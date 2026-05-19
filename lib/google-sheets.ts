@@ -37,7 +37,7 @@ function getSheetsClient() {
   }
 
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const key = normalizePrivateKey(process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
 
   if (!email || !key) {
     throw new Error("Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.");
@@ -51,6 +51,29 @@ function getSheetsClient() {
 
   sheetsClient = google.sheets({ version: "v4", auth });
   return sheetsClient;
+}
+
+function normalizePrivateKey(value: string | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  let key = value.trim().replace(/^\uFEFF/, "");
+
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1);
+  }
+
+  key = key.replace(/\\n/g, "\n").trim();
+
+  if (!key.includes("-----BEGIN PRIVATE KEY-----")) {
+    throw new Error("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY is not a valid private key.");
+  }
+
+  return `${key}\n`;
 }
 
 function spreadsheetId() {
