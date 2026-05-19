@@ -1,0 +1,18 @@
+Tôi muốn tạo 1 web app dành cho việc giao tiết học đến giáo viên thông qua email, giáo vụ sẽ là người hỏi lịch giáo viên bằng tin nhắn, sau đó sẽ giao lịch trên phần mềm này.
+app được phân quyền cho admin là người giao lịch dạy, các giáo viên là người vô nhận lịch.
+admin sẽ là người đưa hệ thống bài học lên, mỗi bài học sẽ kèm theo mục tiêu giảng dạy. nên sắp xếp chương trình theo khối (ví dụ khối 1, 2, 3,4,...)
+Hãy có phần để thêm các khung giờ để khi gửi lịch dạy, admin chọn khung giờ cho nhanh.
+nên có dạng lịch thể hiện tất cả khung giờ làm việc của giáo viên.
+Nên có khu vực để nhập thông tin giáo viên đó, trường hợp cần liên lạc nhanh rê chuột vô sẽ xuất hiện hình và số điện thoại để liên lạc nhanh.
+giáo viên sẽ gửi giáo án về cho giáo vụ, nên có khu vực để họ tải lên, khi tải lên báo là đã tải lên, hiện thông báo cho admin, có thêm ô chat để admin trao đổi với giáo viên.
+Nên có thêm khu vực để điểm danh cho từng tiết dạy để giáo viên tự điểm danh khi đến lớp
+quy trình giao giáo án như sau:
+Sau khi admin hỏi lịch xong, amdin lên chọn bài (kèm mục tiêu), chọn trường, lớp, giờ và gán cho 1 hoặc nhiều giáo viên cùng lúc. Sau khi gán và bấm gửi lịch, hệ thống sẽ tự động gửi email thông báo lịch dạy trong tuần đến giáo viên.
+Khi giáo viên nhận email sẽ có CTA để xác nhận lịch dạy, khi giáo viên xác nhận lịch dạy trên hệ thống hiển thị nhãn giáo viên đã nhận lịch. Khi đến trường, giáo viên bấm vào điểm danh trên chính tiết học đó để admin nắm.
+Vì có những giáo viên hủy lịch, khi hủy lịch chỉ có admin mới có quyền xóa lịch của người đó và chuyển cho người khác.
+Tài khoản nào chỉ thấy lịch của mình mà thôi
+trên giao diện cho phần thêm tài khoản cho giáo viên mới, phân quyền cho ai là admin là giáo viên.
+Hệ thống phân quyền và lưu trữ trên ggsheet để thuận tiện chỉnh sửa sau này.
+giáo án giáo viên tải lên được đẩy thẳng vô google drive để quản lý.
+Sử dụng frame work next.js kết hợp với taiwan css hiện đại với giao diện chuẩn màu thương hiệu #1992b0, #ff9500 hệ thống thông báo chuẩn hiện đại, có hiệu ứng rê chuột, đổ bóng,...đẹp.
+Cố vấn thêm cho tôi về kế hoạch thực hiện để hệ thống được xịn hơn, có thể hỏi tôi các câu hỏi để làm rõ hơn nhé!
