@@ -568,33 +568,33 @@ export function LifeSkillApp() {
 
   function renderMain() {
     if (activeTab === "dashboard") {
-      return <Dashboard />;
+      return Dashboard();
     }
     if (activeTab === "assignment") {
-      return <AssignmentPanel />;
+      return AssignmentPanel();
     }
     if (activeTab === "calendar") {
-      return <CalendarPanel />;
+      return CalendarPanel();
     }
     if (activeTab === "teachers") {
-      return <TeachersPanel />;
+      return TeachersPanel();
     }
     if (activeTab === "lessons") {
-      return <LessonsPanel />;
+      return LessonsPanel();
     }
     if (activeTab === "slots") {
-      return <SlotsPanel />;
+      return SlotsPanel();
     }
     if (activeTab === "plans") {
-      return <LessonPlansPanel />;
+      return LessonPlansPanel();
     }
     if (activeTab === "attendance") {
-      return <AttendancePanel />;
+      return AttendancePanel();
     }
     if (activeTab === "chat") {
-      return <ChatPanel />;
+      return ChatPanel();
     }
-    return <SettingsPanel />;
+    return SettingsPanel();
   }
 
   const visibleThreads =
