@@ -1,13 +1,13 @@
 import type { ScheduleStatus } from "@/lib/types";
 
 export const statusLabels: Record<ScheduleStatus, string> = {
-  draft: "Nhap",
-  sent: "Cho xac nhan",
-  confirmed: "Da nhan lich",
-  lesson_plan_uploaded: "Da upload giao an",
-  attended: "Da diem danh",
-  cancelled: "Da huy",
-  reassigned: "Da chuyen lich",
+  draft: "Nháp",
+  sent: "Chờ xác nhận",
+  confirmed: "Đã nhận lịch",
+  lesson_plan_uploaded: "Đã upload giáo án",
+  attended: "Đã điểm danh",
+  cancelled: "Đã hủy",
+  reassigned: "Đã chuyển lịch",
 };
 
 export const statusStyles: Record<ScheduleStatus, string> = {

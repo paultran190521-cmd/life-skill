@@ -80,22 +80,22 @@ type DraftSchedule = {
 const today = "2026-05-19";
 
 const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
-  { id: "dashboard", label: "Tong quan", icon: LayoutDashboard },
-  { id: "assignment", label: "Giao lich", icon: Send },
-  { id: "calendar", label: "Lich tong", icon: CalendarDays },
-  { id: "teachers", label: "Giao vien", icon: Users },
-  { id: "lessons", label: "Bai hoc", icon: BookOpen },
-  { id: "slots", label: "Khung gio", icon: Clock3 },
-  { id: "plans", label: "Giao an", icon: FileUp },
-  { id: "attendance", label: "Diem danh", icon: CheckCircle2 },
+  { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
+  { id: "assignment", label: "Giao lịch", icon: Send },
+  { id: "calendar", label: "Lịch tổng", icon: CalendarDays },
+  { id: "teachers", label: "Giáo viên", icon: Users },
+  { id: "lessons", label: "Bài học", icon: BookOpen },
+  { id: "slots", label: "Khung giờ", icon: Clock3 },
+  { id: "plans", label: "Giáo án", icon: FileUp },
+  { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
   { id: "chat", label: "Chat", icon: MessageSquareText },
-  { id: "settings", label: "Cau hinh", icon: Settings2 },
+  { id: "settings", label: "Cấu hình", icon: Settings2 },
 ];
 
 const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
-  { id: "calendar", label: "Lich cua toi", icon: CalendarDays },
-  { id: "plans", label: "Giao an", icon: FileUp },
-  { id: "attendance", label: "Diem danh", icon: CheckCircle2 },
+  { id: "calendar", label: "Lịch của tôi", icon: CalendarDays },
+  { id: "plans", label: "Giáo án", icon: FileUp },
+  { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
   { id: "chat", label: "Chat", icon: MessageSquareText },
 ];
 
@@ -131,7 +131,7 @@ export function LifeSkillApp() {
     specialty: "",
   });
   const [lessonDraft, setLessonDraft] = useState({
-    grade: "Khoi 1",
+    grade: "Khối 1",
     title: "",
     objective: "",
     durationMinutes: 35,
@@ -201,7 +201,7 @@ export function LifeSkillApp() {
 
   function createSchedules() {
     if (draftSchedule.teacherIds.length === 0) {
-      addNotification("Chua chon giao vien", "Hay chon it nhat mot giao vien de gui lich.", "admin");
+      addNotification("Chưa chọn giáo viên", "Hãy chọn ít nhất một giáo viên để gửi lịch.", "admin");
       return;
     }
 
@@ -220,11 +220,11 @@ export function LifeSkillApp() {
     setSchedules((items) => [...created, ...items]);
     created.forEach((schedule) => ensureScheduleThread(schedule));
     addNotification(
-      "Da gui lich day",
-      `${created.length} lich moi da duoc tao va san sang gui email CTA xac nhan.`,
+      "Đã gửi lịch dạy",
+      `${created.length} lịch mới đã được tạo và sẵn sàng gửi email CTA xác nhận.`,
       "admin",
     );
-    addNotification("Ban co lich day moi", "Vui long mo lich ca nhan de xac nhan.", "teacher");
+    addNotification("Bạn có lịch dạy mới", "Vui lòng mở lịch cá nhân để xác nhận.", "teacher");
   }
 
   function ensureScheduleThread(schedule: Schedule) {
@@ -242,7 +242,7 @@ export function LifeSkillApp() {
           type: "schedule",
           teacherId: schedule.teacherId,
           scheduleId: schedule.id,
-          title: `${slot?.label ?? "Tiet"} - Lop ${classRoom?.name ?? ""}`,
+          title: `${slot?.label ?? "Tiết"} - Lớp ${classRoom?.name ?? ""}`,
         },
       ];
     });
@@ -256,7 +256,7 @@ export function LifeSkillApp() {
           : item,
       ),
     );
-    addNotification("Giao vien da nhan lich", "Mot lich day vua duoc xac nhan.", "admin");
+    addNotification("Giáo viên đã nhận lịch", "Một lịch dạy vừa được xác nhận.", "admin");
   }
 
   function uploadLessonPlan(schedule: Schedule, fileName: string) {
@@ -278,7 +278,7 @@ export function LifeSkillApp() {
           : item,
       ),
     );
-    addNotification("Giao an moi", `${teacherName(schedule.teacherId)} da upload ${safeName}.`, "admin");
+    addNotification("Giáo án mới", `${teacherName(schedule.teacherId)} đã tải lên ${safeName}.`, "admin");
   }
 
   function checkIn(schedule: Schedule) {
@@ -298,14 +298,14 @@ export function LifeSkillApp() {
     setSchedules((items) =>
       items.map((item) => (item.id === schedule.id ? { ...item, status: "attended" } : item)),
     );
-    addNotification("Da diem danh", `${teacherName(schedule.teacherId)} da diem danh tiet day.`, "admin");
+    addNotification("Đã điểm danh", `${teacherName(schedule.teacherId)} đã điểm danh tiết dạy.`, "admin");
   }
 
   function cancelSchedule(schedule: Schedule) {
     setSchedules((items) =>
       items.map((item) => (item.id === schedule.id ? { ...item, status: "cancelled" } : item)),
     );
-    addNotification("Lich da huy", `${teacherName(schedule.teacherId)} khong con lich ${schedule.date}.`, "all");
+    addNotification("Lịch đã hủy", `${teacherName(schedule.teacherId)} không còn lịch ${schedule.date}.`, "all");
   }
 
   function reassignSchedule(schedule: Schedule) {
@@ -328,8 +328,8 @@ export function LifeSkillApp() {
       ),
     );
     addNotification(
-      "Da chuyen lich",
-      `Lich cua ${teacherName(schedule.teacherId)} da chuyen sang ${replacement.name}.`,
+      "Đã chuyển lịch",
+      `Lịch của ${teacherName(schedule.teacherId)} đã chuyển sang ${replacement.name}.`,
       "admin",
     );
   }
@@ -344,10 +344,10 @@ export function LifeSkillApp() {
         id: createId("t"),
         name: teacherDraft.name,
         email: teacherDraft.email,
-        phone: teacherDraft.phone || "Chua cap nhat",
+        phone: teacherDraft.phone || "Chưa cập nhật",
         avatarUrl:
           "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=160&q=80",
-        specialty: teacherDraft.specialty || "Ky nang song",
+        specialty: teacherDraft.specialty || "Kỹ năng sống",
         active: true,
       },
       ...items,
@@ -361,7 +361,7 @@ export function LifeSkillApp() {
     }
 
     setLessons((items) => [{ id: createId("l"), ...lessonDraft }, ...items]);
-    setLessonDraft({ grade: "Khoi 1", title: "", objective: "", durationMinutes: 35 });
+    setLessonDraft({ grade: "Khối 1", title: "", objective: "", durationMinutes: 35 });
   }
 
   function addSlot() {
@@ -394,7 +394,7 @@ export function LifeSkillApp() {
   }
 
   function teacherName(teacherId: string) {
-    return teachers.find((teacher) => teacher.id === teacherId)?.name ?? "Giao vien";
+    return teachers.find((teacher) => teacher.id === teacherId)?.name ?? "Giáo viên";
   }
 
   function renderMain() {
@@ -442,8 +442,8 @@ export function LifeSkillApp() {
               <GraduationCap size={24} />
             </div>
             <div>
-              <p className="text-lg font-extrabold tracking-tight">Life Skill</p>
-              <p className="text-xs font-semibold uppercase text-[var(--muted)]">Scheduler</p>
+              <p className="text-lg font-extrabold tracking-tight text-[var(--brand-dark)]">Life Skill</p>
+              <p className="text-xs font-semibold uppercase text-[var(--muted)]">Lịch dạy</p>
             </div>
           </div>
 
@@ -458,7 +458,7 @@ export function LifeSkillApp() {
                   setActiveTab("dashboard");
                 }}
               >
-                Admin
+                Quản trị
               </button>
               <button
                 className={`rounded-xl px-3 py-2 text-sm font-bold transition ${
@@ -469,7 +469,7 @@ export function LifeSkillApp() {
                   setActiveTab("calendar");
                 }}
               >
-                Giao vien
+                Giáo viên
               </button>
             </div>
           </div>
@@ -483,7 +483,7 @@ export function LifeSkillApp() {
                   className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-bold transition ${
                     activeTab === item.id
                       ? "bg-[var(--brand)] text-white shadow-lg shadow-cyan-800/20"
-                      : "text-slate-600 hover:bg-cyan-50 hover:text-[var(--brand-dark)]"
+                      : "text-[var(--brand-dark)] hover:bg-cyan-50 hover:text-[var(--brand-dark)]"
                   }`}
                   onClick={() => setActiveTab(item.id)}
                 >
@@ -501,10 +501,10 @@ export function LifeSkillApp() {
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <p className="text-sm font-bold text-[var(--brand-dark)]">
-                  {role === "admin" ? "Ban dieu phoi giao vu" : "Cong viec cua giao vien"}
+                  {role === "admin" ? "Bàn điều phối giáo vụ" : "Công việc của giáo viên"}
                 </p>
                 <h1 className="mt-1 text-2xl font-black tracking-tight md:text-3xl">
-                  Quan ly lich day, giao an va diem danh
+                  Quản lý lịch dạy, giáo án và điểm danh
                 </h1>
               </div>
 
@@ -514,8 +514,8 @@ export function LifeSkillApp() {
                   <input
                     value={searchTerm}
                     onChange={(event) => setSearchTerm(event.target.value)}
-                    placeholder="Tim lich, giao vien, lop..."
-                    className="min-w-0 bg-transparent text-sm outline-none"
+                    placeholder="Tìm lịch, giáo viên, lớp..."
+                    className="min-w-0 bg-transparent text-sm text-[var(--brand-dark)] outline-none placeholder:text-slate-400"
                   />
                 </label>
                 <div className="flex items-center gap-2 rounded-2xl border border-[var(--line)] bg-white px-3 py-2 shadow-sm">
@@ -525,7 +525,7 @@ export function LifeSkillApp() {
                     className="h-9 w-9 rounded-full object-cover"
                   />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-extrabold">{currentUser.name}</p>
+                    <p className="truncate text-sm font-extrabold text-[var(--brand-dark)]">{currentUser.name}</p>
                     <p className="truncate text-xs text-[var(--muted)]">{currentUser.email}</p>
                   </div>
                 </div>
@@ -555,24 +555,24 @@ export function LifeSkillApp() {
     return (
       <div className="space-y-6">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Stat icon={CalendarDays} label="Lich trong he thong" value={schedules.length} tone="cyan" />
-          <Stat icon={CheckCircle2} label="Da nhan lich" value={confirmed} tone="emerald" />
-          <Stat icon={UploadCloud} label="Giao an da nop" value={uploaded} tone="blue" />
-          <Stat icon={ShieldCheck} label="Da diem danh" value={attended} tone="orange" />
+          <Stat icon={CalendarDays} label="Lịch trong hệ thống" value={schedules.length} tone="cyan" />
+          <Stat icon={CheckCircle2} label="Đã nhận lịch" value={confirmed} tone="emerald" />
+          <Stat icon={UploadCloud} label="Giáo án đã nộp" value={uploaded} tone="blue" />
+          <Stat icon={ShieldCheck} label="Đã điểm danh" value={attended} tone="orange" />
         </div>
 
         <div className="grid gap-5 xl:grid-cols-[1.5fr_0.85fr]">
-          <Panel title="Lich day gan nhat" action="Xem theo tuan">
+          <Panel title="Lịch dạy gần nhất" action="Xem theo tuần">
             <ScheduleList items={visibleSchedules.slice(0, 5)} compact />
           </Panel>
-          <Panel title="Thong bao van hanh" action={`${unreadNotifications} moi`}>
+          <Panel title="Thông báo vận hành" action={`${unreadNotifications} mới`}>
             <div className="space-y-3">
               {notifications
                 .filter((item) => item.role === role || item.role === "all")
                 .slice(0, 5)
                 .map((item) => (
                   <div key={item.id} className="rounded-2xl border border-[var(--line)] bg-slate-50 p-4">
-                    <p className="text-sm font-extrabold">{item.title}</p>
+                    <p className="text-sm font-extrabold text-[var(--brand-dark)]">{item.title}</p>
                     <p className="mt-1 text-sm text-[var(--muted)]">{item.body}</p>
                   </div>
                 ))}
@@ -588,9 +588,9 @@ export function LifeSkillApp() {
 
     return (
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.35fr]">
-        <Panel title="Tao lich day moi" action="Email CTA">
+        <Panel title="Tạo lịch dạy mới" action="Email xác nhận">
           <div className="grid gap-4">
-            <Field label="Ngay day">
+            <Field label="Ngày dạy">
               <input
                 type="date"
                 value={draftSchedule.date}
@@ -598,7 +598,7 @@ export function LifeSkillApp() {
                 className={inputClass}
               />
             </Field>
-            <Field label="Truong">
+            <Field label="Trường">
               <select
                 value={draftSchedule.schoolId}
                 onChange={(event) => {
@@ -619,7 +619,7 @@ export function LifeSkillApp() {
               </select>
             </Field>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Lop">
+              <Field label="Lớp">
                 <select
                   value={draftSchedule.classId}
                   onChange={(event) => setDraftSchedule({ ...draftSchedule, classId: event.target.value })}
@@ -632,7 +632,7 @@ export function LifeSkillApp() {
                   ))}
                 </select>
               </Field>
-              <Field label="Khung gio">
+              <Field label="Khung giờ">
                 <select
                   value={draftSchedule.timeSlotId}
                   onChange={(event) =>
@@ -648,7 +648,7 @@ export function LifeSkillApp() {
                 </select>
               </Field>
             </div>
-            <Field label="Bai hoc va muc tieu">
+            <Field label="Bài học và mục tiêu">
               <select
                 value={draftSchedule.lessonId}
                 onChange={(event) => setDraftSchedule({ ...draftSchedule, lessonId: event.target.value })}
@@ -662,7 +662,7 @@ export function LifeSkillApp() {
               </select>
             </Field>
             <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
-              <p className="text-sm font-extrabold text-[var(--brand-dark)]">Chon giao vien</p>
+              <p className="text-sm font-extrabold text-[var(--brand-dark)]">Chọn giáo viên</p>
               <div className="mt-3 grid gap-2">
                 {teachers.map((teacher) => (
                   <label
@@ -693,12 +693,12 @@ export function LifeSkillApp() {
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--brand)] px-5 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]"
             >
               <Send size={18} />
-              Gui lich va email thong bao
+              Gửi lịch và email thông báo
             </button>
           </div>
         </Panel>
 
-        <Panel title="Preview lich sap gui" action="Cho phep trung gio">
+        <Panel title="Xem trước lịch sắp gửi" action="Cho phép trùng giờ">
           <ScheduleList items={visibleSchedules.slice(0, 7)} compact />
         </Panel>
       </div>
@@ -707,7 +707,7 @@ export function LifeSkillApp() {
 
   function CalendarPanel() {
     return (
-      <Panel title={role === "admin" ? "Lich tong quan" : "Lich day cua toi"} action="Ngay / tuan / thang">
+      <Panel title={role === "admin" ? "Lịch tổng quan" : "Lịch dạy của tôi"} action="Ngày / tuần / tháng">
         <ScheduleList items={visibleSchedules} />
       </Panel>
     );
@@ -716,12 +716,12 @@ export function LifeSkillApp() {
   function TeachersPanel() {
     return (
       <div className="grid gap-5 xl:grid-cols-[0.8fr_1.3fr]">
-        <Panel title="Them giao vien" action="Phan quyen">
+        <Panel title="Thêm giáo viên" action="Phân quyền">
           <div className="grid gap-3">
             <input
               value={teacherDraft.name}
               onChange={(event) => setTeacherDraft({ ...teacherDraft, name: event.target.value })}
-              placeholder="Ho ten"
+              placeholder="Họ tên"
               className={inputClass}
             />
             <input
@@ -733,22 +733,22 @@ export function LifeSkillApp() {
             <input
               value={teacherDraft.phone}
               onChange={(event) => setTeacherDraft({ ...teacherDraft, phone: event.target.value })}
-              placeholder="So dien thoai"
+              placeholder="Số điện thoại"
               className={inputClass}
             />
             <input
               value={teacherDraft.specialty}
               onChange={(event) => setTeacherDraft({ ...teacherDraft, specialty: event.target.value })}
-              placeholder="Chuyen mon"
+              placeholder="Chuyên môn"
               className={inputClass}
             />
             <button onClick={addTeacher} className={primaryButtonClass}>
               <UserPlus size={18} />
-              Them giao vien
+              Thêm giáo viên
             </button>
           </div>
         </Panel>
-        <Panel title="Danh sach giao vien" action={`${teachers.length} nguoi`}>
+        <Panel title="Danh sách giáo viên" action={`${teachers.length} người`}>
           <div className="grid gap-3 md:grid-cols-2">
             {teachers.map((teacher) => (
               <TeacherCard key={teacher.id} teacher={teacher} />
@@ -762,47 +762,47 @@ export function LifeSkillApp() {
   function LessonsPanel() {
     return (
       <div className="grid gap-5 xl:grid-cols-[0.8fr_1.3fr]">
-        <Panel title="Them bai hoc" action="Theo khoi">
+        <Panel title="Thêm bài học" action="Theo khối">
           <div className="grid gap-3">
             <select
               value={lessonDraft.grade}
               onChange={(event) => setLessonDraft({ ...lessonDraft, grade: event.target.value })}
               className={inputClass}
             >
-              {["Khoi 1", "Khoi 2", "Khoi 3", "Khoi 4", "Khoi 5"].map((grade) => (
+              {["Khối 1", "Khối 2", "Khối 3", "Khối 4", "Khối 5"].map((grade) => (
                 <option key={grade}>{grade}</option>
               ))}
             </select>
             <input
               value={lessonDraft.title}
               onChange={(event) => setLessonDraft({ ...lessonDraft, title: event.target.value })}
-              placeholder="Ten bai hoc"
+              placeholder="Tên bài học"
               className={inputClass}
             />
             <textarea
               value={lessonDraft.objective}
               onChange={(event) => setLessonDraft({ ...lessonDraft, objective: event.target.value })}
-              placeholder="Muc tieu giang day"
+              placeholder="Mục tiêu giảng dạy"
               className={`${inputClass} min-h-28 resize-none`}
             />
             <button onClick={addLesson} className={primaryButtonClass}>
               <Plus size={18} />
-              Them bai hoc
+              Thêm bài học
             </button>
           </div>
         </Panel>
-        <Panel title="Thu vien bai hoc" action={`${lessons.length} bai`}>
+        <Panel title="Thư viện bài học" action={`${lessons.length} bài`}>
           <div className="space-y-3">
             {lessons.map((lesson) => (
               <div key={lesson.id} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-black uppercase text-[var(--brand)]">{lesson.grade}</p>
-                    <h3 className="mt-1 text-base font-black">{lesson.title}</h3>
+                    <h3 className="mt-1 text-base font-black text-[var(--brand-dark)]">{lesson.title}</h3>
                     <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{lesson.objective}</p>
                   </div>
                   <span className="rounded-full bg-orange-50 px-3 py-1 text-xs font-black text-orange-700">
-                    {lesson.durationMinutes} phut
+                    {lesson.durationMinutes} phút
                   </span>
                 </div>
               </div>
@@ -816,12 +816,12 @@ export function LifeSkillApp() {
   function SlotsPanel() {
     return (
       <div className="grid gap-5 xl:grid-cols-[0.75fr_1.35fr]">
-        <Panel title="Them khung gio" action="Chon nhanh khi giao lich">
+        <Panel title="Thêm khung giờ" action="Chọn nhanh khi giao lịch">
           <div className="grid gap-3">
             <input
               value={slotDraft.label}
               onChange={(event) => setSlotDraft({ ...slotDraft, label: event.target.value })}
-              placeholder="Vi du: Tiet 5"
+              placeholder="Ví dụ: Tiết 5"
               className={inputClass}
             />
             <div className="grid grid-cols-2 gap-3">
@@ -840,15 +840,15 @@ export function LifeSkillApp() {
             </div>
             <button onClick={addSlot} className={primaryButtonClass}>
               <Clock3 size={18} />
-              Luu khung gio
+              Lưu khung giờ
             </button>
           </div>
         </Panel>
-        <Panel title="Khung gio lam viec" action={`${timeSlots.length} khung`}>
+        <Panel title="Khung giờ làm việc" action={`${timeSlots.length} khung`}>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {timeSlots.map((slot) => (
               <div key={slot.id} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
-                <p className="text-sm font-black">{slot.label}</p>
+                <p className="text-sm font-black text-[var(--brand-dark)]">{slot.label}</p>
                 <p className="mt-2 text-2xl font-black text-[var(--brand)]">
                   {slot.start}
                   <span className="text-[var(--muted)]"> - </span>
@@ -867,7 +867,7 @@ export function LifeSkillApp() {
       role === "admin" ? schedules : schedules.filter((item) => item.teacherId === currentTeacherId);
 
     return (
-      <Panel title="Trung tam giao an" action="Google Drive ready">
+      <Panel title="Trung tâm giáo án" action="Sẵn sàng Google Drive">
         <div className="space-y-3">
           {scopedSchedules.map((schedule) => {
             const meta = lookupSchedule(schedule);
@@ -877,9 +877,9 @@ export function LifeSkillApp() {
                 className="grid gap-4 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm lg:grid-cols-[1fr_auto]"
               >
                 <div>
-                  <p className="text-sm font-black">{meta.lesson?.title}</p>
+                  <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title}</p>
                   <p className="mt-1 text-sm text-[var(--muted)]">
-                    {meta.teacher?.name} - {meta.school?.name} - Lop {meta.classRoom?.name} -{" "}
+                    {meta.teacher?.name} - {meta.school?.name} - Lớp {meta.classRoom?.name} -{" "}
                     {formatDate(schedule.date)}
                   </p>
                   {meta.plan ? (
@@ -891,13 +891,13 @@ export function LifeSkillApp() {
                       {meta.plan.fileName}
                     </a>
                   ) : (
-                    <p className="mt-3 text-sm font-semibold text-orange-700">Chua co giao an</p>
+                    <p className="mt-3 text-sm font-semibold text-orange-700">Chưa có giáo án</p>
                   )}
                 </div>
                 {role === "teacher" || role === "admin" ? (
                   <label className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 text-sm font-black text-white shadow-lg shadow-orange-500/20 transition hover:-translate-y-0.5">
                     <FileUp size={17} />
-                    Upload
+                    Tải lên
                     <input
                       type="file"
                       className="hidden"
@@ -922,7 +922,7 @@ export function LifeSkillApp() {
       role === "admin" ? schedules : schedules.filter((item) => item.teacherId === currentTeacherId);
 
     return (
-      <Panel title="Diem danh tung tiet" action="Luu thoi gian bam">
+      <Panel title="Điểm danh từng tiết" action="Lưu thời gian bấm">
         <div className="space-y-3">
           {scopedSchedules.map((schedule) => {
             const meta = lookupSchedule(schedule);
@@ -932,18 +932,18 @@ export function LifeSkillApp() {
                 className="grid gap-4 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm lg:grid-cols-[1fr_auto]"
               >
                 <div>
-                  <p className="text-sm font-black">
+                  <p className="text-sm font-black text-[var(--brand-dark)]">
                     {meta.slot?.label} - {meta.lesson?.title}
                   </p>
                   <p className="mt-1 text-sm text-[var(--muted)]">
-                    {meta.teacher?.name} tai {meta.school?.name}, lop {meta.classRoom?.name}
+                    {meta.teacher?.name} tại {meta.school?.name}, lớp {meta.classRoom?.name}
                   </p>
                   {meta.checkIn ? (
                     <p className="mt-2 text-sm font-bold text-emerald-700">
-                      Da diem danh luc {formatDateTime(meta.checkIn.checkedInAt)}
+                      Đã điểm danh lúc {formatDateTime(meta.checkIn.checkedInAt)}
                     </p>
                   ) : (
-                    <p className="mt-2 text-sm font-bold text-orange-700">Chua diem danh</p>
+                    <p className="mt-2 text-sm font-bold text-orange-700">Chưa điểm danh</p>
                   )}
                 </div>
                 <button
@@ -952,7 +952,7 @@ export function LifeSkillApp() {
                   className={primaryButtonClass}
                 >
                   <CheckCircle2 size={18} />
-                  Diem danh
+                  Điểm danh
                 </button>
               </div>
             );
@@ -970,7 +970,7 @@ export function LifeSkillApp() {
 
     return (
       <div className="grid min-h-[620px] gap-5 xl:grid-cols-[340px_1fr]">
-        <Panel title="Kenh trao doi" action="Theo GV va tung tiet">
+        <Panel title="Kênh trao đổi" action="Theo giáo viên và từng tiết">
           <div className="space-y-2">
             {visibleThreads.map((thread) => (
               <button
@@ -982,16 +982,16 @@ export function LifeSkillApp() {
                     : "border-[var(--line)] bg-white hover:border-cyan-200"
                 }`}
               >
-                <p className="text-sm font-black">{thread.title}</p>
+                <p className="text-sm font-black text-[var(--brand-dark)]">{thread.title}</p>
                 <p className="mt-1 text-xs font-bold uppercase text-[var(--muted)]">
-                  {thread.type === "teacher" ? "Theo giao vien" : "Theo tiet day"}
+                  {thread.type === "teacher" ? "Theo giáo viên" : "Theo tiết dạy"}
                 </p>
               </button>
             ))}
           </div>
         </Panel>
 
-        <Panel title={selectedThread?.title ?? "Chat"} action="Polling ready">
+        <Panel title={selectedThread?.title ?? "Chat"} action="Cập nhật định kỳ">
           <div className="flex min-h-[510px] flex-col">
             <div className="app-scrollbar flex-1 space-y-3 overflow-y-auto pr-2">
               {selectedMessages.map((message) => (
@@ -1000,7 +1000,7 @@ export function LifeSkillApp() {
                   className={`max-w-[82%] rounded-2xl p-3 ${
                     message.senderRole === role
                       ? "ml-auto bg-[var(--brand)] text-white"
-                      : "bg-slate-100 text-slate-800"
+                      : "bg-cyan-50 text-[var(--brand-dark)]"
                   }`}
                 >
                   <p className="text-xs font-black opacity-80">{message.senderName}</p>
@@ -1018,7 +1018,7 @@ export function LifeSkillApp() {
                     sendChatMessage();
                   }
                 }}
-                placeholder="Nhap tin nhan..."
+                placeholder="Nhập tin nhắn..."
                 className={inputClass}
               />
               <button onClick={sendChatMessage} className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--brand)] text-white">
@@ -1049,16 +1049,18 @@ export function LifeSkillApp() {
     ];
 
     return (
-      <Panel title="Cau hinh Google Workspace" action="San sang noi API">
+      <Panel title="Cấu hình Google Workspace" action="Sẵn sàng nối API">
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3">
               <School2 className="text-[var(--brand)]" />
-              <h3 className="text-base font-black">Google Sheets la database chinh</h3>
+              <h3 className="text-base font-black text-[var(--brand-dark)]">
+                Google Sheets là cơ sở dữ liệu chính
+              </h3>
             </div>
             <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-              Tao spreadsheet voi cac tab dung ten ben duoi, cap quyen cho service account, sau do dien
-              GOOGLE_SHEETS_SPREADSHEET_ID vao .env.
+              Tạo spreadsheet với các tab đúng tên bên dưới, cấp quyền cho service account, sau đó điền
+              GOOGLE_SHEETS_SPREADSHEET_ID vào .env.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               {sheets.map((sheet) => (
@@ -1071,14 +1073,14 @@ export function LifeSkillApp() {
           <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3">
               <Mail className="text-[var(--accent)]" />
-              <h3 className="text-base font-black">Email va Google Drive</h3>
+              <h3 className="text-base font-black text-[var(--brand-dark)]">Email và Google Drive</h3>
             </div>
             <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-              Email thong bao se dung Resend hoac Gmail API. Giao an upload se day vao Drive folder theo cau
-              truc nam hoc / truong / khoi / lop / giao vien.
+              Email thông báo sẽ dùng Resend hoặc Gmail API. Giáo án tải lên sẽ đẩy vào thư mục Drive theo cấu
+              trúc năm học / trường / khối / lớp / giáo viên.
             </p>
             <div className="mt-4 rounded-2xl bg-orange-50 p-4 text-sm font-bold text-orange-800">
-              Ban demo hien dang gia lap upload Drive va gui email de co the kiem tra UI truoc khi gan credential.
+              Bản demo hiện đang giả lập tải lên Drive và gửi email để có thể kiểm tra UI trước khi gắn thông tin xác thực.
             </div>
           </div>
         </div>
@@ -1090,8 +1092,8 @@ export function LifeSkillApp() {
     if (items.length === 0) {
       return (
         <div className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 p-8 text-center">
-          <p className="font-black text-[var(--brand-dark)]">Chua co lich phu hop</p>
-          <p className="mt-2 text-sm text-[var(--muted)]">Hay tao lich moi hoac doi bo loc tim kiem.</p>
+          <p className="font-black text-[var(--brand-dark)]">Chưa có lịch phù hợp</p>
+          <p className="mt-2 text-sm text-[var(--muted)]">Hãy tạo lịch mới hoặc đổi bộ lọc tìm kiếm.</p>
         </div>
       );
     }
@@ -1107,15 +1109,15 @@ export function LifeSkillApp() {
                 className="grid grid-cols-[130px_1fr_160px_170px] items-center gap-4 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-lg"
               >
                 <div>
-                  <p className="text-sm font-black">{formatDate(schedule.date)}</p>
+                  <p className="text-sm font-black text-[var(--brand-dark)]">{formatDate(schedule.date)}</p>
                   <p className="mt-1 text-xs font-bold text-[var(--muted)]">
                     {meta.slot?.label} {meta.slot?.start}
                   </p>
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-black">{meta.lesson?.title}</p>
+                  <p className="truncate text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title}</p>
                   <p className="mt-1 truncate text-sm text-[var(--muted)]">
-                    {meta.school?.name} - Lop {meta.classRoom?.name} - {meta.lesson?.objective}
+                    {meta.school?.name} - Lớp {meta.classRoom?.name} - {meta.lesson?.objective}
                   </p>
                 </div>
                 <TeacherHover teacher={meta.teacher} />
@@ -1124,14 +1126,14 @@ export function LifeSkillApp() {
                   {!compact && role === "admin" ? (
                     <div className="flex gap-1">
                       <button
-                        title="Chuyen lich"
+                        title="Chuyển lịch"
                         onClick={() => reassignSchedule(schedule)}
                         className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
                       >
                         <RefreshCcw size={16} />
                       </button>
                       <button
-                        title="Huy lich"
+                        title="Hủy lịch"
                         onClick={() => cancelSchedule(schedule)}
                         className="grid h-9 w-9 place-items-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
                       >
@@ -1144,7 +1146,7 @@ export function LifeSkillApp() {
                       onClick={() => confirmSchedule(schedule.id)}
                       className="rounded-xl bg-[var(--brand)] px-3 py-2 text-xs font-black text-white"
                     >
-                      Xac nhan
+                      Xác nhận
                     </button>
                   ) : null}
                 </div>
@@ -1169,9 +1171,11 @@ function Panel({
   return (
     <section className="rounded-3xl border border-[var(--line)] bg-white p-5 shadow-[0_18px_48px_rgba(20,33,43,0.06)]">
       <div className="mb-5 flex items-center justify-between gap-3">
-        <h2 className="text-lg font-black tracking-tight">{title}</h2>
+        <h2 className="text-lg font-black tracking-tight text-[var(--brand-dark)]">{title}</h2>
         {action ? (
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{action}</span>
+          <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-[var(--brand-dark)]">
+            {action}
+          </span>
         ) : null}
       </div>
       {children}
@@ -1202,7 +1206,7 @@ function Stat({
       <div className={`grid h-12 w-12 place-items-center rounded-2xl ${toneClass}`}>
         <Icon size={22} />
       </div>
-      <p className="mt-5 text-3xl font-black tracking-tight">{value}</p>
+      <p className="mt-5 text-3xl font-black tracking-tight text-[var(--brand-dark)]">{value}</p>
       <p className="mt-1 text-sm font-bold text-[var(--muted)]">{label}</p>
     </div>
   );
@@ -1211,7 +1215,7 @@ function Stat({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="grid gap-2">
-      <span className="text-xs font-black uppercase text-[var(--muted)]">{label}</span>
+      <span className="text-xs font-black uppercase text-[var(--brand-dark)]">{label}</span>
       {children}
     </label>
   );
@@ -1223,7 +1227,7 @@ function TeacherCard({ teacher }: { teacher: Teacher }) {
       <div className="flex items-center gap-3">
         <img alt={teacher.name} src={teacher.avatarUrl} className="h-12 w-12 rounded-2xl object-cover" />
         <div className="min-w-0">
-          <p className="truncate text-sm font-black">{teacher.name}</p>
+          <p className="truncate text-sm font-black text-[var(--brand-dark)]">{teacher.name}</p>
           <p className="truncate text-xs font-bold text-[var(--muted)]">{teacher.specialty}</p>
         </div>
       </div>
@@ -1237,7 +1241,7 @@ function TeacherCard({ teacher }: { teacher: Teacher }) {
 
 function TeacherHover({ teacher }: { teacher?: Teacher }) {
   if (!teacher) {
-    return <span className="text-sm font-bold text-[var(--muted)]">Chua ro</span>;
+    return <span className="text-sm font-bold text-[var(--muted)]">Chưa rõ</span>;
   }
 
   return (
@@ -1245,7 +1249,7 @@ function TeacherHover({ teacher }: { teacher?: Teacher }) {
       <div className="flex items-center gap-3">
         <img alt={teacher.name} src={teacher.avatarUrl} className="h-10 w-10 rounded-full object-cover" />
         <div className="min-w-0">
-          <p className="truncate text-sm font-black">{teacher.name}</p>
+          <p className="truncate text-sm font-black text-[var(--brand-dark)]">{teacher.name}</p>
           <p className="truncate text-xs text-[var(--muted)]">{teacher.phone}</p>
         </div>
       </div>
@@ -1253,11 +1257,11 @@ function TeacherHover({ teacher }: { teacher?: Teacher }) {
         <div className="flex items-center gap-3">
           <img alt={teacher.name} src={teacher.avatarUrl} className="h-14 w-14 rounded-2xl object-cover" />
           <div>
-            <p className="font-black">{teacher.name}</p>
+            <p className="font-black text-[var(--brand-dark)]">{teacher.name}</p>
             <p className="text-xs font-bold text-[var(--brand)]">{teacher.specialty}</p>
           </div>
         </div>
-        <div className="mt-4 space-y-2 text-sm font-bold text-slate-700">
+        <div className="mt-4 space-y-2 text-sm font-bold text-[var(--brand-dark)]">
           <p className="flex items-center gap-2">
             <Phone size={15} className="text-[var(--accent)]" />
             {teacher.phone}
@@ -1281,7 +1285,7 @@ function StatusChip({ status }: { status: Schedule["status"] }) {
 }
 
 const inputClass =
-  "w-full rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-[var(--brand)] focus:ring-4 focus:ring-cyan-100";
+  "w-full rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[var(--brand-dark)] outline-none transition placeholder:text-slate-400 focus:border-[var(--brand)] focus:ring-4 focus:ring-cyan-100";
 
 const primaryButtonClass =
   "inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--brand)] px-4 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]";
