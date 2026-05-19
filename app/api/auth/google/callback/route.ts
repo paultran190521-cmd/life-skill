@@ -6,8 +6,7 @@ import {
   oauthStateCookieName,
   sessionCookieName,
 } from "@/lib/auth-session";
-import { readSheetRows } from "@/lib/google-sheets";
-import type { Role, User } from "@/lib/types";
+import { findAuthorizedUserByEmail } from "@/lib/auth-users";
 
 type GoogleTokenResponse = {
   id_token?: string;
@@ -38,7 +37,7 @@ export async function GET(request: NextRequest) {
       throw new Error("Google account email is not verified.");
     }
 
-    const user = await findAuthorizedUser(profile.email);
+    const user = await findAuthorizedUserByEmail(profile.email);
     if (!user) {
       throw new Error("Email này chưa được phân quyền trong menu Giáo viên.");
     }
@@ -93,29 +92,7 @@ async function fetchGoogleProfile(request: NextRequest, code: string) {
   return profile;
 }
 
-async function findAuthorizedUser(email: string) {
-  const normalizedEmail = email.trim().toLowerCase();
-  const rows = await readSheetRows("Users");
-  const users = rows.map<User>((row) => ({
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    role: normalizeRole(row.role),
-    teacherId: row.teacherId || undefined,
-    avatarUrl: row.avatarUrl || undefined,
-    isActive: row.isActive !== "false",
-  }));
-
-  return users.find(
-    (user) => user.email.trim().toLowerCase() === normalizedEmail && user.isActive !== false,
-  );
-}
-
 function redirectUri(request: NextRequest) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin;
   return new URL("/api/auth/google/callback", baseUrl).toString();
-}
-
-function normalizeRole(role: string): Role {
-  return role === "teacher" ? "teacher" : "admin";
 }
