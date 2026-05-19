@@ -25,7 +25,7 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   attendance as seedAttendance,
   chatMessages as seedMessages,
@@ -77,7 +77,19 @@ type DraftSchedule = {
   teacherIds: string[];
 };
 
-const today = "2026-05-19";
+type AppData = {
+  teachers: Teacher[];
+  schools: School[];
+  classes: ClassRoom[];
+  lessons: Lesson[];
+  timeSlots: TimeSlot[];
+  schedules: Schedule[];
+  lessonPlans: LessonPlan[];
+  attendance: Attendance[];
+  chatThreads: ChatThread[];
+  chatMessages: ChatMessage[];
+  notifications: Notification[];
+};
 
 const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
@@ -113,6 +125,7 @@ export function LifeSkillApp() {
   const [chatThreads, setChatThreads] = useState<ChatThread[]>(seedThreads);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(seedMessages);
   const [notifications, setNotifications] = useState<Notification[]>(seedNotifications);
+  const [dataStatus, setDataStatus] = useState<"loading" | "connected" | "offline">("loading");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedThreadId, setSelectedThreadId] = useState(seedThreads[0]?.id ?? "");
   const [chatDraft, setChatDraft] = useState("");
@@ -144,6 +157,40 @@ export function LifeSkillApp() {
 
   const currentUser = role === "admin" ? users[0] : users[1];
   const currentTeacherId = currentUser.teacherId ?? "t1";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAppData() {
+      try {
+        const data = await apiRequest<AppData>("/api/app-data");
+        if (cancelled) {
+          return;
+        }
+
+        setTeachers(data.teachers);
+        setLessons(data.lessons);
+        setTimeSlots(data.timeSlots);
+        setSchedules(data.schedules);
+        setLessonPlans(data.lessonPlans);
+        setAttendance(data.attendance);
+        setChatThreads(data.chatThreads);
+        setChatMessages(data.chatMessages);
+        setNotifications(data.notifications);
+        setDataStatus("connected");
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) {
+          setDataStatus("offline");
+        }
+      }
+    }
+
+    loadAppData();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const visibleSchedules = useMemo(() => {
     const scoped =
@@ -199,23 +246,35 @@ export function LifeSkillApp() {
     ]);
   }
 
-  function createSchedules() {
+  async function createSchedules() {
     if (draftSchedule.teacherIds.length === 0) {
       addNotification("Chưa chọn giáo viên", "Hãy chọn ít nhất một giáo viên để gửi lịch.", "admin");
       return;
     }
 
-    const created = draftSchedule.teacherIds.map<Schedule>((teacherId) => ({
-      id: createId("sch"),
-      date: draftSchedule.date,
-      teacherId,
-      schoolId: draftSchedule.schoolId,
-      classId: draftSchedule.classId,
-      lessonId: draftSchedule.lessonId,
-      timeSlotId: draftSchedule.timeSlotId,
-      status: "sent",
-      sentAt: new Date().toISOString(),
-    }));
+    let created: Schedule[];
+    try {
+      const response = await apiRequest<{ schedules: Schedule[] }>("/api/schedules", {
+        method: "POST",
+        body: JSON.stringify({ ...draftSchedule, createdBy: currentUser.id }),
+      });
+      created = response.schedules;
+      setDataStatus("connected");
+    } catch (error) {
+      console.error(error);
+      setDataStatus("offline");
+      created = draftSchedule.teacherIds.map<Schedule>((teacherId) => ({
+        id: createId("sch"),
+        date: draftSchedule.date,
+        teacherId,
+        schoolId: draftSchedule.schoolId,
+        classId: draftSchedule.classId,
+        lessonId: draftSchedule.lessonId,
+        timeSlotId: draftSchedule.timeSlotId,
+        status: "sent",
+        sentAt: new Date().toISOString(),
+      }));
+    }
 
     setSchedules((items) => [...created, ...items]);
     created.forEach((schedule) => ensureScheduleThread(schedule));
@@ -248,7 +307,18 @@ export function LifeSkillApp() {
     });
   }
 
-  function confirmSchedule(scheduleId: string) {
+  async function confirmSchedule(scheduleId: string) {
+    try {
+      await apiRequest(`/api/schedules/${scheduleId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "confirmed" }),
+      });
+      setDataStatus("connected");
+    } catch (error) {
+      console.error(error);
+      setDataStatus("offline");
+    }
+
     setSchedules((items) =>
       items.map((item) =>
         item.id === scheduleId
@@ -259,7 +329,7 @@ export function LifeSkillApp() {
     addNotification("Giáo viên đã nhận lịch", "Một lịch dạy vừa được xác nhận.", "admin");
   }
 
-  function uploadLessonPlan(schedule: Schedule, fileName: string) {
+  async function uploadLessonPlan(schedule: Schedule, fileName: string) {
     const safeName = fileName || `giao-an-${schedule.id}.pdf`;
     const plan: LessonPlan = {
       id: createId("lp"),
@@ -269,6 +339,24 @@ export function LifeSkillApp() {
       driveUrl: `https://drive.google.com/life-skill/${schedule.id}/${encodeURIComponent(safeName)}`,
       uploadedAt: new Date().toISOString(),
     };
+
+    try {
+      await apiRequest("/api/lesson-plans", {
+        method: "POST",
+        body: JSON.stringify({
+          ...plan,
+          driveFileId: "",
+        }),
+      });
+      await apiRequest(`/api/schedules/${schedule.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "lesson_plan_uploaded" }),
+      });
+      setDataStatus("connected");
+    } catch (error) {
+      console.error(error);
+      setDataStatus("offline");
+    }
 
     setLessonPlans((items) => [plan, ...items.filter((item) => item.scheduleId !== schedule.id)]);
     setSchedules((items) =>
@@ -281,18 +369,35 @@ export function LifeSkillApp() {
     addNotification("Giáo án mới", `${teacherName(schedule.teacherId)} đã tải lên ${safeName}.`, "admin");
   }
 
-  function checkIn(schedule: Schedule) {
+  async function checkIn(schedule: Schedule) {
     if (attendance.some((item) => item.scheduleId === schedule.id)) {
       return;
     }
 
+    const record: Attendance = {
+      id: createId("att"),
+      scheduleId: schedule.id,
+      teacherId: schedule.teacherId,
+      checkedInAt: new Date().toISOString(),
+    };
+
+    try {
+      await apiRequest("/api/attendance", {
+        method: "POST",
+        body: JSON.stringify(record),
+      });
+      await apiRequest(`/api/schedules/${schedule.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "attended" }),
+      });
+      setDataStatus("connected");
+    } catch (error) {
+      console.error(error);
+      setDataStatus("offline");
+    }
+
     setAttendance((items) => [
-      {
-        id: createId("att"),
-        scheduleId: schedule.id,
-        teacherId: schedule.teacherId,
-        checkedInAt: new Date().toISOString(),
-      },
+      record,
       ...items,
     ]);
     setSchedules((items) =>
@@ -301,17 +406,43 @@ export function LifeSkillApp() {
     addNotification("Đã điểm danh", `${teacherName(schedule.teacherId)} đã điểm danh tiết dạy.`, "admin");
   }
 
-  function cancelSchedule(schedule: Schedule) {
+  async function cancelSchedule(schedule: Schedule) {
+    try {
+      await apiRequest(`/api/schedules/${schedule.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "cancelled" }),
+      });
+      setDataStatus("connected");
+    } catch (error) {
+      console.error(error);
+      setDataStatus("offline");
+    }
+
     setSchedules((items) =>
       items.map((item) => (item.id === schedule.id ? { ...item, status: "cancelled" } : item)),
     );
     addNotification("Lịch đã hủy", `${teacherName(schedule.teacherId)} không còn lịch ${schedule.date}.`, "all");
   }
 
-  function reassignSchedule(schedule: Schedule) {
+  async function reassignSchedule(schedule: Schedule) {
     const replacement = teachers.find((teacher) => teacher.id !== schedule.teacherId && teacher.active);
     if (!replacement) {
       return;
+    }
+
+    try {
+      await apiRequest(`/api/schedules/${schedule.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "reassigned",
+          teacherId: replacement.id,
+          reassignedFrom: schedule.teacherId,
+        }),
+      });
+      setDataStatus("connected");
+    } catch (error) {
+      console.error(error);
+      setDataStatus("offline");
     }
 
     setSchedules((items) =>
@@ -334,42 +465,80 @@ export function LifeSkillApp() {
     );
   }
 
-  function addTeacher() {
+  async function addTeacher() {
     if (!teacherDraft.name || !teacherDraft.email) {
       return;
     }
 
-    setTeachers((items) => [
-      {
-        id: createId("t"),
-        name: teacherDraft.name,
-        email: teacherDraft.email,
-        phone: teacherDraft.phone || "Chưa cập nhật",
-        avatarUrl:
-          "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=160&q=80",
-        specialty: teacherDraft.specialty || "Kỹ năng sống",
-        active: true,
-      },
-      ...items,
-    ]);
+    const teacher: Teacher = {
+      id: createId("t"),
+      name: teacherDraft.name,
+      email: teacherDraft.email,
+      phone: teacherDraft.phone || "Chưa cập nhật",
+      avatarUrl: "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=160&q=80",
+      specialty: teacherDraft.specialty || "Kỹ năng sống",
+      active: true,
+    };
+
+    try {
+      const savedTeacher = await apiRequest<Teacher>("/api/teachers", {
+        method: "POST",
+        body: JSON.stringify(teacher),
+      });
+      setTeachers((items) => [savedTeacher, ...items]);
+      setDataStatus("connected");
+    } catch (error) {
+      console.error(error);
+      setTeachers((items) => [teacher, ...items]);
+      setDataStatus("offline");
+    }
+
     setTeacherDraft({ name: "", email: "", phone: "", specialty: "" });
   }
 
-  function addLesson() {
+  async function addLesson() {
     if (!lessonDraft.title || !lessonDraft.objective) {
       return;
     }
 
-    setLessons((items) => [{ id: createId("l"), ...lessonDraft }, ...items]);
+    const lesson = { id: createId("l"), ...lessonDraft };
+
+    try {
+      const savedLesson = await apiRequest<Lesson>("/api/lessons", {
+        method: "POST",
+        body: JSON.stringify(lesson),
+      });
+      setLessons((items) => [savedLesson, ...items]);
+      setDataStatus("connected");
+    } catch (error) {
+      console.error(error);
+      setLessons((items) => [lesson, ...items]);
+      setDataStatus("offline");
+    }
+
     setLessonDraft({ grade: "Khối 1", title: "", objective: "", durationMinutes: 35 });
   }
 
-  function addSlot() {
+  async function addSlot() {
     if (!slotDraft.label) {
       return;
     }
 
-    setTimeSlots((items) => [{ id: createId("ts"), ...slotDraft }, ...items]);
+    const timeSlot = { id: createId("ts"), ...slotDraft };
+
+    try {
+      const savedTimeSlot = await apiRequest<TimeSlot>("/api/time-slots", {
+        method: "POST",
+        body: JSON.stringify(timeSlot),
+      });
+      setTimeSlots((items) => [savedTimeSlot, ...items]);
+      setDataStatus("connected");
+    } catch (error) {
+      console.error(error);
+      setTimeSlots((items) => [timeSlot, ...items]);
+      setDataStatus("offline");
+    }
+
     setSlotDraft({ label: "", start: "07:30", end: "08:05" });
   }
 
@@ -509,6 +678,21 @@ export function LifeSkillApp() {
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <span
+                  className={`inline-flex h-11 items-center justify-center rounded-2xl px-3 text-xs font-black ${
+                    dataStatus === "connected"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : dataStatus === "loading"
+                        ? "bg-cyan-50 text-[var(--brand-dark)]"
+                        : "bg-orange-50 text-orange-700"
+                  }`}
+                >
+                  {dataStatus === "connected"
+                    ? "Đã nối Google Sheet"
+                    : dataStatus === "loading"
+                      ? "Đang tải dữ liệu"
+                      : "Dùng dữ liệu tạm"}
+                </span>
                 <label className="flex min-w-0 items-center gap-2 rounded-2xl border border-[var(--line)] bg-white px-3 py-2 shadow-sm transition focus-within:border-[var(--brand)]">
                   <Search size={17} className="text-[var(--muted)]" />
                   <input
@@ -1292,6 +1476,23 @@ const primaryButtonClass =
 
 function createId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error || `Request failed: ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
 }
 
 function formatDate(value: string) {
