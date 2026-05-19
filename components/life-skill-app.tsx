@@ -126,6 +126,7 @@ export function LifeSkillApp() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(seedMessages);
   const [notifications, setNotifications] = useState<Notification[]>(seedNotifications);
   const [dataStatus, setDataStatus] = useState<"loading" | "connected" | "offline">("loading");
+  const [saveError, setSaveError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedThreadId, setSelectedThreadId] = useState(seedThreads[0]?.id ?? "");
   const [chatDraft, setChatDraft] = useState("");
@@ -246,6 +247,14 @@ export function LifeSkillApp() {
     ]);
   }
 
+  function handleSaveError(error: unknown) {
+    const message = error instanceof Error ? error.message : "Không thể ghi dữ liệu vào Google Sheet.";
+    console.error(error);
+    setDataStatus("offline");
+    setSaveError(message);
+    addNotification("Không lưu được dữ liệu", message, "admin");
+  }
+
   async function createSchedules() {
     if (draftSchedule.teacherIds.length === 0) {
       addNotification("Chưa chọn giáo viên", "Hãy chọn ít nhất một giáo viên để gửi lịch.", "admin");
@@ -260,20 +269,10 @@ export function LifeSkillApp() {
       });
       created = response.schedules;
       setDataStatus("connected");
+      setSaveError("");
     } catch (error) {
-      console.error(error);
-      setDataStatus("offline");
-      created = draftSchedule.teacherIds.map<Schedule>((teacherId) => ({
-        id: createId("sch"),
-        date: draftSchedule.date,
-        teacherId,
-        schoolId: draftSchedule.schoolId,
-        classId: draftSchedule.classId,
-        lessonId: draftSchedule.lessonId,
-        timeSlotId: draftSchedule.timeSlotId,
-        status: "sent",
-        sentAt: new Date().toISOString(),
-      }));
+      handleSaveError(error);
+      return;
     }
 
     setSchedules((items) => [...created, ...items]);
@@ -314,9 +313,10 @@ export function LifeSkillApp() {
         body: JSON.stringify({ status: "confirmed" }),
       });
       setDataStatus("connected");
+      setSaveError("");
     } catch (error) {
-      console.error(error);
-      setDataStatus("offline");
+      handleSaveError(error);
+      return;
     }
 
     setSchedules((items) =>
@@ -353,9 +353,10 @@ export function LifeSkillApp() {
         body: JSON.stringify({ status: "lesson_plan_uploaded" }),
       });
       setDataStatus("connected");
+      setSaveError("");
     } catch (error) {
-      console.error(error);
-      setDataStatus("offline");
+      handleSaveError(error);
+      return;
     }
 
     setLessonPlans((items) => [plan, ...items.filter((item) => item.scheduleId !== schedule.id)]);
@@ -391,9 +392,10 @@ export function LifeSkillApp() {
         body: JSON.stringify({ status: "attended" }),
       });
       setDataStatus("connected");
+      setSaveError("");
     } catch (error) {
-      console.error(error);
-      setDataStatus("offline");
+      handleSaveError(error);
+      return;
     }
 
     setAttendance((items) => [
@@ -413,9 +415,10 @@ export function LifeSkillApp() {
         body: JSON.stringify({ status: "cancelled" }),
       });
       setDataStatus("connected");
+      setSaveError("");
     } catch (error) {
-      console.error(error);
-      setDataStatus("offline");
+      handleSaveError(error);
+      return;
     }
 
     setSchedules((items) =>
@@ -440,9 +443,10 @@ export function LifeSkillApp() {
         }),
       });
       setDataStatus("connected");
+      setSaveError("");
     } catch (error) {
-      console.error(error);
-      setDataStatus("offline");
+      handleSaveError(error);
+      return;
     }
 
     setSchedules((items) =>
@@ -487,10 +491,10 @@ export function LifeSkillApp() {
       });
       setTeachers((items) => [savedTeacher, ...items]);
       setDataStatus("connected");
+      setSaveError("");
     } catch (error) {
-      console.error(error);
-      setTeachers((items) => [teacher, ...items]);
-      setDataStatus("offline");
+      handleSaveError(error);
+      return;
     }
 
     setTeacherDraft({ name: "", email: "", phone: "", specialty: "" });
@@ -510,10 +514,10 @@ export function LifeSkillApp() {
       });
       setLessons((items) => [savedLesson, ...items]);
       setDataStatus("connected");
+      setSaveError("");
     } catch (error) {
-      console.error(error);
-      setLessons((items) => [lesson, ...items]);
-      setDataStatus("offline");
+      handleSaveError(error);
+      return;
     }
 
     setLessonDraft({ grade: "Khối 1", title: "", objective: "", durationMinutes: 35 });
@@ -533,10 +537,10 @@ export function LifeSkillApp() {
       });
       setTimeSlots((items) => [savedTimeSlot, ...items]);
       setDataStatus("connected");
+      setSaveError("");
     } catch (error) {
-      console.error(error);
-      setTimeSlots((items) => [timeSlot, ...items]);
-      setDataStatus("offline");
+      handleSaveError(error);
+      return;
     }
 
     setSlotDraft({ label: "", start: "07:30", end: "08:05" });
@@ -726,6 +730,12 @@ export function LifeSkillApp() {
           </header>
 
           <div className="p-4 md:p-7">{renderMain()}</div>
+          {saveError ? (
+            <div className="fixed bottom-5 right-5 z-50 max-w-md rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm font-bold text-orange-800 shadow-2xl">
+              <p className="font-black">Không ghi được Google Sheet</p>
+              <p className="mt-1 leading-6">{saveError}</p>
+            </div>
+          ) : null}
         </section>
       </div>
     </main>
