@@ -16,6 +16,7 @@ export type User = {
   role: Role;
   teacherId?: string;
   avatarUrl?: string;
+  isActive?: boolean;
 };
 
 export type Teacher = {

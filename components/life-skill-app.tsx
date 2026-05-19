@@ -54,6 +54,7 @@ import type {
   School,
   Teacher,
   TimeSlot,
+  User,
 } from "@/lib/types";
 
 type TabId =
@@ -78,6 +79,7 @@ type DraftSchedule = {
 };
 
 type AppData = {
+  users: User[];
   teachers: Teacher[];
   schools: School[];
   classes: ClassRoom[];
@@ -89,6 +91,10 @@ type AppData = {
   chatThreads: ChatThread[];
   chatMessages: ChatMessage[];
   notifications: Notification[];
+};
+
+type AuthSession = {
+  user: User | null;
 };
 
 const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
@@ -112,8 +118,9 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
 ];
 
 export function LifeSkillApp() {
-  const [role, setRole] = useState<Role>("admin");
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
+  const [appUsers, setAppUsers] = useState<User[]>(users);
+  const [currentUserId, setCurrentUserId] = useState(users[0].id);
   const [teachers, setTeachers] = useState<Teacher[]>(seedTeachers);
   const [schools] = useState<School[]>(seedSchools);
   const [classes] = useState<ClassRoom[]>(seedClasses);
@@ -126,6 +133,7 @@ export function LifeSkillApp() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(seedMessages);
   const [notifications, setNotifications] = useState<Notification[]>(seedNotifications);
   const [dataStatus, setDataStatus] = useState<"loading" | "connected" | "offline">("loading");
+  const [authStatus, setAuthStatus] = useState<"checking" | "signed-in" | "signed-out">("checking");
   const [saveError, setSaveError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedThreadId, setSelectedThreadId] = useState(seedThreads[0]?.id ?? "");
@@ -143,6 +151,7 @@ export function LifeSkillApp() {
     email: "",
     phone: "",
     specialty: "",
+    role: "teacher" as Role,
   });
   const [lessonDraft, setLessonDraft] = useState({
     grade: "Khối 1",
@@ -156,11 +165,43 @@ export function LifeSkillApp() {
     end: "08:05",
   });
 
-  const currentUser = role === "admin" ? users[0] : users[1];
-  const currentTeacherId = currentUser.teacherId ?? "t1";
+  const activeUsers = useMemo(() => appUsers.filter((user) => user.isActive !== false), [appUsers]);
+  const currentUser =
+    activeUsers.find((user) => user.id === currentUserId) ??
+    activeUsers.find((user) => user.role === "admin") ??
+    users[0];
+  const role = currentUser.role;
+  const currentTeacherId = currentUser.teacherId ?? "";
 
   useEffect(() => {
     let cancelled = false;
+
+    async function loadSession() {
+      try {
+        const session = await apiRequest<AuthSession>("/api/auth/session");
+        if (cancelled) {
+          return;
+        }
+
+        const sessionUser = session.user;
+        if (sessionUser) {
+          setAppUsers((items) =>
+            items.some((item) => item.id === sessionUser.id)
+              ? items.map((item) => (item.id === sessionUser.id ? { ...item, ...sessionUser } : item))
+              : [sessionUser, ...items],
+          );
+          setCurrentUserId(sessionUser.id);
+          setAuthStatus("signed-in");
+        } else {
+          setAuthStatus("signed-out");
+        }
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) {
+          setAuthStatus("signed-out");
+        }
+      }
+    }
 
     async function loadAppData() {
       try {
@@ -169,6 +210,7 @@ export function LifeSkillApp() {
           return;
         }
 
+        setAppUsers(data.users);
         setTeachers(data.teachers);
         setLessons(data.lessons);
         setTimeSlots(data.timeSlots);
@@ -187,11 +229,25 @@ export function LifeSkillApp() {
       }
     }
 
+    loadSession();
     loadAppData();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!activeUsers.some((user) => user.id === currentUserId)) {
+      setCurrentUserId(activeUsers[0]?.id ?? users[0].id);
+    }
+  }, [activeUsers, currentUserId]);
+
+  useEffect(() => {
+    const allowedTabs = role === "admin" ? adminTabs : teacherTabs;
+    if (!allowedTabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab(role === "admin" ? "dashboard" : "calendar");
+    }
+  }, [activeTab, role]);
 
   const visibleSchedules = useMemo(() => {
     const scoped =
@@ -489,7 +545,20 @@ export function LifeSkillApp() {
         method: "POST",
         body: JSON.stringify(teacher),
       });
+      const savedUser = await apiRequest<User>("/api/users", {
+        method: "POST",
+        body: JSON.stringify({
+          id: `u-${savedTeacher.id}`,
+          name: savedTeacher.name,
+          email: savedTeacher.email,
+          role: teacherDraft.role,
+          teacherId: savedTeacher.id,
+          avatarUrl: savedTeacher.avatarUrl,
+          isActive: true,
+        }),
+      });
       setTeachers((items) => [savedTeacher, ...items]);
+      setAppUsers((items) => [savedUser, ...items.filter((item) => item.id !== savedUser.id)]);
       setDataStatus("connected");
       setSaveError("");
     } catch (error) {
@@ -497,7 +566,54 @@ export function LifeSkillApp() {
       return;
     }
 
-    setTeacherDraft({ name: "", email: "", phone: "", specialty: "" });
+    setTeacherDraft({ name: "", email: "", phone: "", specialty: "", role: "teacher" });
+  }
+
+  async function updateTeacherRole(teacher: Teacher, nextRole: Role) {
+    const linkedUser = userForTeacher(teacher.id);
+
+    try {
+      const savedUser = linkedUser
+        ? await apiRequest<User>(`/api/users/${linkedUser.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ role: nextRole }),
+          })
+        : await apiRequest<User>("/api/users", {
+            method: "POST",
+            body: JSON.stringify({
+              id: `u-${teacher.id}`,
+              name: teacher.name,
+              email: teacher.email,
+              role: nextRole,
+              teacherId: teacher.id,
+              avatarUrl: teacher.avatarUrl,
+              isActive: true,
+            }),
+          });
+      setAppUsers((items) =>
+        linkedUser
+          ? items.map((item) => (item.id === linkedUser.id ? { ...item, ...savedUser } : item))
+          : [savedUser, ...items],
+      );
+      setDataStatus("connected");
+      setSaveError("");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  function userForTeacher(teacherId: string) {
+    return appUsers.find((user) => user.teacherId === teacherId);
+  }
+
+  async function logout() {
+    try {
+      await apiRequest("/api/auth/logout", { method: "POST" });
+    } catch (error) {
+      console.error(error);
+    }
+    setAuthStatus("signed-out");
+    setCurrentUserId(activeUsers.find((user) => user.role === "admin")?.id ?? users[0].id);
   }
 
   async function addLesson() {
@@ -620,30 +736,23 @@ export function LifeSkillApp() {
             </div>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-cyan-100 bg-cyan-50 p-2">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                className={`rounded-xl px-3 py-2 text-sm font-bold transition ${
-                  role === "admin" ? "bg-white text-[var(--brand-dark)] shadow-sm" : "text-cyan-800"
-                }`}
-                onClick={() => {
-                  setRole("admin");
-                  setActiveTab("dashboard");
-                }}
+          <div className="mt-6 rounded-2xl border border-cyan-100 bg-cyan-50 p-3">
+            <label className="grid gap-2">
+              <span className="text-xs font-black uppercase text-[var(--brand-dark)]">Tài khoản</span>
+              <select
+                value={currentUser.id}
+                onChange={(event) => setCurrentUserId(event.target.value)}
+                className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-bold text-[var(--brand-dark)] outline-none"
               >
-                Quản trị
-              </button>
-              <button
-                className={`rounded-xl px-3 py-2 text-sm font-bold transition ${
-                  role === "teacher" ? "bg-white text-[var(--brand-dark)] shadow-sm" : "text-cyan-800"
-                }`}
-                onClick={() => {
-                  setRole("teacher");
-                  setActiveTab("calendar");
-                }}
-              >
-                Giáo viên
-              </button>
+                {activeUsers.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name} - {user.role === "admin" ? "Quản trị" : "Giáo viên"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)]">
+              {role === "admin" ? "Quyền quản trị" : "Quyền giáo viên"}
             </div>
           </div>
 
@@ -717,6 +826,21 @@ export function LifeSkillApp() {
                     <p className="truncate text-xs text-[var(--muted)]">{currentUser.email}</p>
                   </div>
                 </div>
+                {authStatus === "signed-in" ? (
+                  <button
+                    onClick={logout}
+                    className="h-11 rounded-2xl border border-[var(--line)] bg-white px-3 text-xs font-black text-[var(--brand-dark)] shadow-sm transition hover:border-cyan-200 hover:bg-cyan-50"
+                  >
+                    Đăng xuất
+                  </button>
+                ) : (
+                  <a
+                    href="/api/auth/google"
+                    className="inline-flex h-11 items-center rounded-2xl bg-[var(--brand)] px-3 text-xs font-black text-white shadow-lg shadow-cyan-700/20 transition hover:bg-[var(--brand-dark)]"
+                  >
+                    Google Login
+                  </a>
+                )}
                 <button className="relative grid h-11 w-11 place-items-center rounded-2xl bg-[var(--accent)] text-white shadow-lg shadow-orange-500/20">
                   <Bell size={18} />
                   {unreadNotifications > 0 ? (
@@ -936,6 +1060,14 @@ export function LifeSkillApp() {
               placeholder="Chuyên môn"
               className={inputClass}
             />
+            <select
+              value={teacherDraft.role}
+              onChange={(event) => setTeacherDraft({ ...teacherDraft, role: event.target.value as Role })}
+              className={inputClass}
+            >
+              <option value="teacher">Quyền giáo viên</option>
+              <option value="admin">Quyền quản trị</option>
+            </select>
             <button onClick={addTeacher} className={primaryButtonClass}>
               <UserPlus size={18} />
               Thêm giáo viên
@@ -945,7 +1077,12 @@ export function LifeSkillApp() {
         <Panel title="Danh sách giáo viên" action={`${teachers.length} người`}>
           <div className="grid gap-3 md:grid-cols-2">
             {teachers.map((teacher) => (
-              <TeacherCard key={teacher.id} teacher={teacher} />
+              <TeacherCard
+                key={teacher.id}
+                teacher={teacher}
+                user={userForTeacher(teacher.id)}
+                onRoleChange={updateTeacherRole}
+              />
             ))}
           </div>
         </Panel>
@@ -1415,7 +1552,17 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function TeacherCard({ teacher }: { teacher: Teacher }) {
+function TeacherCard({
+  teacher,
+  user,
+  onRoleChange,
+}: {
+  teacher: Teacher;
+  user?: User;
+  onRoleChange: (teacher: Teacher, role: Role) => void;
+}) {
+  const role = user?.role ?? "teacher";
+
   return (
     <div className="group relative rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-lg">
       <div className="flex items-center gap-3">
@@ -1428,6 +1575,17 @@ function TeacherCard({ teacher }: { teacher: Teacher }) {
       <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold">
         <span className="rounded-full bg-cyan-50 px-3 py-1 text-[var(--brand-dark)]">{teacher.email}</span>
         <span className="rounded-full bg-orange-50 px-3 py-1 text-orange-700">{teacher.phone}</span>
+      </div>
+      <div className="mt-4 grid gap-2">
+        <span className="text-xs font-black uppercase text-[var(--brand-dark)]">Phân quyền</span>
+        <select
+          value={role}
+          onChange={(event) => onRoleChange(teacher, event.target.value as Role)}
+          className="w-full rounded-xl border border-[var(--line)] bg-cyan-50 px-3 py-2 text-sm font-black text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
+        >
+          <option value="teacher">Giáo viên</option>
+          <option value="admin">Quản trị</option>
+        </select>
       </div>
     </div>
   );

@@ -12,9 +12,11 @@ import type {
   ScheduleStatus,
   School,
   Teacher,
+  User,
 } from "@/lib/types";
 
 type SheetName =
+  | "Users"
   | "Teachers"
   | "Schools"
   | "Classes"
@@ -148,6 +150,7 @@ export async function updateSheetRowById(sheetName: SheetName, id: string, patch
 export async function getAppDataFromSheets() {
   const [
     teachers,
+    users,
     schools,
     classes,
     lessons,
@@ -160,6 +163,7 @@ export async function getAppDataFromSheets() {
     notifications,
   ] = await Promise.all([
     readSheetRows("Teachers").then(toTeachers),
+    readSheetRows("Users").then(toUsers),
     readSheetRows("Schools").then(toSchools),
     readSheetRows("Classes").then(toClasses),
     readSheetRows("Lessons").then(toLessons),
@@ -174,6 +178,7 @@ export async function getAppDataFromSheets() {
 
   return {
     teachers,
+    users,
     schools,
     classes,
     lessons,
@@ -199,6 +204,18 @@ async function getHeaders(sheetName: SheetName) {
   }
 
   return headers;
+}
+
+function toUsers(rows: SheetRow[]): User[] {
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role === "teacher" ? "teacher" : "admin",
+    teacherId: row.teacherId || undefined,
+    avatarUrl: row.avatarUrl || undefined,
+    isActive: parseBoolean(row.isActive, true),
+  }));
 }
 
 function toTeachers(rows: SheetRow[]): Teacher[] {

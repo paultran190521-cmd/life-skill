@@ -11,6 +11,7 @@ import {
   schools as fallbackSchools,
   teachers as fallbackTeachers,
   timeSlots as fallbackTimeSlots,
+  users as fallbackUsers,
 } from "@/lib/sample-data";
 import { apiError } from "@/lib/api";
 import { getAppDataFromSheets } from "@/lib/google-sheets";
@@ -20,6 +21,7 @@ export async function GET() {
     const data = await getAppDataFromSheets();
 
     return NextResponse.json({
+      users: mergeUsers(data.users, fallbackUsers),
       teachers: withFallback(data.teachers, fallbackTeachers),
       schools: withFallback(data.schools, fallbackSchools),
       classes: withFallback(data.classes, fallbackClasses),
@@ -39,4 +41,17 @@ export async function GET() {
 
 function withFallback<T>(rows: T[], fallback: T[]) {
   return rows.length > 0 ? rows : fallback;
+}
+
+function mergeUsers<T extends { id: string; email: string; role: string }>(rows: T[], fallback: T[]) {
+  if (rows.length === 0) {
+    return fallback;
+  }
+
+  const userKeys = new Set(rows.flatMap((user) => [user.id, user.email]));
+  const missingFallbackUsers = fallback.filter(
+    (user) => user.role === "admin" && !userKeys.has(user.id) && !userKeys.has(user.email),
+  );
+
+  return [...rows, ...missingFallbackUsers];
 }
