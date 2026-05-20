@@ -29,7 +29,8 @@ export async function GET(request: NextRequest) {
     const expectedState = cookieStore.get(oauthStateCookieName)?.value;
 
     if (!code || !state || !expectedState || state !== expectedState) {
-      throw new Error("Google login state is invalid.");
+      const allCookies = cookieStore.getAll().map(c => `${c.name}=${c.value}`).join(", ");
+      throw new Error(`Google login state is invalid. Code: ${!!code}, State: ${state}, Expected: ${expectedState}, Cookies: [${allCookies}]`);
     }
 
     const profile = await fetchGoogleProfile(request, code);
