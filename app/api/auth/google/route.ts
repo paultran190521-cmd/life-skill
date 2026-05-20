@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
 import { oauthStateCookieName } from "@/lib/auth-session";
@@ -12,14 +11,6 @@ export async function GET(request: NextRequest) {
     }
 
     const state = randomUUID();
-    const cookieStore = await cookies();
-    cookieStore.set(oauthStateCookieName, state, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 60 * 10,
-    });
 
     const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     authUrl.searchParams.set("client_id", clientId);
@@ -29,7 +20,16 @@ export async function GET(request: NextRequest) {
     authUrl.searchParams.set("state", state);
     authUrl.searchParams.set("prompt", "select_account");
 
-    return NextResponse.redirect(authUrl);
+    const response = NextResponse.redirect(authUrl);
+    response.cookies.set(oauthStateCookieName, state, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 10,
+    });
+
+    return response;
   } catch (error) {
     return apiError(error);
   }
