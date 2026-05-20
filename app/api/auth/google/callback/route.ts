@@ -7,6 +7,7 @@ import {
   sessionCookieName,
 } from "@/lib/auth-session";
 import { findAuthorizedUserByEmail } from "@/lib/auth-users";
+import { readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
 
 type GoogleTokenResponse = {
   id_token?: string;
@@ -41,6 +42,27 @@ export async function GET(request: NextRequest) {
     const user = await findAuthorizedUserByEmail(profile.email);
     if (!user) {
       throw new Error("Email này chưa được phân quyền trong menu Giáo viên.");
+    }
+
+    // Update avatar with Google profile picture if available
+    if (profile.picture) {
+      try {
+        if (user.teacherId) {
+          await updateSheetRowById("Teachers", user.teacherId, { avatarUrl: profile.picture });
+        }
+        
+        const usersRows = await readSheetRows("Users");
+        const userRow = usersRows.find(
+          (row) => row.email && row.email.toLowerCase() === profile.email?.toLowerCase()
+        );
+        if (userRow) {
+          await updateSheetRowById("Users", userRow.id, { avatarUrl: profile.picture });
+        }
+        
+        user.avatarUrl = profile.picture;
+      } catch (err) {
+        console.error("Failed to update avatar in Google Sheet:", err);
+      }
     }
 
     const response = NextResponse.redirect(new URL("/", request.nextUrl.origin));
