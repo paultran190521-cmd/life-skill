@@ -7,7 +7,9 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock3,
+  Download,
   FileUp,
+  FileSpreadsheet,
   GraduationCap,
   LayoutDashboard,
   Mail,
@@ -104,7 +106,7 @@ type LessonDraft = {
   grade: string;
   title: string;
   objective: string;
-  durationMinutes: number;
+  durationMinutes: number | "";
 };
 
 type BulkLessonRow = LessonDraft & {
@@ -683,6 +685,48 @@ export function LifeSkillApp() {
 
   function addBulkLessonRow() {
     setBulkLessonRows((items) => [...items, createBulkLessonRow()]);
+  }
+
+  function downloadLessonSpreadsheetTemplate() {
+    const csv = toCsv([["Khối", "Tên chuyên đề", "Mục tiêu", "Số phút"]]);
+    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "mau-bai-hoc-life-skill.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importLessonsFromSpreadsheet(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) {
+      return;
+    }
+
+    try {
+      const rows = parseLessonSpreadsheet(await file.text());
+      const errors = rows.reduce<Record<string, string>>((record, row, index) => {
+        const error = validateLessonDraft(row, `Dòng ${index + 2}`);
+        if (error) {
+          record[row.id] = error;
+        }
+        return record;
+      }, {});
+
+      setBulkLessonRows(rows.length > 0 ? rows : [createBulkLessonRow()]);
+      setBulkLessonErrors(errors);
+      if (Object.keys(errors).length > 0) {
+        setSaveError("File spreadsheet còn dòng thiếu dữ liệu. Vui lòng sửa các dòng lỗi trước khi lưu.");
+      } else {
+        setSaveError("");
+      }
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Không đọc được file spreadsheet.");
+    }
   }
 
   function removeBulkLessonRow(id: string) {
@@ -1280,7 +1324,7 @@ export function LifeSkillApp() {
               <select
                 value={lessonDraft.durationMinutes}
                 onChange={(event) =>
-                  setLessonDraft({ ...lessonDraft, durationMinutes: Number(event.target.value) })
+                  setLessonDraft({ ...lessonDraft, durationMinutes: toLessonDuration(event.target.value) })
                 }
                 className={inputClass}
               >
@@ -1336,11 +1380,12 @@ export function LifeSkillApp() {
                         <select
                           value={row.durationMinutes}
                           onChange={(event) =>
-                            updateBulkLessonRow(row.id, { durationMinutes: Number(event.target.value) })
+                            updateBulkLessonRow(row.id, { durationMinutes: toLessonDuration(event.target.value) })
                           }
                           onPaste={(event) => pasteBulkLessons(row.id, event)}
                           className={compactInputClass}
                         >
+                          <option value="">Chọn</option>
                           {lessonDurations.map((minutes) => (
                             <option key={minutes} value={minutes}>
                               {minutes}
@@ -1362,6 +1407,23 @@ export function LifeSkillApp() {
                   ))}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={downloadLessonSpreadsheetTemplate}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"
+                  >
+                    <Download size={16} />
+                    Tải mẫu spreadsheet
+                  </button>
+                  <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50">
+                    <FileSpreadsheet size={16} />
+                    Nhập từ spreadsheet
+                    <input
+                      type="file"
+                      accept=".csv,.tsv,text/csv,text/tab-separated-values"
+                      className="hidden"
+                      onChange={importLessonsFromSpreadsheet}
+                    />
+                  </label>
                   <button
                     onClick={addBulkLessonRow}
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"
@@ -1405,10 +1467,11 @@ export function LifeSkillApp() {
                         <select
                           value={lessonEditDraft.durationMinutes}
                           onChange={(event) =>
-                            setLessonEditDraft({ ...lessonEditDraft, durationMinutes: Number(event.target.value) })
+                            setLessonEditDraft({ ...lessonEditDraft, durationMinutes: toLessonDuration(event.target.value) })
                           }
                           className={compactInputClass}
                         >
+                          <option value="">Chọn</option>
                           {lessonDurations.map((minutes) => (
                             <option key={minutes} value={minutes}>
                               {minutes} phút
@@ -2010,6 +2073,10 @@ function validateLessonDraft(row: LessonDraft, label = "Bài học") {
     return `${label}: Mục tiêu là bắt buộc.`;
   }
 
+  if (row.durationMinutes === "") {
+    return `${label}: Số phút là bắt buộc.`;
+  }
+
   if (!lessonDurations.includes(Number(row.durationMinutes))) {
     return `${label}: Số phút chỉ được là 45 hoặc 90.`;
   }
@@ -2017,12 +2084,12 @@ function validateLessonDraft(row: LessonDraft, label = "Bài học") {
   return "";
 }
 
-function parseLessonClipboard(text: string) {
+function parseLessonClipboard(text: string): BulkLessonRow[] {
   if (!text.includes("\t")) {
     return [];
   }
 
-  return parseDelimitedRows(text)
+  return parseDelimitedRows(text, "\t")
     .filter((cells) => cells.some((cell) => cell.trim()))
     .map((cells) => ({
       id: createId("bulk-lesson"),
@@ -2033,7 +2100,74 @@ function parseLessonClipboard(text: string) {
     }));
 }
 
-function parseDelimitedRows(text: string) {
+function parseLessonSpreadsheet(text: string): BulkLessonRow[] {
+  const cleanedText = text.replace(/^\uFEFF/, "").trim();
+  if (!cleanedText) {
+    throw new Error("File spreadsheet đang trống.");
+  }
+
+  const delimiter = cleanedText.includes("\t") ? "\t" : ",";
+  const rows = parseDelimitedRows(cleanedText, delimiter).filter((cells) =>
+    cells.some((cell) => cell.trim()),
+  );
+  const [headers, ...dataRows] = rows;
+  if (!headers || dataRows.length === 0) {
+    throw new Error("File spreadsheet cần có dòng tiêu đề và ít nhất một dòng bài học.");
+  }
+
+  const headerMap = createLessonHeaderMap(headers);
+  return dataRows.map((cells) => ({
+    id: createId("bulk-lesson"),
+    grade: normalizeGrade(cells[headerMap.grade]),
+    title: cells[headerMap.title]?.trim() ?? "",
+    objective: cells[headerMap.objective]?.trim() ?? "",
+    durationMinutes: normalizeDuration(cells[headerMap.durationMinutes]),
+  }));
+}
+
+function createLessonHeaderMap(headers: string[]) {
+  const normalized = headers.map(normalizeHeader);
+  const headerMap = {
+    grade: findHeaderIndex(normalized, ["khoi", "grade"]),
+    title: findHeaderIndex(normalized, ["tenchuyende", "tenbaihoc", "title"]),
+    objective: findHeaderIndex(normalized, ["muctieu", "objective"]),
+    durationMinutes: findHeaderIndex(normalized, ["sophut", "durationminutes", "duration"]),
+  };
+
+  const missingHeaders = Object.entries(headerMap)
+    .filter(([, index]) => index === -1)
+    .map(([key]) => {
+      const labels: Record<string, string> = {
+        grade: "Khối",
+        title: "Tên chuyên đề",
+        objective: "Mục tiêu",
+        durationMinutes: "Số phút",
+      };
+      return labels[key] ?? key;
+    });
+
+  if (missingHeaders.length > 0) {
+    throw new Error(`File spreadsheet thiếu cột: ${missingHeaders.join(", ")}.`);
+  }
+
+  return headerMap;
+}
+
+function findHeaderIndex(headers: string[], candidates: string[]) {
+  return headers.findIndex((header) => candidates.includes(header));
+}
+
+function normalizeHeader(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toLowerCase();
+}
+
+function parseDelimitedRows(text: string, delimiter: "," | "\t") {
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
@@ -2053,7 +2187,7 @@ function parseDelimitedRows(text: string) {
       continue;
     }
 
-    if (char === "\t" && !quoted) {
+    if (char === delimiter && !quoted) {
       row.push(cell);
       cell = "";
       continue;
@@ -2085,9 +2219,26 @@ function normalizeGrade(value: string | undefined) {
   return lessonGrades.includes(grade) ? grade : "Khối 1";
 }
 
-function normalizeDuration(value: string | undefined) {
-  const minutes = Number(String(value || "").match(/\d+/)?.[0] || 45);
-  return lessonDurations.includes(minutes) ? minutes : 45;
+function normalizeDuration(value: string | undefined): number | "" {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  const minutes = Number(text.match(/\d+/)?.[0] || 0);
+  return Number.isFinite(minutes) ? minutes : "";
+}
+
+function toLessonDuration(value: string) {
+  return value ? Number(value) : "";
+}
+
+function toCsv(rows: string[][]) {
+  return rows.map((row) => row.map(escapeCsvCell).join(",")).join("\r\n");
+}
+
+function escapeCsvCell(value: string) {
+  return `"${value.replace(/"/g, "\"\"")}"`;
 }
 
 const inputClass =

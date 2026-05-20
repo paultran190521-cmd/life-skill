@@ -9,7 +9,7 @@ export function normalizeLessonInput(body: Record<string, unknown>, index = 0) {
   const grade = String(body.grade || "").trim();
   const title = String(body.title || "").trim();
   const objective = String(body.objective || "").trim();
-  const durationMinutes = Number(body.durationMinutes || 45);
+  const durationMinutes = body.durationMinutes === "" ? Number.NaN : Number(body.durationMinutes || 45);
 
   if (!lessonGrades.has(grade)) {
     throw new Error(`${rowLabel}: Khối phải nằm trong Khối 1 đến Khối 12.`);
@@ -21,6 +21,10 @@ export function normalizeLessonInput(body: Record<string, unknown>, index = 0) {
 
   if (!objective) {
     throw new Error(`${rowLabel}: Mục tiêu là bắt buộc.`);
+  }
+
+  if (!Number.isFinite(durationMinutes)) {
+    throw new Error(`${rowLabel}: Số phút là bắt buộc.`);
   }
 
   if (!lessonDurations.has(durationMinutes)) {
