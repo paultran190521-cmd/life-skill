@@ -42,7 +42,7 @@ const SHEETS = [
   },
   {
     title: "Lessons",
-    headers: ["id", "grade", "title", "objective", "durationMinutes", "active", "createdAt", "updatedAt"],
+    headers: ["id", "grade", "title", "objective", "durationMinutes", "samplePlanUrl", "active", "createdAt", "updatedAt"],
   },
   {
     title: "TimeSlots",

@@ -107,6 +107,7 @@ type LessonDraft = {
   grade: string;
   title: string;
   objective: string;
+  samplePlanUrl: string;
   durationMinutes: number | "";
 };
 
@@ -183,6 +184,7 @@ export function LifeSkillApp() {
     grade: "Khối 1",
     title: "",
     objective: "",
+    samplePlanUrl: "",
     durationMinutes: 45,
   });
   const [lessonDeleteTarget, setLessonDeleteTarget] = useState<Lesson | null>(null);
@@ -690,7 +692,7 @@ export function LifeSkillApp() {
   async function downloadLessonSpreadsheetTemplate() {
     const XLSX = await import("xlsx");
     const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet([["Khối", "Tên chuyên đề", "Mục tiêu", "Số phút"]]);
+    const worksheet = XLSX.utils.aoa_to_sheet([["Khối", "Tên chuyên đề", "Mục tiêu", "Giáo án mẫu", "Số phút"]]);
     XLSX.utils.book_append_sheet(workbook, worksheet, "Bai hoc");
     const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
     const blob = new Blob([fileData], {
@@ -809,6 +811,7 @@ export function LifeSkillApp() {
       grade: lesson.grade,
       title: lesson.title,
       objective: lesson.objective,
+      samplePlanUrl: lesson.samplePlanUrl ?? "",
       durationMinutes: lesson.durationMinutes,
     });
   }
@@ -1346,17 +1349,18 @@ export function LifeSkillApp() {
           <div className="grid gap-4">
             <div className="app-scrollbar overflow-x-auto">
               <div className="min-w-[920px]">
-                <div className="grid grid-cols-[130px_210px_1fr_120px_48px] gap-2 px-2 pb-2 text-xs font-black uppercase text-[var(--brand-dark)]">
+                <div className="grid grid-cols-[130px_210px_1fr_220px_120px_48px] gap-2 px-2 pb-2 text-xs font-black uppercase text-[var(--brand-dark)]">
                   <span>Khối</span>
                   <span>Tên chuyên đề</span>
                   <span>Mục tiêu</span>
+                  <span>Giáo án mẫu</span>
                   <span>Số phút</span>
                   <span />
                 </div>
                 <div className="space-y-2">
                   {bulkLessonRows.map((row) => (
                     <div key={row.id}>
-                      <div className="grid grid-cols-[130px_210px_1fr_120px_48px] items-start gap-2">
+                      <div className="grid grid-cols-[130px_210px_1fr_220px_120px_48px] items-start gap-2">
                         <select
                           value={row.grade}
                           onChange={(event) => updateBulkLessonRow(row.id, { grade: event.target.value })}
@@ -1380,6 +1384,13 @@ export function LifeSkillApp() {
                           onPaste={(event) => pasteBulkLessons(row.id, event)}
                           placeholder="Mỗi mục tiêu một dòng"
                           className={`${compactInputClass} min-h-12 resize-y whitespace-pre-line`}
+                        />
+                        <input
+                          value={row.samplePlanUrl}
+                          onChange={(event) => updateBulkLessonRow(row.id, { samplePlanUrl: event.target.value })}
+                          onPaste={(event) => pasteBulkLessons(row.id, event)}
+                          placeholder="Link Google Drive/PDF"
+                          className={compactInputClass}
                         />
                         <select
                           value={row.durationMinutes}
@@ -1511,6 +1522,14 @@ export function LifeSkillApp() {
                         onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, objective: event.target.value })}
                         className={`${compactInputClass} min-h-28 resize-y whitespace-pre-line`}
                       />
+                      <input
+                        value={lessonEditDraft.samplePlanUrl}
+                        onChange={(event) =>
+                          setLessonEditDraft({ ...lessonEditDraft, samplePlanUrl: event.target.value })
+                        }
+                        placeholder="Link giáo án mẫu trên Google Drive/PDF"
+                        className={compactInputClass}
+                      />
                       <div className="flex flex-wrap justify-end gap-2">
                         <button
                           onClick={() => setEditingLessonId("")}
@@ -1534,6 +1553,17 @@ export function LifeSkillApp() {
                           <p className="mt-2 whitespace-pre-line text-sm leading-6 text-[var(--muted)]">
                             {lesson.objective}
                           </p>
+                          {lesson.samplePlanUrl ? (
+                            <a
+                              href={lesson.samplePlanUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-3 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700 transition hover:bg-blue-100"
+                            >
+                              <FileSpreadsheet size={14} />
+                              Giáo án mẫu
+                            </a>
+                          ) : null}
                         </div>
                         <span className="shrink-0 rounded-full bg-orange-50 px-3 py-1 text-xs font-black text-orange-700">
                           {lesson.durationMinutes} phút
@@ -2063,6 +2093,7 @@ function createEmptyLessonDraft(): LessonDraft {
     grade: "Khối 1",
     title: "",
     objective: "",
+    samplePlanUrl: "",
     durationMinutes: 45,
   };
 }
@@ -2075,7 +2106,7 @@ function createBulkLessonRow(): BulkLessonRow {
 }
 
 function hasLessonContent(row: BulkLessonRow) {
-  return Boolean(row.title.trim() || row.objective.trim());
+  return Boolean(row.title.trim() || row.objective.trim() || row.samplePlanUrl.trim());
 }
 
 function stripBulkLessonId(row: BulkLessonRow): LessonDraft {
@@ -2083,6 +2114,7 @@ function stripBulkLessonId(row: BulkLessonRow): LessonDraft {
     grade: row.grade,
     title: row.title,
     objective: row.objective,
+    samplePlanUrl: row.samplePlanUrl,
     durationMinutes: row.durationMinutes,
   };
 }
@@ -2104,6 +2136,10 @@ function validateLessonDraft(row: LessonDraft, label = "Bài học") {
     return `${label}: Số phút là bắt buộc.`;
   }
 
+  if (row.samplePlanUrl.trim() && !/^https?:\/\//i.test(row.samplePlanUrl.trim())) {
+    return `${label}: Giáo án mẫu phải là link http hoặc https.`;
+  }
+
   if (!lessonDurations.includes(Number(row.durationMinutes))) {
     return `${label}: Số phút chỉ được là 45 hoặc 90.`;
   }
@@ -2123,7 +2159,8 @@ function parseLessonClipboard(text: string): BulkLessonRow[] {
       grade: normalizeGrade(cells[0]),
       title: cells[1]?.trim() ?? "",
       objective: cells[2]?.trim() ?? "",
-      durationMinutes: normalizeDuration(cells[3]),
+      samplePlanUrl: cells.length >= 5 ? cells[3]?.trim() ?? "" : "",
+      durationMinutes: normalizeDuration(cells.length >= 5 ? cells[4] : cells[3]),
     }));
 }
 
@@ -2169,6 +2206,7 @@ function parseLessonSpreadsheetRows(rows: string[][]) {
     grade: normalizeGrade(cells[headerMap.grade]),
     title: cells[headerMap.title]?.trim() ?? "",
     objective: cells[headerMap.objective]?.trim() ?? "",
+    samplePlanUrl: cells[headerMap.samplePlanUrl]?.trim() ?? "",
     durationMinutes: normalizeDuration(cells[headerMap.durationMinutes]),
   }));
 }
@@ -2179,6 +2217,7 @@ function createLessonHeaderMap(headers: string[]) {
     grade: findHeaderIndex(normalized, ["khoi", "grade"]),
     title: findHeaderIndex(normalized, ["tenchuyende", "tenbaihoc", "title"]),
     objective: findHeaderIndex(normalized, ["muctieu", "objective"]),
+    samplePlanUrl: findHeaderIndex(normalized, ["giaoanmau", "sampleplanurl", "sampleplan", "pdf"]),
     durationMinutes: findHeaderIndex(normalized, ["sophut", "durationminutes", "duration"]),
   };
 
@@ -2189,6 +2228,7 @@ function createLessonHeaderMap(headers: string[]) {
         grade: "Khối",
         title: "Tên chuyên đề",
         objective: "Mục tiêu",
+        samplePlanUrl: "Giáo án mẫu",
         durationMinutes: "Số phút",
       };
       return labels[key] ?? key;

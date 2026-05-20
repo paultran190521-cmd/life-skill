@@ -272,6 +272,7 @@ function toLessons(rows: SheetRow[]): Lesson[] {
     title: row.title,
     objective: row.objective,
     durationMinutes: Number(row.durationMinutes || 45),
+    samplePlanUrl: row.samplePlanUrl || undefined,
     active: parseBoolean(row.active, true),
   }));
 }

@@ -9,6 +9,7 @@ export function normalizeLessonInput(body: Record<string, unknown>, index = 0) {
   const grade = String(body.grade || "").trim();
   const title = String(body.title || "").trim();
   const objective = String(body.objective || "").trim();
+  const samplePlanUrl = String(body.samplePlanUrl || "").trim();
   const durationMinutes = body.durationMinutes === "" ? Number.NaN : Number(body.durationMinutes || 45);
 
   if (!lessonGrades.has(grade)) {
@@ -27,6 +28,10 @@ export function normalizeLessonInput(body: Record<string, unknown>, index = 0) {
     throw new Error(`${rowLabel}: Số phút là bắt buộc.`);
   }
 
+  if (samplePlanUrl && !/^https?:\/\//i.test(samplePlanUrl)) {
+    throw new Error(`${rowLabel}: Giáo án mẫu phải là link http hoặc https.`);
+  }
+
   if (!lessonDurations.has(durationMinutes)) {
     throw new Error(`${rowLabel}: Số phút chỉ được là 45 hoặc 90.`);
   }
@@ -36,5 +41,6 @@ export function normalizeLessonInput(body: Record<string, unknown>, index = 0) {
     title,
     objective,
     durationMinutes,
+    samplePlanUrl,
   };
 }
