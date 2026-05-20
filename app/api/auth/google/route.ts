@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
 import { oauthStateCookieName } from "@/lib/auth-session";
@@ -20,8 +21,8 @@ export async function GET(request: NextRequest) {
     authUrl.searchParams.set("state", state);
     authUrl.searchParams.set("prompt", "select_account");
 
-    const response = NextResponse.redirect(authUrl);
-    response.cookies.set(oauthStateCookieName, state, {
+    const cookieStore = await cookies();
+    cookieStore.set(oauthStateCookieName, state, {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
       maxAge: 60 * 10,
     });
 
-    return response;
+    return NextResponse.redirect(authUrl);
   } catch (error) {
     return apiError(error);
   }
