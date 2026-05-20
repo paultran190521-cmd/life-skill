@@ -535,7 +535,7 @@ export function LifeSkillApp() {
       name: teacherDraft.name,
       email: teacherDraft.email,
       phone: teacherDraft.phone || "Chưa cập nhật",
-      avatarUrl: "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=160&q=80",
+      avatarUrl: "",
       specialty: teacherDraft.specialty || "Kỹ năng sống",
       active: true,
     };
