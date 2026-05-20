@@ -12,6 +12,7 @@ import {
   FileSpreadsheet,
   GraduationCap,
   LayoutDashboard,
+  LoaderCircle,
   Mail,
   MessageSquareText,
   Pencil,
@@ -154,7 +155,10 @@ export function LifeSkillApp() {
   const [dataStatus, setDataStatus] = useState<"loading" | "connected" | "offline">("loading");
   const [authStatus, setAuthStatus] = useState<"checking" | "signed-in" | "signed-out">("checking");
   const [saveError, setSaveError] = useState("");
+  const [pendingAction, setPendingAction] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [lessonSearchTerm, setLessonSearchTerm] = useState("");
+  const [lessonGradeFilter, setLessonGradeFilter] = useState("all");
   const [selectedThreadId, setSelectedThreadId] = useState(seedThreads[0]?.id ?? "");
   const [chatDraft, setChatDraft] = useState("");
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
@@ -172,12 +176,6 @@ export function LifeSkillApp() {
     specialty: "",
     role: "teacher" as Role,
   });
-  const [lessonDraft, setLessonDraft] = useState<LessonDraft>({
-    grade: "Khối 1",
-    title: "",
-    objective: "",
-    durationMinutes: 45,
-  });
   const [bulkLessonRows, setBulkLessonRows] = useState<BulkLessonRow[]>(() => [createBulkLessonRow()]);
   const [bulkLessonErrors, setBulkLessonErrors] = useState<Record<string, string>>({});
   const [editingLessonId, setEditingLessonId] = useState("");
@@ -187,6 +185,7 @@ export function LifeSkillApp() {
     objective: "",
     durationMinutes: 45,
   });
+  const [lessonDeleteTarget, setLessonDeleteTarget] = useState<Lesson | null>(null);
   const [slotDraft, setSlotDraft] = useState({
     label: "",
     start: "07:30",
@@ -201,6 +200,21 @@ export function LifeSkillApp() {
   const role = currentUser.role;
   const currentTeacherId = currentUser.teacherId ?? "";
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
+  const filteredLessons = useMemo(() => {
+    const term = lessonSearchTerm.trim().toLowerCase();
+    return activeLessons.filter((lesson) => {
+      const matchesGrade = lessonGradeFilter === "all" || lesson.grade === lessonGradeFilter;
+      const matchesTerm =
+        !term ||
+        [lesson.title, lesson.objective]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(term);
+      return matchesGrade && matchesTerm;
+    });
+  }, [activeLessons, lessonGradeFilter, lessonSearchTerm]);
+  const isBusy = Boolean(pendingAction);
 
   useEffect(() => {
     let cancelled = false;
@@ -346,6 +360,15 @@ export function LifeSkillApp() {
     addNotification("Không lưu được dữ liệu", message, "admin");
   }
 
+  async function saveRequest<T>(label: string, url: string, init?: RequestInit) {
+    setPendingAction(label);
+    try {
+      return await apiRequest<T>(url, init);
+    } finally {
+      setPendingAction("");
+    }
+  }
+
   async function createSchedules() {
     if (draftSchedule.teacherIds.length === 0) {
       addNotification("Chưa chọn giáo viên", "Hãy chọn ít nhất một giáo viên để gửi lịch.", "admin");
@@ -354,7 +377,7 @@ export function LifeSkillApp() {
 
     let created: Schedule[];
     try {
-      const response = await apiRequest<{ schedules: Schedule[] }>("/api/schedules", {
+      const response = await saveRequest<{ schedules: Schedule[] }>("Đang tạo lịch dạy...", "/api/schedules", {
         method: "POST",
         body: JSON.stringify({ ...draftSchedule, createdBy: currentUser.id }),
       });
@@ -399,7 +422,7 @@ export function LifeSkillApp() {
 
   async function confirmSchedule(scheduleId: string) {
     try {
-      await apiRequest(`/api/schedules/${scheduleId}`, {
+      await saveRequest(`Đang xác nhận lịch...`, `/api/schedules/${scheduleId}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "confirmed" }),
       });
@@ -432,14 +455,14 @@ export function LifeSkillApp() {
     };
 
     try {
-      await apiRequest("/api/lesson-plans", {
+      await saveRequest("Đang lưu giáo án...", "/api/lesson-plans", {
         method: "POST",
         body: JSON.stringify({
           ...plan,
           driveFileId: "",
         }),
       });
-      await apiRequest(`/api/schedules/${schedule.id}`, {
+      await saveRequest("Đang cập nhật trạng thái lịch...", `/api/schedules/${schedule.id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "lesson_plan_uploaded" }),
       });
@@ -474,11 +497,11 @@ export function LifeSkillApp() {
     };
 
     try {
-      await apiRequest("/api/attendance", {
+      await saveRequest("Đang điểm danh...", "/api/attendance", {
         method: "POST",
         body: JSON.stringify(record),
       });
-      await apiRequest(`/api/schedules/${schedule.id}`, {
+      await saveRequest("Đang cập nhật trạng thái lịch...", `/api/schedules/${schedule.id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "attended" }),
       });
@@ -501,7 +524,7 @@ export function LifeSkillApp() {
 
   async function cancelSchedule(schedule: Schedule) {
     try {
-      await apiRequest(`/api/schedules/${schedule.id}`, {
+      await saveRequest("Đang hủy lịch...", `/api/schedules/${schedule.id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "cancelled" }),
       });
@@ -525,7 +548,7 @@ export function LifeSkillApp() {
     }
 
     try {
-      await apiRequest(`/api/schedules/${schedule.id}`, {
+      await saveRequest("Đang chuyển lịch...", `/api/schedules/${schedule.id}`, {
         method: "PATCH",
         body: JSON.stringify({
           status: "reassigned",
@@ -576,11 +599,11 @@ export function LifeSkillApp() {
     };
 
     try {
-      const savedTeacher = await apiRequest<Teacher>("/api/teachers", {
+      const savedTeacher = await saveRequest<Teacher>("Đang thêm giáo viên...", "/api/teachers", {
         method: "POST",
         body: JSON.stringify(teacher),
       });
-      const savedUser = await apiRequest<User>("/api/users", {
+      const savedUser = await saveRequest<User>("Đang tạo tài khoản...", "/api/users", {
         method: "POST",
         body: JSON.stringify({
           id: `u-${savedTeacher.id}`,
@@ -609,11 +632,11 @@ export function LifeSkillApp() {
 
     try {
       const savedUser = linkedUser
-        ? await apiRequest<User>(`/api/users/${linkedUser.id}`, {
+        ? await saveRequest<User>("Đang cập nhật phân quyền...", `/api/users/${linkedUser.id}`, {
             method: "PATCH",
             body: JSON.stringify({ role: nextRole }),
           })
-        : await apiRequest<User>("/api/users", {
+        : await saveRequest<User>("Đang tạo tài khoản...", "/api/users", {
             method: "POST",
             body: JSON.stringify({
               id: `u-${teacher.id}`,
@@ -643,35 +666,12 @@ export function LifeSkillApp() {
 
   async function logout() {
     try {
-      await apiRequest("/api/auth/logout", { method: "POST" });
+      await saveRequest("Đang đăng xuất...", "/api/auth/logout", { method: "POST" });
     } catch (error) {
       console.error(error);
     }
     setAuthStatus("signed-out");
     setCurrentUserId(activeUsers.find((user) => user.role === "admin")?.id ?? users[0].id);
-  }
-
-  async function addLesson() {
-    const error = validateLessonDraft(lessonDraft);
-    if (error) {
-      setSaveError(error);
-      return;
-    }
-
-    try {
-      const savedLesson = await apiRequest<Lesson>("/api/lessons", {
-        method: "POST",
-        body: JSON.stringify(lessonDraft),
-      });
-      setLessons((items) => [savedLesson, ...items]);
-      setDataStatus("connected");
-      setSaveError("");
-    } catch (error) {
-      handleSaveError(error);
-      return;
-    }
-
-    setLessonDraft(createEmptyLessonDraft());
   }
 
   function updateBulkLessonRow(id: string, patch: Partial<LessonDraft>) {
@@ -687,13 +687,19 @@ export function LifeSkillApp() {
     setBulkLessonRows((items) => [...items, createBulkLessonRow()]);
   }
 
-  function downloadLessonSpreadsheetTemplate() {
-    const csv = toCsv([["Khối", "Tên chuyên đề", "Mục tiêu", "Số phút"]]);
-    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  async function downloadLessonSpreadsheetTemplate() {
+    const XLSX = await import("xlsx");
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([["Khối", "Tên chuyên đề", "Mục tiêu", "Số phút"]]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Bai hoc");
+    const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+    const blob = new Blob([fileData], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "mau-bai-hoc-life-skill.csv";
+    link.download = "mau-bai-hoc-life-skill.xlsx";
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -708,7 +714,9 @@ export function LifeSkillApp() {
     }
 
     try {
-      const rows = parseLessonSpreadsheet(await file.text());
+      const rows = file.name.toLowerCase().endsWith(".xlsx")
+        ? await parseLessonWorkbook(file)
+        : parseLessonSpreadsheet(await file.text());
       const errors = rows.reduce<Record<string, string>>((record, row, index) => {
         const error = validateLessonDraft(row, `Dòng ${index + 2}`);
         if (error) {
@@ -781,7 +789,7 @@ export function LifeSkillApp() {
     }
 
     try {
-      const response = await apiRequest<{ lessons: Lesson[] }>("/api/lessons", {
+      const response = await saveRequest<{ lessons: Lesson[] }>("Đang lưu bài học hàng loạt...", "/api/lessons", {
         method: "POST",
         body: JSON.stringify({ lessons: rowsToSave.map(stripBulkLessonId) }),
       });
@@ -813,7 +821,7 @@ export function LifeSkillApp() {
     }
 
     try {
-      const savedLesson = await apiRequest<Lesson>(`/api/lessons/${lessonId}`, {
+      const savedLesson = await saveRequest<Lesson>("Đang lưu bài học...", `/api/lessons/${lessonId}`, {
         method: "PATCH",
         body: JSON.stringify(lessonEditDraft),
       });
@@ -828,7 +836,7 @@ export function LifeSkillApp() {
 
   async function deleteLesson(lessonId: string) {
     try {
-      const savedLesson = await apiRequest<Lesson>(`/api/lessons/${lessonId}`, {
+      const savedLesson = await saveRequest<Lesson>("Đang xóa bài học...", `/api/lessons/${lessonId}`, {
         method: "PATCH",
         body: JSON.stringify({ active: false }),
       });
@@ -836,6 +844,7 @@ export function LifeSkillApp() {
       if (editingLessonId === lessonId) {
         setEditingLessonId("");
       }
+      setLessonDeleteTarget(null);
       setDataStatus("connected");
       setSaveError("");
     } catch (error) {
@@ -851,7 +860,7 @@ export function LifeSkillApp() {
     const timeSlot = { id: createId("ts"), ...slotDraft };
 
     try {
-      const savedTimeSlot = await apiRequest<TimeSlot>("/api/time-slots", {
+      const savedTimeSlot = await saveRequest<TimeSlot>("Đang lưu khung giờ...", "/api/time-slots", {
         method: "POST",
         body: JSON.stringify(timeSlot),
       });
@@ -1058,6 +1067,42 @@ export function LifeSkillApp() {
           </header>
 
           <div className="p-4 md:p-7">{renderMain()}</div>
+          {pendingAction ? (
+            <div className="fixed right-5 top-5 z-50 flex items-center gap-3 rounded-2xl border border-cyan-100 bg-white/95 px-4 py-3 text-sm font-black text-[var(--brand-dark)] shadow-2xl shadow-cyan-900/10 backdrop-blur">
+              <LoaderCircle className="animate-spin text-[var(--brand)]" size={20} />
+              {pendingAction}
+            </div>
+          ) : null}
+          {lessonDeleteTarget ? (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-3xl border border-rose-100 bg-white p-5 shadow-2xl">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-rose-50 text-rose-700">
+                  <Trash2 size={22} />
+                </div>
+                <h2 className="mt-4 text-xl font-black text-[var(--brand-dark)]">Xác nhận xóa bài học</h2>
+                <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
+                  Bài “{lessonDeleteTarget.title}” sẽ bị ẩn khỏi thư viện và không còn hiện khi giao lịch mới.
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    onClick={() => setLessonDeleteTarget(null)}
+                    disabled={isBusy}
+                    className="inline-flex h-11 items-center rounded-xl border border-[var(--line)] bg-white px-4 text-sm font-black text-[var(--brand-dark)] transition hover:bg-cyan-50 disabled:opacity-60"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    onClick={() => deleteLesson(lessonDeleteTarget.id)}
+                    disabled={isBusy}
+                    className="inline-flex h-11 items-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-black text-white shadow-lg shadow-rose-700/20 transition hover:bg-rose-700 disabled:opacity-60"
+                  >
+                    {isBusy ? <LoaderCircle className="animate-spin" size={17} /> : <Trash2 size={17} />}
+                    Xóa bài học
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
           {saveError ? (
             <div className="fixed bottom-5 right-5 z-50 max-w-md rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm font-bold text-orange-800 shadow-2xl">
               <p className="font-black">Không ghi được Google Sheet</p>
@@ -1297,49 +1342,8 @@ export function LifeSkillApp() {
   function LessonsPanel() {
     return (
       <div className="space-y-5">
-        <Panel title="Thêm mẫu bài học" action="Khối 1-12">
-          <div className="grid gap-4 xl:grid-cols-[0.8fr_1.4fr]">
-            <div className="grid gap-3">
-              <select
-                value={lessonDraft.grade}
-                onChange={(event) => setLessonDraft({ ...lessonDraft, grade: event.target.value })}
-                className={inputClass}
-              >
-                {lessonGrades.map((grade) => (
-                  <option key={grade}>{grade}</option>
-                ))}
-              </select>
-              <input
-                value={lessonDraft.title}
-                onChange={(event) => setLessonDraft({ ...lessonDraft, title: event.target.value })}
-                placeholder="Tên chuyên đề"
-                className={inputClass}
-              />
-              <textarea
-                value={lessonDraft.objective}
-                onChange={(event) => setLessonDraft({ ...lessonDraft, objective: event.target.value })}
-                placeholder="Mục tiêu, mỗi dòng một ý"
-                className={`${inputClass} min-h-32 resize-y whitespace-pre-line`}
-              />
-              <select
-                value={lessonDraft.durationMinutes}
-                onChange={(event) =>
-                  setLessonDraft({ ...lessonDraft, durationMinutes: toLessonDuration(event.target.value) })
-                }
-                className={inputClass}
-              >
-                {lessonDurations.map((minutes) => (
-                  <option key={minutes} value={minutes}>
-                    {minutes} phút
-                  </option>
-                ))}
-              </select>
-              <button onClick={addLesson} className={primaryButtonClass}>
-                <Plus size={18} />
-                Thêm bài học
-              </button>
-            </div>
-
+        <Panel title="Nhập mẫu bài học" action="Spreadsheet / hàng loạt">
+          <div className="grid gap-4">
             <div className="app-scrollbar overflow-x-auto">
               <div className="min-w-[920px]">
                 <div className="grid grid-cols-[130px_210px_1fr_120px_48px] gap-2 px-2 pb-2 text-xs font-black uppercase text-[var(--brand-dark)]">
@@ -1419,7 +1423,7 @@ export function LifeSkillApp() {
                     Nhập từ spreadsheet
                     <input
                       type="file"
-                      accept=".csv,.tsv,text/csv,text/tab-separated-values"
+                      accept=".xlsx,.csv,.tsv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/tab-separated-values"
                       className="hidden"
                       onChange={importLessonsFromSpreadsheet}
                     />
@@ -1431,9 +1435,9 @@ export function LifeSkillApp() {
                     <Plus size={16} />
                     Thêm dòng
                   </button>
-                  <button onClick={saveBulkLessons} className={primaryButtonClass}>
-                    <Save size={17} />
-                    Lưu hàng loạt
+                  <button onClick={saveBulkLessons} disabled={isBusy} className={primaryButtonClass}>
+                    {isBusy ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />}
+                    {isBusy ? "Đang lưu..." : "Lưu hàng loạt"}
                   </button>
                 </div>
               </div>
@@ -1441,9 +1445,32 @@ export function LifeSkillApp() {
           </div>
         </Panel>
 
-        <Panel title="Thư viện bài học" action={`${activeLessons.length} bài`}>
+        <Panel title="Thư viện bài học" action={`${filteredLessons.length}/${activeLessons.length} bài`}>
+          <div className="mb-4 grid gap-3 md:grid-cols-[1fr_180px]">
+            <label className="flex min-w-0 items-center gap-2 rounded-2xl border border-[var(--line)] bg-white px-3 py-2 shadow-sm transition focus-within:border-[var(--brand)]">
+              <Search size={17} className="text-[var(--muted)]" />
+              <input
+                value={lessonSearchTerm}
+                onChange={(event) => setLessonSearchTerm(event.target.value)}
+                placeholder="Tìm chuyên đề, mục tiêu..."
+                className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[var(--brand-dark)] outline-none placeholder:text-slate-400"
+              />
+            </label>
+            <select
+              value={lessonGradeFilter}
+              onChange={(event) => setLessonGradeFilter(event.target.value)}
+              className={compactInputClass}
+            >
+              <option value="all">Tất cả khối</option>
+              {lessonGrades.map((grade) => (
+                <option key={grade} value={grade}>
+                  {grade}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="grid gap-3 lg:grid-cols-2">
-            {activeLessons.map((lesson) => {
+            {filteredLessons.map((lesson) => {
               const isEditing = editingLessonId === lesson.id;
               return (
                 <div key={lesson.id} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
@@ -1492,9 +1519,9 @@ export function LifeSkillApp() {
                           <X size={16} />
                           Hủy
                         </button>
-                        <button onClick={() => saveLessonEdit(lesson.id)} className={primaryButtonClass}>
-                          <Save size={17} />
-                          Lưu
+                        <button onClick={() => saveLessonEdit(lesson.id)} disabled={isBusy} className={primaryButtonClass}>
+                          {isBusy ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />}
+                          {isBusy ? "Đang lưu..." : "Lưu"}
                         </button>
                       </div>
                     </div>
@@ -1522,7 +1549,7 @@ export function LifeSkillApp() {
                         </button>
                         <button
                           title="Xóa bài học"
-                          onClick={() => deleteLesson(lesson.id)}
+                          onClick={() => setLessonDeleteTarget(lesson)}
                           className="grid h-9 w-9 place-items-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
                         >
                           <Trash2 size={16} />
@@ -2107,10 +2134,31 @@ function parseLessonSpreadsheet(text: string): BulkLessonRow[] {
   }
 
   const delimiter = cleanedText.includes("\t") ? "\t" : ",";
-  const rows = parseDelimitedRows(cleanedText, delimiter).filter((cells) =>
-    cells.some((cell) => cell.trim()),
-  );
-  const [headers, ...dataRows] = rows;
+  return parseLessonSpreadsheetRows(parseDelimitedRows(cleanedText, delimiter));
+}
+
+async function parseLessonWorkbook(file: File): Promise<BulkLessonRow[]> {
+  const XLSX = await import("xlsx");
+  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) {
+    throw new Error("File Excel không có sheet dữ liệu.");
+  }
+
+  const worksheet = workbook.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(worksheet, {
+    header: 1,
+    raw: false,
+    defval: "",
+    blankrows: false,
+  }) as unknown[][];
+
+  return parseLessonSpreadsheetRows(rows.map((row) => row.map((cell) => String(cell ?? ""))));
+}
+
+function parseLessonSpreadsheetRows(rows: string[][]) {
+  const filledRows = rows.filter((cells) => cells.some((cell) => cell.trim()));
+  const [headers, ...dataRows] = filledRows;
   if (!headers || dataRows.length === 0) {
     throw new Error("File spreadsheet cần có dòng tiêu đề và ít nhất một dòng bài học.");
   }
