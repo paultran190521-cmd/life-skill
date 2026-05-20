@@ -1,4 +1,5 @@
 import { readSheetRows } from "@/lib/google-sheets";
+import { getAvatarUrl } from "@/lib/avatar";
 import type { Role, User } from "@/lib/types";
 
 export async function findAuthorizedUserByEmail(email: string) {
@@ -27,7 +28,7 @@ export async function findAuthorizedUserByEmail(email: string) {
     email: teacher.email,
     role: "teacher",
     teacherId: teacher.id,
-    avatarUrl: teacher.avatarUrl || undefined,
+    avatarUrl: teacher.avatarUrl || getAvatarUrl(teacher.email, teacher.name),
     isActive: true,
   } satisfies User;
 }
@@ -53,7 +54,7 @@ async function readUsers() {
     email: row.email,
     role: normalizeRole(row.role),
     teacherId: row.teacherId || undefined,
-    avatarUrl: row.avatarUrl || undefined,
+    avatarUrl: row.avatarUrl || getAvatarUrl(row.email, row.name),
     isActive: parseBoolean(row.isActive, true),
   }));
 }

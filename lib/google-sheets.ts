@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { getAvatarUrl } from "@/lib/avatar";
 import type {
   Attendance,
   ChatMessage,
@@ -213,7 +214,7 @@ function toUsers(rows: SheetRow[]): User[] {
     email: row.email,
     role: row.role === "teacher" ? "teacher" : "admin",
     teacherId: row.teacherId || undefined,
-    avatarUrl: row.avatarUrl || undefined,
+    avatarUrl: row.avatarUrl || getAvatarUrl(row.email, row.name),
     isActive: parseBoolean(row.isActive, true),
   }));
 }
@@ -224,7 +225,7 @@ function toTeachers(rows: SheetRow[]): Teacher[] {
     name: row.name,
     email: row.email,
     phone: row.phone,
-    avatarUrl: row.avatarUrl,
+    avatarUrl: row.avatarUrl || getAvatarUrl(row.email, row.name),
     specialty: row.specialty,
     active: parseBoolean(row.active, true),
   }));

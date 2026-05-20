@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, createId } from "@/lib/api";
 import { appendSheetRow, readSheetRows } from "@/lib/google-sheets";
+import { getAvatarUrl } from "@/lib/avatar";
 
 export async function GET() {
   try {
@@ -19,9 +20,7 @@ export async function POST(request: Request) {
       name: body.name,
       email: body.email,
       phone: body.phone || "Chưa cập nhật",
-      avatarUrl:
-        body.avatarUrl ||
-        "https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=160&q=80",
+      avatarUrl: body.avatarUrl || getAvatarUrl(body.email, body.name),
       specialty: body.specialty || "Kỹ năng sống",
       active: body.active ?? true,
       createdAt: now,

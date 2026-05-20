@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, createId } from "@/lib/api";
 import { appendSheetRow, readSheetRows } from "@/lib/google-sheets";
+import { getAvatarUrl } from "@/lib/avatar";
 import type { Role } from "@/lib/types";
 
 export async function GET() {
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
       email: body.email,
       role: normalizeRole(body.role),
       teacherId: body.teacherId || "",
-      avatarUrl: body.avatarUrl || "",
+      avatarUrl: body.avatarUrl || getAvatarUrl(body.email, body.name),
       isActive: body.isActive ?? true,
       createdAt: now,
       updatedAt: now,
