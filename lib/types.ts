@@ -48,6 +48,7 @@ export type Lesson = {
   title: string;
   objective: string;
   durationMinutes: number;
+  active?: boolean;
 };
 
 export type TimeSlot = {

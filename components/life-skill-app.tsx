@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Mail,
   MessageSquareText,
+  Pencil,
   Phone,
   Plus,
   RefreshCcw,
@@ -20,10 +21,12 @@ import {
   Send,
   Settings2,
   ShieldCheck,
+  Save,
   Trash2,
   UploadCloud,
   UserPlus,
   Users,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -97,6 +100,20 @@ type AuthSession = {
   user: User | null;
 };
 
+type LessonDraft = {
+  grade: string;
+  title: string;
+  objective: string;
+  durationMinutes: number;
+};
+
+type BulkLessonRow = LessonDraft & {
+  id: string;
+};
+
+const lessonGrades = Array.from({ length: 12 }, (_, index) => `Khối ${index + 1}`);
+const lessonDurations = [45, 90];
+
 const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "assignment", label: "Giao lịch", icon: Send },
@@ -153,11 +170,20 @@ export function LifeSkillApp() {
     specialty: "",
     role: "teacher" as Role,
   });
-  const [lessonDraft, setLessonDraft] = useState({
+  const [lessonDraft, setLessonDraft] = useState<LessonDraft>({
     grade: "Khối 1",
     title: "",
     objective: "",
-    durationMinutes: 35,
+    durationMinutes: 45,
+  });
+  const [bulkLessonRows, setBulkLessonRows] = useState<BulkLessonRow[]>(() => [createBulkLessonRow()]);
+  const [bulkLessonErrors, setBulkLessonErrors] = useState<Record<string, string>>({});
+  const [editingLessonId, setEditingLessonId] = useState("");
+  const [lessonEditDraft, setLessonEditDraft] = useState<LessonDraft>({
+    grade: "Khối 1",
+    title: "",
+    objective: "",
+    durationMinutes: 45,
   });
   const [slotDraft, setSlotDraft] = useState({
     label: "",
@@ -172,6 +198,7 @@ export function LifeSkillApp() {
     users[0];
   const role = currentUser.role;
   const currentTeacherId = currentUser.teacherId ?? "";
+  const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
 
   useEffect(() => {
     let cancelled = false;
@@ -248,6 +275,12 @@ export function LifeSkillApp() {
       setActiveTab(role === "admin" ? "dashboard" : "calendar");
     }
   }, [activeTab, role]);
+
+  useEffect(() => {
+    if (activeLessons.length > 0 && !activeLessons.some((lesson) => lesson.id === draftSchedule.lessonId)) {
+      setDraftSchedule((current) => ({ ...current, lessonId: activeLessons[0].id }));
+    }
+  }, [activeLessons, draftSchedule.lessonId]);
 
   const visibleSchedules = useMemo(() => {
     const scoped =
@@ -617,16 +650,16 @@ export function LifeSkillApp() {
   }
 
   async function addLesson() {
-    if (!lessonDraft.title || !lessonDraft.objective) {
+    const error = validateLessonDraft(lessonDraft);
+    if (error) {
+      setSaveError(error);
       return;
     }
-
-    const lesson = { id: createId("l"), ...lessonDraft };
 
     try {
       const savedLesson = await apiRequest<Lesson>("/api/lessons", {
         method: "POST",
-        body: JSON.stringify(lesson),
+        body: JSON.stringify(lessonDraft),
       });
       setLessons((items) => [savedLesson, ...items]);
       setDataStatus("connected");
@@ -636,7 +669,134 @@ export function LifeSkillApp() {
       return;
     }
 
-    setLessonDraft({ grade: "Khối 1", title: "", objective: "", durationMinutes: 35 });
+    setLessonDraft(createEmptyLessonDraft());
+  }
+
+  function updateBulkLessonRow(id: string, patch: Partial<LessonDraft>) {
+    setBulkLessonRows((items) => items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    setBulkLessonErrors((items) => {
+      const next = { ...items };
+      delete next[id];
+      return next;
+    });
+  }
+
+  function addBulkLessonRow() {
+    setBulkLessonRows((items) => [...items, createBulkLessonRow()]);
+  }
+
+  function removeBulkLessonRow(id: string) {
+    setBulkLessonRows((items) => (items.length === 1 ? [createBulkLessonRow()] : items.filter((item) => item.id !== id)));
+    setBulkLessonErrors((items) => {
+      const next = { ...items };
+      delete next[id];
+      return next;
+    });
+  }
+
+  function pasteBulkLessons(
+    rowId: string,
+    event: React.ClipboardEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+  ) {
+    const rows = parseLessonClipboard(event.clipboardData.getData("text"));
+    if (rows.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    setBulkLessonRows((items) => {
+      const targetIndex = Math.max(0, items.findIndex((item) => item.id === rowId));
+      return [
+        ...items.slice(0, targetIndex),
+        ...rows,
+        ...items.slice(targetIndex + 1),
+      ];
+    });
+    setBulkLessonErrors({});
+  }
+
+  async function saveBulkLessons() {
+    const rowsToSave = bulkLessonRows.filter(hasLessonContent);
+    if (rowsToSave.length === 0) {
+      setBulkLessonErrors({ [bulkLessonRows[0].id]: "Cần nhập ít nhất một bài học." });
+      return;
+    }
+
+    const errors = rowsToSave.reduce<Record<string, string>>((record, row, index) => {
+      const error = validateLessonDraft(row, `Dòng ${index + 1}`);
+      if (error) {
+        record[row.id] = error;
+      }
+      return record;
+    }, {});
+
+    setBulkLessonErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setSaveError("Vui lòng sửa các dòng lỗi trước khi lưu hàng loạt.");
+      return;
+    }
+
+    try {
+      const response = await apiRequest<{ lessons: Lesson[] }>("/api/lessons", {
+        method: "POST",
+        body: JSON.stringify({ lessons: rowsToSave.map(stripBulkLessonId) }),
+      });
+      setLessons((items) => [...response.lessons, ...items]);
+      setBulkLessonRows([createBulkLessonRow()]);
+      setBulkLessonErrors({});
+      setDataStatus("connected");
+      setSaveError("");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  function startEditLesson(lesson: Lesson) {
+    setEditingLessonId(lesson.id);
+    setLessonEditDraft({
+      grade: lesson.grade,
+      title: lesson.title,
+      objective: lesson.objective,
+      durationMinutes: lesson.durationMinutes,
+    });
+  }
+
+  async function saveLessonEdit(lessonId: string) {
+    const error = validateLessonDraft(lessonEditDraft);
+    if (error) {
+      setSaveError(error);
+      return;
+    }
+
+    try {
+      const savedLesson = await apiRequest<Lesson>(`/api/lessons/${lessonId}`, {
+        method: "PATCH",
+        body: JSON.stringify(lessonEditDraft),
+      });
+      setLessons((items) => items.map((item) => (item.id === lessonId ? { ...item, ...savedLesson } : item)));
+      setEditingLessonId("");
+      setDataStatus("connected");
+      setSaveError("");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function deleteLesson(lessonId: string) {
+    try {
+      const savedLesson = await apiRequest<Lesson>(`/api/lessons/${lessonId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active: false }),
+      });
+      setLessons((items) => items.map((item) => (item.id === lessonId ? { ...item, ...savedLesson, active: false } : item)));
+      if (editingLessonId === lessonId) {
+        setEditingLessonId("");
+      }
+      setDataStatus("connected");
+      setSaveError("");
+    } catch (error) {
+      handleSaveError(error);
+    }
   }
 
   async function addSlot() {
@@ -972,7 +1132,7 @@ export function LifeSkillApp() {
                 onChange={(event) => setDraftSchedule({ ...draftSchedule, lessonId: event.target.value })}
                 className={inputClass}
               >
-                {lessons.map((lesson) => (
+                {activeLessons.map((lesson) => (
                   <option key={lesson.id} value={lesson.id}>
                     {lesson.grade} - {lesson.title}
                   </option>
@@ -1092,52 +1252,224 @@ export function LifeSkillApp() {
 
   function LessonsPanel() {
     return (
-      <div className="grid gap-5 xl:grid-cols-[0.8fr_1.3fr]">
-        <Panel title="Thêm bài học" action="Theo khối">
-          <div className="grid gap-3">
-            <select
-              value={lessonDraft.grade}
-              onChange={(event) => setLessonDraft({ ...lessonDraft, grade: event.target.value })}
-              className={inputClass}
-            >
-              {["Khối 1", "Khối 2", "Khối 3", "Khối 4", "Khối 5"].map((grade) => (
-                <option key={grade}>{grade}</option>
-              ))}
-            </select>
-            <input
-              value={lessonDraft.title}
-              onChange={(event) => setLessonDraft({ ...lessonDraft, title: event.target.value })}
-              placeholder="Tên bài học"
-              className={inputClass}
-            />
-            <textarea
-              value={lessonDraft.objective}
-              onChange={(event) => setLessonDraft({ ...lessonDraft, objective: event.target.value })}
-              placeholder="Mục tiêu giảng dạy"
-              className={`${inputClass} min-h-28 resize-none`}
-            />
-            <button onClick={addLesson} className={primaryButtonClass}>
-              <Plus size={18} />
-              Thêm bài học
-            </button>
-          </div>
-        </Panel>
-        <Panel title="Thư viện bài học" action={`${lessons.length} bài`}>
-          <div className="space-y-3">
-            {lessons.map((lesson) => (
-              <div key={lesson.id} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-black uppercase text-[var(--brand)]">{lesson.grade}</p>
-                    <h3 className="mt-1 text-base font-black text-[var(--brand-dark)]">{lesson.title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{lesson.objective}</p>
-                  </div>
-                  <span className="rounded-full bg-orange-50 px-3 py-1 text-xs font-black text-orange-700">
-                    {lesson.durationMinutes} phút
-                  </span>
+      <div className="space-y-5">
+        <Panel title="Thêm mẫu bài học" action="Khối 1-12">
+          <div className="grid gap-4 xl:grid-cols-[0.8fr_1.4fr]">
+            <div className="grid gap-3">
+              <select
+                value={lessonDraft.grade}
+                onChange={(event) => setLessonDraft({ ...lessonDraft, grade: event.target.value })}
+                className={inputClass}
+              >
+                {lessonGrades.map((grade) => (
+                  <option key={grade}>{grade}</option>
+                ))}
+              </select>
+              <input
+                value={lessonDraft.title}
+                onChange={(event) => setLessonDraft({ ...lessonDraft, title: event.target.value })}
+                placeholder="Tên chuyên đề"
+                className={inputClass}
+              />
+              <textarea
+                value={lessonDraft.objective}
+                onChange={(event) => setLessonDraft({ ...lessonDraft, objective: event.target.value })}
+                placeholder="Mục tiêu, mỗi dòng một ý"
+                className={`${inputClass} min-h-32 resize-y whitespace-pre-line`}
+              />
+              <select
+                value={lessonDraft.durationMinutes}
+                onChange={(event) =>
+                  setLessonDraft({ ...lessonDraft, durationMinutes: Number(event.target.value) })
+                }
+                className={inputClass}
+              >
+                {lessonDurations.map((minutes) => (
+                  <option key={minutes} value={minutes}>
+                    {minutes} phút
+                  </option>
+                ))}
+              </select>
+              <button onClick={addLesson} className={primaryButtonClass}>
+                <Plus size={18} />
+                Thêm bài học
+              </button>
+            </div>
+
+            <div className="app-scrollbar overflow-x-auto">
+              <div className="min-w-[920px]">
+                <div className="grid grid-cols-[130px_210px_1fr_120px_48px] gap-2 px-2 pb-2 text-xs font-black uppercase text-[var(--brand-dark)]">
+                  <span>Khối</span>
+                  <span>Tên chuyên đề</span>
+                  <span>Mục tiêu</span>
+                  <span>Số phút</span>
+                  <span />
+                </div>
+                <div className="space-y-2">
+                  {bulkLessonRows.map((row) => (
+                    <div key={row.id}>
+                      <div className="grid grid-cols-[130px_210px_1fr_120px_48px] items-start gap-2">
+                        <select
+                          value={row.grade}
+                          onChange={(event) => updateBulkLessonRow(row.id, { grade: event.target.value })}
+                          onPaste={(event) => pasteBulkLessons(row.id, event)}
+                          className={compactInputClass}
+                        >
+                          {lessonGrades.map((grade) => (
+                            <option key={grade}>{grade}</option>
+                          ))}
+                        </select>
+                        <input
+                          value={row.title}
+                          onChange={(event) => updateBulkLessonRow(row.id, { title: event.target.value })}
+                          onPaste={(event) => pasteBulkLessons(row.id, event)}
+                          placeholder="Tên chuyên đề"
+                          className={compactInputClass}
+                        />
+                        <textarea
+                          value={row.objective}
+                          onChange={(event) => updateBulkLessonRow(row.id, { objective: event.target.value })}
+                          onPaste={(event) => pasteBulkLessons(row.id, event)}
+                          placeholder="Mỗi mục tiêu một dòng"
+                          className={`${compactInputClass} min-h-12 resize-y whitespace-pre-line`}
+                        />
+                        <select
+                          value={row.durationMinutes}
+                          onChange={(event) =>
+                            updateBulkLessonRow(row.id, { durationMinutes: Number(event.target.value) })
+                          }
+                          onPaste={(event) => pasteBulkLessons(row.id, event)}
+                          className={compactInputClass}
+                        >
+                          {lessonDurations.map((minutes) => (
+                            <option key={minutes} value={minutes}>
+                              {minutes}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          title="Xóa dòng"
+                          onClick={() => removeBulkLessonRow(row.id)}
+                          className="grid h-11 w-11 place-items-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                      {bulkLessonErrors[row.id] ? (
+                        <p className="mt-1 px-2 text-xs font-bold text-rose-700">{bulkLessonErrors[row.id]}</p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={addBulkLessonRow}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"
+                  >
+                    <Plus size={16} />
+                    Thêm dòng
+                  </button>
+                  <button onClick={saveBulkLessons} className={primaryButtonClass}>
+                    <Save size={17} />
+                    Lưu hàng loạt
+                  </button>
                 </div>
               </div>
-            ))}
+            </div>
+          </div>
+        </Panel>
+
+        <Panel title="Thư viện bài học" action={`${activeLessons.length} bài`}>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {activeLessons.map((lesson) => {
+              const isEditing = editingLessonId === lesson.id;
+              return (
+                <div key={lesson.id} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+                  {isEditing ? (
+                    <div className="grid gap-3">
+                      <div className="grid gap-3 md:grid-cols-[140px_1fr_120px]">
+                        <select
+                          value={lessonEditDraft.grade}
+                          onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, grade: event.target.value })}
+                          className={compactInputClass}
+                        >
+                          {lessonGrades.map((grade) => (
+                            <option key={grade}>{grade}</option>
+                          ))}
+                        </select>
+                        <input
+                          value={lessonEditDraft.title}
+                          onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, title: event.target.value })}
+                          className={compactInputClass}
+                        />
+                        <select
+                          value={lessonEditDraft.durationMinutes}
+                          onChange={(event) =>
+                            setLessonEditDraft({ ...lessonEditDraft, durationMinutes: Number(event.target.value) })
+                          }
+                          className={compactInputClass}
+                        >
+                          {lessonDurations.map((minutes) => (
+                            <option key={minutes} value={minutes}>
+                              {minutes} phút
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <textarea
+                        value={lessonEditDraft.objective}
+                        onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, objective: event.target.value })}
+                        className={`${compactInputClass} min-h-28 resize-y whitespace-pre-line`}
+                      />
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button
+                          onClick={() => setEditingLessonId("")}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"
+                        >
+                          <X size={16} />
+                          Hủy
+                        </button>
+                        <button onClick={() => saveLessonEdit(lesson.id)} className={primaryButtonClass}>
+                          <Save size={17} />
+                          Lưu
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex h-full flex-col">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-black uppercase text-[var(--brand)]">{lesson.grade}</p>
+                          <h3 className="mt-1 text-base font-black text-[var(--brand-dark)]">{lesson.title}</h3>
+                          <p className="mt-2 whitespace-pre-line text-sm leading-6 text-[var(--muted)]">
+                            {lesson.objective}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-orange-50 px-3 py-1 text-xs font-black text-orange-700">
+                          {lesson.durationMinutes} phút
+                        </span>
+                      </div>
+                      <div className="mt-4 flex justify-end gap-2">
+                        <button
+                          title="Sửa bài học"
+                          onClick={() => startEditLesson(lesson)}
+                          className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          title="Xóa bài học"
+                          onClick={() => deleteLesson(lesson.id)}
+                          className="grid h-9 w-9 place-items-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Panel>
       </div>
@@ -1636,8 +1968,133 @@ function StatusChip({ status }: { status: Schedule["status"] }) {
   );
 }
 
+function createEmptyLessonDraft(): LessonDraft {
+  return {
+    grade: "Khối 1",
+    title: "",
+    objective: "",
+    durationMinutes: 45,
+  };
+}
+
+function createBulkLessonRow(): BulkLessonRow {
+  return {
+    id: createId("bulk-lesson"),
+    ...createEmptyLessonDraft(),
+  };
+}
+
+function hasLessonContent(row: BulkLessonRow) {
+  return Boolean(row.title.trim() || row.objective.trim());
+}
+
+function stripBulkLessonId(row: BulkLessonRow): LessonDraft {
+  return {
+    grade: row.grade,
+    title: row.title,
+    objective: row.objective,
+    durationMinutes: row.durationMinutes,
+  };
+}
+
+function validateLessonDraft(row: LessonDraft, label = "Bài học") {
+  if (!lessonGrades.includes(row.grade)) {
+    return `${label}: Khối phải nằm trong Khối 1 đến Khối 12.`;
+  }
+
+  if (!row.title.trim()) {
+    return `${label}: Tên chuyên đề là bắt buộc.`;
+  }
+
+  if (!row.objective.trim()) {
+    return `${label}: Mục tiêu là bắt buộc.`;
+  }
+
+  if (!lessonDurations.includes(Number(row.durationMinutes))) {
+    return `${label}: Số phút chỉ được là 45 hoặc 90.`;
+  }
+
+  return "";
+}
+
+function parseLessonClipboard(text: string) {
+  if (!text.includes("\t")) {
+    return [];
+  }
+
+  return parseDelimitedRows(text)
+    .filter((cells) => cells.some((cell) => cell.trim()))
+    .map((cells) => ({
+      id: createId("bulk-lesson"),
+      grade: normalizeGrade(cells[0]),
+      title: cells[1]?.trim() ?? "",
+      objective: cells[2]?.trim() ?? "",
+      durationMinutes: normalizeDuration(cells[3]),
+    }));
+}
+
+function parseDelimitedRows(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === "\"") {
+      if (quoted && next === "\"") {
+        cell += "\"";
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+      continue;
+    }
+
+    if (char === "\t" && !quoted) {
+      row.push(cell);
+      cell = "";
+      continue;
+    }
+
+    if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") {
+        index += 1;
+      }
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+      continue;
+    }
+
+    cell += char;
+  }
+
+  row.push(cell);
+  rows.push(row);
+  return rows;
+}
+
+function normalizeGrade(value: string | undefined) {
+  const text = String(value || "").trim();
+  const matchedNumber = text.match(/\d+/)?.[0];
+  const grade = matchedNumber ? `Khối ${Number(matchedNumber)}` : text;
+  return lessonGrades.includes(grade) ? grade : "Khối 1";
+}
+
+function normalizeDuration(value: string | undefined) {
+  const minutes = Number(String(value || "").match(/\d+/)?.[0] || 45);
+  return lessonDurations.includes(minutes) ? minutes : 45;
+}
+
 const inputClass =
   "w-full rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[var(--brand-dark)] outline-none transition placeholder:text-slate-400 focus:border-[var(--brand)] focus:ring-4 focus:ring-cyan-100";
+
+const compactInputClass =
+  "w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-dark)] outline-none transition placeholder:text-slate-400 focus:border-[var(--brand)] focus:ring-4 focus:ring-cyan-100";
 
 const primaryButtonClass =
   "inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--brand)] px-4 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]";

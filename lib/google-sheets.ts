@@ -119,6 +119,23 @@ export async function appendSheetRow(sheetName: SheetName, row: Record<string, u
   });
 }
 
+export async function appendSheetRows(sheetName: SheetName, rows: Array<Record<string, unknown>>) {
+  if (rows.length === 0) {
+    return;
+  }
+
+  const headers = await getHeaders(sheetName);
+  const values = rows.map((row) => headers.map((header) => stringifyCell(row[header])));
+
+  await getSheetsClient().spreadsheets.values.append({
+    spreadsheetId: spreadsheetId(),
+    range: quoteSheetName(sheetName),
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values },
+  });
+}
+
 export async function updateSheetRowById(sheetName: SheetName, id: string, patch: Record<string, unknown>) {
   const client = getSheetsClient();
   const response = await client.spreadsheets.values.get({
@@ -254,7 +271,8 @@ function toLessons(rows: SheetRow[]): Lesson[] {
     grade: row.grade,
     title: row.title,
     objective: row.objective,
-    durationMinutes: Number(row.durationMinutes || 35),
+    durationMinutes: Number(row.durationMinutes || 45),
+    active: parseBoolean(row.active, true),
   }));
 }
 
