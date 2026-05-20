@@ -65,7 +65,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const cookieStore = await cookies();
     cookieStore.delete(oauthStateCookieName);
     cookieStore.set(sessionCookieName, createSessionToken(user.id, user.email), {
       httpOnly: true,
