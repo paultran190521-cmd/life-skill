@@ -42,8 +42,9 @@ export async function GET(request: NextRequest) {
       throw new Error("Email này chưa được phân quyền trong menu Giáo viên.");
     }
 
-    cookieStore.delete(oauthStateCookieName);
-    cookieStore.set(sessionCookieName, createSessionToken(user.id, user.email), {
+    const response = NextResponse.redirect(new URL("/", request.nextUrl.origin));
+    response.cookies.delete(oauthStateCookieName);
+    response.cookies.set(sessionCookieName, createSessionToken(user.id, user.email), {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
@@ -51,7 +52,7 @@ export async function GET(request: NextRequest) {
       maxAge: 60 * 60 * 24 * 7,
     });
 
-    return NextResponse.redirect(new URL("/", request.nextUrl.origin));
+    return response;
   } catch (error) {
     return apiError(error);
   }
