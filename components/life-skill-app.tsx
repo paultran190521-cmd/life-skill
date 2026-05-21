@@ -2404,10 +2404,21 @@ async function uploadFileToDrive(uploadUrl: string, file: File): Promise<DriveUp
 
   if (!response.ok) {
     const message = await response.text().catch(() => "");
-    throw new Error(message || `Google Drive upload failed: ${response.status}`);
+    throw new Error(formatDriveUploadError(message, response.status));
   }
 
   return response.json() as Promise<DriveUploadResult>;
+}
+
+function formatDriveUploadError(message: string, status: number) {
+  if (message.includes("Service Accounts do not have storage quota") || message.includes("storageQuotaExceeded")) {
+    return [
+      "Google Drive từ chối lưu file vì service account không có dung lượng lưu trữ.",
+      "Hãy chuyển thư mục giáo án sang Shared Drive hoặc dùng tài khoản Google Workspace có domain-wide delegation cho upload.",
+    ].join(" ");
+  }
+
+  return message || `Google Drive upload failed: ${status}`;
 }
 
 function formatDate(value: string) {
