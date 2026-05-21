@@ -17,19 +17,84 @@ type ResendResponse = {
 };
 
 export async function sendScheduleEmail(input: ScheduleEmailInput) {
-  const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
   const to = input.teacher.email;
 
-  if (!apiKey || !from) {
-    return { sent: false, reason: "Missing RESEND_API_KEY or EMAIL_FROM." };
-  }
   if (!to) {
     return { sent: false, reason: "Teacher email is missing." };
   }
 
   const confirmUrl = buildConfirmUrl(input.schedule);
   const subject = `Lich day ${formatDate(input.schedule.date)} - ${input.classRoom?.name || "Life Skill"}`;
+  const html = renderScheduleEmail(input, confirmUrl);
+
+  if (process.env.EMAIL_PROVIDER === "gas") {
+    return sendViaGas({ to, subject, html, from });
+  }
+
+  return sendViaResend({ to, subject, html, from });
+}
+
+async function sendViaGas({
+  to,
+  subject,
+  html,
+  from,
+}: {
+  to: string;
+  subject: string;
+  html: string;
+  from?: string;
+}) {
+  const webhookUrl = process.env.GAS_MAIL_WEBHOOK_URL;
+  const secret = process.env.GAS_MAIL_WEBHOOK_SECRET;
+
+  if (!webhookUrl || !secret) {
+    return { sent: false, reason: "Missing GAS_MAIL_WEBHOOK_URL or GAS_MAIL_WEBHOOK_SECRET." };
+  }
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        secret,
+        to,
+        subject,
+        html,
+        from,
+      }),
+    });
+
+    const body = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!response.ok || !body.ok) {
+      return { sent: false, reason: body.error || `GAS mail webhook failed: ${response.status}` };
+    }
+
+    return { sent: true, id: "gas" };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "Cannot reach GAS mail webhook.";
+    return { sent: false, reason };
+  }
+}
+
+async function sendViaResend({
+  to,
+  subject,
+  html,
+  from,
+}: {
+  to: string;
+  subject: string;
+  html: string;
+  from?: string;
+}) {
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (!apiKey || !from) {
+    return { sent: false, reason: "Missing RESEND_API_KEY or EMAIL_FROM." };
+  }
+
   try {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -41,7 +106,7 @@ export async function sendScheduleEmail(input: ScheduleEmailInput) {
         from,
         to,
         subject,
-        html: renderScheduleEmail(input, confirmUrl),
+        html,
       }),
     });
 
