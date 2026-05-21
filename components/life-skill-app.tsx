@@ -111,13 +111,8 @@ type EmailResult = {
   id?: string;
 };
 
-type DriveUploadSession = {
-  uploadUrl: string;
-};
-
-type DriveUploadResult = {
-  id?: string;
-  webViewLink?: string;
+type GasLessonPlanUploadResponse = {
+  lessonPlan: LessonPlan;
 };
 
 type LessonDraft = {
@@ -470,36 +465,25 @@ export function LifeSkillApp() {
     if (!file) {
       return;
     }
+    if (file.size > 10 * 1024 * 1024) {
+      handleSaveError(new Error("File giáo án tối đa 10 MB khi tải qua Google Apps Script."));
+      return;
+    }
 
     try {
-      const session = await saveRequest<DriveUploadSession>("Đang chuẩn bị tải giáo án lên Drive...", "/api/lesson-plans/upload-session", {
-        method: "POST",
-        body: JSON.stringify({
-          scheduleId: schedule.id,
-          fileName: file.name,
-          mimeType: file.type || "application/octet-stream",
-          fileSize: file.size,
-        }),
-      });
-      const driveFile = await uploadFileToDrive(session.uploadUrl, file);
-      if (!driveFile.id) {
-        throw new Error("Google Drive không trả về mã file sau khi tải lên.");
-      }
-
-      const plan = await saveRequest<LessonPlan>("Đang lưu thông tin giáo án...", "/api/lesson-plans", {
+      const fileData = await fileToBase64(file);
+      const response = await saveRequest<GasLessonPlanUploadResponse>("Đang tải giáo án qua GAS...", "/api/lesson-plans/upload", {
         method: "POST",
         body: JSON.stringify({
           scheduleId: schedule.id,
           teacherId: schedule.teacherId,
           fileName: file.name,
-          driveFileId: driveFile.id,
-          driveUrl: driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view`,
+          mimeType: file.type || "application/octet-stream",
+          fileSize: file.size,
+          fileData,
         }),
       });
-      await saveRequest("Đang cập nhật trạng thái lịch...", `/api/schedules/${schedule.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "lesson_plan_uploaded" }),
-      });
+      const plan = response.lessonPlan;
       setDataStatus("connected");
       setSaveError("");
 
@@ -2393,32 +2377,15 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function uploadFileToDrive(uploadUrl: string, file: File): Promise<DriveUploadResult> {
-  const response = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream",
-    },
-    body: file,
+async function fileToBase64(file: File) {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Không đọc được file giáo án."));
+    reader.readAsDataURL(file);
   });
 
-  if (!response.ok) {
-    const message = await response.text().catch(() => "");
-    throw new Error(formatDriveUploadError(message, response.status));
-  }
-
-  return response.json() as Promise<DriveUploadResult>;
-}
-
-function formatDriveUploadError(message: string, status: number) {
-  if (message.includes("Service Accounts do not have storage quota") || message.includes("storageQuotaExceeded")) {
-    return [
-      "Google Drive từ chối lưu file vì service account không có dung lượng lưu trữ.",
-      "Hãy chuyển thư mục giáo án sang Shared Drive hoặc dùng tài khoản Google Workspace có domain-wide delegation cho upload.",
-    ].join(" ");
-  }
-
-  return message || `Google Drive upload failed: ${status}`;
+  return dataUrl.split(",")[1] || "";
 }
 
 function formatDate(value: string) {
