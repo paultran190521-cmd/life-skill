@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const response = await fetch(webhookUrl, {
       method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      headers: { "Content-Type": "application/json;charset=utf-8" },
       body: JSON.stringify({
         ...body,
         action: "uploadLessonPlan",
@@ -24,7 +24,8 @@ export async function POST(request: Request) {
       }),
     });
 
-    const result = (await response.json().catch(() => ({}))) as {
+    const responseText = await response.text();
+    const result = parseGasResponse(responseText) as {
       ok?: boolean;
       error?: string;
       lessonPlan?: unknown;
@@ -32,11 +33,36 @@ export async function POST(request: Request) {
     };
 
     if (!response.ok || !result.ok) {
-      throw new Error(result.error || `GAS upload webhook failed: ${response.status}`);
+      throw new Error(result.error || gasResponseError(response.status, responseText));
+    }
+    if (!result.lessonPlan) {
+      throw new Error("GAS đã phản hồi OK nhưng thiếu lessonPlan. Hãy cập nhật và deploy lại Apps Script bản mới nhất.");
     }
 
     return NextResponse.json(result);
   } catch (error) {
     return apiError(error);
   }
+}
+
+function parseGasResponse(responseText: string) {
+  try {
+    return JSON.parse(responseText);
+  } catch {
+    return {};
+  }
+}
+
+function gasResponseError(status: number, responseText: string) {
+  const text = responseText.trim();
+  if (!text) {
+    return `GAS upload webhook trả về rỗng với HTTP ${status}. Hãy kiểm tra Apps Script deployment và quyền truy cập Web App.`;
+  }
+  if (text.startsWith("<")) {
+    return [
+      `GAS upload webhook trả về HTML với HTTP ${status}, không phải JSON.`,
+      "Thường là Web App chưa để quyền Anyone, URL /exec sai, hoặc Apps Script chưa deploy phiên bản mới.",
+    ].join(" ");
+  }
+  return `GAS upload webhook trả về dữ liệu không hợp lệ với HTTP ${status}: ${text.slice(0, 300)}`;
 }

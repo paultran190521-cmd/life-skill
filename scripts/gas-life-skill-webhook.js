@@ -13,7 +13,15 @@ function doPost(e) {
       return json(uploadLessonPlan(payload));
     }
 
-    return json(sendScheduleEmail(payload));
+    if (payload.action === "ping") {
+      return json({ ok: true, message: "Life Skill GAS webhook is ready." });
+    }
+
+    if (payload.to && payload.subject && payload.html) {
+      return json(sendScheduleEmail(payload));
+    }
+
+    return json({ ok: false, error: "Unknown action: " + payload.action });
   } catch (error) {
     return json({ ok: false, error: String(error) });
   }
