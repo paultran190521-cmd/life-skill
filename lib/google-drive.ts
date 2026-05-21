@@ -1,11 +1,11 @@
-import { Readable } from "node:stream";
 import { google } from "googleapis";
 
+let driveAuth: InstanceType<typeof google.auth.JWT> | null = null;
 let driveClient: ReturnType<typeof google.drive> | null = null;
 
-function getDriveClient() {
-  if (driveClient) {
-    return driveClient;
+function getDriveAuth() {
+  if (driveAuth) {
+    return driveAuth;
   }
 
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -15,14 +15,69 @@ function getDriveClient() {
     throw new Error("Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.");
   }
 
-  const auth = new google.auth.JWT({
+  driveAuth = new google.auth.JWT({
     email,
     key,
     scopes: ["https://www.googleapis.com/auth/drive"],
   });
 
-  driveClient = google.drive({ version: "v3", auth });
+  return driveAuth;
+}
+
+function getDriveClient() {
+  if (driveClient) {
+    return driveClient;
+  }
+
+  driveClient = google.drive({ version: "v3", auth: getDriveAuth() });
   return driveClient;
+}
+
+export async function createLessonPlanUploadSession({
+  fileName,
+  mimeType,
+  fileSize,
+  scheduleId,
+}: {
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  scheduleId: string;
+}) {
+  const folderId = process.env.GOOGLE_DRIVE_LESSON_PLANS_FOLDER_ID;
+  if (!folderId) {
+    throw new Error("Missing GOOGLE_DRIVE_LESSON_PLANS_FOLDER_ID.");
+  }
+
+  const token = await getAccessToken();
+  const response = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": mimeType,
+        "X-Upload-Content-Length": String(fileSize),
+      },
+      body: JSON.stringify({
+        name: `${scheduleId}-${fileName}`,
+        parents: [folderId],
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => "");
+    throw new Error(message || `Cannot create Google Drive upload session: ${response.status}`);
+  }
+
+  const uploadUrl = response.headers.get("location");
+  if (!uploadUrl) {
+    throw new Error("Google Drive did not return an upload session URL.");
+  }
+
+  return { uploadUrl };
 }
 
 export async function uploadLessonPlanToDrive({
@@ -36,20 +91,15 @@ export async function uploadLessonPlanToDrive({
   buffer: Buffer;
   scheduleId: string;
 }) {
-  const folderId = process.env.GOOGLE_DRIVE_LESSON_PLANS_FOLDER_ID;
-  if (!folderId) {
-    throw new Error("Missing GOOGLE_DRIVE_LESSON_PLANS_FOLDER_ID.");
-  }
-
   const response = await getDriveClient().files.create({
     fields: "id, webViewLink",
     requestBody: {
       name: `${scheduleId}-${fileName}`,
-      parents: [folderId],
+      parents: [driveFolderId()],
     },
     media: {
       mimeType,
-      body: Readable.from(buffer),
+      body: Buffer.from(buffer),
     },
   });
 
@@ -62,6 +112,23 @@ export async function uploadLessonPlanToDrive({
     driveFileId: fileId,
     driveUrl: response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
   };
+}
+
+async function getAccessToken() {
+  const response = await getDriveAuth().getAccessToken();
+  const token = typeof response === "string" ? response : response?.token;
+  if (!token) {
+    throw new Error("Cannot get Google Drive access token.");
+  }
+  return token;
+}
+
+function driveFolderId() {
+  const folderId = process.env.GOOGLE_DRIVE_LESSON_PLANS_FOLDER_ID;
+  if (!folderId) {
+    throw new Error("Missing GOOGLE_DRIVE_LESSON_PLANS_FOLDER_ID.");
+  }
+  return folderId;
 }
 
 function normalizePrivateKey(value: string | undefined) {

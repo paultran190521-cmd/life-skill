@@ -111,6 +111,15 @@ type EmailResult = {
   id?: string;
 };
 
+type DriveUploadSession = {
+  uploadUrl: string;
+};
+
+type DriveUploadResult = {
+  id?: string;
+  webViewLink?: string;
+};
+
 type LessonDraft = {
   grade: string;
   title: string;
@@ -462,16 +471,30 @@ export function LifeSkillApp() {
       return;
     }
 
-    let plan: LessonPlan;
-    const formData = new FormData();
-    formData.set("scheduleId", schedule.id);
-    formData.set("teacherId", schedule.teacherId);
-    formData.set("file", file);
-
     try {
-      plan = await saveRequest<LessonPlan>("Đang tải giáo án lên Drive...", "/api/lesson-plans", {
+      const session = await saveRequest<DriveUploadSession>("Đang chuẩn bị tải giáo án lên Drive...", "/api/lesson-plans/upload-session", {
         method: "POST",
-        body: formData,
+        body: JSON.stringify({
+          scheduleId: schedule.id,
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          fileSize: file.size,
+        }),
+      });
+      const driveFile = await uploadFileToDrive(session.uploadUrl, file);
+      if (!driveFile.id) {
+        throw new Error("Google Drive không trả về mã file sau khi tải lên.");
+      }
+
+      const plan = await saveRequest<LessonPlan>("Đang lưu thông tin giáo án...", "/api/lesson-plans", {
+        method: "POST",
+        body: JSON.stringify({
+          scheduleId: schedule.id,
+          teacherId: schedule.teacherId,
+          fileName: file.name,
+          driveFileId: driveFile.id,
+          driveUrl: driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view`,
+        }),
       });
       await saveRequest("Đang cập nhật trạng thái lịch...", `/api/schedules/${schedule.id}`, {
         method: "PATCH",
@@ -479,20 +502,19 @@ export function LifeSkillApp() {
       });
       setDataStatus("connected");
       setSaveError("");
+
+      setLessonPlans((items) => [plan, ...items.filter((item) => item.scheduleId !== schedule.id)]);
+      setSchedules((items) =>
+        items.map((item) =>
+          item.id === schedule.id && item.status !== "attended"
+            ? { ...item, status: "lesson_plan_uploaded" }
+            : item,
+        ),
+      );
+      addNotification("Giáo án mới", `${teacherName(schedule.teacherId)} đã tải lên ${plan.fileName}.`, "admin");
     } catch (error) {
       handleSaveError(error);
-      return;
     }
-
-    setLessonPlans((items) => [plan, ...items.filter((item) => item.scheduleId !== schedule.id)]);
-    setSchedules((items) =>
-      items.map((item) =>
-        item.id === schedule.id && item.status !== "attended"
-          ? { ...item, status: "lesson_plan_uploaded" }
-          : item,
-      ),
-    );
-    addNotification("Giáo án mới", `${teacherName(schedule.teacherId)} đã tải lên ${plan.fileName}.`, "admin");
   }
 
   async function checkIn(schedule: Schedule) {
@@ -2369,6 +2391,23 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+async function uploadFileToDrive(uploadUrl: string, file: File): Promise<DriveUploadResult> {
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": file.type || "application/octet-stream",
+    },
+    body: file,
+  });
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => "");
+    throw new Error(message || `Google Drive upload failed: ${response.status}`);
+  }
+
+  return response.json() as Promise<DriveUploadResult>;
 }
 
 function formatDate(value: string) {
