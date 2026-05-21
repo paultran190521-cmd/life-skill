@@ -17,9 +17,10 @@ export async function GET(request: NextRequest) {
     authUrl.searchParams.set("client_id", clientId);
     authUrl.searchParams.set("redirect_uri", redirectUri(request));
     authUrl.searchParams.set("response_type", "code");
-    authUrl.searchParams.set("scope", "openid email profile");
+    authUrl.searchParams.set("scope", "openid email profile https://www.googleapis.com/auth/drive.file");
     authUrl.searchParams.set("state", state);
-    authUrl.searchParams.set("prompt", "select_account");
+    authUrl.searchParams.set("access_type", "offline");
+    authUrl.searchParams.set("prompt", "consent select_account");
 
     const cookieStore = await cookies();
     cookieStore.set(oauthStateCookieName, state, {

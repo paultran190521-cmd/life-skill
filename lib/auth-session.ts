@@ -7,13 +7,23 @@ type SessionPayload = {
   userId: string;
   email: string;
   exp: number;
+  googleAccessToken?: string;
+  googleRefreshToken?: string;
+  googleAccessTokenExpiresAt?: number;
 };
 
-export function createSessionToken(userId: string, email: string) {
+type SessionTokenOptions = {
+  googleAccessToken?: string;
+  googleRefreshToken?: string;
+  googleAccessTokenExpiresAt?: number;
+};
+
+export function createSessionToken(userId: string, email: string, options: SessionTokenOptions = {}) {
   const payload: SessionPayload = {
     userId,
     email,
     exp: Date.now() + 1000 * 60 * 60 * 24 * 7,
+    ...options,
   };
   const encodedPayload = toBase64Url(JSON.stringify(payload));
   return `${encodedPayload}.${sign(encodedPayload)}`;

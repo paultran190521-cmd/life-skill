@@ -38,24 +38,25 @@ export async function createLessonPlanUploadSession({
   mimeType,
   fileSize,
   scheduleId,
+  accessToken,
 }: {
   fileName: string;
   mimeType: string;
   fileSize: number;
   scheduleId: string;
+  accessToken: string;
 }) {
   const folderId = process.env.GOOGLE_DRIVE_LESSON_PLANS_FOLDER_ID;
   if (!folderId) {
     throw new Error("Missing GOOGLE_DRIVE_LESSON_PLANS_FOLDER_ID.");
   }
 
-  const token = await getAccessToken();
   const response = await fetch(
     "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink",
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json; charset=UTF-8",
         "X-Upload-Content-Type": mimeType,
         "X-Upload-Content-Length": String(fileSize),

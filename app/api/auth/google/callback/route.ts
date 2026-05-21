@@ -10,8 +10,16 @@ import { findAuthorizedUserByEmail } from "@/lib/auth-users";
 import { readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
 
 type GoogleTokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
   id_token?: string;
   error?: string;
+};
+
+type GoogleTokenSuccess = GoogleTokenResponse & {
+  access_token: string;
+  id_token: string;
 };
 
 type GoogleTokenInfo = {
@@ -38,7 +46,8 @@ export async function GET(request: NextRequest) {
       throw new Error(`Google login state is invalid. Code: ${!!code}, State: ${state}, Expected: ${expectedState}, Cookies: [${allCookies}]`);
     }
 
-    const profile = await fetchGoogleProfile(request, code);
+    const token = await exchangeGoogleCode(request, code);
+    const profile = await fetchGoogleProfile(token.id_token);
     if (!profile.email || profile.email_verified !== "true") {
       throw new Error("Google account email is not verified.");
     }
@@ -70,7 +79,11 @@ export async function GET(request: NextRequest) {
     }
 
     cookieStore.delete(oauthStateCookieName);
-    cookieStore.set(sessionCookieName, createSessionToken(user.id, user.email), {
+    cookieStore.set(sessionCookieName, createSessionToken(user.id, user.email, {
+      googleAccessToken: token.access_token,
+      googleRefreshToken: token.refresh_token,
+      googleAccessTokenExpiresAt: Date.now() + Math.max((token.expires_in || 3600) - 60, 0) * 1000,
+    }), {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
@@ -85,7 +98,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function fetchGoogleProfile(request: NextRequest, code: string) {
+async function exchangeGoogleCode(request: NextRequest, code: string): Promise<GoogleTokenSuccess> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
@@ -105,12 +118,21 @@ async function fetchGoogleProfile(request: NextRequest, code: string) {
   });
 
   const token = (await tokenResponse.json()) as GoogleTokenResponse;
-  if (!tokenResponse.ok || !token.id_token) {
+  if (!tokenResponse.ok || !token.id_token || !token.access_token) {
     throw new Error(token.error || "Cannot exchange Google login code.");
   }
 
+  return token as GoogleTokenSuccess;
+}
+
+async function fetchGoogleProfile(idToken: string) {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    throw new Error("Missing GOOGLE_CLIENT_ID.");
+  }
+
   const profileResponse = await fetch(
-    `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token.id_token)}`,
+    `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
   );
   const profile = (await profileResponse.json()) as GoogleTokenInfo;
   if (!profileResponse.ok || profile.aud !== clientId) {
