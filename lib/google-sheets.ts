@@ -308,6 +308,7 @@ function toLessonPlans(rows: SheetRow[]): LessonPlan[] {
     scheduleId: row.scheduleId,
     teacherId: row.teacherId,
     fileName: row.fileName,
+    driveFileId: row.driveFileId || undefined,
     driveUrl: row.driveUrl,
     uploadedAt: row.uploadedAt,
   }));

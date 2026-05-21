@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, createId } from "@/lib/api";
+import { sendScheduleEmail } from "@/lib/email";
 import { appendSheetRow, readSheetRows } from "@/lib/google-sheets";
 import type { Schedule } from "@/lib/types";
 
@@ -40,8 +41,39 @@ export async function POST(request: Request) {
       ),
     );
 
-    return NextResponse.json({ schedules });
+    const emailResults = await sendScheduleEmails(schedules);
+
+    return NextResponse.json({ schedules, emailResults });
   } catch (error) {
     return apiError(error);
   }
+}
+
+async function sendScheduleEmails(schedules: Schedule[]) {
+  const [teachers, schools, classes, lessons, slots] = await Promise.all([
+    readSheetRows("Teachers"),
+    readSheetRows("Schools"),
+    readSheetRows("Classes"),
+    readSheetRows("Lessons"),
+    readSheetRows("TimeSlots"),
+  ]);
+
+  return Promise.all(
+    schedules.map(async (schedule) => {
+      const result = await sendScheduleEmail({
+        schedule,
+        teacher: teachers.find((teacher) => teacher.id === schedule.teacherId) || {},
+        school: schools.find((school) => school.id === schedule.schoolId),
+        classRoom: classes.find((classRoom) => classRoom.id === schedule.classId),
+        lesson: lessons.find((lesson) => lesson.id === schedule.lessonId),
+        slot: slots.find((slot) => slot.id === schedule.timeSlotId),
+      });
+
+      return {
+        scheduleId: schedule.id,
+        teacherId: schedule.teacherId,
+        ...result,
+      };
+    }),
+  );
 }

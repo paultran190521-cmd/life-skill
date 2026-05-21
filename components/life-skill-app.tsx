@@ -103,6 +103,14 @@ type AuthSession = {
   user: User | null;
 };
 
+type EmailResult = {
+  scheduleId: string;
+  teacherId: string;
+  sent: boolean;
+  reason?: string;
+  id?: string;
+};
+
 type LessonDraft = {
   grade: string;
   title: string;
@@ -378,12 +386,14 @@ export function LifeSkillApp() {
     }
 
     let created: Schedule[];
+    let emailResults: EmailResult[] = [];
     try {
-      const response = await saveRequest<{ schedules: Schedule[] }>("Đang tạo lịch dạy...", "/api/schedules", {
+      const response = await saveRequest<{ schedules: Schedule[]; emailResults?: EmailResult[] }>("Đang tạo lịch dạy...", "/api/schedules", {
         method: "POST",
         body: JSON.stringify({ ...draftSchedule, createdBy: currentUser.id }),
       });
       created = response.schedules;
+      emailResults = response.emailResults ?? [];
       setDataStatus("connected");
       setSaveError("");
     } catch (error) {
@@ -393,9 +403,11 @@ export function LifeSkillApp() {
 
     setSchedules((items) => [...created, ...items]);
     created.forEach((schedule) => ensureScheduleThread(schedule));
+    const sentEmails = emailResults.filter((item) => item.sent).length;
+    const failedEmails = emailResults.filter((item) => !item.sent).length;
     addNotification(
       "Đã gửi lịch dạy",
-      `${created.length} lịch mới đã được tạo và sẵn sàng gửi email CTA xác nhận.`,
+      `${created.length} lịch mới đã được tạo. Email CTA: ${sentEmails} thành công${failedEmails ? `, ${failedEmails} chờ cấu hình/lỗi gửi` : ""}.`,
       "admin",
     );
     addNotification("Bạn có lịch dạy mới", "Vui lòng mở lịch cá nhân để xác nhận.", "teacher");
@@ -445,24 +457,21 @@ export function LifeSkillApp() {
     addNotification("Giáo viên đã nhận lịch", "Một lịch dạy vừa được xác nhận.", "admin");
   }
 
-  async function uploadLessonPlan(schedule: Schedule, fileName: string) {
-    const safeName = fileName || `giao-an-${schedule.id}.pdf`;
-    const plan: LessonPlan = {
-      id: createId("lp"),
-      scheduleId: schedule.id,
-      teacherId: schedule.teacherId,
-      fileName: safeName,
-      driveUrl: `https://drive.google.com/life-skill/${schedule.id}/${encodeURIComponent(safeName)}`,
-      uploadedAt: new Date().toISOString(),
-    };
+  async function uploadLessonPlan(schedule: Schedule, file: File | undefined) {
+    if (!file) {
+      return;
+    }
+
+    let plan: LessonPlan;
+    const formData = new FormData();
+    formData.set("scheduleId", schedule.id);
+    formData.set("teacherId", schedule.teacherId);
+    formData.set("file", file);
 
     try {
-      await saveRequest("Đang lưu giáo án...", "/api/lesson-plans", {
+      plan = await saveRequest<LessonPlan>("Đang tải giáo án lên Drive...", "/api/lesson-plans", {
         method: "POST",
-        body: JSON.stringify({
-          ...plan,
-          driveFileId: "",
-        }),
+        body: formData,
       });
       await saveRequest("Đang cập nhật trạng thái lịch...", `/api/schedules/${schedule.id}`, {
         method: "PATCH",
@@ -483,7 +492,7 @@ export function LifeSkillApp() {
           : item,
       ),
     );
-    addNotification("Giáo án mới", `${teacherName(schedule.teacherId)} đã tải lên ${safeName}.`, "admin");
+    addNotification("Giáo án mới", `${teacherName(schedule.teacherId)} đã tải lên ${plan.fileName}.`, "admin");
   }
 
   async function checkIn(schedule: Schedule) {
@@ -1686,7 +1695,7 @@ export function LifeSkillApp() {
                       className="hidden"
                       onChange={(event) => {
                         const file = event.target.files?.[0];
-                        uploadLessonPlan(schedule, file?.name ?? "");
+                        uploadLessonPlan(schedule, file);
                         event.currentTarget.value = "";
                       }}
                     />
@@ -2343,12 +2352,15 @@ function createId(prefix: string) {
 }
 
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  const isFormData = init?.body instanceof FormData;
   const response = await fetch(url, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+    headers: isFormData
+      ? init?.headers
+      : {
+          "Content-Type": "application/json",
+          ...init?.headers,
+        },
   });
 
   if (!response.ok) {

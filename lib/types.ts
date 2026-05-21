@@ -78,6 +78,7 @@ export type LessonPlan = {
   scheduleId: string;
   teacherId: string;
   fileName: string;
+  driveFileId?: string;
   driveUrl: string;
   uploadedAt: string;
 };
