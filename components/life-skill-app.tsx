@@ -369,6 +369,10 @@ export function LifeSkillApp() {
     };
   }
 
+  function canManageLessonPlan(plan: LessonPlan) {
+    return role === "admin" || plan.teacherId === currentTeacherId;
+  }
+
   function addNotification(title: string, body: string, targetRole: Role | "all" = "admin") {
     setNotifications((items) => [
       {
@@ -558,6 +562,57 @@ export function LifeSkillApp() {
         ok: false,
         error: error instanceof Error ? error : new Error("Không thể tải file giáo án."),
       };
+    }
+  }
+
+  async function editLessonPlan(plan: LessonPlan) {
+    if (!canManageLessonPlan(plan)) {
+      handleSaveError(new Error("Bạn không có quyền sửa giáo án này."));
+      return;
+    }
+
+    const nextFileName = window.prompt("Nhập tên giáo án mới", plan.fileName)?.trim();
+    if (!nextFileName || nextFileName === plan.fileName) {
+      return;
+    }
+
+    try {
+      await saveRequest("Đang cập nhật tên giáo án...", `/api/lesson-plans/${plan.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ fileName: nextFileName }),
+      });
+      setDataStatus("connected");
+      setSaveError("");
+      setLessonPlans((items) =>
+        items.map((item) => (item.id === plan.id ? { ...item, fileName: nextFileName } : item)),
+      );
+      addNotification("Cập nhật giáo án", `${teacherName(plan.teacherId)} đã đổi tên giáo án.`, "admin");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function deleteLessonPlan(plan: LessonPlan) {
+    if (!canManageLessonPlan(plan)) {
+      handleSaveError(new Error("Bạn không có quyền xóa giáo án này."));
+      return;
+    }
+
+    const confirmed = window.confirm(`Xóa giáo án "${plan.fileName}"?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await saveRequest("Đang xóa giáo án...", `/api/lesson-plans/${plan.id}`, {
+        method: "DELETE",
+      });
+      setDataStatus("connected");
+      setSaveError("");
+      setLessonPlans((items) => items.filter((item) => item.id !== plan.id));
+      addNotification("Xóa giáo án", `${teacherName(plan.teacherId)} đã xóa ${plan.fileName}.`, "admin");
+    } catch (error) {
+      handleSaveError(error);
     }
   }
 
@@ -1743,16 +1798,37 @@ export function LifeSkillApp() {
                   {meta.plans.length > 0 ? (
                     <div className="mt-3 space-y-2">
                       {meta.plans.map((plan) => (
-                        <a
-                          key={plan.id}
-                          href={plan.driveUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-2 rounded-xl bg-cyan-50 px-3 py-2 text-sm font-bold text-[var(--brand-dark)]"
-                        >
-                          <UploadCloud size={16} />
-                          {plan.fileName}
-                        </a>
+                        <div key={plan.id} className="flex items-center justify-between gap-2">
+                          <a
+                            href={plan.driveUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex min-w-0 items-center gap-2 rounded-xl bg-cyan-50 px-3 py-2 text-sm font-bold text-[var(--brand-dark)]"
+                          >
+                            <UploadCloud size={16} />
+                            <span className="truncate">{plan.fileName}</span>
+                          </a>
+                          {canManageLessonPlan(plan) ? (
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                title="Sửa tên giáo án"
+                                onClick={() => editLessonPlan(plan)}
+                                className="grid h-8 w-8 place-items-center rounded-lg bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                title="Xóa giáo án"
+                                onClick={() => deleteLessonPlan(plan)}
+                                className="grid h-8 w-8 place-items-center rounded-lg bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                       ))}
                     </div>
                   ) : (

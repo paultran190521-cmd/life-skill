@@ -165,6 +165,51 @@ export async function updateSheetRowById(sheetName: SheetName, id: string, patch
   });
 }
 
+export async function deleteSheetRowById(sheetName: SheetName, id: string) {
+  const client = getSheetsClient();
+  const response = await client.spreadsheets.values.get({
+    spreadsheetId: spreadsheetId(),
+    range: quoteSheetName(sheetName),
+  });
+
+  const values = response.data.values || [];
+  const rowIndex = values.findIndex((row, index) => index > 0 && String(row[0] || "") === id);
+
+  if (rowIndex === -1) {
+    throw new Error(`Cannot find row ${id} in ${sheetName}.`);
+  }
+
+  const sheetMeta = await client.spreadsheets.get({
+    spreadsheetId: spreadsheetId(),
+    fields: "sheets(properties(sheetId,title))",
+  });
+
+  const targetSheet = sheetMeta.data.sheets?.find((sheet) => sheet.properties?.title === sheetName);
+  const sheetId = targetSheet?.properties?.sheetId;
+
+  if (sheetId === undefined) {
+    throw new Error(`Cannot find sheet metadata for ${sheetName}.`);
+  }
+
+  await client.spreadsheets.batchUpdate({
+    spreadsheetId: spreadsheetId(),
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: rowIndex,
+              endIndex: rowIndex + 1,
+            },
+          },
+        },
+      ],
+    },
+  });
+}
+
 export async function getAppDataFromSheets() {
   const [
     teachers,
