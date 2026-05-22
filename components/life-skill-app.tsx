@@ -112,6 +112,8 @@ type EmailResult = {
 };
 
 type GasLessonPlanUploadResponse = {
+  ok?: boolean;
+  requestId?: string;
   lessonPlan: LessonPlan;
 };
 
@@ -129,6 +131,19 @@ type BulkLessonRow = LessonDraft & {
 
 const lessonGrades = Array.from({ length: 12 }, (_, index) => `Khối ${index + 1}`);
 const lessonDurations = [45, 90];
+const maxLessonPlanFileBytes = 10 * 1024 * 1024;
+const supportedLessonPlanMimeTypes = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
+  "text/csv",
+]);
+const supportedLessonPlanExtensions = [".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".txt", ".csv"];
 
 const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
@@ -465,8 +480,14 @@ export function LifeSkillApp() {
     if (!file) {
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      handleSaveError(new Error("File giáo án tối đa 10 MB khi tải qua Google Apps Script."));
+    if (file.size > maxLessonPlanFileBytes) {
+      handleSaveError(new Error("File giáo án vượt quá 10 MB. Vui lòng nén file hoặc chia nhỏ nội dung."));
+      return;
+    }
+    if (!isSupportedLessonPlanFile(file)) {
+      handleSaveError(
+        new Error("Định dạng file chưa được hỗ trợ. Hãy dùng PDF, DOC/DOCX, PPT/PPTX, XLS/XLSX, TXT hoặc CSV."),
+      );
       return;
     }
 
@@ -2386,6 +2407,15 @@ async function fileToBase64(file: File) {
   });
 
   return dataUrl.split(",")[1] || "";
+}
+
+function isSupportedLessonPlanFile(file: File) {
+  if (file.type && supportedLessonPlanMimeTypes.has(file.type)) {
+    return true;
+  }
+
+  const lowerName = file.name.toLowerCase();
+  return supportedLessonPlanExtensions.some((extension) => lowerName.endsWith(extension));
 }
 
 function formatDate(value: string) {
