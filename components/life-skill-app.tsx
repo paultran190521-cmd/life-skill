@@ -362,7 +362,9 @@ export function LifeSkillApp() {
       classRoom: classes.find((item) => item.id === schedule.classId),
       lesson: lessons.find((item) => item.id === schedule.lessonId),
       slot: timeSlots.find((item) => item.id === schedule.timeSlotId),
-      plan: lessonPlans.find((item) => item.scheduleId === schedule.id),
+      plans: lessonPlans
+        .filter((item) => item.scheduleId === schedule.id)
+        .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)),
       checkIn: attendance.find((item) => item.scheduleId === schedule.id),
     };
   }
@@ -476,21 +478,56 @@ export function LifeSkillApp() {
     addNotification("Giáo viên đã nhận lịch", "Một lịch dạy vừa được xác nhận.", "admin");
   }
 
-  async function uploadLessonPlan(schedule: Schedule, file: File | undefined) {
-    if (!file) {
+  async function uploadLessonPlans(schedule: Schedule, selectedFiles: FileList | null) {
+    if (!selectedFiles || selectedFiles.length === 0) {
       return;
     }
-    if (file.size > maxLessonPlanFileBytes) {
-      handleSaveError(new Error("File giáo án vượt quá 10 MB. Vui lòng nén file hoặc chia nhỏ nội dung."));
-      return;
-    }
-    if (!isSupportedLessonPlanFile(file)) {
+
+    const files = Array.from(selectedFiles);
+    const invalidTypeFile = files.find((file) => !isSupportedLessonPlanFile(file));
+    if (invalidTypeFile) {
       handleSaveError(
-        new Error("Định dạng file chưa được hỗ trợ. Hãy dùng PDF, DOC/DOCX, PPT/PPTX, XLS/XLSX, TXT hoặc CSV."),
+        new Error(`File ${invalidTypeFile.name} không đúng định dạng. Chỉ hỗ trợ PDF, DOC/DOCX, PPT/PPTX, XLS/XLSX, TXT, CSV.`),
       );
       return;
     }
 
+    const tooLargeFile = files.find((file) => file.size > maxLessonPlanFileBytes);
+    if (tooLargeFile) {
+      handleSaveError(new Error(`File ${tooLargeFile.name} vượt quá 10 MB.`));
+      return;
+    }
+
+    let successCount = 0;
+    const failures: Array<{ fileName: string; error: Error }> = [];
+
+    for (const file of files) {
+      const result = await uploadSingleLessonPlan(schedule, file);
+      if (result.ok) {
+        successCount += 1;
+      } else {
+        failures.push({ fileName: file.name, error: result.error });
+      }
+    }
+
+    if (successCount > 0) {
+      const message =
+        files.length === 1
+          ? `${teacherName(schedule.teacherId)} đã tải lên ${files[0].name}.`
+          : `${teacherName(schedule.teacherId)} đã tải lên ${successCount}/${files.length} file giáo án.`;
+      addNotification("Giáo án mới", message, "admin");
+    }
+
+    if (failures.length > 0) {
+      const firstError = failures[0]?.error?.message || "Không thể tải một số file giáo án.";
+      handleSaveError(new Error(`${firstError} (${failures.length}/${files.length} file thất bại)`));
+    }
+  }
+
+  async function uploadSingleLessonPlan(
+    schedule: Schedule,
+    file: File,
+  ): Promise<{ ok: true } | { ok: false; error: Error }> {
     try {
       const fileData = await fileToBase64(file);
       const response = await saveRequest<GasLessonPlanUploadResponse>("Đang tải giáo án qua GAS...", "/api/lesson-plans/upload", {
@@ -507,8 +544,7 @@ export function LifeSkillApp() {
       const plan = response.lessonPlan;
       setDataStatus("connected");
       setSaveError("");
-
-      setLessonPlans((items) => [plan, ...items.filter((item) => item.scheduleId !== schedule.id)]);
+      setLessonPlans((items) => [plan, ...items]);
       setSchedules((items) =>
         items.map((item) =>
           item.id === schedule.id && item.status !== "attended"
@@ -516,9 +552,12 @@ export function LifeSkillApp() {
             : item,
         ),
       );
-      addNotification("Giáo án mới", `${teacherName(schedule.teacherId)} đã tải lên ${plan.fileName}.`, "admin");
+      return { ok: true };
     } catch (error) {
-      handleSaveError(error);
+      return {
+        ok: false,
+        error: error instanceof Error ? error : new Error("Không thể tải file giáo án."),
+      };
     }
   }
 
@@ -1701,14 +1740,21 @@ export function LifeSkillApp() {
                     {meta.teacher?.name} - {meta.school?.name} - Lớp {meta.classRoom?.name} -{" "}
                     {formatDate(schedule.date)}
                   </p>
-                  {meta.plan ? (
-                    <a
-                      href={meta.plan.driveUrl}
-                      className="mt-3 inline-flex items-center gap-2 rounded-xl bg-cyan-50 px-3 py-2 text-sm font-bold text-[var(--brand-dark)]"
-                    >
-                      <UploadCloud size={16} />
-                      {meta.plan.fileName}
-                    </a>
+                  {meta.plans.length > 0 ? (
+                    <div className="mt-3 space-y-2">
+                      {meta.plans.map((plan) => (
+                        <a
+                          key={plan.id}
+                          href={plan.driveUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 rounded-xl bg-cyan-50 px-3 py-2 text-sm font-bold text-[var(--brand-dark)]"
+                        >
+                          <UploadCloud size={16} />
+                          {plan.fileName}
+                        </a>
+                      ))}
+                    </div>
                   ) : (
                     <p className="mt-3 text-sm font-semibold text-orange-700">Chưa có giáo án</p>
                   )}
@@ -1719,10 +1765,11 @@ export function LifeSkillApp() {
                     Tải lên
                     <input
                       type="file"
+                      multiple
+                      accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv"
                       className="hidden"
                       onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        uploadLessonPlan(schedule, file);
+                        uploadLessonPlans(schedule, event.target.files);
                         event.currentTarget.value = "";
                       }}
                     />
