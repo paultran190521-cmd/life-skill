@@ -1,4 +1,4 @@
-import { createScheduleConfirmationToken } from "@/lib/schedule-confirmation";
+﻿import { createScheduleConfirmationToken } from "@/lib/schedule-confirmation";
 import type { Schedule } from "@/lib/types";
 
 type ScheduleEmailInput = {
@@ -10,6 +10,20 @@ type ScheduleEmailInput = {
   slot?: { label?: string; start?: string; end?: string };
 };
 
+type ScheduleDigestRow = {
+  schedule: Schedule;
+  school?: { name?: string };
+  classRoom?: { name?: string };
+  lesson?: { title?: string; objective?: string };
+  slot?: { label?: string; start?: string; end?: string };
+};
+
+type ScheduleDigestInput = {
+  teacher: { name?: string; email?: string };
+  schedules: Schedule[];
+  rows: ScheduleDigestRow[];
+};
+
 type ResendResponse = {
   id?: string;
   message?: string;
@@ -17,6 +31,22 @@ type ResendResponse = {
 };
 
 export async function sendScheduleEmail(input: ScheduleEmailInput) {
+  return sendScheduleDigestEmail({
+    teacher: input.teacher,
+    schedules: [input.schedule],
+    rows: [
+      {
+        schedule: input.schedule,
+        school: input.school,
+        classRoom: input.classRoom,
+        lesson: input.lesson,
+        slot: input.slot,
+      },
+    ],
+  });
+}
+
+export async function sendScheduleDigestEmail(input: ScheduleDigestInput) {
   const from = process.env.EMAIL_FROM;
   const to = input.teacher.email;
 
@@ -24,9 +54,8 @@ export async function sendScheduleEmail(input: ScheduleEmailInput) {
     return { sent: false, reason: "Teacher email is missing." };
   }
 
-  const confirmUrl = buildConfirmUrl(input.schedule);
-  const subject = `Lịch dạy ${formatDate(input.schedule.date)} - ${input.classRoom?.name || "Life Skill"}`;
-  const html = renderScheduleEmail(input, confirmUrl);
+  const subject = buildScheduleWeekSubject(input.schedules);
+  const html = renderScheduleDigestEmail(input);
 
   if (process.env.EMAIL_PROVIDER === "gas") {
     return sendViaGas({ to, subject, html, from });
@@ -122,6 +151,71 @@ async function sendViaResend({
   }
 }
 
+function renderScheduleDigestEmail(input: ScheduleDigestInput) {
+  const rows = [...input.rows].sort((a, b) => {
+    const dateDiff = a.schedule.date.localeCompare(b.schedule.date);
+    if (dateDiff !== 0) {
+      return dateDiff;
+    }
+    return `${a.slot?.start || ""}-${a.slot?.end || ""}`.localeCompare(`${b.slot?.start || ""}-${b.slot?.end || ""}`);
+  });
+
+  const weekText = buildWeekLabel(input.schedules);
+
+  return `
+    <div style="font-family:Arial,sans-serif;background:#f6fafb;padding:24px;color:#16313a">
+      <div style="max-width:920px;margin:0 auto;background:#ffffff;border:1px solid #dce8eb;border-radius:16px;padding:24px">
+        <p style="margin:0 0 12px;font-size:14px;color:#1992b0;font-weight:700;text-align:center">HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG METTASOUL</p>
+        <h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;color:#0b6f89;text-align:center">Bạn có lịch dạy mới</h1>
+        <p style="margin:0 0 8px;font-size:15px">Chào ${escapeHtml(input.teacher.name || "Thầy/Cô")}, giáo vụ vừa giao lịch dạy cho ${escapeHtml(weekText)}.</p>
+        <p style="margin:0 0 20px;font-size:13px;color:#667985">Mỗi dòng bên dưới là một tiết dạy cần xác nhận.</p>
+
+        <table style="width:100%;border-collapse:collapse;margin:0 0 20px;font-size:13px">
+          <thead>
+            <tr>
+              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:left">Ngày</th>
+              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:left">Khung giờ</th>
+              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:left">Trường</th>
+              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:left">Lớp</th>
+              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:left">Bài học</th>
+              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:left">Mục tiêu</th>
+              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:center">Xác nhận</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map((row) => {
+                const slotTime = [row.slot?.start, row.slot?.end].filter(Boolean).join(" - ");
+                const confirmUrl = buildConfirmUrl(row.schedule);
+                return `
+                  <tr>
+                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top">${escapeHtml(formatDate(row.schedule.date))}</td>
+                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top">${escapeHtml(
+                      `${row.slot?.label || ""}${slotTime ? ` (${slotTime})` : ""}` || "Chưa cập nhật",
+                    )}</td>
+                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top">${escapeHtml(row.school?.name || "Chưa cập nhật")}</td>
+                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top">${escapeHtml(row.classRoom?.name || "Chưa cập nhật")}</td>
+                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top">${escapeHtml(row.lesson?.title || "Chưa cập nhật")}</td>
+                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top">${formatObjectives(row.lesson?.objective || "")}</td>
+                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top;text-align:center">
+                      <a href="${confirmUrl}" style="display:inline-block;background:#ff9500;color:#ffffff;text-decoration:none;border-radius:10px;padding:8px 12px;font-weight:700">Xác nhận</a>
+                    </td>
+                  </tr>
+                `;
+              })
+              .join("")}
+          </tbody>
+        </table>
+
+        <div style="text-align:center">
+          <a href="${buildCalendarUrl()}" style="display:inline-block;background:#0b6f89;color:#ffffff;text-decoration:none;border-radius:12px;padding:12px 18px;font-weight:700;text-align:center">Xác nhận lịch dạy</a>
+        </div>
+        <p style="margin:20px 0 0;font-size:12px;color:#667985">Nếu nút không mở được, hãy đăng nhập hệ thống và xác nhận trong mục Lịch của tôi.</p>
+      </div>
+    </div>
+  `;
+}
+
 function buildConfirmUrl(schedule: Schedule) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const token = createScheduleConfirmationToken(schedule.id, schedule.teacherId);
@@ -130,50 +224,53 @@ function buildConfirmUrl(schedule: Schedule) {
   return url.toString();
 }
 
-function renderScheduleEmail(input: ScheduleEmailInput, confirmUrl: string) {
-  const schedule = input.schedule;
-  const slotTime = [input.slot?.start, input.slot?.end].filter(Boolean).join(" - ");
-  const lessonTitle = input.lesson?.title || "Bài học Life Skill";
-  const objective = input.lesson?.objective || "Vui lòng xem chi tiết trên hệ thống.";
-  const objectivesHtml = formatObjectives(objective);
-
-  return `
-    <div style="font-family:Arial,sans-serif;background:#f6fafb;padding:24px;color:#16313a">
-      <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #dce8eb;border-radius:16px;padding:24px">
-        <p style="margin:0 0 12px;font-size:14px;color:#1992b0;font-weight:700;text-align:center">HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG METTASOUL</p>
-        <h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;color:#0b6f89;text-align:center">Bạn có lịch dạy mới</h1>
-        <p style="margin:0 0 20px;font-size:15px">Chào ${escapeHtml(input.teacher.name || "Thầy/Cô")}, giáo vụ vừa giao một tiết dạy mới cho bạn.</p>
-        <table style="width:100%;border-collapse:collapse;margin:0 0 20px;font-size:14px">
-          ${row("Ngày", formatDate(schedule.date))}
-          ${row("Khung giờ", `${input.slot?.label || ""}${slotTime ? ` (${slotTime})` : ""}`)}
-          ${row("Trường", input.school?.name || "")}
-          ${row("Lớp", input.classRoom?.name || "")}
-          ${row("Bài học", lessonTitle)}
-          ${row("Mục tiêu", objectivesHtml, true)}
-        </table>
-        <div style="text-align:center">
-          <a href="${confirmUrl}" style="display:inline-block;background:#ff9500;color:#ffffff;text-decoration:none;border-radius:12px;padding:12px 18px;font-weight:700;text-align:center">Xác nhận lịch dạy</a>
-        </div>
-        <p style="margin:20px 0 0;font-size:12px;color:#667985">Nếu nút không mở được, hãy đăng nhập hệ thống và xác nhận trong mục Lịch của tôi.</p>
-      </div>
-    </div>
-  `;
+function buildCalendarUrl() {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  return new URL("/", baseUrl).toString();
 }
 
-function row(label: string, value: string, allowHtml = false) {
-  const renderedValue = allowHtml ? value : escapeHtml(value || "Chưa cập nhật");
-  return `
-    <tr>
-      <td style="width:120px;padding:10px;border-top:1px solid #edf3f5;color:#667985;font-weight:700">${label}</td>
-      <td style="padding:10px;border-top:1px solid #edf3f5;color:#16313a">${renderedValue}</td>
-    </tr>
-  `;
+function buildScheduleWeekSubject(schedules: Schedule[]) {
+  const { weekRangeText, yearText } = computeWeekRange(schedules.map((schedule) => schedule.date));
+  return `Lịch dạy tuần ${weekRangeText} năm ${yearText}`;
+}
+
+function buildWeekLabel(schedules: Schedule[]) {
+  const { weekRangeText, yearText } = computeWeekRange(schedules.map((schedule) => schedule.date));
+  return `tuần ${weekRangeText} năm ${yearText}`;
+}
+
+function computeWeekRange(dates: string[]) {
+  const weekYears = dates
+    .map((date) => getIsoWeekYear(new Date(`${date}T00:00:00`)))
+    .filter((item) => Number.isFinite(item.week));
+
+  if (weekYears.length === 0) {
+    const fallbackYear = new Date().getFullYear();
+    return { weekRangeText: "?", yearText: String(fallbackYear) };
+  }
+
+  const weeks = weekYears.map((item) => item.week);
+  const years = Array.from(new Set(weekYears.map((item) => item.year))).sort((a, b) => a - b);
+  const minWeek = Math.min(...weeks);
+  const maxWeek = Math.max(...weeks);
+  const weekRangeText = minWeek === maxWeek ? String(minWeek) : `${minWeek}-${maxWeek}`;
+  const yearText = years.length === 1 ? String(years[0]) : `${years[0]}-${years[years.length - 1]}`;
+  return { weekRangeText, yearText };
+}
+
+function getIsoWeekYear(date: Date) {
+  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = target.getUTCDay() || 7;
+  target.setUTCDate(target.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return { week, year: target.getUTCFullYear() };
 }
 
 function formatObjectives(rawObjective: string) {
   const normalized = String(rawObjective || "").trim();
   if (!normalized) {
-    return "- Mục tiêu 1: Chưa cập nhật.";
+    return "<div>- Mục tiêu 1: Chưa cập nhật.</div>";
   }
 
   const matches = [...normalized.matchAll(/mục tiêu\s*(\d+)\s*:/gi)];

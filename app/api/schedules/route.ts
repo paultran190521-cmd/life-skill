@@ -1,14 +1,22 @@
-import { cookies } from "next/headers";
+﻿import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { apiError, createId } from "@/lib/api";
 import { findAuthorizedUserFromHint, findAuthorizedUserFromSession } from "@/lib/auth-users";
 import { sessionCookieName, verifySessionToken } from "@/lib/auth-session";
-import { sendScheduleEmail } from "@/lib/email";
+import { sendScheduleDigestEmail } from "@/lib/email";
 import { appendSheetRows, readSheetRows } from "@/lib/google-sheets";
 import type { ChatThread, Notification, Schedule } from "@/lib/types";
 
+type ScheduleDraftItem = {
+  schoolId: string;
+  classId: string;
+  lessonId: string;
+  timeSlotId: string;
+};
+
 type EmailResult = {
-  scheduleId: string;
+  scheduleId?: string;
+  scheduleIds: string[];
   teacherId: string;
   sent: boolean;
   reason?: string;
@@ -28,7 +36,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = (await request.json()) as Record<string, unknown>;
     const currentUser = await requireUser(request, String(body.createdBy || "").trim());
     if (currentUser.role !== "admin") {
       return NextResponse.json({ error: "Chỉ quản trị viên được tạo lịch." }, { status: 403 });
@@ -36,6 +44,7 @@ export async function POST(request: Request) {
 
     const now = new Date().toISOString();
     const teacherIds = parseTeacherIds(body);
+    const items = parseScheduleItems(body);
 
     const [teachers, schools, classes, lessons, slots] = await Promise.all([
       readSheetRows("Teachers"),
@@ -45,7 +54,7 @@ export async function POST(request: Request) {
       readSheetRows("TimeSlots"),
     ]);
 
-    const validationError = validateScheduleInput(body, teacherIds, {
+    const validationError = validateScheduleInput(body, teacherIds, items, {
       teachers,
       schools,
       classes,
@@ -56,17 +65,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    const schedules: Schedule[] = teacherIds.map((teacherId) => ({
-      id: createId("sch"),
-      date: String(body.date).trim(),
-      teacherId,
-      schoolId: String(body.schoolId).trim(),
-      classId: String(body.classId).trim(),
-      lessonId: String(body.lessonId).trim(),
-      timeSlotId: String(body.timeSlotId).trim(),
-      status: "sent",
-      sentAt: now,
-    }));
+    const date = String(body.date || "").trim();
+    const schedules: Schedule[] = teacherIds.flatMap((teacherId) =>
+      items.map((item) => ({
+        id: createId("sch"),
+        date,
+        teacherId,
+        schoolId: item.schoolId,
+        classId: item.classId,
+        lessonId: item.lessonId,
+        timeSlotId: item.timeSlotId,
+        status: "sent",
+        sentAt: now,
+      })),
+    );
 
     const chatThreads = schedules.map<ChatThread>((schedule) => {
       const classRoom = classes.find((item) => normalizeId(item.id) === normalizeId(schedule.classId));
@@ -102,12 +114,17 @@ export async function POST(request: Request) {
         action: "schedule.create",
         entityType: "Schedule",
         entityId: schedule.id,
-        metadata: JSON.stringify({ teacherId: schedule.teacherId, classId: schedule.classId }),
+        metadata: JSON.stringify({
+          teacherId: schedule.teacherId,
+          classId: schedule.classId,
+          lessonId: schedule.lessonId,
+          schoolId: schedule.schoolId,
+        }),
         createdAt: now,
       })),
     );
 
-    const emailResults = await sendScheduleEmails(schedules, { teachers, schools, classes, lessons, slots });
+    const emailResults = await sendScheduleEmailsByTeacher(schedules, { teachers, schools, classes, lessons, slots });
     const notifications = createScheduleNotifications(schedules, emailResults, now);
     await appendSheetRows("Notifications", notifications.map((notification) => ({ ...notification, updatedAt: now })));
 
@@ -145,30 +162,45 @@ async function requireUser(request: Request, fallbackUserId?: string) {
     }
   }
 
-  return nullUserError();
-}
-
-function nullUserError(): never {
   throw new RouteError(401, "Unauthorized");
-}
-
-class RouteError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
 }
 
 function parseTeacherIds(body: Record<string, unknown>) {
   const rawIds = Array.isArray(body.teacherIds) ? body.teacherIds : [body.teacherId];
-  return Array.from(new Set(rawIds.map((id) => String(id || "").trim()).filter(Boolean)));
+  return Array.from(new Set(rawIds.map((id) => normalizeId(id)).filter(Boolean)));
+}
+
+function parseScheduleItems(body: Record<string, unknown>): ScheduleDraftItem[] {
+  const rawItems = Array.isArray(body.items) ? body.items : [];
+  if (rawItems.length > 0) {
+    return rawItems
+      .map((item) => {
+        const entry = item as Record<string, unknown>;
+        return {
+          schoolId: normalizeId(entry.schoolId),
+          classId: normalizeId(entry.classId),
+          lessonId: normalizeId(entry.lessonId),
+          timeSlotId: normalizeId(entry.timeSlotId),
+        };
+      })
+      .filter((item) => item.schoolId && item.classId && item.lessonId && item.timeSlotId);
+  }
+
+  const fallbackItem: ScheduleDraftItem = {
+    schoolId: normalizeId(body.schoolId),
+    classId: normalizeId(body.classId),
+    lessonId: normalizeId(body.lessonId),
+    timeSlotId: normalizeId(body.timeSlotId),
+  };
+  return fallbackItem.schoolId && fallbackItem.classId && fallbackItem.lessonId && fallbackItem.timeSlotId
+    ? [fallbackItem]
+    : [];
 }
 
 function validateScheduleInput(
   body: Record<string, unknown>,
   teacherIds: string[],
+  items: ScheduleDraftItem[],
   data: {
     teachers: Array<Record<string, string>>;
     schools: Array<Record<string, string>>;
@@ -178,34 +210,34 @@ function validateScheduleInput(
   },
 ) {
   const date = String(body.date || "").trim();
-  const schoolId = normalizeId(body.schoolId);
-  const classId = normalizeId(body.classId);
-  const lessonId = normalizeId(body.lessonId);
-  const timeSlotId = normalizeId(body.timeSlotId);
   const teacherIdSet = new Set(teacherIds.map((teacherId) => normalizeId(teacherId)));
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return "Ngày dạy không hợp lệ.";
   }
-  if (!schoolId || !classId || !lessonId || !timeSlotId || teacherIds.length === 0) {
+  if (teacherIds.length === 0 || items.length === 0) {
     return "Thiếu thông tin bắt buộc khi tạo lịch.";
   }
-  if (!data.schools.some((item) => normalizeId(item.id) === schoolId)) {
-    return "Trường đã chọn không tồn tại.";
+
+  for (const item of items) {
+    if (!data.schools.some((row) => normalizeId(row.id) === item.schoolId)) {
+      return "Trường đã chọn không tồn tại.";
+    }
+    if (
+      !data.classes.some(
+        (row) => normalizeId(row.id) === item.classId && normalizeId(row.schoolId) === item.schoolId,
+      )
+    ) {
+      return "Lớp đã chọn không thuộc trường đã chọn.";
+    }
+    if (!data.lessons.some((row) => normalizeId(row.id) === item.lessonId && isRowActive(row))) {
+      return "Bài học đã chọn không tồn tại hoặc đang tắt.";
+    }
+    if (!data.slots.some((row) => normalizeId(row.id) === item.timeSlotId && isRowActive(row))) {
+      return "Khung giờ đã chọn không tồn tại hoặc đang tắt.";
+    }
   }
-  if (
-    !data.classes.some(
-      (item) => normalizeId(item.id) === classId && normalizeId(item.schoolId) === schoolId,
-    )
-  ) {
-    return "Lớp đã chọn không thuộc trường đã chọn.";
-  }
-  if (!data.lessons.some((item) => normalizeId(item.id) === lessonId && isRowActive(item))) {
-    return "Bài học đã chọn không tồn tại hoặc đang tắt.";
-  }
-  if (!data.slots.some((item) => normalizeId(item.id) === timeSlotId && isRowActive(item))) {
-    return "Khung giờ đã chọn không tồn tại hoặc đang tắt.";
-  }
+
   const activeTeacherIds = new Set(
     data.teachers.filter((item) => isRowActive(item)).map((item) => normalizeId(item.id)),
   );
@@ -235,7 +267,7 @@ function createScheduleNotifications(schedules: Schedule[], emailResults: EmailR
     {
       id: createId("n"),
       title: "Đã gửi lịch dạy",
-      body: `${schedules.length} lịch mới đã được tạo. Email CTA: ${sentEmails} thành công${
+      body: `${schedules.length} lịch mới đã được tạo. Email tổng hợp: ${sentEmails} thành công${
         failedEmails ? `, ${failedEmails} lỗi gửi` : ""
       }.`,
       role: "admin",
@@ -253,7 +285,7 @@ function createScheduleNotifications(schedules: Schedule[], emailResults: EmailR
   ];
 }
 
-async function sendScheduleEmails(
+async function sendScheduleEmailsByTeacher(
   schedules: Schedule[],
   data: {
     teachers: Array<Record<string, string>>;
@@ -263,23 +295,43 @@ async function sendScheduleEmails(
     slots: Array<Record<string, string>>;
   },
 ): Promise<EmailResult[]> {
+  const grouped = new Map<string, Schedule[]>();
+  for (const schedule of schedules) {
+    const list = grouped.get(schedule.teacherId) || [];
+    list.push(schedule);
+    grouped.set(schedule.teacherId, list);
+  }
+
   return Promise.all(
-    schedules.map(async (schedule) => {
-      const result = await sendScheduleEmail({
-        schedule,
-        teacher:
-          data.teachers.find((teacher) => normalizeId(teacher.id) === normalizeId(schedule.teacherId)) || {},
-        school: data.schools.find((school) => normalizeId(school.id) === normalizeId(schedule.schoolId)),
-        classRoom: data.classes.find((classRoom) => normalizeId(classRoom.id) === normalizeId(schedule.classId)),
-        lesson: data.lessons.find((lesson) => normalizeId(lesson.id) === normalizeId(schedule.lessonId)),
-        slot: data.slots.find((slot) => normalizeId(slot.id) === normalizeId(schedule.timeSlotId)),
+    Array.from(grouped.entries()).map(async ([teacherId, teacherSchedules]) => {
+      const teacher = data.teachers.find((item) => normalizeId(item.id) === normalizeId(teacherId)) || {};
+      const result = await sendScheduleDigestEmail({
+        teacher,
+        schedules: teacherSchedules,
+        rows: teacherSchedules.map((schedule) => ({
+          schedule,
+          school: data.schools.find((item) => normalizeId(item.id) === normalizeId(schedule.schoolId)),
+          classRoom: data.classes.find((item) => normalizeId(item.id) === normalizeId(schedule.classId)),
+          lesson: data.lessons.find((item) => normalizeId(item.id) === normalizeId(schedule.lessonId)),
+          slot: data.slots.find((item) => normalizeId(item.id) === normalizeId(schedule.timeSlotId)),
+        })),
       });
 
       return {
-        scheduleId: schedule.id,
-        teacherId: schedule.teacherId,
+        scheduleId: teacherSchedules[0]?.id,
+        scheduleIds: teacherSchedules.map((schedule) => schedule.id),
+        teacherId,
         ...result,
       };
     }),
   );
+}
+
+class RouteError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
 }

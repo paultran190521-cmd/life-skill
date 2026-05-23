@@ -75,13 +75,18 @@ type TabId =
   | "chat"
   | "settings";
 
-type DraftSchedule = {
-  date: string;
+type DraftScheduleItem = {
+  id: string;
   schoolId: string;
   classId: string;
   lessonId: string;
   timeSlotId: string;
+};
+
+type DraftSchedule = {
+  date: string;
   teacherIds: string[];
+  items: DraftScheduleItem[];
 };
 
 type AppData = {
@@ -104,7 +109,8 @@ type AuthSession = {
 };
 
 type EmailResult = {
-  scheduleId: string;
+  scheduleId?: string;
+  scheduleIds?: string[];
   teacherId: string;
   sent: boolean;
   reason?: string;
@@ -232,11 +238,15 @@ export function LifeSkillApp() {
   const [chatDraft, setChatDraft] = useState("");
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
     date: "2026-05-23",
-    schoolId: seedSchools[0].id,
-    classId: seedClasses[0].id,
-    lessonId: seedLessons[0].id,
-    timeSlotId: seedTimeSlots[0].id,
     teacherIds: [seedTeachers[0].id],
+    items: [
+      createDraftScheduleItem({
+        schoolId: seedSchools[0]?.id ?? "",
+        classId: seedClasses[0]?.id ?? "",
+        lessonId: seedLessons[0]?.id ?? "",
+        timeSlotId: seedTimeSlots[0]?.id ?? "",
+      }),
+    ],
   });
   const [teacherDraft, setTeacherDraft] = useState({
     name: "",
@@ -390,10 +400,39 @@ export function LifeSkillApp() {
   }, [activeTab, role]);
 
   useEffect(() => {
-    if (activeLessons.length > 0 && !activeLessons.some((lesson) => lesson.id === draftSchedule.lessonId)) {
-      setDraftSchedule((current) => ({ ...current, lessonId: activeLessons[0].id }));
-    }
-  }, [activeLessons, draftSchedule.lessonId]);
+    setDraftSchedule((current) => {
+      if (current.items.length === 0) {
+        return {
+          ...current,
+          items: [
+            createDraftScheduleItem({
+              schoolId: schools[0]?.id ?? "",
+              classId: classes.find((item) => item.schoolId === (schools[0]?.id ?? ""))?.id ?? "",
+              lessonId: activeLessons[0]?.id ?? "",
+              timeSlotId: activeTimeSlots[0]?.id ?? "",
+            }),
+          ],
+        };
+      }
+
+      const nextItems = current.items.map((item) =>
+        normalizeDraftScheduleItem(item, { schools, classes, activeLessons, activeTimeSlots }),
+      );
+      const changed = nextItems.some((item, index) => {
+        const currentItem = current.items[index];
+        return (
+          item.schoolId !== currentItem.schoolId ||
+          item.classId !== currentItem.classId ||
+          item.lessonId !== currentItem.lessonId ||
+          item.timeSlotId !== currentItem.timeSlotId
+        );
+      });
+      if (!changed) {
+        return current;
+      }
+      return { ...current, items: nextItems };
+    });
+  }, [schools, classes, activeLessons, activeTimeSlots]);
 
   useEffect(() => {
     if (activeTeachers.length === 0) {
@@ -410,36 +449,6 @@ export function LifeSkillApp() {
       setDraftSchedule((current) => ({ ...current, teacherIds: nextTeacherIds }));
     }
   }, [activeTeachers, draftSchedule.teacherIds]);
-
-  useEffect(() => {
-    if (activeTimeSlots.length === 0) {
-      return;
-    }
-
-    if (!activeTimeSlots.some((slot) => slot.id === draftSchedule.timeSlotId)) {
-      setDraftSchedule((current) => ({ ...current, timeSlotId: activeTimeSlots[0].id }));
-    }
-  }, [activeTimeSlots, draftSchedule.timeSlotId]);
-
-  useEffect(() => {
-    if (schools.length === 0 || classes.length === 0) {
-      return;
-    }
-
-    setDraftSchedule((current) => {
-      const nextSchoolId = schools.some((school) => school.id === current.schoolId)
-        ? current.schoolId
-        : schools[0].id;
-      const classesInSchool = classes.filter((item) => item.schoolId === nextSchoolId);
-      const nextClassId = classesInSchool.some((item) => item.id === current.classId)
-        ? current.classId
-        : classesInSchool[0]?.id ?? current.classId;
-      if (nextSchoolId === current.schoolId && nextClassId === current.classId) {
-        return current;
-      }
-      return { ...current, schoolId: nextSchoolId, classId: nextClassId };
-    });
-  }, [schools, classes]);
 
   useEffect(() => {
     if (schools.length === 0) {
@@ -476,16 +485,18 @@ export function LifeSkillApp() {
 
   const draftSchedulePreview = useMemo<Schedule[]>(
     () =>
-      draftSchedule.teacherIds.map((teacherId) => ({
-        id: `preview-${teacherId}`,
-        date: draftSchedule.date,
-        teacherId,
-        schoolId: draftSchedule.schoolId,
-        classId: draftSchedule.classId,
-        lessonId: draftSchedule.lessonId,
-        timeSlotId: draftSchedule.timeSlotId,
-        status: "sent",
-      })),
+      draftSchedule.teacherIds.flatMap((teacherId) =>
+        draftSchedule.items.map((item) => ({
+          id: `preview-${teacherId}-${item.id}`,
+          date: draftSchedule.date,
+          teacherId,
+          schoolId: item.schoolId,
+          classId: item.classId,
+          lessonId: item.lessonId,
+          timeSlotId: item.timeSlotId,
+          status: "sent",
+        })),
+      ),
     [draftSchedule],
   );
 
@@ -632,6 +643,15 @@ export function LifeSkillApp() {
   }
 
   async function createSchedules() {
+    const validItems = draftSchedule.items.filter(
+      (item) => item.schoolId && item.classId && item.lessonId && item.timeSlotId,
+    );
+
+    if (validItems.length === 0) {
+      pushToast("Thiếu lịch dạy", "Hãy thêm ít nhất một dòng lịch dạy hợp lệ trước khi gửi.", "warning");
+      return;
+    }
+
     if (activeTeachers.length === 0) {
       pushToast("Thiếu giáo viên", "Chưa có giáo viên hoạt động. Vào mục Giáo viên để kích hoạt hoặc thêm mới.", "warning");
       return;
@@ -656,8 +676,15 @@ export function LifeSkillApp() {
       return;
     }
 
-    if (!activeTimeSlots.some((slot) => slot.id === draftSchedule.timeSlotId)) {
-      setDraftSchedule((current) => ({ ...current, timeSlotId: activeTimeSlots[0].id }));
+    if (!validItems.every((item) => activeTimeSlots.some((slot) => slot.id === item.timeSlotId))) {
+      setDraftSchedule((current) => ({
+        ...current,
+        items: current.items.map((item) =>
+          activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
+            ? item
+            : { ...item, timeSlotId: activeTimeSlots[0]?.id ?? item.timeSlotId },
+        ),
+      }));
       pushToast("Khung giờ không hợp lệ", "Khung giờ đã chọn không còn hoạt động. Hệ thống đã tự chọn lại khung giờ hợp lệ.", "warning");
       return;
     }
@@ -674,7 +701,17 @@ export function LifeSkillApp() {
     try {
       const response = await saveRequest<ScheduleCreateResponse>("Đang tạo lịch dạy...", "/api/schedules", {
         method: "POST",
-        body: JSON.stringify({ ...draftSchedule, createdBy: currentUser.id }),
+        body: JSON.stringify({
+          date: draftSchedule.date,
+          teacherIds: draftSchedule.teacherIds,
+          items: validItems.map((item) => ({
+            schoolId: item.schoolId,
+            classId: item.classId,
+            lessonId: item.lessonId,
+            timeSlotId: item.timeSlotId,
+          })),
+          createdBy: currentUser.id,
+        }),
       });
       created = response.schedules;
       emailResults = response.emailResults ?? [];
@@ -1927,8 +1964,6 @@ export function LifeSkillApp() {
   }
 
   function AssignmentPanel() {
-    const filteredClasses = classes.filter((item) => item.schoolId === draftSchedule.schoolId);
-
     return (
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.35fr]">
         <Panel title="Tạo lịch dạy mới" action="Email xác nhận">
@@ -1941,69 +1976,142 @@ export function LifeSkillApp() {
                 className={inputClass}
               />
             </Field>
-            <Field label="Trường">
-              <select
-                value={draftSchedule.schoolId}
-                onChange={(event) => {
-                  const firstClass = classes.find((item) => item.schoolId === event.target.value);
-                  setDraftSchedule({
-                    ...draftSchedule,
-                    schoolId: event.target.value,
-                    classId: firstClass?.id ?? draftSchedule.classId,
-                  });
-                }}
-                className={inputClass}
-              >
-                {schools.map((school) => (
-                  <option key={school.id} value={school.id}>
-                    {school.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Lớp">
-                <select
-                  value={draftSchedule.classId}
-                  onChange={(event) => setDraftSchedule({ ...draftSchedule, classId: event.target.value })}
-                  className={inputClass}
-                >
-                  {filteredClasses.map((classRoom) => (
-                    <option key={classRoom.id} value={classRoom.id}>
-                      {classRoom.name} - {classRoom.grade}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Khung giờ">
-                <select
-                  value={draftSchedule.timeSlotId}
-                  onChange={(event) =>
-                    setDraftSchedule({ ...draftSchedule, timeSlotId: event.target.value })
+            <div className="rounded-2xl border border-cyan-100 bg-cyan-50/55 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-extrabold text-[var(--brand-dark)]">Danh sách tiết dạy cần giao</p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDraftSchedule((current) => ({
+                      ...current,
+                      items: [
+                        ...current.items,
+                        createDraftScheduleItem({
+                          schoolId: current.items[0]?.schoolId ?? schools[0]?.id ?? "",
+                          classId:
+                            classes.find((item) => item.schoolId === (current.items[0]?.schoolId ?? schools[0]?.id))?.id ?? "",
+                          lessonId: current.items[0]?.lessonId ?? activeLessons[0]?.id ?? "",
+                          timeSlotId: current.items[0]?.timeSlotId ?? activeTimeSlots[0]?.id ?? "",
+                        }),
+                      ],
+                    }))
                   }
-                  className={inputClass}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--brand)] px-3 text-xs font-black text-white"
                 >
-                  {activeTimeSlots.map((slot) => (
-                    <option key={slot.id} value={slot.id}>
-                      {slot.label} ({slot.start}-{slot.end})
-                    </option>
-                  ))}
-                </select>
-              </Field>
+                  <Plus size={14} />
+                  Thêm dòng
+                </button>
+              </div>
+              <div className="mt-3 grid gap-3">
+                {draftSchedule.items.map((item, index) => {
+                  const rowClasses = classes.filter((classRoom) => classRoom.schoolId === item.schoolId);
+                  return (
+                    <div key={item.id} className="rounded-2xl border border-cyan-100 bg-white p-3 shadow-sm">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Lịch #{index + 1}</p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDraftSchedule((current) => ({
+                              ...current,
+                              items:
+                                current.items.length <= 1
+                                  ? current.items
+                                  : current.items.filter((currentItem) => currentItem.id !== item.id),
+                            }))
+                          }
+                          disabled={draftSchedule.items.length <= 1}
+                          className="grid h-8 w-8 place-items-center rounded-lg bg-rose-50 text-rose-700 disabled:opacity-50"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <select
+                          value={item.schoolId}
+                          onChange={(event) =>
+                            setDraftSchedule((current) => ({
+                              ...current,
+                              items: current.items.map((currentItem) =>
+                                currentItem.id === item.id
+                                  ? {
+                                      ...currentItem,
+                                      schoolId: event.target.value,
+                                      classId:
+                                        classes.find((classRoom) => classRoom.schoolId === event.target.value)?.id ?? "",
+                                    }
+                                  : currentItem,
+                              ),
+                            }))
+                          }
+                          className={inputClass}
+                        >
+                          {schools.map((school) => (
+                            <option key={school.id} value={school.id}>
+                              {school.name}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={item.classId}
+                          onChange={(event) =>
+                            setDraftSchedule((current) => ({
+                              ...current,
+                              items: current.items.map((currentItem) =>
+                                currentItem.id === item.id ? { ...currentItem, classId: event.target.value } : currentItem,
+                              ),
+                            }))
+                          }
+                          className={inputClass}
+                        >
+                          {rowClasses.map((classRoom) => (
+                            <option key={classRoom.id} value={classRoom.id}>
+                              {classRoom.name} - {classRoom.grade}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={item.timeSlotId}
+                          onChange={(event) =>
+                            setDraftSchedule((current) => ({
+                              ...current,
+                              items: current.items.map((currentItem) =>
+                                currentItem.id === item.id ? { ...currentItem, timeSlotId: event.target.value } : currentItem,
+                              ),
+                            }))
+                          }
+                          className={inputClass}
+                        >
+                          {activeTimeSlots.map((slot) => (
+                            <option key={slot.id} value={slot.id}>
+                              {slot.label} ({slot.start}-{slot.end})
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={item.lessonId}
+                          onChange={(event) =>
+                            setDraftSchedule((current) => ({
+                              ...current,
+                              items: current.items.map((currentItem) =>
+                                currentItem.id === item.id ? { ...currentItem, lessonId: event.target.value } : currentItem,
+                              ),
+                            }))
+                          }
+                          className={inputClass}
+                        >
+                          {activeLessons.map((lesson) => (
+                            <option key={lesson.id} value={lesson.id}>
+                              {lesson.grade} - {lesson.title}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <Field label="Bài học và mục tiêu">
-              <select
-                value={draftSchedule.lessonId}
-                onChange={(event) => setDraftSchedule({ ...draftSchedule, lessonId: event.target.value })}
-                className={inputClass}
-              >
-                {activeLessons.map((lesson) => (
-                  <option key={lesson.id} value={lesson.id}>
-                    {lesson.grade} - {lesson.title}
-                  </option>
-                ))}
-              </select>
-            </Field>
             <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
               <p className="text-sm font-extrabold text-[var(--brand-dark)]">Chọn giáo viên</p>
               <div className="mt-3 grid gap-2">
@@ -3328,6 +3436,41 @@ function toCsv(rows: string[][]) {
 
 function escapeCsvCell(value: string) {
   return `"${value.replace(/"/g, "\"\"")}"`;
+}
+
+function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftScheduleItem {
+  return {
+    id: seed?.id || createId("draft"),
+    schoolId: seed?.schoolId || "",
+    classId: seed?.classId || "",
+    lessonId: seed?.lessonId || "",
+    timeSlotId: seed?.timeSlotId || "",
+  };
+}
+
+function normalizeDraftScheduleItem(
+  item: DraftScheduleItem,
+  context: {
+    schools: School[];
+    classes: ClassRoom[];
+    activeLessons: Lesson[];
+    activeTimeSlots: TimeSlot[];
+  },
+): DraftScheduleItem {
+  const schoolId = context.schools.some((school) => school.id === item.schoolId)
+    ? item.schoolId
+    : context.schools[0]?.id ?? "";
+  const schoolClasses = context.classes.filter((classRoom) => classRoom.schoolId === schoolId);
+  const classId = schoolClasses.some((classRoom) => classRoom.id === item.classId)
+    ? item.classId
+    : schoolClasses[0]?.id ?? "";
+  const lessonId = context.activeLessons.some((lesson) => lesson.id === item.lessonId)
+    ? item.lessonId
+    : context.activeLessons[0]?.id ?? "";
+  const timeSlotId = context.activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
+    ? item.timeSlotId
+    : context.activeTimeSlots[0]?.id ?? "";
+  return { ...item, schoolId, classId, lessonId, timeSlotId };
 }
 
 const inputClass =
