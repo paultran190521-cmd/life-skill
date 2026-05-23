@@ -595,7 +595,10 @@ export function LifeSkillApp() {
   async function saveRequest<T>(label: string, url: string, init?: RequestInit) {
     setPendingAction(label);
     try {
-      return await apiRequest<T>(url, init);
+      const headers = new Headers(init?.headers);
+      headers.set("x-app-user-id", currentUser.id);
+      headers.set("x-app-user-email", currentUser.email);
+      return await apiRequest<T>(url, { ...init, headers });
     } finally {
       setPendingAction("");
     }

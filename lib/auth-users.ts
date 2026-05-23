@@ -1,5 +1,6 @@
 import { readSheetRows } from "@/lib/google-sheets";
 import { getAvatarUrl } from "@/lib/avatar";
+import { users as fallbackUsers } from "@/lib/sample-data";
 import type { Role, User } from "@/lib/types";
 
 export async function findAuthorizedUserByEmail(email: string) {
@@ -46,9 +47,33 @@ export async function findAuthorizedUserFromSession(userId: string, email: strin
   return findAuthorizedUserByEmail(email);
 }
 
+export async function findAuthorizedUserFromHint(userId?: string | null, email?: string | null) {
+  const users = await readUsers();
+  const normalizedEmail = normalizeEmail(String(email || ""));
+
+  if (userId) {
+    const userById = users.find((item) => item.id === userId && item.isActive !== false);
+    if (userById) {
+      return userById;
+    }
+  }
+
+  if (normalizedEmail) {
+    const userByEmail = users.find(
+      (item) => normalizeEmail(item.email) === normalizedEmail && item.isActive !== false,
+    );
+    if (userByEmail) {
+      return userByEmail;
+    }
+    return findAuthorizedUserByEmail(normalizedEmail);
+  }
+
+  return null;
+}
+
 async function readUsers() {
   const rows = await readSheetRows("Users");
-  return rows.map<User>((row) => ({
+  const sheetUsers = rows.map<User>((row) => ({
     id: row.id,
     name: row.name,
     email: row.email,
@@ -57,6 +82,17 @@ async function readUsers() {
     avatarUrl: row.avatarUrl || getAvatarUrl(row.email, row.name),
     isActive: parseBoolean(row.isActive, true),
   }));
+
+  if (sheetUsers.length === 0) {
+    return fallbackUsers;
+  }
+
+  const keys = new Set(sheetUsers.flatMap((user) => [user.id, normalizeEmail(user.email)]));
+  const missingFallbackAdmins = fallbackUsers.filter(
+    (user) => user.role === "admin" && !keys.has(user.id) && !keys.has(normalizeEmail(user.email)),
+  );
+
+  return [...sheetUsers, ...missingFallbackAdmins];
 }
 
 function normalizeEmail(email: string) {

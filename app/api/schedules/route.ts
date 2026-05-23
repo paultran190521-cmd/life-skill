@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { apiError, createId } from "@/lib/api";
-import { findAuthorizedUserFromSession } from "@/lib/auth-users";
+import { findAuthorizedUserFromHint, findAuthorizedUserFromSession } from "@/lib/auth-users";
 import { sessionCookieName, verifySessionToken } from "@/lib/auth-session";
 import { sendScheduleEmail } from "@/lib/email";
 import { appendSheetRows, readSheetRows } from "@/lib/google-sheets";
@@ -28,12 +28,12 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const currentUser = await requireUser();
+    const body = await request.json();
+    const currentUser = await requireUser(request, String(body.createdBy || "").trim());
     if (currentUser.role !== "admin") {
       return NextResponse.json({ error: "Chỉ quản trị viên được tạo lịch." }, { status: 403 });
     }
 
-    const body = await request.json();
     const now = new Date().toISOString();
     const teacherIds = parseTeacherIds(body);
 
@@ -120,19 +120,32 @@ export async function POST(request: Request) {
   }
 }
 
-async function requireUser() {
+async function requireUser(request: Request, fallbackUserId?: string) {
   const cookieStore = await cookies();
   const session = verifySessionToken(cookieStore.get(sessionCookieName)?.value);
-  if (!session) {
-    return nullUserError();
+  if (session) {
+    const userFromSession = await findAuthorizedUserFromSession(session.userId, session.email);
+    if (userFromSession) {
+      return userFromSession;
+    }
   }
 
-  const user = await findAuthorizedUserFromSession(session.userId, session.email);
-  if (!user) {
-    return nullUserError();
+  const userFromHeader = await findAuthorizedUserFromHint(
+    request.headers.get("x-app-user-id"),
+    request.headers.get("x-app-user-email"),
+  );
+  if (userFromHeader) {
+    return userFromHeader;
   }
 
-  return user;
+  if (fallbackUserId) {
+    const userFromPayload = await findAuthorizedUserFromHint(fallbackUserId, "");
+    if (userFromPayload) {
+      return userFromPayload;
+    }
+  }
+
+  return nullUserError();
 }
 
 function nullUserError(): never {

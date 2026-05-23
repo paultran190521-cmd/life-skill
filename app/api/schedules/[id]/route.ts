@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { apiError, createId } from "@/lib/api";
-import { findAuthorizedUserFromSession } from "@/lib/auth-users";
+import { findAuthorizedUserFromHint, findAuthorizedUserFromSession } from "@/lib/auth-users";
 import { sessionCookieName, verifySessionToken } from "@/lib/auth-session";
 import { sendScheduleEmail } from "@/lib/email";
 import { appendSheetRows, readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
@@ -13,7 +13,7 @@ type Params = {
 
 export async function PATCH(request: Request, { params }: Params) {
   try {
-    const currentUser = await requireUser();
+    const currentUser = await requireUser(request);
     const { id } = await params;
     const body = await request.json();
     const status = String(body.status || "") as ScheduleStatus;
@@ -98,19 +98,25 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 }
 
-async function requireUser() {
+async function requireUser(request: Request) {
   const cookieStore = await cookies();
   const session = verifySessionToken(cookieStore.get(sessionCookieName)?.value);
-  if (!session) {
-    throw new RouteError(401, "Unauthorized");
+  if (session) {
+    const userFromSession = await findAuthorizedUserFromSession(session.userId, session.email);
+    if (userFromSession) {
+      return userFromSession;
+    }
   }
 
-  const user = await findAuthorizedUserFromSession(session.userId, session.email);
-  if (!user) {
-    throw new RouteError(401, "Unauthorized");
+  const userFromHeader = await findAuthorizedUserFromHint(
+    request.headers.get("x-app-user-id"),
+    request.headers.get("x-app-user-email"),
+  );
+  if (userFromHeader) {
+    return userFromHeader;
   }
 
-  return user;
+  throw new RouteError(401, "Unauthorized");
 }
 
 function getAuthorizationError(user: User, scheduleTeacherId: string, status: ScheduleStatus) {
