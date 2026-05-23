@@ -294,6 +294,7 @@ export function LifeSkillApp() {
   const currentTeacherId = currentUser.teacherId ?? "";
   const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.active !== false), [teachers]);
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
+  const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);
   const filteredLessons = useMemo(() => {
     const term = lessonSearchTerm.trim().toLowerCase();
     return activeLessons.filter((lesson) => {
@@ -393,6 +394,16 @@ export function LifeSkillApp() {
       setDraftSchedule((current) => ({ ...current, lessonId: activeLessons[0].id }));
     }
   }, [activeLessons, draftSchedule.lessonId]);
+
+  useEffect(() => {
+    if (activeTimeSlots.length === 0) {
+      return;
+    }
+
+    if (!activeTimeSlots.some((slot) => slot.id === draftSchedule.timeSlotId)) {
+      setDraftSchedule((current) => ({ ...current, timeSlotId: activeTimeSlots[0].id }));
+    }
+  }, [activeTimeSlots, draftSchedule.timeSlotId]);
 
   useEffect(() => {
     if (schools.length === 0 || classes.length === 0) {
@@ -605,6 +616,17 @@ export function LifeSkillApp() {
   }
 
   async function createSchedules() {
+    if (activeTimeSlots.length === 0) {
+      pushToast("Thiếu khung giờ", "Chưa có khung giờ hoạt động. Vào mục Khung giờ để tạo hoặc bật lại.", "warning");
+      return;
+    }
+
+    if (!activeTimeSlots.some((slot) => slot.id === draftSchedule.timeSlotId)) {
+      setDraftSchedule((current) => ({ ...current, timeSlotId: activeTimeSlots[0].id }));
+      pushToast("Khung giờ không hợp lệ", "Khung giờ đã chọn không còn hoạt động. Hệ thống đã tự chọn lại khung giờ hợp lệ.", "warning");
+      return;
+    }
+
     if (draftSchedule.teacherIds.length === 0) {
       addNotification("Chưa chọn giáo viên", "Hãy chọn ít nhất một giáo viên để gửi lịch.", "admin", {
         tone: "warning",
@@ -1926,7 +1948,7 @@ export function LifeSkillApp() {
                   }
                   className={inputClass}
                 >
-                  {timeSlots.map((slot) => (
+                  {activeTimeSlots.map((slot) => (
                     <option key={slot.id} value={slot.id}>
                       {slot.label} ({slot.start}-{slot.end})
                     </option>

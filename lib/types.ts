@@ -57,6 +57,7 @@ export type TimeSlot = {
   label: string;
   start: string;
   end: string;
+  active?: boolean;
 };
 
 export type Schedule = {

@@ -330,10 +330,11 @@ function toLessons(rows: SheetRow[]): Lesson[] {
 
 function toTimeSlots(rows: SheetRow[]) {
   return rows.map((row) => ({
-    id: row.id,
+    id: String(row.id || "").trim(),
     label: row.label,
     start: row.start,
     end: row.end,
+    active: parseBoolean(row.active ?? row.isActive, true),
   }));
 }
 
