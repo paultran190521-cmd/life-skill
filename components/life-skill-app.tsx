@@ -239,8 +239,19 @@ export function LifeSkillApp() {
     name: "",
     district: "",
   });
+  const [editingSchoolId, setEditingSchoolId] = useState("");
+  const [schoolEditDraft, setSchoolEditDraft] = useState({
+    name: "",
+    district: "",
+  });
   const [classDraft, setClassDraft] = useState({
     schoolId: seedSchools[0]?.id ?? "",
+    name: "",
+    grade: "Khối 1",
+  });
+  const [editingClassId, setEditingClassId] = useState("");
+  const [classEditDraft, setClassEditDraft] = useState({
+    schoolId: "",
     name: "",
     grade: "Khối 1",
   });
@@ -1126,6 +1137,121 @@ export function LifeSkillApp() {
     }
 
     setClassDraft((current) => ({ ...current, name: "", grade: "Khối 1" }));
+  }
+
+  function startEditSchool(school: School) {
+    setEditingSchoolId(school.id);
+    setSchoolEditDraft({
+      name: school.name,
+      district: school.district,
+    });
+  }
+
+  function cancelEditSchool() {
+    setEditingSchoolId("");
+    setSchoolEditDraft({ name: "", district: "" });
+  }
+
+  async function saveSchoolEdit(schoolId: string) {
+    if (!schoolEditDraft.name.trim()) {
+      handleSaveError(new Error("Tên trường là bắt buộc."));
+      return;
+    }
+
+    try {
+      const updated = await saveRequest<School>("Đang cập nhật trường...", `/api/schools/${schoolId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: schoolEditDraft.name.trim(),
+          district: schoolEditDraft.district.trim(),
+        }),
+      });
+      setSchools((items) => items.map((item) => (item.id === schoolId ? { ...item, ...updated } : item)));
+      setDataStatus("connected");
+      setSaveError("");
+      cancelEditSchool();
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function deleteSchool(schoolId: string) {
+    if (!window.confirm("Xóa trường này?")) {
+      return;
+    }
+
+    try {
+      await saveRequest("Đang xóa trường...", `/api/schools/${schoolId}`, {
+        method: "DELETE",
+      });
+      setSchools((items) => items.filter((item) => item.id !== schoolId));
+      setClasses((items) => items.filter((item) => item.schoolId !== schoolId));
+      setDataStatus("connected");
+      setSaveError("");
+      if (editingSchoolId === schoolId) {
+        cancelEditSchool();
+      }
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  function startEditClassRoom(classRoom: ClassRoom) {
+    setEditingClassId(classRoom.id);
+    setClassEditDraft({
+      schoolId: classRoom.schoolId,
+      name: classRoom.name,
+      grade: classRoom.grade,
+    });
+  }
+
+  function cancelEditClassRoom() {
+    setEditingClassId("");
+    setClassEditDraft({ schoolId: "", name: "", grade: "Khối 1" });
+  }
+
+  async function saveClassRoomEdit(classId: string) {
+    if (!classEditDraft.schoolId || !classEditDraft.name.trim() || !classEditDraft.grade.trim()) {
+      handleSaveError(new Error("Thiếu thông tin bắt buộc của lớp."));
+      return;
+    }
+
+    try {
+      const updated = await saveRequest<ClassRoom>("Đang cập nhật lớp...", `/api/classes/${classId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          schoolId: classEditDraft.schoolId,
+          name: classEditDraft.name.trim(),
+          grade: classEditDraft.grade.trim(),
+        }),
+      });
+      setClasses((items) => items.map((item) => (item.id === classId ? { ...item, ...updated } : item)));
+      setDataStatus("connected");
+      setSaveError("");
+      cancelEditClassRoom();
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function deleteClassRoom(classId: string) {
+    if (!window.confirm("Xóa lớp này?")) {
+      return;
+    }
+
+    try {
+      await saveRequest("Đang xóa lớp...", `/api/classes/${classId}`, {
+        method: "DELETE",
+      });
+      setClasses((items) => items.filter((item) => item.id !== classId));
+      setDataStatus("connected");
+      setSaveError("");
+      if (editingClassId === classId) {
+        cancelEditClassRoom();
+      }
+    } catch (error) {
+      handleSaveError(error);
+    }
   }
 
   function sendChatMessage() {
@@ -2188,10 +2314,63 @@ export function LifeSkillApp() {
                 </button>
               </div>
               <div className="mt-4 space-y-2">
-                {schools.slice(0, 6).map((school) => (
+                {schools.map((school) => (
                   <div key={school.id} className="rounded-xl bg-cyan-50 px-3 py-2 text-sm font-semibold text-[var(--brand-dark)]">
-                    {school.name}
-                    <span className="ml-2 text-xs font-bold text-[var(--muted)]">{school.district}</span>
+                    {editingSchoolId === school.id ? (
+                      <div className="grid gap-2">
+                        <input
+                          value={schoolEditDraft.name}
+                          onChange={(event) => setSchoolEditDraft((current) => ({ ...current, name: event.target.value }))}
+                          placeholder="Tên trường"
+                          className={compactInputClass}
+                        />
+                        <input
+                          value={schoolEditDraft.district}
+                          onChange={(event) =>
+                            setSchoolEditDraft((current) => ({ ...current, district: event.target.value }))
+                          }
+                          placeholder="Quận/Huyện"
+                          className={compactInputClass}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={cancelEditSchool}
+                            className="rounded-lg border border-[var(--line)] bg-white px-3 py-1 text-xs font-black text-[var(--brand-dark)]"
+                          >
+                            Hủy
+                          </button>
+                          <button
+                            onClick={() => saveSchoolEdit(school.id)}
+                            className="rounded-lg bg-[var(--brand)] px-3 py-1 text-xs font-black text-white"
+                          >
+                            Lưu
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate">{school.name}</p>
+                          <p className="truncate text-xs font-bold text-[var(--muted)]">{school.district}</p>
+                        </div>
+                        <div className="ml-auto flex gap-1">
+                          <button
+                            title="Sửa trường"
+                            onClick={() => startEditSchool(school)}
+                            className="grid h-8 w-8 place-items-center rounded-lg bg-white text-[var(--brand-dark)]"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            title="Xóa trường"
+                            onClick={() => deleteSchool(school.id)}
+                            className="grid h-8 w-8 place-items-center rounded-lg bg-rose-100 text-rose-700"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2231,9 +2410,78 @@ export function LifeSkillApp() {
                 </button>
               </div>
               <div className="mt-4 space-y-2">
-                {classes.slice(0, 6).map((classRoom) => (
+                {classes.map((classRoom) => (
                   <div key={classRoom.id} className="rounded-xl bg-cyan-50 px-3 py-2 text-sm font-semibold text-[var(--brand-dark)]">
-                    {classRoom.name} - {classRoom.grade}
+                    {editingClassId === classRoom.id ? (
+                      <div className="grid gap-2">
+                        <select
+                          value={classEditDraft.schoolId}
+                          onChange={(event) =>
+                            setClassEditDraft((current) => ({ ...current, schoolId: event.target.value }))
+                          }
+                          className={compactInputClass}
+                        >
+                          {schools.map((school) => (
+                            <option key={school.id} value={school.id}>
+                              {school.name}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          value={classEditDraft.name}
+                          onChange={(event) => setClassEditDraft((current) => ({ ...current, name: event.target.value }))}
+                          placeholder="Tên lớp"
+                          className={compactInputClass}
+                        />
+                        <input
+                          value={classEditDraft.grade}
+                          onChange={(event) => setClassEditDraft((current) => ({ ...current, grade: event.target.value }))}
+                          placeholder="Khối"
+                          className={compactInputClass}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={cancelEditClassRoom}
+                            className="rounded-lg border border-[var(--line)] bg-white px-3 py-1 text-xs font-black text-[var(--brand-dark)]"
+                          >
+                            Hủy
+                          </button>
+                          <button
+                            onClick={() => saveClassRoomEdit(classRoom.id)}
+                            className="rounded-lg bg-[var(--brand)] px-3 py-1 text-xs font-black text-white"
+                          >
+                            Lưu
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate">
+                            {classRoom.name} - {classRoom.grade}
+                          </p>
+                          <p className="truncate text-xs font-bold text-[var(--muted)]">
+                            {schools.find((school) => school.id === classRoom.schoolId)?.name || "Không rõ trường"}
+                          </p>
+                        </div>
+                        <div className="ml-auto flex gap-1">
+                          <button
+                            title="Sửa lớp"
+                            onClick={() => startEditClassRoom(classRoom)}
+                            className="grid h-8 w-8 place-items-center rounded-lg bg-white text-[var(--brand-dark)]"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            title="Xóa lớp"
+                            onClick={() => deleteClassRoom(classRoom.id)}
+                            className="grid h-8 w-8 place-items-center rounded-lg bg-rose-100 text-rose-700"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
