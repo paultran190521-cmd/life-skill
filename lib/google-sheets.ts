@@ -28,7 +28,8 @@ type SheetName =
   | "Attendance"
   | "ChatThreads"
   | "ChatMessages"
-  | "Notifications";
+  | "Notifications"
+  | "AuditLogs";
 
 type SheetRow = Record<string, string>;
 

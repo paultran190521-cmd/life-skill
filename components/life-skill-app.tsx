@@ -111,6 +111,19 @@ type EmailResult = {
   id?: string;
 };
 
+type ScheduleCreateResponse = {
+  schedules: Schedule[];
+  chatThreads?: ChatThread[];
+  notifications?: Notification[];
+  emailResults?: EmailResult[];
+};
+
+type ScheduleUpdateResponse = Partial<Schedule> & {
+  id: string;
+  notifications?: Notification[];
+  emailResult?: EmailResult | null;
+};
+
 type GasLessonPlanUploadResponse = {
   ok?: boolean;
   requestId?: string;
@@ -215,6 +228,8 @@ export function LifeSkillApp() {
     durationMinutes: 45,
   });
   const [lessonDeleteTarget, setLessonDeleteTarget] = useState<Lesson | null>(null);
+  const [reassignTarget, setReassignTarget] = useState<Schedule | null>(null);
+  const [reassignTeacherId, setReassignTeacherId] = useState("");
   const [slotDraft, setSlotDraft] = useState({
     label: "",
     start: "07:30",
@@ -228,6 +243,7 @@ export function LifeSkillApp() {
     users[0];
   const role = currentUser.role;
   const currentTeacherId = currentUser.teacherId ?? "";
+  const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.active !== false), [teachers]);
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
   const filteredLessons = useMemo(() => {
     const term = lessonSearchTerm.trim().toLowerCase();
@@ -351,6 +367,21 @@ export function LifeSkillApp() {
     });
   }, [classes, currentTeacherId, lessons, role, schedules, schools, searchTerm, teachers]);
 
+  const draftSchedulePreview = useMemo<Schedule[]>(
+    () =>
+      draftSchedule.teacherIds.map((teacherId) => ({
+        id: `preview-${teacherId}`,
+        date: draftSchedule.date,
+        teacherId,
+        schoolId: draftSchedule.schoolId,
+        classId: draftSchedule.classId,
+        lessonId: draftSchedule.lessonId,
+        timeSlotId: draftSchedule.timeSlotId,
+        status: "sent",
+      })),
+    [draftSchedule],
+  );
+
   const unreadNotifications = notifications.filter(
     (item) => !item.read && (item.role === role || item.role === "all"),
   ).length;
@@ -411,14 +442,21 @@ export function LifeSkillApp() {
     }
 
     let created: Schedule[];
-    let emailResults: EmailResult[] = [];
     try {
-      const response = await saveRequest<{ schedules: Schedule[]; emailResults?: EmailResult[] }>("Đang tạo lịch dạy...", "/api/schedules", {
+      const response = await saveRequest<ScheduleCreateResponse>("Đang tạo lịch dạy...", "/api/schedules", {
         method: "POST",
         body: JSON.stringify({ ...draftSchedule, createdBy: currentUser.id }),
       });
       created = response.schedules;
-      emailResults = response.emailResults ?? [];
+      if (response.chatThreads?.length) {
+        setChatThreads((items) => [
+          ...response.chatThreads!.filter((thread) => !items.some((item) => item.id === thread.id)),
+          ...items,
+        ]);
+      }
+      if (response.notifications?.length) {
+        setNotifications((items) => [...response.notifications!, ...items]);
+      }
       setDataStatus("connected");
       setSaveError("");
     } catch (error) {
@@ -427,44 +465,18 @@ export function LifeSkillApp() {
     }
 
     setSchedules((items) => [...created, ...items]);
-    created.forEach((schedule) => ensureScheduleThread(schedule));
-    const sentEmails = emailResults.filter((item) => item.sent).length;
-    const failedEmails = emailResults.filter((item) => !item.sent).length;
-    addNotification(
-      "Đã gửi lịch dạy",
-      `${created.length} lịch mới đã được tạo. Email CTA: ${sentEmails} thành công${failedEmails ? `, ${failedEmails} chờ cấu hình/lỗi gửi` : ""}.`,
-      "admin",
-    );
-    addNotification("Bạn có lịch dạy mới", "Vui lòng mở lịch cá nhân để xác nhận.", "teacher");
-  }
-
-  function ensureScheduleThread(schedule: Schedule) {
-    setChatThreads((items) => {
-      if (items.some((thread) => thread.scheduleId === schedule.id)) {
-        return items;
-      }
-
-      const classRoom = classes.find((item) => item.id === schedule.classId);
-      const slot = timeSlots.find((item) => item.id === schedule.timeSlotId);
-      return [
-        ...items,
-        {
-          id: `thread-${schedule.id}`,
-          type: "schedule",
-          teacherId: schedule.teacherId,
-          scheduleId: schedule.id,
-          title: `${slot?.label ?? "Tiết"} - Lớp ${classRoom?.name ?? ""}`,
-        },
-      ];
-    });
   }
 
   async function confirmSchedule(scheduleId: string) {
+    let response: ScheduleUpdateResponse;
     try {
-      await saveRequest(`Đang xác nhận lịch...`, `/api/schedules/${scheduleId}`, {
+      response = await saveRequest<ScheduleUpdateResponse>(`Đang xác nhận lịch...`, `/api/schedules/${scheduleId}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "confirmed" }),
       });
+      if (response.notifications?.length) {
+        setNotifications((items) => [...response.notifications!, ...items]);
+      }
       setDataStatus("connected");
       setSaveError("");
     } catch (error) {
@@ -479,7 +491,6 @@ export function LifeSkillApp() {
           : item,
       ),
     );
-    addNotification("Giáo viên đã nhận lịch", "Một lịch dạy vừa được xác nhận.", "admin");
   }
 
   async function uploadLessonPlans(schedule: Schedule, selectedFiles: FileList | null) {
@@ -655,11 +666,15 @@ export function LifeSkillApp() {
   }
 
   async function cancelSchedule(schedule: Schedule) {
+    let response: ScheduleUpdateResponse;
     try {
-      await saveRequest("Đang hủy lịch...", `/api/schedules/${schedule.id}`, {
+      response = await saveRequest<ScheduleUpdateResponse>("Đang hủy lịch...", `/api/schedules/${schedule.id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "cancelled" }),
       });
+      if (response.notifications?.length) {
+        setNotifications((items) => [...response.notifications!, ...items]);
+      }
       setDataStatus("connected");
       setSaveError("");
     } catch (error) {
@@ -670,24 +685,38 @@ export function LifeSkillApp() {
     setSchedules((items) =>
       items.map((item) => (item.id === schedule.id ? { ...item, status: "cancelled" } : item)),
     );
-    addNotification("Lịch đã hủy", `${teacherName(schedule.teacherId)} không còn lịch ${schedule.date}.`, "all");
   }
 
-  async function reassignSchedule(schedule: Schedule) {
-    const replacement = teachers.find((teacher) => teacher.id !== schedule.teacherId && teacher.active);
-    if (!replacement) {
+  function reassignSchedule(schedule: Schedule) {
+    const replacement = activeTeachers.find((teacher) => teacher.id !== schedule.teacherId);
+    setReassignTarget(schedule);
+    setReassignTeacherId(replacement?.id ?? "");
+  }
+
+  async function submitReassignSchedule() {
+    if (!reassignTarget || !reassignTeacherId) {
       return;
     }
 
+    const replacement = teachers.find((teacher) => teacher.id === reassignTeacherId);
+    if (!replacement) {
+      handleSaveError(new Error("Không tìm thấy giáo viên thay thế."));
+      return;
+    }
+
+    let response: ScheduleUpdateResponse;
     try {
-      await saveRequest("Đang chuyển lịch...", `/api/schedules/${schedule.id}`, {
+      response = await saveRequest<ScheduleUpdateResponse>("Đang chuyển lịch...", `/api/schedules/${reassignTarget.id}`, {
         method: "PATCH",
         body: JSON.stringify({
           status: "reassigned",
           teacherId: replacement.id,
-          reassignedFrom: schedule.teacherId,
+          reassignedFrom: reassignTarget.teacherId,
         }),
       });
+      if (response.notifications?.length) {
+        setNotifications((items) => [...response.notifications!, ...items]);
+      }
       setDataStatus("connected");
       setSaveError("");
     } catch (error) {
@@ -697,22 +726,19 @@ export function LifeSkillApp() {
 
     setSchedules((items) =>
       items.map((item) =>
-        item.id === schedule.id
+        item.id === reassignTarget.id
           ? {
               ...item,
               teacherId: replacement.id,
               status: "reassigned",
-              reassignedFrom: schedule.teacherId,
+              reassignedFrom: reassignTarget.teacherId,
               sentAt: new Date().toISOString(),
             }
           : item,
       ),
     );
-    addNotification(
-      "Đã chuyển lịch",
-      `Lịch của ${teacherName(schedule.teacherId)} đã chuyển sang ${replacement.name}.`,
-      "admin",
-    );
+    setReassignTarget(null);
+    setReassignTeacherId("");
   }
 
   async function addTeacher() {
@@ -1236,6 +1262,56 @@ export function LifeSkillApp() {
               </div>
             </div>
           ) : null}
+          {reassignTarget ? (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-50 text-[var(--brand-dark)]">
+                  <RefreshCcw size={22} />
+                </div>
+                <h2 className="mt-4 text-xl font-black text-[var(--brand-dark)]">Chuyển lịch dạy</h2>
+                <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
+                  Chọn giáo viên mới cho lịch ngày {formatDate(reassignTarget.date)}. Hệ thống sẽ cập nhật Google Sheet
+                  và gửi email xác nhận cho giáo viên mới.
+                </p>
+                <div className="mt-5 grid gap-2">
+                  <span className="text-xs font-black uppercase text-[var(--brand-dark)]">Giáo viên thay thế</span>
+                  <select
+                    value={reassignTeacherId}
+                    onChange={(event) => setReassignTeacherId(event.target.value)}
+                    className={inputClass}
+                  >
+                    {activeTeachers
+                      .filter((teacher) => teacher.id !== reassignTarget.teacherId)
+                      .map((teacher) => (
+                        <option key={teacher.id} value={teacher.id}>
+                          {teacher.name} - {teacher.specialty}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    onClick={() => {
+                      setReassignTarget(null);
+                      setReassignTeacherId("");
+                    }}
+                    disabled={isBusy}
+                    className="inline-flex h-11 items-center rounded-xl border border-[var(--line)] bg-white px-4 text-sm font-black text-[var(--brand-dark)] transition hover:bg-cyan-50 disabled:opacity-60"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    onClick={submitReassignSchedule}
+                    disabled={isBusy || !reassignTeacherId}
+                    className="inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--brand)] px-4 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition hover:bg-[var(--brand-dark)] disabled:opacity-60"
+                  >
+                    {isBusy ? <LoaderCircle className="animate-spin" size={17} /> : <RefreshCcw size={17} />}
+                    Chuyển lịch
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
           {saveError ? (
             <div className="fixed bottom-5 right-5 z-50 max-w-md rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm font-bold text-orange-800 shadow-2xl">
               <p className="font-black">Không ghi được Google Sheet</p>
@@ -1364,7 +1440,7 @@ export function LifeSkillApp() {
             <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
               <p className="text-sm font-extrabold text-[var(--brand-dark)]">Chọn giáo viên</p>
               <div className="mt-3 grid gap-2">
-                {teachers.map((teacher) => (
+                {activeTeachers.map((teacher) => (
                   <label
                     key={teacher.id}
                     className="flex items-center gap-3 rounded-xl bg-white px-3 py-2 text-sm font-semibold shadow-sm"
@@ -1398,8 +1474,8 @@ export function LifeSkillApp() {
           </div>
         </Panel>
 
-        <Panel title="Xem trước lịch sắp gửi" action="Cho phép trùng giờ">
-          <ScheduleList items={visibleSchedules.slice(0, 7)} compact />
+        <Panel title="Xem trước lịch sắp gửi" action={`Sẽ tạo ${draftSchedulePreview.length} lịch`}>
+          <ScheduleList items={draftSchedulePreview} compact />
         </Panel>
       </div>
     );
@@ -2083,7 +2159,7 @@ export function LifeSkillApp() {
                       </button>
                     </div>
                   ) : null}
-                  {!compact && role === "teacher" && schedule.status === "sent" ? (
+                  {!compact && role === "teacher" && ["sent", "reassigned"].includes(schedule.status) ? (
                     <button
                       onClick={() => confirmSchedule(schedule.id)}
                       className="rounded-xl bg-[var(--brand)] px-3 py-2 text-xs font-black text-white"
