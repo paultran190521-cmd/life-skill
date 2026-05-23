@@ -144,6 +144,32 @@ type BulkLessonRow = LessonDraft & {
   id: string;
 };
 
+type ToastTone = "info" | "success" | "warning" | "error";
+
+type ToastMessage = {
+  id: string;
+  title: string;
+  body: string;
+  tone: ToastTone;
+  leaving: boolean;
+};
+
+type AppDialogVariant = "confirm" | "prompt";
+
+type AppDialog = {
+  id: string;
+  variant: AppDialogVariant;
+  title: string;
+  message: string;
+  confirmText: string;
+  cancelText: string;
+  tone: "brand" | "danger";
+  value: string;
+  placeholder?: string;
+  leaving: boolean;
+  onResolve: (result: boolean | string | null) => void;
+};
+
 const lessonGrades = Array.from({ length: 12 }, (_, index) => `Khối ${index + 1}`);
 const lessonDurations = [45, 90];
 const maxLessonPlanFileBytes = 10 * 1024 * 1024;
@@ -256,6 +282,8 @@ export function LifeSkillApp() {
     name: "",
     grade: "Khối 1",
   });
+  const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
+  const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
 
   const activeUsers = useMemo(() => appUsers.filter((user) => user.isActive !== false), [appUsers]);
   const currentUser =
@@ -456,7 +484,88 @@ export function LifeSkillApp() {
     return role === "admin" || plan.teacherId === currentTeacherId;
   }
 
-  function addNotification(title: string, body: string, targetRole: Role | "all" = "admin") {
+  function dismissToast(id: string) {
+    setToastMessages((items) => items.map((item) => (item.id === id ? { ...item, leaving: true } : item)));
+    setTimeout(() => {
+      setToastMessages((items) => items.filter((item) => item.id !== id));
+    }, 220);
+  }
+
+  function pushToast(title: string, body: string, tone: ToastTone = "info") {
+    const id = createId("toast");
+    setToastMessages((items) => [{ id, title, body, tone, leaving: false }, ...items].slice(0, 4));
+    setTimeout(() => dismissToast(id), 4200);
+  }
+
+  function closeDialog() {
+    setAppDialog((current) => (current ? { ...current, leaving: true } : current));
+    setTimeout(() => {
+      setAppDialog(null);
+    }, 220);
+  }
+
+  function resolveDialog(result: boolean | string | null) {
+    if (!appDialog) {
+      return;
+    }
+    appDialog.onResolve(result);
+    closeDialog();
+  }
+
+  function openConfirmDialog(options: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    tone?: "brand" | "danger";
+  }) {
+    return new Promise<boolean>((resolve) => {
+      setAppDialog({
+        id: createId("dialog"),
+        variant: "confirm",
+        title: options.title,
+        message: options.message,
+        confirmText: options.confirmText ?? "Xác nhận",
+        cancelText: options.cancelText ?? "Hủy",
+        tone: options.tone ?? "brand",
+        value: "",
+        leaving: false,
+        onResolve: (result) => resolve(result === true),
+      });
+    });
+  }
+
+  function openPromptDialog(options: {
+    title: string;
+    message: string;
+    defaultValue?: string;
+    placeholder?: string;
+    confirmText?: string;
+    cancelText?: string;
+  }) {
+    return new Promise<string | null>((resolve) => {
+      setAppDialog({
+        id: createId("dialog"),
+        variant: "prompt",
+        title: options.title,
+        message: options.message,
+        confirmText: options.confirmText ?? "Lưu",
+        cancelText: options.cancelText ?? "Hủy",
+        tone: "brand",
+        value: options.defaultValue ?? "",
+        placeholder: options.placeholder,
+        leaving: false,
+        onResolve: (result) => resolve(typeof result === "string" ? result : null),
+      });
+    });
+  }
+
+  function addNotification(
+    title: string,
+    body: string,
+    targetRole: Role | "all" = "admin",
+    options?: { tone?: ToastTone; showToast?: boolean },
+  ) {
     setNotifications((items) => [
       {
         id: createId("n"),
@@ -468,6 +577,10 @@ export function LifeSkillApp() {
       },
       ...items,
     ]);
+    const shouldShowToast = options?.showToast ?? true;
+    if (shouldShowToast && (targetRole === "all" || targetRole === role)) {
+      pushToast(title, body, options?.tone ?? "info");
+    }
   }
 
   function handleSaveError(error: unknown) {
@@ -475,7 +588,8 @@ export function LifeSkillApp() {
     console.error(error);
     setDataStatus("offline");
     setSaveError(message);
-    addNotification("Không lưu được dữ liệu", message, "admin");
+    addNotification("Không lưu được dữ liệu", message, "admin", { showToast: false });
+    pushToast("Không lưu được dữ liệu", message, "error");
   }
 
   async function saveRequest<T>(label: string, url: string, init?: RequestInit) {
@@ -489,17 +603,21 @@ export function LifeSkillApp() {
 
   async function createSchedules() {
     if (draftSchedule.teacherIds.length === 0) {
-      addNotification("Chưa chọn giáo viên", "Hãy chọn ít nhất một giáo viên để gửi lịch.", "admin");
+      addNotification("Chưa chọn giáo viên", "Hãy chọn ít nhất một giáo viên để gửi lịch.", "admin", {
+        tone: "warning",
+      });
       return;
     }
 
     let created: Schedule[];
+    let emailResults: EmailResult[] = [];
     try {
       const response = await saveRequest<ScheduleCreateResponse>("Đang tạo lịch dạy...", "/api/schedules", {
         method: "POST",
         body: JSON.stringify({ ...draftSchedule, createdBy: currentUser.id }),
       });
       created = response.schedules;
+      emailResults = response.emailResults ?? [];
       if (response.chatThreads?.length) {
         setChatThreads((items) => [
           ...response.chatThreads!.filter((thread) => !items.some((item) => item.id === thread.id)),
@@ -517,6 +635,17 @@ export function LifeSkillApp() {
     }
 
     setSchedules((items) => [...created, ...items]);
+    const sentEmails = emailResults.filter((item) => item.sent).length;
+    const failedEmails = emailResults.length - sentEmails;
+    if (emailResults.length > 0) {
+      pushToast(
+        "Đã gửi lịch dạy",
+        `Tạo ${created.length} lịch, email thành công ${sentEmails}, thất bại ${failedEmails}.`,
+        failedEmails > 0 ? "warning" : "success",
+      );
+      return;
+    }
+    pushToast("Đã gửi lịch dạy", `Đã tạo ${created.length} lịch thành công.`, "success");
   }
 
   async function confirmSchedule(scheduleId: string) {
@@ -543,6 +672,7 @@ export function LifeSkillApp() {
           : item,
       ),
     );
+    pushToast("Đã xác nhận lịch", "Lịch dạy đã được xác nhận thành công.", "success");
   }
 
   async function uploadLessonPlans(schedule: Schedule, selectedFiles: FileList | null) {
@@ -582,7 +712,7 @@ export function LifeSkillApp() {
         files.length === 1
           ? `${teacherName(schedule.teacherId)} đã tải lên ${files[0].name}.`
           : `${teacherName(schedule.teacherId)} đã tải lên ${successCount}/${files.length} file giáo án.`;
-      addNotification("Giáo án mới", message, "admin");
+      addNotification("Giáo án mới", message, "admin", { tone: "success" });
     }
 
     if (failures.length > 0) {
@@ -634,7 +764,15 @@ export function LifeSkillApp() {
       return;
     }
 
-    const nextFileName = window.prompt("Nhập tên giáo án mới", plan.fileName)?.trim();
+    const nextFileName = (
+      await openPromptDialog({
+        title: "Đổi tên giáo án",
+        message: "Nhập tên mới cho giáo án. Tên sẽ được cập nhật trên Google Sheet.",
+        defaultValue: plan.fileName,
+        placeholder: "Tên giáo án",
+        confirmText: "Lưu tên mới",
+      })
+    )?.trim();
     if (!nextFileName || nextFileName === plan.fileName) {
       return;
     }
@@ -649,7 +787,9 @@ export function LifeSkillApp() {
       setLessonPlans((items) =>
         items.map((item) => (item.id === plan.id ? { ...item, fileName: nextFileName } : item)),
       );
-      addNotification("Cập nhật giáo án", `${teacherName(plan.teacherId)} đã đổi tên giáo án.`, "admin");
+      addNotification("Cập nhật giáo án", `${teacherName(plan.teacherId)} đã đổi tên giáo án.`, "admin", {
+        tone: "success",
+      });
     } catch (error) {
       handleSaveError(error);
     }
@@ -661,7 +801,12 @@ export function LifeSkillApp() {
       return;
     }
 
-    const confirmed = window.confirm(`Xóa giáo án "${plan.fileName}"?`);
+    const confirmed = await openConfirmDialog({
+      title: "Xóa giáo án",
+      message: `Bạn chắc chắn muốn xóa giáo án "${plan.fileName}" khỏi hệ thống?`,
+      confirmText: "Xóa giáo án",
+      tone: "danger",
+    });
     if (!confirmed) {
       return;
     }
@@ -673,7 +818,9 @@ export function LifeSkillApp() {
       setDataStatus("connected");
       setSaveError("");
       setLessonPlans((items) => items.filter((item) => item.id !== plan.id));
-      addNotification("Xóa giáo án", `${teacherName(plan.teacherId)} đã xóa ${plan.fileName}.`, "admin");
+      addNotification("Xóa giáo án", `${teacherName(plan.teacherId)} đã xóa ${plan.fileName}.`, "admin", {
+        tone: "warning",
+      });
     } catch (error) {
       handleSaveError(error);
     }
@@ -714,7 +861,9 @@ export function LifeSkillApp() {
     setSchedules((items) =>
       items.map((item) => (item.id === schedule.id ? { ...item, status: "attended" } : item)),
     );
-    addNotification("Đã điểm danh", `${teacherName(schedule.teacherId)} đã điểm danh tiết dạy.`, "admin");
+    addNotification("Đã điểm danh", `${teacherName(schedule.teacherId)} đã điểm danh tiết dạy.`, "admin", {
+      tone: "success",
+    });
   }
 
   async function cancelSchedule(schedule: Schedule) {
@@ -737,6 +886,7 @@ export function LifeSkillApp() {
     setSchedules((items) =>
       items.map((item) => (item.id === schedule.id ? { ...item, status: "cancelled" } : item)),
     );
+    pushToast("Đã hủy lịch", "Lịch dạy đã được hủy và đồng bộ lên Google Sheet.", "warning");
   }
 
   function reassignSchedule(schedule: Schedule) {
@@ -789,6 +939,7 @@ export function LifeSkillApp() {
           : item,
       ),
     );
+    pushToast("Đã chuyển lịch", `Lịch đã chuyển sang giáo viên ${replacement.name}.`, "success");
     setReassignTarget(null);
     setReassignTeacherId("");
   }
@@ -1189,7 +1340,13 @@ export function LifeSkillApp() {
   }
 
   async function deleteSchool(schoolId: string) {
-    if (!window.confirm("Xóa trường này?")) {
+    const confirmed = await openConfirmDialog({
+      title: "Xóa trường",
+      message: "Bạn chắc chắn muốn xóa trường này? Tất cả lớp thuộc trường cũng sẽ bị xóa.",
+      confirmText: "Xóa trường",
+      tone: "danger",
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -1204,6 +1361,7 @@ export function LifeSkillApp() {
       if (editingSchoolId === schoolId) {
         cancelEditSchool();
       }
+      pushToast("Đã xóa trường", "Trường và các lớp liên quan đã được xóa.", "warning");
     } catch (error) {
       handleSaveError(error);
     }
@@ -1248,7 +1406,13 @@ export function LifeSkillApp() {
   }
 
   async function deleteClassRoom(classId: string) {
-    if (!window.confirm("Xóa lớp này?")) {
+    const confirmed = await openConfirmDialog({
+      title: "Xóa lớp",
+      message: "Bạn chắc chắn muốn xóa lớp này khỏi hệ thống?",
+      confirmText: "Xóa lớp",
+      tone: "danger",
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -1262,6 +1426,7 @@ export function LifeSkillApp() {
       if (editingClassId === classId) {
         cancelEditClassRoom();
       }
+      pushToast("Đã xóa lớp", "Lớp đã được xóa khỏi hệ thống.", "warning");
     } catch (error) {
       handleSaveError(error);
     }
@@ -1328,8 +1493,8 @@ export function LifeSkillApp() {
       : chatThreads.filter((thread) => thread.teacherId === currentTeacherId);
 
   return (
-    <main className="min-h-screen bg-[var(--canvas)]">
-      <div className="grid min-h-screen lg:grid-cols-[280px_1fr]">
+    <main className="ui-polish min-h-screen bg-[var(--canvas)]">
+      <div className="ui-enter grid min-h-screen lg:grid-cols-[280px_1fr]">
         <aside className="border-r border-[var(--line)] bg-white px-4 py-5 shadow-[12px_0_32px_rgba(25,146,176,0.06)]">
           <div className="flex items-center gap-3 px-2">
             <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[var(--brand)] text-white shadow-lg shadow-cyan-700/20">
@@ -1545,10 +1710,119 @@ export function LifeSkillApp() {
               </div>
             </div>
           ) : null}
-          {saveError ? (
-            <div className="fixed bottom-5 right-5 z-50 max-w-md rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm font-bold text-orange-800 shadow-2xl">
-              <p className="font-black">Không ghi được Google Sheet</p>
-              <p className="mt-1 leading-6">{saveError}</p>
+          {appDialog ? (
+            <div
+              className={`fixed inset-0 z-[60] grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm transition-opacity duration-200 ${
+                appDialog.leaving ? "opacity-0" : "opacity-100"
+              }`}
+            >
+              <div
+                className={`w-full max-w-lg rounded-3xl border bg-white p-5 shadow-2xl transition duration-200 ${
+                  appDialog.leaving ? "translate-y-2 scale-[0.98] opacity-0" : "translate-y-0 scale-100 opacity-100"
+                } ${appDialog.tone === "danger" ? "border-rose-100" : "border-cyan-100"}`}
+              >
+                <div
+                  className={`grid h-12 w-12 place-items-center rounded-2xl ${
+                    appDialog.tone === "danger" ? "bg-rose-50 text-rose-700" : "bg-cyan-50 text-[var(--brand-dark)]"
+                  }`}
+                >
+                  {appDialog.tone === "danger" ? <Trash2 size={20} /> : <Pencil size={20} />}
+                </div>
+                <h2 className="mt-4 text-xl font-black text-[var(--brand-dark)]">{appDialog.title}</h2>
+                <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{appDialog.message}</p>
+                {appDialog.variant === "prompt" ? (
+                  <input
+                    autoFocus
+                    value={appDialog.value}
+                    onChange={(event) =>
+                      setAppDialog((current) => (current ? { ...current, value: event.target.value } : current))
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && appDialog.value.trim()) {
+                        resolveDialog(appDialog.value.trim());
+                      }
+                      if (event.key === "Escape") {
+                        resolveDialog(null);
+                      }
+                    }}
+                    placeholder={appDialog.placeholder}
+                    className="mt-4 w-full rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)] focus:ring-4 focus:ring-cyan-100"
+                  />
+                ) : null}
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    onClick={() => resolveDialog(appDialog.variant === "prompt" ? null : false)}
+                    className="inline-flex h-11 items-center rounded-xl border border-[var(--line)] bg-white px-4 text-sm font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"
+                  >
+                    {appDialog.cancelText}
+                  </button>
+                  <button
+                    onClick={() =>
+                      resolveDialog(appDialog.variant === "prompt" ? appDialog.value.trim() : true)
+                    }
+                    disabled={appDialog.variant === "prompt" && !appDialog.value.trim()}
+                    className={`inline-flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-black text-white shadow-lg transition disabled:opacity-60 ${
+                      appDialog.tone === "danger"
+                        ? "bg-rose-600 shadow-rose-700/20 hover:bg-rose-700"
+                        : "bg-[var(--brand)] shadow-cyan-700/20 hover:bg-[var(--brand-dark)]"
+                    }`}
+                  >
+                    {appDialog.confirmText}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {toastMessages.length > 0 ? (
+            <div className="pointer-events-none fixed right-5 top-20 z-[65] flex w-[min(420px,calc(100vw-2rem))] flex-col gap-3">
+              {toastMessages.map((toast) => (
+                <div
+                  key={toast.id}
+                  className={`pointer-events-auto rounded-2xl border px-4 py-3 shadow-2xl transition duration-200 ${
+                    toast.leaving ? "translate-x-4 opacity-0" : "translate-x-0 opacity-100"
+                  } ${
+                    toast.tone === "error"
+                      ? "border-rose-200 bg-rose-50 text-rose-900"
+                      : toast.tone === "warning"
+                        ? "border-orange-200 bg-orange-50 text-orange-900"
+                        : toast.tone === "success"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                          : "border-cyan-200 bg-white text-[var(--brand-dark)]"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`mt-0.5 grid h-6 w-6 place-items-center rounded-full ${
+                        toast.tone === "error"
+                          ? "bg-rose-100 text-rose-700"
+                          : toast.tone === "warning"
+                            ? "bg-orange-100 text-orange-700"
+                            : toast.tone === "success"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-cyan-100 text-[var(--brand-dark)]"
+                      }`}
+                    >
+                      {toast.tone === "error" ? (
+                        <X size={14} />
+                      ) : toast.tone === "success" ? (
+                        <CheckCircle2 size={14} />
+                      ) : (
+                        <Bell size={14} />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-black">{toast.title}</p>
+                      <p className="mt-1 text-sm leading-6">{toast.body}</p>
+                    </div>
+                    <button
+                      onClick={() => dismissToast(toast.id)}
+                      className="grid h-7 w-7 place-items-center rounded-lg bg-white/80 text-slate-500 transition hover:bg-white hover:text-slate-800"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : null}
         </section>

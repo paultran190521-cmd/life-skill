@@ -9,6 +9,10 @@
   --line: #dce8ec;
   --canvas: #f5f9fb;
   --surface: #ffffff;
+  --shadow-soft: 0 14px 34px rgba(11, 53, 74, 0.08);
+  --shadow-hover: 0 18px 42px rgba(11, 53, 74, 0.14);
+  --ring-soft: 0 0 0 4px rgba(25, 146, 176, 0.14);
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 * {
@@ -71,4 +75,83 @@ button:disabled {
 .app-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(25, 146, 176, 0.45);
   border-radius: 999px;
+}
+
+@keyframes ui-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ui-polish {
+  background-image:
+    radial-gradient(1200px 500px at -10% -5%, rgba(25, 146, 176, 0.07), transparent 52%),
+    radial-gradient(900px 380px at 115% 0%, rgba(255, 149, 0, 0.06), transparent 45%);
+  background-attachment: fixed;
+}
+
+.ui-polish .ui-enter {
+  animation: ui-fade-up 0.55s var(--ease-smooth) both;
+}
+
+.ui-polish :is(section, div, article, li)[class*="rounded-3xl"][class*="bg-white"][class*="border"],
+.ui-polish :is(section, div, article, li)[class*="rounded-2xl"][class*="bg-white"][class*="border"] {
+  box-shadow: var(--shadow-soft);
+  transition:
+    transform 0.24s var(--ease-smooth),
+    box-shadow 0.24s var(--ease-smooth),
+    border-color 0.2s var(--ease-smooth);
+}
+
+.ui-polish :is(section, div, article, li)[class*="rounded-3xl"][class*="bg-white"][class*="border"]:hover,
+.ui-polish :is(section, div, article, li)[class*="rounded-2xl"][class*="bg-white"][class*="border"]:hover {
+  transform: translateY(-2px);
+  border-color: rgba(25, 146, 176, 0.28);
+  box-shadow: var(--shadow-hover);
+}
+
+.ui-polish button,
+.ui-polish a {
+  transition:
+    transform 0.2s var(--ease-smooth),
+    box-shadow 0.2s var(--ease-smooth),
+    filter 0.2s var(--ease-smooth),
+    background-color 0.2s var(--ease-smooth),
+    border-color 0.2s var(--ease-smooth);
+}
+
+.ui-polish button:not(:disabled):hover,
+.ui-polish a:hover {
+  transform: translateY(-1px);
+}
+
+.ui-polish button:active,
+.ui-polish a:active {
+  transform: translateY(0);
+}
+
+.ui-polish input,
+.ui-polish select,
+.ui-polish textarea {
+  transition:
+    border-color 0.2s var(--ease-smooth),
+    box-shadow 0.2s var(--ease-smooth),
+    background-color 0.2s var(--ease-smooth);
+}
+
+.ui-polish input:hover,
+.ui-polish select:hover,
+.ui-polish textarea:hover {
+  border-color: rgba(25, 146, 176, 0.45);
+}
+
+.ui-polish input:focus,
+.ui-polish select:focus,
+.ui-polish textarea:focus {
+  box-shadow: var(--ring-soft);
 }
