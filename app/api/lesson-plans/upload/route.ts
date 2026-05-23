@@ -1,4 +1,8 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { findAuthorizedUserFromSession } from "@/lib/auth-users";
+import { sessionCookieName, verifySessionToken } from "@/lib/auth-session";
+import { readSheetRowById } from "@/lib/google-sheets";
 import type { LessonPlan } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -43,6 +47,7 @@ class UploadProxyError extends Error {
 export async function POST(request: Request) {
   const requestId = `lp-${crypto.randomUUID()}`;
   try {
+    const currentUser = await requireUser(requestId);
     const webhookUrl = process.env.GAS_UPLOAD_WEBHOOK_URL || process.env.GAS_MAIL_WEBHOOK_URL;
     const secret = process.env.GAS_UPLOAD_WEBHOOK_SECRET || process.env.GAS_MAIL_WEBHOOK_SECRET;
 
@@ -55,6 +60,22 @@ export async function POST(request: Request) {
     }
 
     const body = parseUploadBody(await request.json(), requestId);
+    const schedule = await readSheetRowById("Schedules", body.scheduleId);
+    if (!schedule) {
+      throw new UploadProxyError(`Cannot find schedule for upload. Request ID: ${requestId}`, {
+        status: 404,
+        errorCode: "SCHEDULE_NOT_FOUND",
+        requestId,
+      });
+    }
+    if (!canUploadForSchedule(currentUser, schedule.teacherId || "")) {
+      throw new UploadProxyError(`Permission denied for lesson plan upload. Request ID: ${requestId}`, {
+        status: 403,
+        errorCode: "UPLOAD_FORBIDDEN",
+        requestId,
+      });
+    }
+
     const result = await callGasUploadWebhook({ webhookUrl, secret, requestId, body });
 
     if (!result.lessonPlan) {
@@ -96,6 +117,39 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+async function requireUser(requestId: string) {
+  const cookieStore = await cookies();
+  const session = verifySessionToken(cookieStore.get(sessionCookieName)?.value);
+  if (!session) {
+    throw new UploadProxyError("Unauthorized upload request.", {
+      status: 401,
+      errorCode: "UPLOAD_UNAUTHORIZED",
+      requestId,
+    });
+  }
+
+  const user = await findAuthorizedUserFromSession(session.userId, session.email);
+  if (!user) {
+    throw new UploadProxyError("Unauthorized upload request.", {
+      status: 401,
+      errorCode: "UPLOAD_UNAUTHORIZED",
+      requestId,
+    });
+  }
+
+  return user;
+}
+
+function canUploadForSchedule(
+  user: { role: "admin" | "teacher"; teacherId?: string },
+  scheduleTeacherId: string,
+) {
+  if (user.role === "admin") {
+    return true;
+  }
+  return user.teacherId === scheduleTeacherId;
 }
 
 function parseUploadBody(raw: unknown, requestId: string): UploadRequestBody {
@@ -286,6 +340,10 @@ function mapGasErrorMessage(errorCode: string) {
       return "Upload request is unauthorized. Please verify GAS webhook secret.";
     case "UPLOAD_FIELDS_MISSING":
       return "Upload request is missing required fields.";
+    case "UPLOAD_UNAUTHORIZED":
+      return "You need to sign in before uploading lesson plans.";
+    case "UPLOAD_FORBIDDEN":
+      return "You do not have permission to upload lesson plans for this schedule.";
     case "PAYLOAD_TOO_LARGE":
     case "UPLOAD_FILE_TOO_LARGE":
       return "Lesson plan file is too large. Maximum supported size is 10 MB.";
@@ -317,6 +375,10 @@ function mapStatus(status: number, errorCode: string) {
       return 401;
     case "UPLOAD_FIELDS_MISSING":
       return 400;
+    case "UPLOAD_UNAUTHORIZED":
+      return 401;
+    case "UPLOAD_FORBIDDEN":
+      return 403;
     case "UPLOAD_FILE_TOO_LARGE":
     case "PAYLOAD_TOO_LARGE":
       return 413;

@@ -106,6 +106,11 @@ export async function readSheetRows(sheetName: SheetName) {
     );
 }
 
+export async function readSheetRowById(sheetName: SheetName, id: string) {
+  const rows = await readSheetRows(sheetName);
+  return rows.find((row) => row.id === id) || null;
+}
+
 export async function appendSheetRow(sheetName: SheetName, row: Record<string, unknown>) {
   const headers = await getHeaders(sheetName);
   const values = headers.map((header) => stringifyCell(row[header]));

@@ -32,6 +32,20 @@ function doPost(e) {
       });
     }
 
+    if (payload.action === "deleteLessonPlan") {
+      const result = deleteLessonPlan(payload, requestId);
+      logInfo("deleteLessonPlan.success", requestId, {
+        lessonPlanId: result.lessonPlanId,
+        driveFileId: result.driveFileId,
+      });
+      return json({
+        ok: true,
+        requestId,
+        message: "Lesson plan deleted successfully.",
+        lessonPlanId: result.lessonPlanId,
+      });
+    }
+
     if (payload.action === "ping") {
       return json({ ok: true, requestId, message: "Life Skill GAS webhook is ready." });
     }
@@ -197,6 +211,64 @@ function updateScheduleStatus(scheduleId, now) {
   }
 
   throw new Error("Cannot find schedule: " + scheduleId);
+}
+
+function deleteLessonPlan(payload, requestId) {
+  const lessonPlanId = asText(payload.lessonPlanId);
+  if (!lessonPlanId) {
+    throw appError("DELETE_FIELDS_MISSING", "Missing lessonPlanId.");
+  }
+
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("LessonPlans");
+  if (!sheet) {
+    throw appError("SHEET_NOT_FOUND", "Missing sheet: LessonPlans");
+  }
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0] || [];
+  const idIndex = headers.indexOf("id");
+  const driveFileIdIndex = headers.indexOf("driveFileId");
+
+  if (idIndex === -1) {
+    throw appError("SHEET_HEADER_MISSING", "LessonPlans sheet must contain 'id' column.");
+  }
+
+  var rowToDelete = -1;
+  var driveFileId = "";
+
+  for (var rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
+    if (String(values[rowIndex][idIndex] || "") === lessonPlanId) {
+      rowToDelete = rowIndex + 1;
+      if (driveFileIdIndex !== -1) {
+        driveFileId = String(values[rowIndex][driveFileIdIndex] || "").trim();
+      }
+      break;
+    }
+  }
+
+  if (rowToDelete === -1) {
+    throw appError("LESSON_PLAN_NOT_FOUND", "Cannot find lesson plan: " + lessonPlanId);
+  }
+
+  if (driveFileId) {
+    try {
+      DriveApp.getFileById(driveFileId).setTrashed(true);
+    } catch (error) {
+      throw appError("DRIVE_DELETE_FAILED", "Cannot delete lesson plan file from Google Drive.", error);
+    }
+  }
+
+  try {
+    sheet.deleteRow(rowToDelete);
+  } catch (error) {
+    throw appError("SHEET_DELETE_FAILED", "Cannot delete lesson plan from Google Sheets.", error);
+  }
+
+  return {
+    lessonPlanId: lessonPlanId,
+    driveFileId: driveFileId,
+    requestId: requestId,
+  };
 }
 
 function authorizeDriveAndSheets() {

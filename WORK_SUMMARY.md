@@ -1,226 +1,156 @@
-# Tong Ket Ket Qua Lam Viec - Life Skill Scheduler
+# Tổng Kết Kết Quả Làm Việc - Life Skill Scheduler
 
-Ngay cap nhat: 2026-05-21
+Ngày cập nhật: 2026-05-22
 
-## 1. Tong quan
+## 1. Tổng quan
 
-Life Skill Scheduler la web app Next.js dung cho giao vu/admin quan ly lich day ky nang song, giao lich cho giao vien, theo doi giao an, diem danh va thong bao qua email.
+Life Skill Scheduler là web app Next.js dành cho giáo vụ/admin quản lý lịch dạy kỹ năng sống, giao lịch cho giáo viên, theo dõi giáo án, điểm danh và thông báo email.
 
-Trang thai hien tai:
+Trạng thái hiện tại:
 
-- App da co UI chinh va cac luong nghiep vu cot loi.
-- Du lieu chinh doc/ghi qua Google Sheets.
-- Google Login da duoc khoi phuc ve scope co ban `openid email profile` de tranh loi Google OAuth verification.
-- Email thong bao lich day da chuyen sang Google Apps Script (GAS).
-- Upload giao an dang duoc chuyen sang GAS, nhung hien chua hoan tat do GAS chua duoc cap quyen DriveApp.
+- App đã có đầy đủ UI và các luồng nghiệp vụ cốt lõi.
+- Dữ liệu chính đọc/ghi qua Google Sheets.
+- Đăng nhập Google OAuth đang hoạt động.
+- Email thông báo lịch dạy đang gửi qua Google Apps Script (GAS).
+- Phân hệ giáo án đã hoàn thiện theo mục tiêu hiện tại (upload, xem, sửa tên, xóa bản ghi, hỗ trợ nhiều file).
 
-## 2. Tinh nang da co
+## 2. Tính năng đã có
 
-### Quan ly nguoi dung va phan quyen
+### Quản lý người dùng và phân quyền
 
-- Dang nhap bang Google OAuth.
-- Doc user tu tab `Users` trong Google Sheet.
-- Ho tro role `admin` va `teacher`.
-- Admin xem duoc toan bo he thong.
-- Giao vien chi thay cac tab phu hop voi cong viec cua giao vien.
-- Giao vien chi thay lich cua chinh minh tren UI.
+- Đăng nhập bằng Google OAuth.
+- Đọc user từ tab `Users` trong Google Sheet.
+- Hỗ trợ role `admin` và `teacher`.
+- Admin xem được toàn bộ hệ thống.
+- Giáo viên chỉ thấy các tab phù hợp và lịch của mình.
 
-### Quan ly giao vien
+### Quản lý giáo viên
 
-- Them giao vien moi.
-- Luu thong tin giao vien vao tab `Teachers`.
-- Tao/lien ket tai khoan user trong tab `Users`.
-- Phan quyen giao vien/admin.
-- Hien avatar, email, so dien thoai, chuyen mon.
-- Co hover card de xem nhanh thong tin lien he.
+- Thêm/sửa thông tin giáo viên.
+- Lưu giáo viên vào tab `Teachers`.
+- Tạo/liên kết tài khoản user trong tab `Users`.
+- Phân quyền giáo viên/admin.
 
-### Quan ly bai hoc
+### Quản lý bài học
 
-- Them bai hoc theo khoi.
-- Luu ten chuyen de, muc tieu, thoi luong, link giao an mau.
-- Ho tro them nhieu bai hoc bang bang copy/paste hoac file Excel/CSV.
-- Loc/tim kiem bai hoc theo khoi va tu khoa.
+- Thêm bài học theo khối.
+- Lưu tên chuyên đề, mục tiêu, thời lượng, link giáo án mẫu.
+- Hỗ trợ thêm nhiều bài học bằng copy/paste hoặc file Excel/CSV.
+- Lọc/tìm kiếm bài học theo khối và từ khóa.
 
-### Quan ly khung gio
+### Quản lý khung giờ
 
-- Them khung gio day.
-- Luu vao tab `TimeSlots`.
-- Dung khung gio khi giao lich de thao tac nhanh.
+- Thêm khung giờ dạy.
+- Lưu vào tab `TimeSlots`.
+- Dùng khung giờ khi giao lịch.
 
-### Giao lich day
+### Giao lịch dạy
 
-- Admin chon ngay, truong, lop, bai hoc, khung gio.
-- Gan lich cho mot hoac nhieu giao vien cung luc.
-- Luu moi lich vao tab `Schedules`.
-- Tao thread chat theo lich.
-- Gui thong bao email CTA xac nhan lich qua GAS.
+- Admin chọn ngày, trường, lớp, bài học, khung giờ.
+- Gán lịch cho 1 hoặc nhiều giáo viên.
+- Lưu vào tab `Schedules`.
+- Tạo thread chat theo lịch.
+- Gửi email CTA xác nhận lịch qua GAS.
 
-### Xac nhan, huy, chuyen lich
+### Xác nhận, hủy, chuyển lịch
 
-- Giao vien xac nhan lich tren app.
-- Email CTA co endpoint xac nhan lich bang token ky tu `AUTH_SECRET`.
-- Admin co the huy lich.
-- Admin co the chuyen lich sang giao vien khac.
-- Trang thai lich duoc cap nhat trong tab `Schedules`.
+- Giáo viên xác nhận lịch trên app.
+- Admin hủy/chuyển lịch.
+- Trạng thái lịch cập nhật trong `Schedules`.
 
-### Giao an
+### Phân hệ giáo án (đã hoàn thiện đợt này)
 
-- UI co trung tam giao an.
-- Hien lich nao da co/chua co giao an.
-- Da tung co cac phuong an upload:
-  - Upload qua Vercel API: bi loi `413` khi file lon.
-  - Upload truc tiep Google Drive: bi `Failed to fetch`/CORS.
-  - Upload bang service account: bi loi quota vi service account khong co Drive storage.
-- Phuong an hien tai: upload giao an qua GAS Web App.
+- Upload giáo án qua GAS Web App.
+- Hỗ trợ file: `pdf`, `doc`, `docx`, `ppt`, `pptx`, `xls`, `xlsx`, `txt`, `csv`.
+- Hỗ trợ chọn và upload nhiều file trong 1 lần thao tác.
+- Giới hạn kích thước mỗi file: 10MB.
+- Mỗi lịch có thể lưu nhiều giáo án và hiển thị danh sách link trên UI.
+- Đã thêm API upload có timeout + retry + `requestId` + map `errorCode`.
+- Đã thêm API sửa/xóa giáo án:
+  - `PATCH /api/lesson-plans/[id]` (đổi tên file hiển thị)
+  - `DELETE /api/lesson-plans/[id]` (xóa bản ghi giáo án trên hệ thống)
+- Đã thêm kiểm tra quyền backend:
+  - Teacher chỉ upload/sửa/xóa giáo án của chính teacher đó.
+  - Admin có toàn quyền.
 
-### Diem danh
+### Điểm danh
 
-- Giao vien/admin co the diem danh theo tung tiet.
-- Diem danh luu vao tab `Attendance`.
-- Lich cap nhat trang thai `attended`.
+- Giáo viên/admin điểm danh theo tiết.
+- Lưu vào tab `Attendance`.
+- Lịch cập nhật trạng thái `attended`.
 
-### Chat va thong bao
+### Chat và thông báo
 
-- Co UI chat theo giao vien va theo tiet day.
-- Co notification trong app.
-- Mot so thong bao van con dang luu o state/client, can noi that vao Google Sheet neu muon production day du.
+- Có UI chat theo giáo viên và theo tiết dạy.
+- Có notification trong app.
 
-### Google Sheets database
+## 3. Tích hợp đã cấu hình
 
-Dang su dung spreadsheet:
+### Google Sheets
+
+- Service account đọc/ghi Google Sheet.
+- Env cần có:
+  - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+  - `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+  - `GOOGLE_SHEETS_SPREADSHEET_ID`
+
+Spreadsheet đang sử dụng:
 
 ```text
 1wTbm61GHwmvza94UmNeptTAmhSlLEPHQaoCLC7uMni0
 ```
 
-Da co cac tab:
-
-- `Users`
-- `Teachers`
-- `Schools`
-- `Classes`
-- `Lessons`
-- `TimeSlots`
-- `Schedules`
-- `LessonPlans`
-- `Attendance`
-- `ChatThreads`
-- `ChatMessages`
-- `Notifications`
-- `AuditLogs`
-
-## 3. Tich hop da cau hinh
-
-### Google Sheets
-
-- Service account doc/ghi Google Sheet.
-- `.env.local` local da co service account email/private key.
-- Vercel can co cac env tuong ung:
-  - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
-  - `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
-  - `GOOGLE_SHEETS_SPREADSHEET_ID`
-
 ### Google Drive
 
-- Folder giao an hien tai:
+Folder giáo án:
 
 ```text
 1Tn0cqAsXjbrLlV8G2MTewMd8TL6P44tD
 ```
 
-- Khong nen de service account tao file truc tiep trong My Drive vi service account khong co storage quota.
-- Huong hien tai la de GAS tao file Drive bang tai khoan deploy GAS.
-
 ### Google Apps Script
 
-Da co script mau trong repo:
+Script mẫu trong repo:
 
 ```text
 scripts/gas-life-skill-webhook.js
 ```
 
-Script nay phu trach:
+Script xử lý:
 
-- Gui email lich day.
-- Nhan file giao an base64.
-- Tao file trong Drive folder.
-- Ghi metadata vao tab `LessonPlans`.
-- Cap nhat `Schedules.status = lesson_plan_uploaded`.
-
-Webhook URL dang dung:
-
-```text
-https://script.google.com/macros/s/AKfycbzaysbasAVWP4anrNYMLDFI7w71tJIxUMJr_dgJ32uxhn592KhDNinWDqYgm3OFE9t-/exec
-```
-
-Khong dua gia tri secret vao tai lieu nay. Secret nam trong bien moi truong:
-
-- `GAS_MAIL_WEBHOOK_SECRET`
-- `GAS_UPLOAD_WEBHOOK_SECRET` neu tach rieng upload.
+- Gửi email lịch dạy.
+- Nhận upload file base64.
+- Tạo file vào Drive folder.
+- Ghi metadata vào `LessonPlans`.
+- Cập nhật `Schedules.status = lesson_plan_uploaded`.
+- Trả về `requestId`, `errorCode`, `message` để debug.
 
 ### Email
 
-- Da bo Resend khoi luong chinh.
-- Email hien gui qua GAS bang `MailApp.sendEmail`.
-- Email sender mong muon: `infoasst@mettasoul.vn`.
 - `EMAIL_PROVIDER=gas`.
+- Gửi qua `MailApp.sendEmail`.
+- Sender mong muốn: `Life Skill <infoasst@mettasoul.vn>`.
 
-## 4. Loi hien tai
+## 4. Các thay đổi kỹ thuật mới nhất (2026-05-22)
 
-Upload giao an qua GAS hien bao loi:
+- Nâng cấp `app/api/lesson-plans/upload/route.ts`:
+  - Validate payload.
+  - Timeout + retry.
+  - Map lỗi theo `errorCode`.
+  - Gắn `requestId` xuyên suốt.
+  - Kiểm tra session và quyền upload theo teacher/schedule.
+- Nâng cấp `components/life-skill-app.tsx`:
+  - Upload nhiều file.
+  - Hiển thị nhiều giáo án trên 1 lịch.
+  - Thêm nút sửa/xóa giáo án trong phân hệ giáo viên.
+- Thêm route mới `app/api/lesson-plans/[id]/route.ts` cho PATCH/DELETE.
+- Nâng cấp `lib/google-sheets.ts`:
+  - Thêm `readSheetRowById`.
+  - Thêm `deleteSheetRowById`.
 
-```text
-Exception: You do not have permission to call DriveApp.getFolderById.
-Required permissions:
-https://www.googleapis.com/auth/drive.readonly
-or
-https://www.googleapis.com/auth/drive
-```
+## 5. Các env cần có trên Vercel
 
-Danh gia:
-
-- App Next.js da goi duoc GAS.
-- GAS da vao duoc code upload.
-- Loi nam o quyen Apps Script: deployment/function chua duoc authorize scope Drive.
-- Day khong phai loi Google Sheet, khong phai loi Vercel, va khong phai sai webhook URL.
-
-Can xu ly trong Apps Script:
-
-1. Mo Apps Script project.
-2. Vao `Project Settings`.
-3. Bat hien thi file manifest `appsscript.json`.
-4. Them/cap nhat oauth scopes:
-
-```json
-{
-  "timeZone": "Asia/Ho_Chi_Minh",
-  "exceptionLogging": "STACKDRIVER",
-  "oauthScopes": [
-    "https://www.googleapis.com/auth/script.external_request",
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/script.send_mail"
-  ]
-}
-```
-
-5. Them ham test authorize vao GAS neu can:
-
-```javascript
-function authorizeDriveAndSheets() {
-  DriveApp.getFolderById(LESSON_PLAN_FOLDER_ID).getName();
-  SpreadsheetApp.openById(SPREADSHEET_ID).getName();
-  MailApp.getRemainingDailyQuota();
-}
-```
-
-6. Bam Run ham `authorizeDriveAndSheets`.
-7. Chap nhan tat ca quyen Google yeu cau.
-8. Deploy lai Web App bang `New version`.
-
-## 5. Cac env can co tren Vercel
-
-Bat buoc:
+Bắt buộc:
 
 ```env
 NEXT_PUBLIC_APP_URL=https://domain-vercel-cua-ban
@@ -237,46 +167,31 @@ EMAIL_PROVIDER=gas
 GAS_MAIL_WEBHOOK_URL=https://script.google.com/macros/s/AKfycbzaysbasAVWP4anrNYMLDFI7w71tJIxUMJr_dgJ32uxhn592KhDNinWDqYgm3OFE9t-/exec
 GAS_MAIL_WEBHOOK_SECRET=...
 EMAIL_FROM=Life Skill <infoasst@mettasoul.vn>
-```
 
-Neu muon tach rieng upload:
-
-```env
 GAS_UPLOAD_WEBHOOK_URL=https://script.google.com/macros/s/AKfycbzaysbasAVWP4anrNYMLDFI7w71tJIxUMJr_dgJ32uxhn592KhDNinWDqYgm3OFE9t-/exec
 GAS_UPLOAD_WEBHOOK_SECRET=...
 ```
 
-Sau khi sua env tren Vercel phai redeploy.
+Sau khi sửa env trên Vercel cần redeploy.
 
-## 6. Cac commit quan trong da day len GitHub
+## 6. Trạng thái hiện tại của phân hệ giáo án
 
-- `e99f84d` - Add Drive uploads and schedule emails
-- `35974bc` - Add GAS email provider
-- `0f21ccc` - Fix lesson plan uploads exceeding body limit
-- `69a96bc` - Use Google user OAuth for Drive uploads
-- `8762dac` - Restore Google login basic OAuth scope
-- `de66cd4` - Move lesson plan uploads to GAS
-- `1a1d65f` - Improve GAS upload response handling
+Đã đạt:
 
-## 7. Viec can lam tiep
+- Upload đã chạy qua GAS.
+- Teacher có thể upload nhiều file (doc/ppt/pdf...) trong 1 lần.
+- Có thể sửa tên và xóa giáo án trên UI.
+- Backend đã có check quyền.
 
-Uu tien 1:
+Cần quyết định tiếp (nếu muốn đẩy đến mức production chặt chẽ hơn):
 
-- Sua quyen GAS DriveApp theo muc 4.
-- Deploy lai GAS `New version`.
-- Redeploy Vercel neu code/env co thay doi.
-- Test upload bang file nho 1-2 MB.
+- Khi xóa giáo án, hiện đang xóa bản ghi trên hệ thống; nếu cần xóa cả file vật lý trên Google Drive thì bổ sung action xóa file trong GAS.
 
-Uu tien 2:
+## 7. Việc cần làm tiếp (ngoài phân hệ giáo án)
 
-- Sau khi upload giao an chay on, test lai email giao lich qua GAS.
-- Kiem tra CTA xac nhan lich tren email.
-- Kiem tra tab `LessonPlans` va `Schedules` sau upload.
+Ưu tiên tiếp theo:
 
-Uu tien 3:
-
-- Noi chat/notifications that vao Google Sheet.
-- Them backend authorization de giao vien khong goi API xem/sua du lieu nguoi khac.
-- Lam man quan ly truong/lop.
-- Them audit log cho cac thao tac quan trong.
-
+- Nối chat/notifications thật vào Google Sheet 100%.
+- Bổ sung backend authorization rộng hơn cho các API còn lại (không chỉ lesson plans).
+- Hoàn thiện màn quản lý trường/lớp nếu cần đầy đủ CRUD.
+- Bổ sung audit log cho các thao tác quan trọng.
