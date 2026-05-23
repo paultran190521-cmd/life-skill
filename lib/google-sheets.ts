@@ -96,12 +96,16 @@ export async function readSheetRows(sheetName: SheetName) {
 
   const values = response.data.values || [];
   const [headers = [], ...rows] = values;
+  const normalizedHeaders = headers.map((header) => normalizeSheetHeader(header));
 
   return rows
     .filter((row) => row.some((cell) => String(cell || "").trim()))
     .map((row) =>
-      headers.reduce<SheetRow>((record, header, index) => {
-        record[String(header)] = String(row[index] ?? "");
+      normalizedHeaders.reduce<SheetRow>((record, header, index) => {
+        if (!header) {
+          return record;
+        }
+        record[header] = String(row[index] ?? "");
         return record;
       }, {}),
     );
@@ -109,7 +113,8 @@ export async function readSheetRows(sheetName: SheetName) {
 
 export async function readSheetRowById(sheetName: SheetName, id: string) {
   const rows = await readSheetRows(sheetName);
-  return rows.find((row) => row.id === id) || null;
+  const targetId = String(id || "").trim();
+  return rows.find((row) => String(row.id || "").trim() === targetId) || null;
 }
 
 export async function appendSheetRow(sheetName: SheetName, row: Record<string, unknown>) {
@@ -267,12 +272,18 @@ async function getHeaders(sheetName: SheetName) {
     range: `${quoteSheetName(sheetName)}!1:1`,
   });
 
-  const headers = (response.data.values?.[0] || []).map(String);
+  const headers = (response.data.values?.[0] || []).map((header) => normalizeSheetHeader(header));
   if (headers.length === 0) {
     throw new Error(`${sheetName} is missing a header row.`);
   }
 
   return headers;
+}
+
+function normalizeSheetHeader(value: unknown) {
+  return String(value ?? "")
+    .replace(/^\uFEFF/, "")
+    .trim();
 }
 
 function toUsers(rows: SheetRow[]): User[] {

@@ -396,6 +396,22 @@ export function LifeSkillApp() {
   }, [activeLessons, draftSchedule.lessonId]);
 
   useEffect(() => {
+    if (activeTeachers.length === 0) {
+      return;
+    }
+
+    const activeTeacherIds = new Set(activeTeachers.map((teacher) => teacher.id));
+    const nextTeacherIds = draftSchedule.teacherIds.filter((teacherId) => activeTeacherIds.has(teacherId));
+    if (nextTeacherIds.length === 0) {
+      setDraftSchedule((current) => ({ ...current, teacherIds: [activeTeachers[0].id] }));
+      return;
+    }
+    if (nextTeacherIds.length !== draftSchedule.teacherIds.length) {
+      setDraftSchedule((current) => ({ ...current, teacherIds: nextTeacherIds }));
+    }
+  }, [activeTeachers, draftSchedule.teacherIds]);
+
+  useEffect(() => {
     if (activeTimeSlots.length === 0) {
       return;
     }
@@ -616,6 +632,25 @@ export function LifeSkillApp() {
   }
 
   async function createSchedules() {
+    if (activeTeachers.length === 0) {
+      pushToast("Thiếu giáo viên", "Chưa có giáo viên hoạt động. Vào mục Giáo viên để kích hoạt hoặc thêm mới.", "warning");
+      return;
+    }
+
+    const activeTeacherIds = new Set(activeTeachers.map((teacher) => teacher.id));
+    if (!draftSchedule.teacherIds.every((teacherId) => activeTeacherIds.has(teacherId))) {
+      pushToast(
+        "Giáo viên không hợp lệ",
+        "Danh sách giáo viên đã thay đổi. Hệ thống đã làm mới, vui lòng chọn lại giáo viên rồi gửi lịch.",
+        "warning",
+      );
+      setDraftSchedule((current) => ({
+        ...current,
+        teacherIds: current.teacherIds.filter((teacherId) => activeTeacherIds.has(teacherId)),
+      }));
+      return;
+    }
+
     if (activeTimeSlots.length === 0) {
       pushToast("Thiếu khung giờ", "Chưa có khung giờ hoạt động. Vào mục Khung giờ để tạo hoặc bật lại.", "warning");
       return;
