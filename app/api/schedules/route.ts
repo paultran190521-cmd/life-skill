@@ -8,6 +8,7 @@ import { appendSheetRows, readSheetRows } from "@/lib/google-sheets";
 import type { ChatThread, Notification, Schedule } from "@/lib/types";
 
 type ScheduleDraftItem = {
+  date: string;
   schoolId: string;
   classId: string;
   lessonId: string;
@@ -65,11 +66,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
-    const date = String(body.date || "").trim();
     const schedules: Schedule[] = teacherIds.flatMap((teacherId) =>
       items.map((item) => ({
         id: createId("sch"),
-        date,
+        date: item.date,
         teacherId,
         schoolId: item.schoolId,
         classId: item.classId,
@@ -177,22 +177,24 @@ function parseScheduleItems(body: Record<string, unknown>): ScheduleDraftItem[] 
       .map((item) => {
         const entry = item as Record<string, unknown>;
         return {
+          date: String(entry.date || entry.day || body.date || "").trim(),
           schoolId: normalizeId(entry.schoolId),
           classId: normalizeId(entry.classId),
           lessonId: normalizeId(entry.lessonId),
           timeSlotId: normalizeId(entry.timeSlotId),
         };
       })
-      .filter((item) => item.schoolId && item.classId && item.lessonId && item.timeSlotId);
+      .filter((item) => item.date && item.schoolId && item.classId && item.lessonId && item.timeSlotId);
   }
 
   const fallbackItem: ScheduleDraftItem = {
+    date: String(body.date || "").trim(),
     schoolId: normalizeId(body.schoolId),
     classId: normalizeId(body.classId),
     lessonId: normalizeId(body.lessonId),
     timeSlotId: normalizeId(body.timeSlotId),
   };
-  return fallbackItem.schoolId && fallbackItem.classId && fallbackItem.lessonId && fallbackItem.timeSlotId
+  return fallbackItem.date && fallbackItem.schoolId && fallbackItem.classId && fallbackItem.lessonId && fallbackItem.timeSlotId
     ? [fallbackItem]
     : [];
 }
@@ -209,17 +211,16 @@ function validateScheduleInput(
     slots: Array<Record<string, string>>;
   },
 ) {
-  const date = String(body.date || "").trim();
   const teacherIdSet = new Set(teacherIds.map((teacherId) => normalizeId(teacherId)));
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return "Ngày dạy không hợp lệ.";
-  }
   if (teacherIds.length === 0 || items.length === 0) {
     return "Thiếu thông tin bắt buộc khi tạo lịch.";
   }
 
   for (const item of items) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
+      return "Ngày dạy không hợp lệ.";
+    }
     if (!data.schools.some((row) => normalizeId(row.id) === item.schoolId)) {
       return "Trường đã chọn không tồn tại.";
     }

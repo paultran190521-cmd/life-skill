@@ -77,6 +77,7 @@ type TabId =
 
 type DraftScheduleItem = {
   id: string;
+  date: string;
   schoolId: string;
   classId: string;
   lessonId: string;
@@ -84,7 +85,6 @@ type DraftScheduleItem = {
 };
 
 type DraftSchedule = {
-  date: string;
   teacherIds: string[];
   items: DraftScheduleItem[];
 };
@@ -237,10 +237,10 @@ export function LifeSkillApp() {
   const [selectedThreadId, setSelectedThreadId] = useState(seedThreads[0]?.id ?? "");
   const [chatDraft, setChatDraft] = useState("");
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
-    date: "2026-05-23",
     teacherIds: [seedTeachers[0].id],
     items: [
       createDraftScheduleItem({
+        date: "2026-05-23",
         schoolId: seedSchools[0]?.id ?? "",
         classId: seedClasses[0]?.id ?? "",
         lessonId: seedLessons[0]?.id ?? "",
@@ -406,6 +406,7 @@ export function LifeSkillApp() {
           ...current,
           items: [
             createDraftScheduleItem({
+              date: current.items[0]?.date ?? "2026-05-23",
               schoolId: schools[0]?.id ?? "",
               classId: classes.find((item) => item.schoolId === (schools[0]?.id ?? ""))?.id ?? "",
               lessonId: activeLessons[0]?.id ?? "",
@@ -488,7 +489,7 @@ export function LifeSkillApp() {
       draftSchedule.teacherIds.flatMap((teacherId) =>
         draftSchedule.items.map((item) => ({
           id: `preview-${teacherId}-${item.id}`,
-          date: draftSchedule.date,
+          date: item.date,
           teacherId,
           schoolId: item.schoolId,
           classId: item.classId,
@@ -644,7 +645,7 @@ export function LifeSkillApp() {
 
   async function createSchedules() {
     const validItems = draftSchedule.items.filter(
-      (item) => item.schoolId && item.classId && item.lessonId && item.timeSlotId,
+      (item) => item.date && item.schoolId && item.classId && item.lessonId && item.timeSlotId,
     );
 
     if (validItems.length === 0) {
@@ -702,9 +703,9 @@ export function LifeSkillApp() {
       const response = await saveRequest<ScheduleCreateResponse>("Đang tạo lịch dạy...", "/api/schedules", {
         method: "POST",
         body: JSON.stringify({
-          date: draftSchedule.date,
           teacherIds: draftSchedule.teacherIds,
           items: validItems.map((item) => ({
+            date: item.date,
             schoolId: item.schoolId,
             classId: item.classId,
             lessonId: item.lessonId,
@@ -1968,14 +1969,6 @@ export function LifeSkillApp() {
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.35fr]">
         <Panel title="Tạo lịch dạy mới" action="Email xác nhận">
           <div className="grid gap-4">
-            <Field label="Ngày dạy">
-              <input
-                type="date"
-                value={draftSchedule.date}
-                onChange={(event) => setDraftSchedule({ ...draftSchedule, date: event.target.value })}
-                className={inputClass}
-              />
-            </Field>
             <div className="rounded-2xl border border-cyan-100 bg-cyan-50/55 p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-extrabold text-[var(--brand-dark)]">Danh sách tiết dạy cần giao</p>
@@ -1987,6 +1980,7 @@ export function LifeSkillApp() {
                       items: [
                         ...current.items,
                         createDraftScheduleItem({
+                          date: current.items[0]?.date ?? "2026-05-23",
                           schoolId: current.items[0]?.schoolId ?? schools[0]?.id ?? "",
                           classId:
                             classes.find((item) => item.schoolId === (current.items[0]?.schoolId ?? schools[0]?.id))?.id ?? "",
@@ -2027,6 +2021,19 @@ export function LifeSkillApp() {
                         </button>
                       </div>
                       <div className="grid gap-3 md:grid-cols-2">
+                        <input
+                          type="date"
+                          value={item.date}
+                          onChange={(event) =>
+                            setDraftSchedule((current) => ({
+                              ...current,
+                              items: current.items.map((currentItem) =>
+                                currentItem.id === item.id ? { ...currentItem, date: event.target.value } : currentItem,
+                              ),
+                            }))
+                          }
+                          className={inputClass}
+                        />
                         <select
                           value={item.schoolId}
                           onChange={(event) =>
@@ -3441,6 +3448,7 @@ function escapeCsvCell(value: string) {
 function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftScheduleItem {
   return {
     id: seed?.id || createId("draft"),
+    date: seed?.date || "2026-05-23",
     schoolId: seed?.schoolId || "",
     classId: seed?.classId || "",
     lessonId: seed?.lessonId || "",
@@ -3470,7 +3478,8 @@ function normalizeDraftScheduleItem(
   const timeSlotId = context.activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
     ? item.timeSlotId
     : context.activeTimeSlots[0]?.id ?? "";
-  return { ...item, schoolId, classId, lessonId, timeSlotId };
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : "2026-05-23";
+  return { ...item, date, schoolId, classId, lessonId, timeSlotId };
 }
 
 const inputClass =
