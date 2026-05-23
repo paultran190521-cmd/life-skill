@@ -124,6 +124,8 @@ type ScheduleUpdateResponse = Partial<Schedule> & {
   emailResult?: EmailResult | null;
 };
 
+type ClassCreateResponse = ClassRoom | { classes: ClassRoom[] };
+
 type GasLessonPlanUploadResponse = {
   ok?: boolean;
   requestId?: string;
@@ -247,7 +249,6 @@ export function LifeSkillApp() {
   const [classDraft, setClassDraft] = useState({
     schoolId: seedSchools[0]?.id ?? "",
     name: "",
-    grade: "Khối 1",
   });
   const [editingClassId, setEditingClassId] = useState("");
   const [classEditDraft, setClassEditDraft] = useState({
@@ -1113,22 +1114,34 @@ export function LifeSkillApp() {
   }
 
   async function addClassRoom() {
-    if (!classDraft.schoolId || !classDraft.name.trim() || !classDraft.grade.trim()) {
+    if (!classDraft.schoolId || !classDraft.name.trim()) {
       handleSaveError(new Error("Thiếu thông tin lớp cần tạo."));
       return;
     }
 
     try {
-      const savedClass = await saveRequest<ClassRoom>("Đang lưu lớp...", "/api/classes", {
+      const response = await saveRequest<ClassCreateResponse>("Đang lưu lớp...", "/api/classes", {
         method: "POST",
         body: JSON.stringify({
           schoolId: classDraft.schoolId,
-          name: classDraft.name.trim(),
-          grade: classDraft.grade.trim(),
+          names: classDraft.name.trim(),
         }),
       });
-      setClasses((items) => [savedClass, ...items.filter((item) => item.id !== savedClass.id)]);
-      setDraftSchedule((current) => ({ ...current, schoolId: savedClass.schoolId, classId: savedClass.id }));
+      const savedClasses = Array.isArray((response as { classes?: ClassRoom[] }).classes)
+        ? (response as { classes: ClassRoom[] }).classes
+        : [response as ClassRoom];
+      setClasses((items) => [
+        ...savedClasses,
+        ...items.filter((item) => !savedClasses.some((savedClass) => savedClass.id === item.id)),
+      ]);
+      const firstSavedClass = savedClasses[0];
+      if (firstSavedClass) {
+        setDraftSchedule((current) => ({
+          ...current,
+          schoolId: firstSavedClass.schoolId,
+          classId: firstSavedClass.id,
+        }));
+      }
       setDataStatus("connected");
       setSaveError("");
     } catch (error) {
@@ -1136,7 +1149,7 @@ export function LifeSkillApp() {
       return;
     }
 
-    setClassDraft((current) => ({ ...current, name: "", grade: "Khối 1" }));
+    setClassDraft((current) => ({ ...current, name: "" }));
   }
 
   function startEditSchool(school: School) {
@@ -2395,15 +2408,12 @@ export function LifeSkillApp() {
                 <input
                   value={classDraft.name}
                   onChange={(event) => setClassDraft({ ...classDraft, name: event.target.value })}
-                  placeholder="Tên lớp (ví dụ: 1A)"
+                  placeholder="Tên lớp cách nhau dấu phẩy (ví dụ: 1A,1B,2A)"
                   className={inputClass}
                 />
-                <input
-                  value={classDraft.grade}
-                  onChange={(event) => setClassDraft({ ...classDraft, grade: event.target.value })}
-                  placeholder="Khối (ví dụ: Khối 1)"
-                  className={inputClass}
-                />
+                <p className="text-xs font-bold text-[var(--muted)]">
+                  Hệ thống tự xác định khối theo số trong tên lớp. Ví dụ: 10A sẽ thành Khối 10.
+                </p>
                 <button onClick={addClassRoom} className={primaryButtonClass}>
                   <Plus size={18} />
                   Lưu lớp
