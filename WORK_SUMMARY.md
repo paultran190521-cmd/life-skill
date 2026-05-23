@@ -1,197 +1,174 @@
-# Tổng Kết Kết Quả Làm Việc - Life Skill Scheduler
+# Tổng Kết Phiên Làm Việc - Life Skill Scheduler
 
-Ngày cập nhật: 2026-05-22
+Ngày cập nhật: 23/05/2026
 
-## 1. Tổng quan
+## 1. Trạng thái tổng quan
 
-Life Skill Scheduler là web app Next.js dành cho giáo vụ/admin quản lý lịch dạy kỹ năng sống, giao lịch cho giáo viên, theo dõi giáo án, điểm danh và thông báo email.
+Life Skill Scheduler là web app Next.js dùng cho giáo vụ/admin quản lý lịch dạy kỹ năng sống, giao lịch cho giáo viên, gửi email xác nhận, theo dõi giáo án, điểm danh, chat và thông báo vận hành.
 
 Trạng thái hiện tại:
 
-- App đã có đầy đủ UI và các luồng nghiệp vụ cốt lõi.
-- Dữ liệu chính đọc/ghi qua Google Sheets.
-- Đăng nhập Google OAuth đang hoạt động.
+- Dữ liệu chính đang đọc/ghi qua Google Sheets.
 - Email thông báo lịch dạy đang gửi qua Google Apps Script (GAS).
-- Phân hệ giáo án đã hoàn thiện theo mục tiêu hiện tại (upload, xem, sửa tên, xóa bản ghi, hỗ trợ nhiều file).
+- Google Drive đang dùng để lưu giáo án upload.
+- Phân hệ `Giao lịch` đã chuyển từ mockup sang luồng thật end-to-end.
+- Admin đã gửi được lịch, ghi được Google Sheet và gửi được email.
+- UI đã có popup/toast nội bộ thay cho hộp thoại mặc định của trình duyệt.
+- Giao diện đã được tăng hiệu ứng hover, đổ bóng, focus và chuyển động cơ bản.
+- Code đã được push lên GitHub nhánh `main` sau các thay đổi.
 
-## 2. Tính năng đã có
+## 2. Phân hệ Giao Lịch
 
-### Quản lý người dùng và phân quyền
+Đã hoàn thiện các phần chính:
 
-- Đăng nhập bằng Google OAuth.
-- Đọc user từ tab `Users` trong Google Sheet.
-- Hỗ trợ role `admin` và `teacher`.
-- Admin xem được toàn bộ hệ thống.
-- Giáo viên chỉ thấy các tab phù hợp và lịch của mình.
+- Admin tạo lịch thật qua `POST /api/schedules`.
+- Backend validate ngày, trường, lớp, bài học, khung giờ, giáo viên.
+- Ghi lịch vào tab `Schedules`.
+- Tạo chat thread thật vào tab `ChatThreads`.
+- Ghi thông báo vào tab `Notifications`.
+- Ghi audit log vào tab `AuditLogs`.
+- Gửi email sau khi ghi lịch; nếu email lỗi thì lịch vẫn được giữ.
+- Chính sách trùng giờ hiện tại: luôn cho phép trùng giờ, không chặn conflict.
+- Teacher chỉ thấy lịch của mình, admin thấy toàn bộ.
+- Backend có kiểm tra quyền cho tạo, hủy, chuyển, xác nhận lịch.
 
-### Quản lý giáo viên
+Các lỗi đã xử lý trong phân hệ này:
 
-- Thêm/sửa thông tin giáo viên.
-- Lưu giáo viên vào tab `Teachers`.
-- Tạo/liên kết tài khoản user trong tab `Users`.
-- Phân quyền giáo viên/admin.
+- Sửa lỗi `Unauthorized` khi gửi lịch bằng tài khoản nội bộ trong app.
+- Sửa lỗi `Trường đã chọn không tồn tại` bằng cách bổ sung quản lý trường/lớp và đồng bộ dữ liệu Sheet.
+- Sửa lỗi `Khung giờ đã chọn không tồn tại hoặc đang tắt` bằng cách normalize ID, hỗ trợ `active/isActive`, và tự chọn lại khung giờ hợp lệ.
+- Sửa lỗi `Một hoặc nhiều giáo viên đã chọn không tồn tại hoặc đang tắt` bằng cách normalize header/cell khi đọc Google Sheet và tự làm sạch danh sách giáo viên đang chọn trên UI.
+- Sửa luồng preview để hiển thị lịch sắp gửi thay vì lịch cũ.
 
-### Quản lý bài học
+Nâng cấp mới nhất của Giao lịch:
 
-- Thêm bài học theo khối.
-- Lưu tên chuyên đề, mục tiêu, thời lượng, link giáo án mẫu.
-- Hỗ trợ thêm nhiều bài học bằng copy/paste hoặc file Excel/CSV.
-- Lọc/tìm kiếm bài học theo khối và từ khóa.
+- Một lần gửi có thể có nhiều dòng lịch.
+- Mỗi dòng lịch có ngày dạy riêng.
+- Mỗi dòng gồm: ngày dạy, trường, lớp, khung giờ, bài học.
+- Một lần gửi có thể chọn nhiều giáo viên.
+- Backend tạo nhiều dòng `Schedules` tương ứng theo từng giáo viên và từng dòng lịch.
+- Email được gom theo giáo viên: mỗi giáo viên nhận một email tổng hợp thay vì nhiều email rời.
+- Tiêu đề email đổi sang dạng `Lịch dạy tuần ... năm ...`, tính theo tuần ISO từ các ngày được giao.
+- Nội dung email dạng bảng để giáo viên xem nhanh nhiều trường, nhiều lớp, nhiều bài, nhiều khung giờ.
 
-### Quản lý khung giờ
+## 3. Email Lịch Dạy
 
-- Thêm khung giờ dạy.
-- Lưu vào tab `TimeSlots`.
-- Dùng khung giờ khi giao lịch.
+Đã chỉnh mẫu email:
 
-### Giao lịch dạy
+- Đổi `Life Skill Scheduler` thành `HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG METTASOUL`.
+- Sửa chính tả tiếng Việt có dấu.
+- Căn giữa tiêu đề `Bạn có lịch dạy mới`.
+- Căn giữa nút `Xác nhận lịch dạy`.
+- Mục tiêu bài học được tách thành từng dòng rõ ràng:
+  - `- Mục tiêu 1: ...`
+  - `- Mục tiêu 2: ...`
+- Với email tổng hợp, mỗi dòng lịch có nút xác nhận riêng.
 
-- Admin chọn ngày, trường, lớp, bài học, khung giờ.
-- Gán lịch cho 1 hoặc nhiều giáo viên.
-- Lưu vào tab `Schedules`.
-- Tạo thread chat theo lịch.
-- Gửi email CTA xác nhận lịch qua GAS.
+## 4. Quản Lý Trường Và Lớp
 
-### Xác nhận, hủy, chuyển lịch
+Đã bổ sung trong phân hệ `Cấu hình`:
 
-- Giáo viên xác nhận lịch trên app.
-- Admin hủy/chuyển lịch.
-- Trạng thái lịch cập nhật trong `Schedules`.
+- Thêm, sửa, xóa trường.
+- Thêm, sửa, xóa lớp.
+- Khi thêm lớp có thể nhập nhiều tên lớp cùng lúc, cách nhau bằng dấu phẩy.
+- Hệ thống tự xác định khối từ tên lớp, ví dụ `10A1` thành `Khối 10`.
+- Dữ liệu trường/lớp được ghi vào Google Sheet và dùng lại trong phân hệ Giao lịch.
 
-### Phân hệ giáo án (đã hoàn thiện đợt này)
+## 5. Phân Hệ Giáo Án
+
+Đã hoàn thiện:
 
 - Upload giáo án qua GAS Web App.
-- Hỗ trợ file: `pdf`, `doc`, `docx`, `ppt`, `pptx`, `xls`, `xlsx`, `txt`, `csv`.
-- Hỗ trợ chọn và upload nhiều file trong 1 lần thao tác.
-- Giới hạn kích thước mỗi file: 10MB.
-- Mỗi lịch có thể lưu nhiều giáo án và hiển thị danh sách link trên UI.
-- Đã thêm API upload có timeout + retry + `requestId` + map `errorCode`.
-- Đã thêm API sửa/xóa giáo án:
-  - `PATCH /api/lesson-plans/[id]` (đổi tên file hiển thị)
-  - `DELETE /api/lesson-plans/[id]` (xóa bản ghi giáo án trên hệ thống)
-- Đã thêm kiểm tra quyền backend:
-  - Teacher chỉ upload/sửa/xóa giáo án của chính teacher đó.
-  - Admin có toàn quyền.
+- Hỗ trợ nhiều định dạng: `pdf`, `doc`, `docx`, `ppt`, `pptx`, `xls`, `xlsx`, `txt`, `csv`.
+- Hỗ trợ upload nhiều file trong một lần.
+- Giới hạn mỗi file 10MB.
+- Mỗi lịch có thể lưu nhiều giáo án.
+- Hiển thị danh sách giáo án theo từng lịch.
+- Sửa tên giáo án.
+- Xóa bản ghi giáo án trên Google Sheet.
+- Xóa file giáo án trên Google Drive qua GAS.
+- Backend có kiểm tra quyền: teacher chỉ xử lý giáo án của mình, admin có toàn quyền.
 
-### Điểm danh
+## 6. UI Và Trải Nghiệm
 
-- Giáo viên/admin điểm danh theo tiết.
-- Lưu vào tab `Attendance`.
-- Lịch cập nhật trạng thái `attended`.
+Đã cập nhật:
 
-### Chat và thông báo
+- Thay toàn bộ `window.confirm` và `window.prompt` bằng dialog nội bộ.
+- Thêm toast thông báo nội bộ chuyên nghiệp thay cho thông báo trình duyệt.
+- Thêm animation vào/ra cho dialog và toast.
+- Thêm hiệu ứng hover, đổ bóng, focus ring, và chuyển động nhẹ cho toàn bộ giao diện.
+- Sửa lỗi font/encoding trên giao diện chính ở các phần đã can thiệp gần đây.
 
-- Có UI chat theo giáo viên và theo tiết dạy.
-- Có notification trong app.
+## 7. Google Sheets, Drive Và GAS
 
-## 3. Tích hợp đã cấu hình
+Google Sheets đang là nguồn dữ liệu chính.
 
-### Google Sheets
+Các tab đang dùng:
 
-- Service account đọc/ghi Google Sheet.
-- Env cần có:
-  - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
-  - `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
-  - `GOOGLE_SHEETS_SPREADSHEET_ID`
+- `Users`
+- `Teachers`
+- `Schools`
+- `Classes`
+- `Lessons`
+- `TimeSlots`
+- `Schedules`
+- `LessonPlans`
+- `Attendance`
+- `ChatThreads`
+- `ChatMessages`
+- `Notifications`
+- `AuditLogs`
 
-Spreadsheet đang sử dụng:
+Tích hợp đã có:
 
-```text
-1wTbm61GHwmvza94UmNeptTAmhSlLEPHQaoCLC7uMni0
-```
+- Service account đọc/ghi Google Sheets.
+- GAS gửi email lịch dạy.
+- GAS upload giáo án lên Google Drive.
+- GAS xóa file giáo án khỏi Google Drive.
+- Backend normalize header/cell khi đọc Sheet để tránh lỗi BOM, khoảng trắng, hoặc lệch cột.
 
-### Google Drive
+## 8. Kiểm Thử Và Build
 
-Folder giáo án:
+Các lần thay đổi quan trọng gần đây đều đã chạy:
 
-```text
-1Tn0cqAsXjbrLlV8G2MTewMd8TL6P44tD
-```
+- `npx tsc --noEmit`
+- `npm run build`
 
-### Google Apps Script
+Trạng thái gần nhất:
 
-Script mẫu trong repo:
+- TypeScript pass.
+- Next build pass.
+- Code đã push lên `main`.
 
-```text
-scripts/gas-life-skill-webhook.js
-```
+Các commit gần nhất:
 
-Script xử lý:
+- `262a03e` - Support per-row teaching date in batch assignment
+- `7ea933f` - Support batch schedule assignment and weekly digest emails
+- `8915c27` - Refine Vietnamese schedule email template and objective formatting
+- `2ba722e` - Harden teacher validation and normalize sheet headers
+- `896bedd` - Prevent invalid timeslot assignment and honor active time slots
 
-- Gửi email lịch dạy.
-- Nhận upload file base64.
-- Tạo file vào Drive folder.
-- Ghi metadata vào `LessonPlans`.
-- Cập nhật `Schedules.status = lesson_plan_uploaded`.
-- Trả về `requestId`, `errorCode`, `message` để debug.
+## 9. Kế Hoạch Phiên Tiếp Theo
 
-### Email
+Ưu tiên tiếp theo tại phân hệ `Giao lịch`:
 
-- `EMAIL_PROVIDER=gas`.
-- Gửi qua `MailApp.sendEmail`.
-- Sender mong muốn: `Life Skill <infoasst@mettasoul.vn>`.
+- Khi người dùng chọn `Lớp - Khối`, hệ thống tự xác định khối của lớp.
+- Danh sách `Bài học` trong dòng lịch sẽ tự lọc theo khối đó.
+- Mục tiêu là giúp giáo vụ chọn bài nhanh hơn và giảm chọn nhầm bài không đúng khối.
 
-## 4. Các thay đổi kỹ thuật mới nhất (2026-05-22)
+Hướng triển khai đề xuất:
 
-- Nâng cấp `app/api/lesson-plans/upload/route.ts`:
-  - Validate payload.
-  - Timeout + retry.
-  - Map lỗi theo `errorCode`.
-  - Gắn `requestId` xuyên suốt.
-  - Kiểm tra session và quyền upload theo teacher/schedule.
-- Nâng cấp `components/life-skill-app.tsx`:
-  - Upload nhiều file.
-  - Hiển thị nhiều giáo án trên 1 lịch.
-  - Thêm nút sửa/xóa giáo án trong phân hệ giáo viên.
-- Thêm route mới `app/api/lesson-plans/[id]/route.ts` cho PATCH/DELETE.
-- Nâng cấp `lib/google-sheets.ts`:
-  - Thêm `readSheetRowById`.
-  - Thêm `deleteSheetRowById`.
+- Trong từng dòng lịch, khi `classId` thay đổi thì lấy `grade` từ `ClassRoom`.
+- Bộ chọn bài học chỉ hiển thị `Lessons` có `lesson.grade === classRoom.grade`.
+- Nếu bài học đang chọn không thuộc khối mới, tự chọn bài đầu tiên phù hợp.
+- Nếu khối chưa có bài học, hiển thị cảnh báo rõ trong dòng lịch.
+- Preview và email sẽ dùng đúng bài học đã lọc theo khối.
 
-## 5. Các env cần có trên Vercel
+## 10. Ghi Chú Kết Thúc Phiên
 
-Bắt buộc:
+Phiên hôm nay kết thúc ở trạng thái:
 
-```env
-NEXT_PUBLIC_APP_URL=https://domain-vercel-cua-ban
-AUTH_SECRET=...
-
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-
-GOOGLE_SERVICE_ACCOUNT_EMAIL=...
-GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY=...
-GOOGLE_SHEETS_SPREADSHEET_ID=1wTbm61GHwmvza94UmNeptTAmhSlLEPHQaoCLC7uMni0
-
-EMAIL_PROVIDER=gas
-GAS_MAIL_WEBHOOK_URL=https://script.google.com/macros/s/AKfycbzaysbasAVWP4anrNYMLDFI7w71tJIxUMJr_dgJ32uxhn592KhDNinWDqYgm3OFE9t-/exec
-GAS_MAIL_WEBHOOK_SECRET=...
-EMAIL_FROM=Life Skill <infoasst@mettasoul.vn>
-
-GAS_UPLOAD_WEBHOOK_URL=https://script.google.com/macros/s/AKfycbzaysbasAVWP4anrNYMLDFI7w71tJIxUMJr_dgJ32uxhn592KhDNinWDqYgm3OFE9t-/exec
-GAS_UPLOAD_WEBHOOK_SECRET=...
-```
-
-Sau khi sửa env trên Vercel cần redeploy.
-
-## 6. Trạng thái hiện tại của phân hệ giáo án
-
-Đã đạt:
-
-- Upload đã chạy qua GAS.
-- Teacher có thể upload nhiều file (doc/ppt/pdf...) trong 1 lần.
-- Có thể sửa tên và xóa giáo án trên UI.
-- Backend đã có check quyền.
-
-Cần quyết định tiếp (nếu muốn đẩy đến mức production chặt chẽ hơn):
-
-- Khi xóa giáo án, hiện đang xóa bản ghi trên hệ thống; nếu cần xóa cả file vật lý trên Google Drive thì bổ sung action xóa file trong GAS.
-
-## 7. Việc cần làm tiếp (ngoài phân hệ giáo án)
-
-Ưu tiên tiếp theo:
-
-- Nối chat/notifications thật vào Google Sheet 100%.
-- Bổ sung backend authorization rộng hơn cho các API còn lại (không chỉ lesson plans).
-- Hoàn thiện màn quản lý trường/lớp nếu cần đầy đủ CRUD.
-- Bổ sung audit log cho các thao tác quan trọng.
+- Giao lịch đã gửi được.
+- Email tổng hợp theo giáo viên đã có.
+- Mỗi dòng lịch đã có ngày dạy riêng.
+- Kế hoạch tiếp theo đã rõ: lọc bài học theo khối của lớp trong từng dòng giao lịch.
