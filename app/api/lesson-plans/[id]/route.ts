@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
 import { findAuthorizedUserFromSession } from "@/lib/auth-users";
 import { sessionCookieName, verifySessionToken } from "@/lib/auth-session";
-import { readSheetRowById, updateSheetRowById } from "@/lib/google-sheets";
+import { trashDriveFileById } from "@/lib/google-drive";
+import { deleteSheetRowById, readSheetRowById, updateSheetRowById } from "@/lib/google-sheets";
 import type { User } from "@/lib/types";
 
 type Params = {
@@ -62,36 +63,25 @@ export async function DELETE(_: Request, { params }: Params) {
       return NextResponse.json({ error: "Permission denied." }, { status: 403 });
     }
 
-    const webhookUrl = process.env.GAS_UPLOAD_WEBHOOK_URL || process.env.GAS_MAIL_WEBHOOK_URL;
-    const secret = process.env.GAS_UPLOAD_WEBHOOK_SECRET || process.env.GAS_MAIL_WEBHOOK_SECRET;
-    if (!webhookUrl || !secret) {
-      return NextResponse.json({ error: "Missing GAS webhook configuration." }, { status: 500 });
-    }
-
     const requestId = `lp-del-${crypto.randomUUID()}`;
-    const gasResponse = await fetchWithTimeout(
-      webhookUrl,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json;charset=utf-8" },
-        body: JSON.stringify({
-          action: "deleteLessonPlan",
-          secret,
-          requestId,
-          lessonPlanId: id,
-        }),
-      },
-      requestId,
-    );
+    const gasResult = await tryDeleteViaGas(id, requestId);
 
-    const rawText = (await gasResponse.text()).trim();
-    const parsed = tryParseJson(rawText);
-    if (!gasResponse.ok || !parsed || !parsed.ok) {
-      const message =
-        parsed?.error ||
-        parsed?.message ||
-        `Cannot delete lesson plan from GAS. Request ID: ${requestId}`;
-      return NextResponse.json({ error: message }, { status: 502 });
+    if (!gasResult.deleted) {
+      try {
+        await trashDriveFileById(lessonPlan.driveFileId || "");
+        await deleteSheetRowById("LessonPlans", id);
+      } catch (fallbackError) {
+        const reason = fallbackError instanceof Error ? fallbackError.message : "Unknown Google API error.";
+        return NextResponse.json(
+          {
+            error:
+              `${gasResult.message} Fallback delete also failed: ${reason}. ` +
+              `Redeploy GAS with deleteLessonPlan or make sure the service account can access the Drive file. ` +
+              `Request ID: ${requestId}`,
+          },
+          { status: 502 },
+        );
+      }
     }
 
     return NextResponse.json({ id, deleted: true });
@@ -145,6 +135,50 @@ async function fetchWithTimeout(url: string, init: RequestInit, requestId: strin
     throw new RouteError(502, `Cannot reach GAS webhook. Request ID: ${requestId}`);
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+async function tryDeleteViaGas(lessonPlanId: string, requestId: string) {
+  const webhookUrl = process.env.GAS_UPLOAD_WEBHOOK_URL || process.env.GAS_MAIL_WEBHOOK_URL;
+  const secret = process.env.GAS_UPLOAD_WEBHOOK_SECRET || process.env.GAS_MAIL_WEBHOOK_SECRET;
+  if (!webhookUrl || !secret) {
+    return { deleted: false, message: "Missing GAS webhook configuration." };
+  }
+
+  try {
+    const gasResponse = await fetchWithTimeout(
+      webhookUrl,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json;charset=utf-8" },
+        body: JSON.stringify({
+          action: "deleteLessonPlan",
+          secret,
+          requestId,
+          lessonPlanId,
+        }),
+      },
+      requestId,
+    );
+
+    const rawText = (await gasResponse.text()).trim();
+    const parsed = tryParseJson(rawText);
+    if (gasResponse.ok && parsed?.ok) {
+      return { deleted: true, message: "Deleted via GAS." };
+    }
+
+    return {
+      deleted: false,
+      message:
+        parsed?.error ||
+        parsed?.message ||
+        `Cannot delete lesson plan from GAS. HTTP ${gasResponse.status}.`,
+    };
+  } catch (error) {
+    return {
+      deleted: false,
+      message: error instanceof Error ? error.message : "Cannot reach GAS webhook.",
+    };
   }
 }
 
