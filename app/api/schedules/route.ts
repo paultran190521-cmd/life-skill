@@ -69,8 +69,8 @@ export async function POST(request: Request) {
     }));
 
     const chatThreads = schedules.map<ChatThread>((schedule) => {
-      const classRoom = classes.find((item) => item.id === schedule.classId);
-      const slot = slots.find((item) => item.id === schedule.timeSlotId);
+      const classRoom = classes.find((item) => normalizeId(item.id) === normalizeId(schedule.classId));
+      const slot = slots.find((item) => normalizeId(item.id) === normalizeId(schedule.timeSlotId));
       return {
         id: `thread-${schedule.id}`,
         type: "schedule",
@@ -178,10 +178,11 @@ function validateScheduleInput(
   },
 ) {
   const date = String(body.date || "").trim();
-  const schoolId = String(body.schoolId || "").trim();
-  const classId = String(body.classId || "").trim();
-  const lessonId = String(body.lessonId || "").trim();
-  const timeSlotId = String(body.timeSlotId || "").trim();
+  const schoolId = normalizeId(body.schoolId);
+  const classId = normalizeId(body.classId);
+  const lessonId = normalizeId(body.lessonId);
+  const timeSlotId = normalizeId(body.timeSlotId);
+  const teacherIdSet = new Set(teacherIds.map((teacherId) => normalizeId(teacherId)));
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return "Ngày dạy không hợp lệ.";
@@ -189,23 +190,42 @@ function validateScheduleInput(
   if (!schoolId || !classId || !lessonId || !timeSlotId || teacherIds.length === 0) {
     return "Thiếu thông tin bắt buộc khi tạo lịch.";
   }
-  if (!data.schools.some((item) => item.id === schoolId)) {
+  if (!data.schools.some((item) => normalizeId(item.id) === schoolId)) {
     return "Trường đã chọn không tồn tại.";
   }
-  if (!data.classes.some((item) => item.id === classId && item.schoolId === schoolId)) {
+  if (
+    !data.classes.some(
+      (item) => normalizeId(item.id) === classId && normalizeId(item.schoolId) === schoolId,
+    )
+  ) {
     return "Lớp đã chọn không thuộc trường đã chọn.";
   }
-  if (!data.lessons.some((item) => item.id === lessonId && item.active !== "false")) {
+  if (!data.lessons.some((item) => normalizeId(item.id) === lessonId && isRowActive(item))) {
     return "Bài học đã chọn không tồn tại hoặc đang tắt.";
   }
-  if (!data.slots.some((item) => item.id === timeSlotId && item.active !== "false")) {
+  if (!data.slots.some((item) => normalizeId(item.id) === timeSlotId && isRowActive(item))) {
     return "Khung giờ đã chọn không tồn tại hoặc đang tắt.";
   }
-  if (!teacherIds.every((teacherId) => data.teachers.some((item) => item.id === teacherId && item.active !== "false"))) {
+  const activeTeacherIds = new Set(
+    data.teachers.filter((item) => isRowActive(item)).map((item) => normalizeId(item.id)),
+  );
+  if (!Array.from(teacherIdSet).every((teacherId) => activeTeacherIds.has(teacherId))) {
     return "Một hoặc nhiều giáo viên đã chọn không tồn tại hoặc đang tắt.";
   }
 
   return "";
+}
+
+function normalizeId(value: unknown) {
+  return String(value || "").trim();
+}
+
+function isRowActive(row: Record<string, string>) {
+  const raw = String(row.active ?? row.isActive ?? "").trim().toLowerCase();
+  if (!raw) {
+    return true;
+  }
+  return !["false", "0", "no", "inactive", "disabled", "off"].includes(raw);
 }
 
 function createScheduleNotifications(schedules: Schedule[], emailResults: EmailResult[], now: string): Notification[] {
@@ -247,11 +267,12 @@ async function sendScheduleEmails(
     schedules.map(async (schedule) => {
       const result = await sendScheduleEmail({
         schedule,
-        teacher: data.teachers.find((teacher) => teacher.id === schedule.teacherId) || {},
-        school: data.schools.find((school) => school.id === schedule.schoolId),
-        classRoom: data.classes.find((classRoom) => classRoom.id === schedule.classId),
-        lesson: data.lessons.find((lesson) => lesson.id === schedule.lessonId),
-        slot: data.slots.find((slot) => slot.id === schedule.timeSlotId),
+        teacher:
+          data.teachers.find((teacher) => normalizeId(teacher.id) === normalizeId(schedule.teacherId)) || {},
+        school: data.schools.find((school) => normalizeId(school.id) === normalizeId(schedule.schoolId)),
+        classRoom: data.classes.find((classRoom) => normalizeId(classRoom.id) === normalizeId(schedule.classId)),
+        lesson: data.lessons.find((lesson) => normalizeId(lesson.id) === normalizeId(schedule.lessonId)),
+        slot: data.slots.find((slot) => normalizeId(slot.id) === normalizeId(schedule.timeSlotId)),
       });
 
       return {
