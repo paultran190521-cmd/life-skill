@@ -73,6 +73,7 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - Khi bấm vào bất kỳ điểm nào trên dòng lịch chi tiết, hệ thống mở modal chi tiết lịch với đầy đủ trường/lớp/giáo viên/trạng thái/khung giờ.
 - Mục tiêu bài học trong modal được tách dòng để giáo vụ đọc nhanh từng mục tiêu.
 - Giao diện lịch sử dụng linh hoạt hai màu thương hiệu `#1992b0` và `#ff9500` để tạo điểm nhấn rõ hơn.
+- Dòng lịch và modal chi tiết dùng nhiều nhóm màu theo ý nghĩa: trạng thái, điểm danh, khung giờ, trường và lớp được tô khác nhau để quét thông tin nhanh hơn.
 - Có chế độ xem `Tháng`, `Tuần`, `Ngày`.
 - Có bộ lọc nâng cao theo trạng thái, giáo viên, trường, lớp, khung giờ và khoảng ngày.
 - Có sắp xếp theo ngày tăng dần, ngày giảm dần hoặc trạng thái; bộ lọc được ghi nhớ trên trình duyệt.

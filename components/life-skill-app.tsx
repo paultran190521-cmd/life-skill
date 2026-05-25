@@ -2520,6 +2520,38 @@ export function LifeSkillApp() {
               <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
                 {(() => {
                   const meta = lookupSchedule(selectedScheduleDetail);
+                  const detailCards = [
+                    {
+                      label: "Trạng thái",
+                      value: statusLabels[selectedScheduleDetail.status],
+                      tone: scheduleStatusTone(selectedScheduleDetail.status),
+                    },
+                    {
+                      label: "Điểm danh",
+                      value: meta.checkIn ? `Đã điểm danh ${formatDateTime(meta.checkIn.checkedInAt)}` : "Chưa điểm danh",
+                      tone: meta.checkIn ? "emerald" : "amber",
+                    },
+                    {
+                      label: "Khung giờ",
+                      value: `${meta.slot?.label || ""} ${meta.slot?.start || ""}-${meta.slot?.end || ""}`,
+                      tone: "indigo",
+                    },
+                    {
+                      label: "Lớp",
+                      value: meta.classRoom?.name || "Chưa rõ",
+                      tone: "orange",
+                    },
+                    {
+                      label: "Trường",
+                      value: meta.school?.name || "Chưa rõ",
+                      tone: "cyan",
+                    },
+                    {
+                      label: "Giáo viên",
+                      value: `${meta.teacher?.name || "Chưa rõ"} - ${meta.teacher?.phone || "Chưa cập nhật"}`,
+                      tone: "slate",
+                    },
+                  ] as const;
                   return (
                     <>
                       <div className="flex items-start justify-between gap-4">
@@ -2542,12 +2574,9 @@ export function LifeSkillApp() {
                       </div>
 
                       <div className="mt-5 grid gap-3 md:grid-cols-2">
-                        <InfoBlock label="Giáo viên" value={meta.teacher?.name || "Chưa rõ"} />
-                        <InfoBlock label="Số điện thoại" value={meta.teacher?.phone || "Chưa cập nhật"} />
-                        <InfoBlock label="Trường" value={meta.school?.name || "Chưa rõ"} />
-                        <InfoBlock label="Lớp" value={meta.classRoom?.name || "Chưa rõ"} />
-                        <InfoBlock label="Trạng thái" value={statusLabels[selectedScheduleDetail.status]} />
-                        <InfoBlock label="Khung giờ" value={`${meta.slot?.label || ""} ${meta.slot?.start || ""}-${meta.slot?.end || ""}`} />
+                        {detailCards.map((card) => (
+                          <InfoBlock key={card.label} label={card.label} value={card.value} tone={card.tone} />
+                        ))}
                       </div>
 
                       <div className="mt-5 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-4">
@@ -4154,6 +4183,7 @@ export function LifeSkillApp() {
         <div className="min-w-[860px] space-y-3">
           {items.map((schedule) => {
             const meta = lookupSchedule(schedule);
+            const checkedIn = Boolean(meta.checkIn);
             const scheduleLogs = rowAuditLogs
               .filter((log) => log.entityType === "Schedule" && log.entityId === schedule.id)
               .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -4170,7 +4200,7 @@ export function LifeSkillApp() {
                     onOpenDetail(schedule);
                   }
                 }}
-                className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-lg"
+                className={`rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-lg ${scheduleAccentBorder(schedule.status)}`}
               >
                 <div className="grid grid-cols-[130px_1fr_160px_190px] items-center gap-4">
                   <div className="flex items-start gap-2">
@@ -4185,7 +4215,7 @@ export function LifeSkillApp() {
                     ) : null}
                     <div>
                       <p className="text-sm font-black text-[var(--brand-dark)]">{formatDate(schedule.date)}</p>
-                      <p className="mt-1 text-xs font-bold text-[var(--muted)]">
+                      <p className="mt-1 inline-flex rounded-full bg-indigo-50 px-2 py-1 text-xs font-black text-indigo-700">
                         {meta.slot?.label} {meta.slot?.start}
                       </p>
                     </div>
@@ -4201,8 +4231,12 @@ export function LifeSkillApp() {
                     >
                       {meta.lesson?.title}
                     </button>
-                    <p className="mt-1 truncate text-sm text-[var(--muted)]">
-                      {meta.school?.name} - Lớp {meta.classRoom?.name} - {meta.lesson?.objective}
+                    <p className="mt-2 flex flex-wrap gap-1 text-xs font-black">
+                      <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">{meta.school?.name}</span>
+                      <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700">Lớp {meta.classRoom?.name}</span>
+                      <span className={`rounded-full px-2 py-1 ${checkedIn ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
+                        {checkedIn ? "Đã điểm danh" : "Chưa điểm danh"}
+                      </span>
                     </p>
                   </div>
                   <TeacherHover teacher={meta.teacher} />
@@ -4347,11 +4381,30 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function InfoBlock({ label, value }: { label: string; value: string }) {
+function InfoBlock({
+  label,
+  value,
+  tone = "cyan",
+}: {
+  label: string;
+  value: string;
+  tone?: "cyan" | "orange" | "emerald" | "amber" | "rose" | "violet" | "indigo" | "slate";
+}) {
+  const toneClass = {
+    cyan: "border-cyan-200 bg-cyan-50 text-cyan-800",
+    orange: "border-orange-200 bg-orange-50 text-orange-800",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+    rose: "border-rose-200 bg-rose-50 text-rose-800",
+    violet: "border-violet-200 bg-violet-50 text-violet-800",
+    indigo: "border-indigo-200 bg-indigo-50 text-indigo-800",
+    slate: "border-slate-200 bg-slate-50 text-slate-800",
+  }[tone];
+
   return (
-    <div className="rounded-2xl border border-cyan-100 bg-cyan-50/45 px-4 py-3 even:border-orange-100 even:bg-orange-50/45">
-      <p className="text-[11px] font-black uppercase text-[var(--muted)]">{label}</p>
-      <p className="mt-1 text-sm font-black text-[var(--brand-dark)]">{value}</p>
+    <div className={`rounded-2xl border px-4 py-3 ${toneClass}`}>
+      <p className="text-[11px] font-black uppercase opacity-75">{label}</p>
+      <p className="mt-1 text-sm font-black">{value}</p>
     </div>
   );
 }
@@ -5319,6 +5372,32 @@ function auditActionLabel(action: string) {
     "schedule.attended": "Điểm danh",
   };
   return labels[action] ?? action;
+}
+
+function scheduleStatusTone(status: Schedule["status"]): "cyan" | "orange" | "emerald" | "amber" | "rose" | "violet" | "indigo" | "slate" {
+  const tones: Record<Schedule["status"], "cyan" | "orange" | "emerald" | "amber" | "rose" | "violet" | "indigo" | "slate"> = {
+    draft: "slate",
+    sent: "amber",
+    confirmed: "cyan",
+    lesson_plan_uploaded: "indigo",
+    attended: "emerald",
+    cancelled: "rose",
+    reassigned: "violet",
+  };
+  return tones[status];
+}
+
+function scheduleAccentBorder(status: Schedule["status"]) {
+  const borders: Record<Schedule["status"], string> = {
+    draft: "border-l-4 border-l-slate-300",
+    sent: "border-l-4 border-l-amber-400",
+    confirmed: "border-l-4 border-l-cyan-400",
+    lesson_plan_uploaded: "border-l-4 border-l-indigo-400",
+    attended: "border-l-4 border-l-emerald-400",
+    cancelled: "border-l-4 border-l-rose-400",
+    reassigned: "border-l-4 border-l-violet-400",
+  };
+  return borders[status];
 }
 
 function teacherNamesForSchedules(schedules: Schedule[], teachers: Teacher[]) {
