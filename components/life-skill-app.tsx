@@ -159,6 +159,13 @@ type TeacherImportDraft = {
   role: Role;
 };
 
+type TeacherEditDraft = {
+  name: string;
+  email: string;
+  phone: string;
+  specialty: string;
+};
+
 type ToastTone = "info" | "success" | "warning" | "error";
 
 type ToastMessage = {
@@ -280,6 +287,13 @@ export function LifeSkillApp() {
     role: "teacher" as Role,
   });
   const [teacherModalOpen, setTeacherModalOpen] = useState(false);
+  const [editingTeacherId, setEditingTeacherId] = useState("");
+  const [teacherEditDraft, setTeacherEditDraft] = useState<TeacherEditDraft>({
+    name: "",
+    email: "",
+    phone: "",
+    specialty: "",
+  });
   const [bulkLessonRows, setBulkLessonRows] = useState<BulkLessonRow[]>(() => [createBulkLessonRow()]);
   const [bulkLessonErrors, setBulkLessonErrors] = useState<Record<string, string>>({});
   const [editingLessonId, setEditingLessonId] = useState("");
@@ -1287,6 +1301,159 @@ export function LifeSkillApp() {
       );
       setDataStatus("connected");
       setSaveError("");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  function startEditTeacher(teacher: Teacher) {
+    setEditingTeacherId(teacher.id);
+    setTeacherEditDraft({
+      name: teacher.name,
+      email: teacher.email,
+      phone: teacher.phone,
+      specialty: teacher.specialty,
+    });
+  }
+
+  function cancelEditTeacher() {
+    setEditingTeacherId("");
+    setTeacherEditDraft({
+      name: "",
+      email: "",
+      phone: "",
+      specialty: "",
+    });
+  }
+
+  async function saveTeacherEdit(teacherId: string) {
+    const name = teacherEditDraft.name.trim();
+    const email = teacherEditDraft.email.trim().toLowerCase();
+    const phone = teacherEditDraft.phone.trim();
+    const specialty = teacherEditDraft.specialty.trim();
+
+    if (!name || !email) {
+      handleSaveError(new Error("Họ tên và Email là bắt buộc."));
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      handleSaveError(new Error("Email giáo viên không hợp lệ."));
+      return;
+    }
+
+    try {
+      const savedTeacher = await saveRequest<Teacher>("Đang cập nhật giáo viên...", `/api/teachers/${teacherId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name,
+          email,
+          phone,
+          specialty,
+        }),
+      });
+      setTeachers((items) => items.map((item) => (item.id === teacherId ? { ...item, ...savedTeacher } : item)));
+      setAppUsers((items) =>
+        items.map((item) =>
+          item.teacherId === teacherId
+            ? {
+                ...item,
+                name: savedTeacher.name,
+                email: savedTeacher.email,
+                avatarUrl: savedTeacher.avatarUrl,
+                isActive: savedTeacher.active,
+              }
+            : item,
+        ),
+      );
+      setDataStatus("connected");
+      setSaveError("");
+      cancelEditTeacher();
+      pushToast("Đã cập nhật giáo viên", `Đã lưu thông tin mới cho ${savedTeacher.name}.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function toggleTeacherActive(teacher: Teacher) {
+    const linkedUser = userForTeacher(teacher.id);
+    const nextActive = !teacher.active;
+    const activeAdminCount = appUsers.filter((item) => item.role === "admin" && item.isActive !== false).length;
+
+    if (!nextActive && linkedUser?.role === "admin" && linkedUser.isActive !== false && activeAdminCount <= 1) {
+      handleSaveError(new Error("Không thể tắt quản trị viên cuối cùng."));
+      return;
+    }
+
+    try {
+      const savedTeacher = await saveRequest<Teacher>(
+        nextActive ? "Đang bật giáo viên..." : "Đang tắt giáo viên...",
+        `/api/teachers/${teacher.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ active: nextActive }),
+        },
+      );
+      setTeachers((items) => items.map((item) => (item.id === teacher.id ? { ...item, ...savedTeacher } : item)));
+      setAppUsers((items) =>
+        items.map((item) =>
+          item.teacherId === teacher.id
+            ? {
+                ...item,
+                isActive: savedTeacher.active,
+                name: savedTeacher.name,
+                email: savedTeacher.email,
+                avatarUrl: savedTeacher.avatarUrl,
+              }
+            : item,
+        ),
+      );
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast(
+        nextActive ? "Đã bật giáo viên" : "Đã tắt giáo viên",
+        `${savedTeacher.name} đã được ${nextActive ? "kích hoạt" : "tạm dừng"}.`,
+        nextActive ? "success" : "warning",
+      );
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function deleteTeacher(teacher: Teacher) {
+    const linkedUser = userForTeacher(teacher.id);
+    const activeAdminCount = appUsers.filter((item) => item.role === "admin" && item.isActive !== false).length;
+    if (linkedUser?.role === "admin" && linkedUser.isActive !== false && activeAdminCount <= 1) {
+      handleSaveError(new Error("Không thể xóa quản trị viên cuối cùng."));
+      return;
+    }
+
+    const confirmed = await openConfirmDialog({
+      title: "Xóa giáo viên",
+      message: `Bạn chắc chắn muốn xóa giáo viên "${teacher.name}"?`,
+      confirmText: "Xóa giáo viên",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await saveRequest<{ id: string; deleted: boolean; deletedUsers?: string[] }>(
+        "Đang xóa giáo viên...",
+        `/api/teachers/${teacher.id}`,
+        { method: "DELETE" },
+      );
+      const deletedUserIds = new Set(response.deletedUsers ?? []);
+      setTeachers((items) => items.filter((item) => item.id !== teacher.id));
+      setAppUsers((items) =>
+        items.filter((item) => item.teacherId !== teacher.id && !deletedUserIds.has(item.id) && item.id !== `u-${teacher.id}`),
+      );
+      if (editingTeacherId === teacher.id) {
+        cancelEditTeacher();
+      }
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã xóa giáo viên", `${teacher.name} đã được xóa khỏi hệ thống.`, "warning");
     } catch (error) {
       handleSaveError(error);
     }
@@ -2525,12 +2692,14 @@ export function LifeSkillApp() {
           </button>
         </div>
         <div className="app-scrollbar overflow-x-auto">
-          <div className="min-w-[860px] overflow-hidden rounded-2xl border border-[var(--line)] bg-white">
-            <div className="grid grid-cols-[2fr_150px_2fr_160px] gap-3 border-b border-[var(--line)] bg-cyan-50 px-4 py-3 text-xs font-black uppercase text-[var(--brand-dark)]">
+          <div className="min-w-[1120px] overflow-hidden rounded-2xl border border-[var(--line)] bg-white">
+            <div className="grid grid-cols-[2fr_150px_2fr_150px_110px_190px] gap-3 border-b border-[var(--line)] bg-cyan-50 px-4 py-3 text-xs font-black uppercase text-[var(--brand-dark)]">
               <span>Tên giáo viên</span>
               <span>Số điện thoại</span>
               <span>Email</span>
               <span>Phân quyền</span>
+              <span>Trạng thái</span>
+              <span>Thao tác</span>
             </div>
             <div className="divide-y divide-[var(--line)]">
               {teachers.map((teacher) => (
@@ -2539,6 +2708,14 @@ export function LifeSkillApp() {
                   teacher={teacher}
                   user={userForTeacher(teacher.id)}
                   onRoleChange={updateTeacherRole}
+                  isEditing={editingTeacherId === teacher.id}
+                  draft={teacherEditDraft}
+                  onStartEdit={startEditTeacher}
+                  onCancelEdit={cancelEditTeacher}
+                  onDraftChange={setTeacherEditDraft}
+                  onSaveEdit={saveTeacherEdit}
+                  onToggleActive={toggleTeacherActive}
+                  onDelete={deleteTeacher}
                 />
               ))}
             </div>
@@ -3442,15 +3619,95 @@ function TeacherTableRow({
   teacher,
   user,
   onRoleChange,
+  isEditing,
+  draft,
+  onStartEdit,
+  onCancelEdit,
+  onDraftChange,
+  onSaveEdit,
+  onToggleActive,
+  onDelete,
 }: {
   teacher: Teacher;
   user?: User;
   onRoleChange: (teacher: Teacher, role: Role) => void;
+  isEditing: boolean;
+  draft: TeacherEditDraft;
+  onStartEdit: (teacher: Teacher) => void;
+  onCancelEdit: () => void;
+  onDraftChange: (draft: TeacherEditDraft) => void;
+  onSaveEdit: (teacherId: string) => void;
+  onToggleActive: (teacher: Teacher) => void;
+  onDelete: (teacher: Teacher) => void;
 }) {
   const role = user?.role ?? "teacher";
 
+  if (isEditing) {
+    return (
+      <div className="grid grid-cols-[2fr_150px_2fr_150px_110px_190px] items-center gap-3 bg-cyan-50/40 px-4 py-3 text-sm">
+        <div className="min-w-0 space-y-2">
+          <input
+            value={draft.name}
+            onChange={(event) => onDraftChange({ ...draft, name: event.target.value })}
+            placeholder="Họ tên"
+            className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 font-semibold text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
+          />
+          <input
+            value={draft.specialty}
+            onChange={(event) => onDraftChange({ ...draft, specialty: event.target.value })}
+            placeholder="Chuyên môn"
+            className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs font-semibold text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
+          />
+        </div>
+        <input
+          value={draft.phone}
+          onChange={(event) => onDraftChange({ ...draft, phone: event.target.value })}
+          placeholder="Số điện thoại"
+          className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 font-semibold text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
+        />
+        <input
+          value={draft.email}
+          onChange={(event) => onDraftChange({ ...draft, email: event.target.value })}
+          placeholder="Email"
+          className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 font-semibold text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
+        />
+        <select
+          value={role}
+          onChange={(event) => onRoleChange(teacher, event.target.value as Role)}
+          className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-black text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
+        >
+          <option value="teacher">Giáo viên</option>
+          <option value="admin">Quản trị</option>
+        </select>
+        <span
+          className={`inline-flex h-10 items-center justify-center rounded-xl px-3 text-xs font-black ${
+            teacher.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
+          }`}
+        >
+          {teacher.active ? "Đang bật" : "Đang tắt"}
+        </span>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancelEdit}
+            className="inline-flex h-9 items-center rounded-lg border border-[var(--line)] bg-white px-3 text-xs font-black text-[var(--brand-dark)]"
+          >
+            Hủy
+          </button>
+          <button
+            type="button"
+            onClick={() => onSaveEdit(teacher.id)}
+            className="inline-flex h-9 items-center rounded-lg bg-[var(--brand)] px-3 text-xs font-black text-white"
+          >
+            Lưu
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-[2fr_150px_2fr_160px] items-center gap-3 px-4 py-3 text-sm transition hover:bg-cyan-50/45">
+    <div className="grid grid-cols-[2fr_150px_2fr_150px_110px_190px] items-center gap-3 px-4 py-3 text-sm transition hover:bg-cyan-50/45">
       <div className="flex min-w-0 items-center gap-3">
         <img alt={teacher.name} src={teacher.avatarUrl} className="h-10 w-10 rounded-xl object-cover" />
         <div className="min-w-0">
@@ -3468,6 +3725,39 @@ function TeacherTableRow({
         <option value="teacher">Giáo viên</option>
         <option value="admin">Quản trị</option>
       </select>
+      <span
+        className={`inline-flex h-10 items-center justify-center rounded-xl px-3 text-xs font-black ${
+          teacher.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
+        }`}
+      >
+        {teacher.active ? "Đang bật" : "Đang tắt"}
+      </span>
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          title="Sửa giáo viên"
+          onClick={() => onStartEdit(teacher)}
+          className="grid h-8 w-8 place-items-center rounded-lg bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
+        >
+          <Pencil size={14} />
+        </button>
+        <button
+          type="button"
+          title={teacher.active ? "Tắt giáo viên" : "Bật giáo viên"}
+          onClick={() => onToggleActive(teacher)}
+          className="inline-flex h-8 items-center rounded-lg bg-white px-2 text-[11px] font-black text-[var(--brand-dark)] ring-1 ring-[var(--line)] transition hover:bg-cyan-50"
+        >
+          {teacher.active ? "Tắt" : "Bật"}
+        </button>
+        <button
+          type="button"
+          title="Xóa giáo viên"
+          onClick={() => onDelete(teacher)}
+          className="grid h-8 w-8 place-items-center rounded-lg bg-rose-100 text-rose-700 transition hover:bg-rose-200"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
     </div>
   );
 }
