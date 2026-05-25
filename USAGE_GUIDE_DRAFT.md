@@ -76,3 +76,4 @@ Sau mỗi lần nâng cấp phân hệ, cần bổ sung vào tài liệu này:
 ## 4. Cập Nhật Giao Diện Toàn Hệ Thống
 
 - Font chữ hiển thị chính đã chuyển từ `Be Vietnam Pro` sang `Quicksand` để thử nghiệm thẩm mỹ mới cho toàn bộ ứng dụng.
+- Đã tăng độ dày chữ mặc định toàn hệ thống thêm 1 mức (`font-weight: 500`) để cải thiện độ rõ khi hiển thị.
