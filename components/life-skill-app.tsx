@@ -5,6 +5,7 @@ import {
   BookOpen,
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Clock3,
   Download,
@@ -248,6 +249,8 @@ export function LifeSkillApp() {
   const [saveError, setSaveError] = useState("");
   const [pendingAction, setPendingAction] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [calendarMonth, setCalendarMonth] = useState(() => currentMonthKey());
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
   const [lessonSearchTerm, setLessonSearchTerm] = useState("");
   const [lessonGradeFilter, setLessonGradeFilter] = useState("all");
   const [selectedThreadId, setSelectedThreadId] = useState(seedThreads[0]?.id ?? "");
@@ -544,6 +547,14 @@ export function LifeSkillApp() {
         .includes(term);
     });
   }, [classes, currentTeacherId, lessons, role, schedules, schools, searchTerm, teachers]);
+  const calendarDays = useMemo(
+    () => buildCalendarDays(calendarMonth, visibleSchedules),
+    [calendarMonth, visibleSchedules],
+  );
+  const selectedDaySchedules = useMemo(
+    () => visibleSchedules.filter((schedule) => schedule.date === selectedCalendarDate),
+    [selectedCalendarDate, visibleSchedules],
+  );
 
   const draftSchedulePreview = useMemo<Schedule[]>(
     () =>
@@ -2687,10 +2698,111 @@ export function LifeSkillApp() {
   }
 
   function CalendarPanel() {
+    const todayKey = currentDateKey();
+
     return (
-      <Panel title={role === "admin" ? "Lịch tổng quan" : "Lịch dạy của tôi"} action="Ngày / tuần / tháng">
-        <ScheduleList items={visibleSchedules} />
-      </Panel>
+      <div className="space-y-5">
+        <Panel title={role === "admin" ? "Lịch tổng quan" : "Lịch dạy của tôi"} action={formatMonthTitle(calendarMonth)}>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                title="Tháng trước"
+                onClick={() => setCalendarMonth((value) => addMonths(value, -1))}
+                className="grid h-10 w-10 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--brand-dark)] transition hover:bg-cyan-50"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                type="button"
+                title="Tháng sau"
+                onClick={() => setCalendarMonth((value) => addMonths(value, 1))}
+                className="grid h-10 w-10 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--brand-dark)] transition hover:bg-cyan-50"
+              >
+                <ChevronRight size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCalendarMonth(currentMonthKey());
+                  setSelectedCalendarDate(todayKey);
+                }}
+                className="h-10 rounded-xl bg-cyan-50 px-3 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-100"
+              >
+                Hôm nay
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-black">
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-800">{countSchedulesByStatus(visibleSchedules, "sent")} chờ</span>
+              <span className="rounded-full bg-cyan-50 px-3 py-1 text-cyan-800">{countSchedulesByStatus(visibleSchedules, "confirmed")} đã nhận</span>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-800">{countSchedulesByStatus(visibleSchedules, "attended")} điểm danh</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 gap-2 text-center text-[11px] font-black uppercase text-[var(--muted)]">
+            {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map((day) => (
+              <span key={day}>{day}</span>
+            ))}
+          </div>
+          <div className="mt-2 grid grid-cols-7 gap-2">
+            {calendarDays.map((day) => {
+              const isSelected = selectedCalendarDate === day.dateKey;
+              const statusTone = day.schedules.some((schedule) => schedule.status === "sent")
+                ? "bg-amber-50 text-amber-800"
+                : day.schedules.some((schedule) => schedule.status === "cancelled")
+                  ? "bg-rose-50 text-rose-700"
+                  : "bg-cyan-50 text-cyan-800";
+
+              return (
+                <button
+                  key={day.dateKey}
+                  type="button"
+                  onClick={() => setSelectedCalendarDate(day.dateKey)}
+                  className={`min-h-[112px] rounded-2xl border p-3 text-left transition ${
+                    isSelected
+                      ? "border-[var(--brand)] bg-cyan-50 shadow-lg shadow-cyan-900/10"
+                      : day.isToday
+                        ? "border-orange-300 bg-orange-50/60"
+                        : day.inMonth
+                          ? "border-[var(--line)] bg-white hover:border-cyan-200 hover:bg-cyan-50/40"
+                          : "border-slate-100 bg-slate-50/70 text-slate-400"
+                  }`}
+                >
+                  <span
+                    className={`grid h-8 w-8 place-items-center rounded-full text-sm font-black ${
+                      day.isToday ? "bg-[var(--accent)] text-white" : "text-[var(--brand-dark)]"
+                    }`}
+                  >
+                    {day.dayNumber}
+                  </span>
+                  {day.schedules.length > 0 ? (
+                    <div className="mt-3 space-y-2">
+                      <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-black ${statusTone}`}>
+                        {day.schedules.length} lịch
+                      </span>
+                      <p className="line-clamp-2 text-xs font-bold text-[var(--brand-dark)]">
+                        {lookupSchedule(day.schedules[0])?.lesson?.title || "Lịch dạy"}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-xs font-semibold text-[var(--muted)]">Trống</p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </Panel>
+
+        {selectedCalendarDate ? (
+          <Panel title={`Chi tiết ngày ${formatDate(selectedCalendarDate)}`} action={`${selectedDaySchedules.length} lịch`}>
+            <ScheduleList items={selectedDaySchedules} />
+          </Panel>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 px-5 py-4 text-sm font-bold text-[var(--brand-dark)]">
+            Chọn một ngày trên lịch để xem danh sách chi tiết.
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -4376,6 +4488,13 @@ function formatDate(value: string) {
   }).format(new Date(`${value}T00:00:00`));
 }
 
+function formatMonthTitle(monthKey: string) {
+  return new Intl.DateTimeFormat("vi-VN", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(`${monthKey}-01T00:00:00`));
+}
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("vi-VN", {
     day: "2-digit",
@@ -4383,6 +4502,60 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function currentDateKey() {
+  return toDateKey(new Date());
+}
+
+function currentMonthKey() {
+  return currentDateKey().slice(0, 7);
+}
+
+function toDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addMonths(monthKey: string, offset: number) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const date = new Date(year, month - 1 + offset, 1);
+  return toDateKey(date).slice(0, 7);
+}
+
+function buildCalendarDays(monthKey: string, schedules: Schedule[]) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const firstDay = new Date(year, month - 1, 1);
+  const startOffset = (firstDay.getDay() + 6) % 7;
+  const startDate = new Date(year, month - 1, 1 - startOffset);
+  const today = currentDateKey();
+  const schedulesByDate = new Map<string, Schedule[]>();
+
+  for (const schedule of schedules) {
+    const list = schedulesByDate.get(schedule.date) || [];
+    list.push(schedule);
+    schedulesByDate.set(schedule.date, list);
+  }
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + index);
+    const dateKey = toDateKey(date);
+
+    return {
+      dateKey,
+      dayNumber: date.getDate(),
+      inMonth: date.getMonth() === month - 1,
+      isToday: dateKey === today,
+      schedules: schedulesByDate.get(dateKey) || [],
+    };
+  });
+}
+
+function countSchedulesByStatus(schedules: Schedule[], status: Schedule["status"]) {
+  return schedules.filter((schedule) => schedule.status === status).length;
 }
 
 

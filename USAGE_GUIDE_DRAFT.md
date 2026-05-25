@@ -60,7 +60,23 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - `Tắt`: giáo viên tạm ngưng, không mất dữ liệu lịch sử; hệ thống không cho chọn để giao lịch mới.
 - Khi tắt, tài khoản `Users` liên kết cũng chuyển sang trạng thái không hoạt động.
 
-## 3. Ghi Chú Cập Nhật Tài Liệu
+## 3. Phân Hệ Lịch Tổng
+
+### Tính năng hiện có
+- Hiển thị lịch tổng theo dạng lưới tháng, chia thành các ô theo từng ngày.
+- Ngày hiện tại luôn được làm nổi bật để giáo vụ nhận diện nhanh.
+- Mỗi ô ngày hiển thị số lượng lịch và bài học đại diện nếu ngày đó có lịch.
+- Khi bấm vào một ngày, hệ thống mở danh sách chi tiết của ngày đó theo giao diện dòng lịch hiện tại.
+- Admin vẫn có thể hủy lịch hoặc chuyển lịch ngay trong danh sách chi tiết.
+- Giáo viên chỉ thấy lịch của mình và có thể xác nhận lịch trong danh sách chi tiết.
+
+### Quy trình thao tác
+- Vào tab `Lịch tổng`.
+- Dùng nút mũi tên để chuyển tháng hoặc bấm `Hôm nay` để quay lại tháng hiện tại.
+- Bấm vào một ô ngày để xem toàn bộ lịch dạy trong ngày đó.
+- Thực hiện thao tác chi tiết trên từng lịch trong phần danh sách bên dưới.
+
+## 4. Ghi Chú Cập Nhật Tài Liệu
 
 Sau mỗi lần nâng cấp phân hệ, cần bổ sung vào tài liệu này:
 - Danh sách tính năng mới.
@@ -73,7 +89,7 @@ Sau mỗi lần nâng cấp phân hệ, cần bổ sung vào tài liệu này:
 - Bước 3: Rà lại nhanh nội dung tài liệu để khớp hành vi thực tế trên UI/API.
 - Bước 4: Mới được commit và push.
 
-## 4. Cập Nhật Giao Diện Toàn Hệ Thống
+## 5. Cập Nhật Giao Diện Toàn Hệ Thống
 
 - Font chữ hiển thị chính đã chuyển từ `Be Vietnam Pro` sang `Quicksand` để thử nghiệm thẩm mỹ mới cho toàn bộ ứng dụng.
 - Đã tăng độ dày chữ mặc định toàn hệ thống thêm 1 mức (`font-weight: 500`) để cải thiện độ rõ khi hiển thị.
