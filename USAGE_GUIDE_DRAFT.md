@@ -29,10 +29,18 @@ Tai lieu nay duoc cap nhat sau moi phan he de tong hop tinh nang va quy trinh th
 - Them giao vien don le (ho ten, email, so dien thoai, chuyen mon, quyen).
 - Tu dong tao tai khoan `Users` lien ket voi `Teachers`.
 - Doi phan quyen giao vien/quan tri truc tiep tren danh sach giao vien.
-- Danh sach giao vien hien theo hang doc de de quan sat va quan ly.
+- Danh sach giao vien hien dang bang ngang nhu Excel voi cac cot: `Ten giao vien`, `So dien thoai`, `Email`, `Phan quyen`.
+- Nut `Them giao vien` mo modal rieng de them thu cong hoac import hang loat.
+
+### Quy trinh them giao vien
+- Tu man hinh `Giao vien`, bam `Them giao vien`.
+- Modal hien cac truong nhap thu cong: `Ho ten`, `Email Google`, `So dien thoai`, `Chuyen mon`, `Quyen`.
+- Nguoi dung co the bam `Luu giao vien` de them mot giao vien.
+- Nguoi dung co the tai file mau va import hang loat ngay trong modal.
 
 ### Tinh nang import nhanh bang Excel
 - Co nut `Tai mau Excel` de tai file mau.
+- File mau co 2 dong vi du san: mot dong quyen `admin` va mot dong quyen `giao vien`.
 - Co nut `Import file` de nap `.xlsx/.csv/.tsv`.
 - Cot mau bat buoc: `Ho ten`, `Email Google`, `So dien thoai`, `Chuyen mon`, `Quyen`.
 - He thong validate du lieu truoc khi ghi:

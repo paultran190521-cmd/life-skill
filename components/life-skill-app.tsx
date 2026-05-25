@@ -279,6 +279,7 @@ export function LifeSkillApp() {
     specialty: "",
     role: "teacher" as Role,
   });
+  const [teacherModalOpen, setTeacherModalOpen] = useState(false);
   const [bulkLessonRows, setBulkLessonRows] = useState<BulkLessonRow[]>(() => [createBulkLessonRow()]);
   const [bulkLessonErrors, setBulkLessonErrors] = useState<Record<string, string>>({});
   const [editingLessonId, setEditingLessonId] = useState("");
@@ -1111,12 +1112,17 @@ export function LifeSkillApp() {
     }
 
     setTeacherDraft({ name: "", email: "", phone: "", specialty: "", role: "teacher" });
+    setTeacherModalOpen(false);
   }
 
   async function downloadTeacherSpreadsheetTemplate() {
     const XLSX = await import("xlsx");
     const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet([["Họ tên", "Email Google", "Số điện thoại", "Chuyên môn", "Quyền"]]);
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ["Họ tên", "Email Google", "Số điện thoại", "Chuyên môn", "Quyền"],
+      ["Nguyễn Văn Admin", "admin@example.com", "0900000001", "Điều phối giáo vụ", "admin"],
+      ["Trần Thị Giáo Viên", "giaovien@example.com", "0900000002", "Kỹ năng sống", "giáo viên"],
+    ]);
     XLSX.utils.book_append_sheet(workbook, worksheet, "Giao vien");
     const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
     const blob = new Blob([fileData], {
@@ -1196,6 +1202,7 @@ export function LifeSkillApp() {
       setDataStatus("connected");
       setSaveError("");
       pushToast("Import thành công", `Đã thêm ${savedTeachers.length} giáo viên từ file.`, "success");
+      setTeacherModalOpen(false);
     } catch (error) {
       handleSaveError(error);
     }
@@ -1894,6 +1901,103 @@ export function LifeSkillApp() {
               {pendingAction}
             </div>
           ) : null}
+          {teacherModalOpen ? (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4 backdrop-blur-sm">
+              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-50 text-[var(--brand-dark)]">
+                      <UserPlus size={22} />
+                    </div>
+                    <h2 className="mt-4 text-xl font-black text-[var(--brand-dark)]">Thêm giáo viên</h2>
+                    <p className="mt-1 text-sm font-semibold text-[var(--muted)]">
+                      Nhập thủ công một giáo viên hoặc import hàng loạt bằng file mẫu.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTeacherModalOpen(false)}
+                    className="grid h-10 w-10 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--brand-dark)] transition hover:bg-cyan-50"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="mt-5 grid gap-3">
+                  <input
+                    value={teacherDraft.name}
+                    onChange={(event) => setTeacherDraft({ ...teacherDraft, name: event.target.value })}
+                    placeholder="Họ tên"
+                    className={inputClass}
+                  />
+                  <input
+                    value={teacherDraft.email}
+                    onChange={(event) => setTeacherDraft({ ...teacherDraft, email: event.target.value })}
+                    placeholder="Email Google"
+                    className={inputClass}
+                  />
+                  <input
+                    value={teacherDraft.phone}
+                    onChange={(event) => setTeacherDraft({ ...teacherDraft, phone: event.target.value })}
+                    placeholder="Số điện thoại"
+                    className={inputClass}
+                  />
+                  <input
+                    value={teacherDraft.specialty}
+                    onChange={(event) => setTeacherDraft({ ...teacherDraft, specialty: event.target.value })}
+                    placeholder="Chuyên môn"
+                    className={inputClass}
+                  />
+                  <select
+                    value={teacherDraft.role}
+                    onChange={(event) => setTeacherDraft({ ...teacherDraft, role: event.target.value as Role })}
+                    className={inputClass}
+                  >
+                    <option value="teacher">Quyền giáo viên</option>
+                    <option value="admin">Quyền quản trị</option>
+                  </select>
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4">
+                  <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Import Excel nhanh</p>
+                  <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
+                    File mẫu có sẵn 2 dòng ví dụ cho quyền admin và giáo viên.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={downloadTeacherSpreadsheetTemplate} className={ghostButtonClass}>
+                      <Download size={15} />
+                      Tải mẫu Excel
+                    </button>
+                    <label className={`${ghostButtonClass} cursor-pointer`}>
+                      <FileSpreadsheet size={15} />
+                      Import file
+                      <input
+                        type="file"
+                        accept=".xlsx,.csv,.tsv,text/csv,text/tab-separated-values,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        className="hidden"
+                        onChange={importTeachersFromSpreadsheet}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTeacherModalOpen(false)}
+                    disabled={isBusy}
+                    className="inline-flex h-11 items-center rounded-xl border border-[var(--line)] bg-white px-4 text-sm font-black text-[var(--brand-dark)] transition hover:bg-cyan-50 disabled:opacity-60"
+                  >
+                    Hủy
+                  </button>
+                  <button type="button" onClick={addTeacher} disabled={isBusy} className={primaryButtonClass}>
+                    {isBusy ? <LoaderCircle className="animate-spin" size={17} /> : <UserPlus size={17} />}
+                    Lưu giáo viên
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
           {lessonDeleteTarget ? (
             <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4 backdrop-blur-sm">
               <div className="w-full max-w-md rounded-3xl border border-rose-100 bg-white p-5 shadow-2xl">
@@ -2409,82 +2513,38 @@ export function LifeSkillApp() {
 
   function TeachersPanel() {
     return (
-      <div className="grid gap-5 xl:grid-cols-[0.8fr_1.3fr]">
-        <Panel title="Thêm giáo viên" action="Phân quyền">
-          <div className="grid gap-3">
-            <input
-              value={teacherDraft.name}
-              onChange={(event) => setTeacherDraft({ ...teacherDraft, name: event.target.value })}
-              placeholder="Họ tên"
-              className={inputClass}
-            />
-            <input
-              value={teacherDraft.email}
-              onChange={(event) => setTeacherDraft({ ...teacherDraft, email: event.target.value })}
-              placeholder="Email Google"
-              className={inputClass}
-            />
-            <input
-              value={teacherDraft.phone}
-              onChange={(event) => setTeacherDraft({ ...teacherDraft, phone: event.target.value })}
-              placeholder="Số điện thoại"
-              className={inputClass}
-            />
-            <input
-              value={teacherDraft.specialty}
-              onChange={(event) => setTeacherDraft({ ...teacherDraft, specialty: event.target.value })}
-              placeholder="Chuyên môn"
-              className={inputClass}
-            />
-            <select
-              value={teacherDraft.role}
-              onChange={(event) => setTeacherDraft({ ...teacherDraft, role: event.target.value as Role })}
-              className={inputClass}
-            >
-              <option value="teacher">Quyền giáo viên</option>
-              <option value="admin">Quyền quản trị</option>
-            </select>
-            <button onClick={addTeacher} className={primaryButtonClass}>
-              <UserPlus size={18} />
-              Thêm giáo viên
-            </button>
-            <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-3">
-              <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Import Excel nhanh</p>
-              <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
-                Tải mẫu, điền đủ các cột bắt buộc: Họ tên, Email Google, Số điện thoại, Chuyên môn, Quyền.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button type="button" onClick={downloadTeacherSpreadsheetTemplate} className={ghostButtonClass}>
-                  <Download size={15} />
-                  Tải mẫu Excel
-                </button>
-                <label className={`${ghostButtonClass} cursor-pointer`}>
-                  <FileSpreadsheet size={15} />
-                  Import file
-                  <input
-                    type="file"
-                    accept=".xlsx,.csv,.tsv,text/csv,text/tab-separated-values,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    className="hidden"
-                    onChange={importTeachersFromSpreadsheet}
-                  />
-                </label>
-              </div>
+      <Panel title="Danh sách giáo viên" action={`${teachers.length} người`}>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-black text-[var(--brand-dark)]">Bảng quản lý giáo viên</p>
+            <p className="text-xs font-semibold text-[var(--muted)]">Theo dõi thông tin, email, số điện thoại và phân quyền.</p>
+          </div>
+          <button type="button" onClick={() => setTeacherModalOpen(true)} className={primaryButtonClass}>
+            <UserPlus size={18} />
+            Thêm giáo viên
+          </button>
+        </div>
+        <div className="app-scrollbar overflow-x-auto">
+          <div className="min-w-[860px] overflow-hidden rounded-2xl border border-[var(--line)] bg-white">
+            <div className="grid grid-cols-[2fr_150px_2fr_160px] gap-3 border-b border-[var(--line)] bg-cyan-50 px-4 py-3 text-xs font-black uppercase text-[var(--brand-dark)]">
+              <span>Tên giáo viên</span>
+              <span>Số điện thoại</span>
+              <span>Email</span>
+              <span>Phân quyền</span>
+            </div>
+            <div className="divide-y divide-[var(--line)]">
+              {teachers.map((teacher) => (
+                <TeacherTableRow
+                  key={teacher.id}
+                  teacher={teacher}
+                  user={userForTeacher(teacher.id)}
+                  onRoleChange={updateTeacherRole}
+                />
+              ))}
             </div>
           </div>
-        </Panel>
-        <Panel title="Danh sách giáo viên" action={`${teachers.length} người`}>
-          <div className="space-y-3">
-            {teachers.map((teacher) => (
-              <TeacherCard
-                key={teacher.id}
-                teacher={teacher}
-                user={userForTeacher(teacher.id)}
-                onRoleChange={updateTeacherRole}
-              />
-            ))}
-          </div>
-        </Panel>
-      </div>
+        </div>
+      </Panel>
     );
   }
 
@@ -3378,7 +3438,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function TeacherCard({
+function TeacherTableRow({
   teacher,
   user,
   onRoleChange,
@@ -3390,31 +3450,24 @@ function TeacherCard({
   const role = user?.role ?? "teacher";
 
   return (
-    <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm transition hover:border-cyan-200 hover:shadow-lg">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <img alt={teacher.name} src={teacher.avatarUrl} className="h-12 w-12 rounded-2xl object-cover" />
-          <div className="min-w-0">
-            <p className="truncate text-base font-black text-[var(--brand-dark)]">{teacher.name}</p>
-            <p className="truncate text-xs font-bold uppercase tracking-wide text-[var(--muted)]">{teacher.specialty}</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs font-bold">
-          <span className="rounded-full bg-cyan-50 px-3 py-1 text-[var(--brand-dark)]">{teacher.email}</span>
-          <span className="rounded-full bg-orange-50 px-3 py-1 text-orange-700">{teacher.phone}</span>
+    <div className="grid grid-cols-[2fr_150px_2fr_160px] items-center gap-3 px-4 py-3 text-sm transition hover:bg-cyan-50/45">
+      <div className="flex min-w-0 items-center gap-3">
+        <img alt={teacher.name} src={teacher.avatarUrl} className="h-10 w-10 rounded-xl object-cover" />
+        <div className="min-w-0">
+          <p className="truncate font-black text-[var(--brand-dark)]">{teacher.name}</p>
+          <p className="truncate text-xs font-bold uppercase text-[var(--muted)]">{teacher.specialty}</p>
         </div>
       </div>
-      <div className="mt-4 grid gap-2 md:max-w-xs">
-        <span className="text-xs font-black uppercase text-[var(--brand-dark)]">Phân quyền</span>
-        <select
-          value={role}
-          onChange={(event) => onRoleChange(teacher, event.target.value as Role)}
-          className="w-full rounded-xl border border-[var(--line)] bg-cyan-50 px-3 py-2 text-sm font-black text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
-        >
-          <option value="teacher">Giáo viên</option>
-          <option value="admin">Quản trị</option>
-        </select>
-      </div>
+      <span className="truncate font-bold text-orange-700">{teacher.phone}</span>
+      <span className="truncate font-bold text-[var(--brand-dark)]">{teacher.email}</span>
+      <select
+        value={role}
+        onChange={(event) => onRoleChange(teacher, event.target.value as Role)}
+        className="w-full rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-sm font-black text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
+      >
+        <option value="teacher">Giáo viên</option>
+        <option value="admin">Quản trị</option>
+      </select>
     </div>
   );
 }
@@ -3496,7 +3549,7 @@ function findDuplicateEmails(emails: string[]) {
 
 function parseTeacherRole(value: string | undefined): Role {
   const normalized = normalizeComparableText(value || "");
-  if (["admin", "quantri", "quantrivien", "quyenquantri"].includes(normalized)) {
+  if (["admin", "quan tri", "quantri", "quan tri vien", "quantrivien", "quyen quan tri", "quyenquantri"].includes(normalized)) {
     return "admin";
   }
   return "teacher";
