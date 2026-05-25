@@ -1,109 +1,133 @@
-# Tổng Kết Phiên Làm Việc - Life Skill Scheduler
+# WORK SUMMARY - Life Skill Scheduler
 
-Ngày cập nhật: 23/05/2026
+Ngày cập nhật: 25/05/2026
+Nhánh hiện tại: `main`
 
-## 1. Trạng thái tổng quan
+## 1. Tổng Quan Trạng Thái
 
-Life Skill Scheduler là web app Next.js dùng cho giáo vụ/admin quản lý lịch dạy kỹ năng sống, giao lịch cho giáo viên, gửi email xác nhận, theo dõi giáo án, điểm danh, chat và thông báo vận hành.
+Life Skill Scheduler là web app Next.js dùng cho giáo vụ/admin quản lý lịch dạy kỹ năng sống, giao lịch cho giáo viên, theo dõi giáo án, điểm danh, thông báo vận hành và chat nội bộ.
 
-Trạng thái hiện tại:
+Trạng thái đã hoàn tất đến hiện tại:
 
-- Dữ liệu chính đang đọc/ghi qua Google Sheets.
-- Email thông báo lịch dạy đang gửi qua Google Apps Script (GAS).
-- Google Drive đang dùng để lưu giáo án upload.
-- Phân hệ `Giao lịch` đã chuyển từ mockup sang luồng thật end-to-end.
-- Admin đã gửi được lịch, ghi được Google Sheet và gửi được email.
-- UI đã có popup/toast nội bộ thay cho hộp thoại mặc định của trình duyệt.
-- Giao diện đã được tăng hiệu ứng hover, đổ bóng, focus và chuyển động cơ bản.
-- Code đã được push lên GitHub nhánh `main` sau các thay đổi.
+- Dữ liệu chính đọc/ghi qua Google Sheets.
+- Google Apps Script được dùng cho email lịch dạy và upload/xóa file giáo án trên Google Drive.
+- UI chính đã chuyển sang font `Quicksand` và tăng độ dày chữ mặc định lên một cấp để dễ đọc hơn.
+- Đã thay `window.confirm`/`window.prompt` bằng dialog nội bộ và toast trong app.
+- Đã có quy trình bắt buộc: sau khi chốt tính năng phân hệ, cập nhật `USAGE_GUIDE_DRAFT.md`, build/test, commit và push lên `main`.
 
-## 2. Phân hệ Giao Lịch
+## 2. Phân Hệ Giao Lịch
 
-Đã hoàn thiện các phần chính:
+Đã hoàn tất:
 
-- Admin tạo lịch thật qua `POST /api/schedules`.
-- Backend validate ngày, trường, lớp, bài học, khung giờ, giáo viên.
-- Ghi lịch vào tab `Schedules`.
-- Tạo chat thread thật vào tab `ChatThreads`.
-- Ghi thông báo vào tab `Notifications`.
-- Ghi audit log vào tab `AuditLogs`.
-- Gửi email sau khi ghi lịch; nếu email lỗi thì lịch vẫn được giữ.
-- Chính sách trùng giờ hiện tại: luôn cho phép trùng giờ, không chặn conflict.
-- Teacher chỉ thấy lịch của mình, admin thấy toàn bộ.
-- Backend có kiểm tra quyền cho tạo, hủy, chuyển, xác nhận lịch.
+- Tạo lịch dạy theo lô: một lần gửi có thể tạo nhiều dòng lịch.
+- Một lần gửi có thể giao cho nhiều giáo viên.
+- Mỗi dòng lịch gồm: ngày dạy, trường, khối/lớp, khung giờ, bài học.
+- Luồng chọn mới theo thứ tự `Trường -> Khối -> Lớp -> Khung giờ -> Bài học`.
+- Khi đổi khối, danh sách lớp và bài học tự lọc theo khối tương ứng.
+- Có preview lịch sắp gửi trước khi tạo lịch chính thức.
+- Backend validate trường, lớp, khung giờ, giáo viên, bài học và quan hệ bài học đúng khối.
+- Sau khi tạo lịch, hệ thống ghi `Schedules`, tạo `ChatThreads`, tạo `Notifications` và ghi `AuditLogs`.
+- Email lịch dạy được gom theo từng giáo viên, mỗi giáo viên nhận một email tổng hợp thay vì nhiều email rời.
+- Email có tiêu đề theo tuần ISO và nội dung dạng bảng để xem nhanh nhiều lịch.
+- Mỗi dòng lịch trong email tổng hợp có nút xác nhận riêng.
+- Teacher chỉ thấy lịch của mình; admin thấy toàn bộ.
+- Backend có kiểm tra quyền cho tạo, hủy, chuyển và xác nhận lịch.
+- Chính sách hiện tại: cho phép trùng giờ, không chặn conflict.
 
 Các lỗi đã xử lý trong phân hệ này:
 
-- Sửa lỗi `Unauthorized` khi gửi lịch bằng tài khoản nội bộ trong app.
-- Sửa lỗi `Trường đã chọn không tồn tại` bằng cách bổ sung quản lý trường/lớp và đồng bộ dữ liệu Sheet.
-- Sửa lỗi `Khung giờ đã chọn không tồn tại hoặc đang tắt` bằng cách normalize ID, hỗ trợ `active/isActive`, và tự chọn lại khung giờ hợp lệ.
-- Sửa lỗi `Một hoặc nhiều giáo viên đã chọn không tồn tại hoặc đang tắt` bằng cách normalize header/cell khi đọc Google Sheet và tự làm sạch danh sách giáo viên đang chọn trên UI.
-- Sửa luồng preview để hiển thị lịch sắp gửi thay vì lịch cũ.
+- Lỗi `Unauthorized` khi gửi lịch bằng tài khoản nội bộ.
+- Lỗi trường/lớp/khung giờ/giáo viên không tồn tại do dữ liệu Sheet và ID chưa đồng bộ.
+- Lỗi preview hiện lịch cũ thay vì lịch sắp gửi.
+- Lỗi danh sách giáo viên chọn bị lệch khi giáo viên đã tắt hoặc không hợp lệ.
 
-Nâng cấp mới nhất của Giao lịch:
+## 3. Phân Hệ Giáo Viên
 
-- Một lần gửi có thể có nhiều dòng lịch.
-- Mỗi dòng lịch có ngày dạy riêng.
-- Mỗi dòng gồm: ngày dạy, trường, lớp, khung giờ, bài học.
-- Một lần gửi có thể chọn nhiều giáo viên.
-- Backend tạo nhiều dòng `Schedules` tương ứng theo từng giáo viên và từng dòng lịch.
-- Email được gom theo giáo viên: mỗi giáo viên nhận một email tổng hợp thay vì nhiều email rời.
-- Tiêu đề email đổi sang dạng `Lịch dạy tuần ... năm ...`, tính theo tuần ISO từ các ngày được giao.
-- Nội dung email dạng bảng để giáo viên xem nhanh nhiều trường, nhiều lớp, nhiều bài, nhiều khung giờ.
+Đã hoàn tất:
 
-## 3. Email Lịch Dạy
+- Thêm giáo viên đơn lẻ với họ tên, email, số điện thoại, chuyên môn và quyền.
+- Tự động tạo tài khoản `Users` liên kết với bản ghi `Teachers`.
+- Đổi phân quyền giáo viên/admin trực tiếp trên danh sách.
+- Sửa thông tin giáo viên ngay trên từng dòng.
+- Bật/tắt trạng thái hoạt động của giáo viên.
+- Xóa giáo viên, có kiểm tra ràng buộc lịch dạy liên quan.
+- Tìm giáo viên nhanh trên thanh tìm kiếm; gõ từ khóa sẽ lọc tức thời theo tên, email, số điện thoại hoặc chuyên môn.
+- Danh sách giáo viên hiển thị dạng bảng ngang như Excel với các cột chính.
+- Nút `Thêm giáo viên` mở modal riêng.
+- Hỗ trợ tải mẫu Excel và import hàng loạt giáo viên từ `.xlsx`, `.csv`, `.tsv`.
+- Import có validate bắt buộc họ tên/email, chuẩn hóa quyền, chặn email trùng trong file và bỏ qua email đã tồn tại.
 
-Đã chỉnh mẫu email:
+Ý nghĩa bật/tắt giáo viên:
 
-- Đổi `Life Skill Scheduler` thành `HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG METTASOUL`.
-- Sửa chính tả tiếng Việt có dấu.
-- Căn giữa tiêu đề `Bạn có lịch dạy mới`.
-- Căn giữa nút `Xác nhận lịch dạy`.
-- Mục tiêu bài học được tách thành từng dòng rõ ràng:
-  - `- Mục tiêu 1: ...`
-  - `- Mục tiêu 2: ...`
-- Với email tổng hợp, mỗi dòng lịch có nút xác nhận riêng.
+- `Bật`: giáo viên đang hoạt động và có thể được chọn để giao lịch mới.
+- `Tắt`: giáo viên tạm ngưng, không mất dữ liệu lịch sử, không được chọn khi giao lịch mới.
+- Khi tắt giáo viên, tài khoản `Users` liên kết cũng chuyển sang trạng thái không hoạt động.
 
-## 4. Quản Lý Trường Và Lớp
+## 4. Phân Hệ Lịch Tổng
 
-Đã bổ sung trong phân hệ `Cấu hình`:
+Đã hoàn tất:
 
-- Thêm, sửa, xóa trường.
-- Thêm, sửa, xóa lớp.
-- Khi thêm lớp có thể nhập nhiều tên lớp cùng lúc, cách nhau bằng dấu phẩy.
-- Hệ thống tự xác định khối từ tên lớp, ví dụ `10A1` thành `Khối 10`.
-- Dữ liệu trường/lớp được ghi vào Google Sheet và dùng lại trong phân hệ Giao lịch.
+- Hiển thị lịch tổng dạng lưới tháng, chia thành các ô theo ngày.
+- Ngày hiện tại luôn được làm nổi bật.
+- Có chế độ xem `Tháng`, `Tuần`, `Ngày`.
+- Ô ngày trong chế độ tháng chỉ hiện nhãn số lượng lịch và tên giáo viên, không hiện tên chuyên đề để giữ giao diện gọn.
+- Ngày không có lịch không hiện chữ `Trống`.
+- Khi bấm vào ô ngày, màn hình tự cuộn xuống vùng chi tiết bên dưới.
+- Vùng chi tiết hiện danh sách lịch trong ngày theo dạng dòng lịch hiện tại.
+- Bấm vào bất kỳ điểm nào trên dòng lịch chi tiết sẽ mở modal chi tiết giữa màn hình.
+- Modal chi tiết lịch hiện đầy đủ: ngày dạy, giáo viên, số điện thoại, trường, lớp, trạng thái, khung giờ, giáo án và mục tiêu bài học.
+- Mục tiêu bài học trong modal được tách dòng thành từng mục để dễ đọc.
+- Giao diện lịch dùng màu nhấn theo ngữ nghĩa: trạng thái, điểm danh, khung giờ, trường, lớp.
+- Có bộ lọc nâng cao theo trạng thái, giáo viên, trường, lớp, khung giờ và khoảng ngày.
+- Có sắp xếp theo ngày tăng dần, ngày giảm dần hoặc trạng thái.
+- Bộ lọc lịch được ghi nhớ trên trình duyệt.
+- Có thống kê nhanh tổng lịch, lịch chờ xác nhận, đã nhận, đã điểm danh và đã hủy.
+- Có cảnh báo vận hành: lịch sắp dạy chưa xác nhận, lịch quá ngày chưa điểm danh, giáo viên có nhiều lịch hủy.
+- Bấm vào thẻ cảnh báo vận hành sẽ mở modal liệt kê từng lịch liên quan với: ngày dạy, giáo viên, lớp, trường, tên chuyên đề.
+- Trong modal cảnh báo, bấm vào một dòng lịch sẽ mở tiếp modal chi tiết đầy đủ của lịch đó.
+- Có thao tác hàng loạt trong chi tiết ngày: chọn nhiều lịch để hủy, chuyển giáo viên hoặc gửi nhắc xác nhận.
+- Có lịch sử thao tác trên từng lịch, đọc từ `AuditLogs`.
+- Admin có thể hủy lịch hoặc chuyển lịch ngay trong danh sách chi tiết.
+- Giáo viên chỉ thấy lịch của mình và có thể xác nhận lịch trong danh sách chi tiết.
 
 ## 5. Phân Hệ Giáo Án
 
-Đã hoàn thiện:
+Đã hoàn tất:
 
 - Upload giáo án qua GAS Web App.
 - Hỗ trợ nhiều định dạng: `pdf`, `doc`, `docx`, `ppt`, `pptx`, `xls`, `xlsx`, `txt`, `csv`.
 - Hỗ trợ upload nhiều file trong một lần.
 - Giới hạn mỗi file 10MB.
 - Mỗi lịch có thể lưu nhiều giáo án.
-- Hiển thị danh sách giáo án theo từng lịch.
+- Hiện danh sách giáo án theo từng lịch.
 - Sửa tên giáo án.
 - Xóa bản ghi giáo án trên Google Sheet.
 - Xóa file giáo án trên Google Drive qua GAS.
-- Backend có kiểm tra quyền: teacher chỉ xử lý giáo án của mình, admin có toàn quyền.
+- Backend kiểm tra quyền: teacher chỉ xử lý giáo án của mình, admin có toàn quyền.
 
-## 6. UI Và Trải Nghiệm
+## 6. Phân Hệ Cấu Hình Trường/Lớp
 
-Đã cập nhật:
+Đã hoàn tất:
 
-- Thay toàn bộ `window.confirm` và `window.prompt` bằng dialog nội bộ.
-- Thêm toast thông báo nội bộ chuyên nghiệp thay cho thông báo trình duyệt.
-- Thêm animation vào/ra cho dialog và toast.
-- Thêm hiệu ứng hover, đổ bóng, focus ring, và chuyển động nhẹ cho toàn bộ giao diện.
-- Sửa lỗi font/encoding trên giao diện chính ở các phần đã can thiệp gần đây.
+- Thêm, sửa, xóa trường.
+- Thêm, sửa, xóa lớp.
+- Khi thêm lớp có thể nhập nhiều tên lớp cùng lúc, cách nhau bằng dấu phẩy.
+- Hệ thống tự xác định khối từ tên lớp, ví dụ `10A1` thành `Khối 10`.
+- Dữ liệu trường/lớp ghi vào Google Sheet và được dùng lại trong phân hệ Giao lịch.
 
-## 7. Google Sheets, Drive Và GAS
+## 7. Email Lịch Dạy
 
-Google Sheets đang là nguồn dữ liệu chính.
+Đã hoàn tất:
 
-Các tab đang dùng:
+- Đổi nhận diện email sang `HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG METTASOUL`.
+- Sửa nội dung tiếng Việt có dấu trong mẫu email.
+- Căn giữa tiêu đề và nút xác nhận lịch dạy.
+- Mục tiêu bài học trong email được tách thành từng dòng.
+- Email tổng hợp có bảng lịch và nút xác nhận riêng cho từng dòng.
+
+## 8. Dữ Liệu Và Tích Hợp
+
+Nguồn dữ liệu chính hiện tại là Google Sheets với các tab:
 
 - `Users`
 - `Teachers`
@@ -119,56 +143,26 @@ Các tab đang dùng:
 - `Notifications`
 - `AuditLogs`
 
-Tích hợp đã có:
+Các API/tích hợp đã dùng:
 
-- Service account đọc/ghi Google Sheets.
-- GAS gửi email lịch dạy.
-- GAS upload giáo án lên Google Drive.
-- GAS xóa file giáo án khỏi Google Drive.
-- Backend normalize header/cell khi đọc Sheet để tránh lỗi BOM, khoảng trắng, hoặc lệch cột.
+- Next.js API routes cho dữ liệu ứng dụng, lịch, giáo viên, trường/lớp, bài học, khung giờ, giáo án, điểm danh, thông báo, auth.
+- Google Sheets cho đọc/ghi dữ liệu nghiệp vụ.
+- Google Drive qua GAS cho file giáo án.
+- GAS cho gửi email lịch dạy và xử lý file.
 
-## 8. Kiểm Thử Và Build
+## 9. Tài Liệu Và Quy Trình Làm Việc
 
-Các lần thay đổi quan trọng gần đây đều đã chạy:
+Đã thiết lập quy trình:
 
-- `npx tsc --noEmit`
-- `npm run build`
+- Mỗi khi chốt xong một tính năng/phiên nâng cấp phân hệ, cập nhật `USAGE_GUIDE_DRAFT.md`.
+- Sau khi cập nhật code và tài liệu, chạy build/kiểm tra phù hợp.
+- Commit và push lên `main` để Vercel có thể deploy giao diện mới.
+- Mặc định push lên GitHub sau khi hoàn tất, không hỏi lại từng lần.
 
-Trạng thái gần nhất:
+## 10. Kiểm Tra Gần Nhất
 
-- TypeScript pass.
-- Next build pass.
-- Code đã push lên `main`.
+Lần kiểm tra gần nhất:
 
-Các commit gần nhất:
-
-- `262a03e` - Support per-row teaching date in batch assignment
-- `7ea933f` - Support batch schedule assignment and weekly digest emails
-- `8915c27` - Refine Vietnamese schedule email template and objective formatting
-- `2ba722e` - Harden teacher validation and normalize sheet headers
-- `896bedd` - Prevent invalid timeslot assignment and honor active time slots
-
-## 9. Kế Hoạch Phiên Tiếp Theo
-
-Ưu tiên tiếp theo tại phân hệ `Giao lịch`:
-
-- Khi người dùng chọn `Lớp - Khối`, hệ thống tự xác định khối của lớp.
-- Danh sách `Bài học` trong dòng lịch sẽ tự lọc theo khối đó.
-- Mục tiêu là giúp giáo vụ chọn bài nhanh hơn và giảm chọn nhầm bài không đúng khối.
-
-Hướng triển khai đề xuất:
-
-- Trong từng dòng lịch, khi `classId` thay đổi thì lấy `grade` từ `ClassRoom`.
-- Bộ chọn bài học chỉ hiển thị `Lessons` có `lesson.grade === classRoom.grade`.
-- Nếu bài học đang chọn không thuộc khối mới, tự chọn bài đầu tiên phù hợp.
-- Nếu khối chưa có bài học, hiển thị cảnh báo rõ trong dòng lịch.
-- Preview và email sẽ dùng đúng bài học đã lọc theo khối.
-
-## 10. Ghi Chú Kết Thúc Phiên
-
-Phiên hôm nay kết thúc ở trạng thái:
-
-- Giao lịch đã gửi được.
-- Email tổng hợp theo giáo viên đã có.
-- Mỗi dòng lịch đã có ngày dạy riêng.
-- Kế hoạch tiếp theo đã rõ: lọc bài học theo khối của lớp trong từng dòng giao lịch.
+- Lệnh: `npm.cmd run -s build`
+- Kết quả: build thành công.
+- Commit gần nhất đã push: `1a5f6de Add operational alert details modal`
