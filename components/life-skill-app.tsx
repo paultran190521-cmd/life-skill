@@ -344,6 +344,20 @@ export function LifeSkillApp() {
   const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.active !== false), [teachers]);
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
   const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);
+  const filteredTeachers = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) {
+      return teachers;
+    }
+
+    return teachers.filter((teacher) =>
+      [teacher.name, teacher.email, teacher.phone, teacher.specialty]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(term),
+    );
+  }, [searchTerm, teachers]);
   const filteredLessons = useMemo(() => {
     const term = lessonSearchTerm.trim().toLowerCase();
     return activeLessons.filter((lesson) => {
@@ -551,6 +565,8 @@ export function LifeSkillApp() {
   const unreadNotifications = notifications.filter(
     (item) => !item.read && (item.role === role || item.role === "all"),
   ).length;
+  const searchPlaceholder =
+    activeTab === "teachers" ? "Tìm nhanh giáo viên theo tên, SĐT, email..." : "Tìm lịch, giáo viên, lớp...";
 
   function lookupSchedule(schedule: Schedule) {
     return {
@@ -2019,7 +2035,7 @@ export function LifeSkillApp() {
                   <input
                     value={searchTerm}
                     onChange={(event) => setSearchTerm(event.target.value)}
-                    placeholder="Tìm lịch, giáo viên, lớp..."
+                    placeholder={searchPlaceholder}
                     className="min-w-0 bg-transparent text-sm text-[var(--brand-dark)] outline-none placeholder:text-slate-400"
                   />
                 </label>
@@ -2680,7 +2696,7 @@ export function LifeSkillApp() {
 
   function TeachersPanel() {
     return (
-      <Panel title="Danh sách giáo viên" action={`${teachers.length} người`}>
+      <Panel title="Danh sách giáo viên" action={`${filteredTeachers.length}/${teachers.length} người`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-black text-[var(--brand-dark)]">Bảng quản lý giáo viên</p>
@@ -2702,7 +2718,7 @@ export function LifeSkillApp() {
               <span>Thao tác</span>
             </div>
             <div className="divide-y divide-[var(--line)]">
-              {teachers.map((teacher) => (
+              {filteredTeachers.map((teacher) => (
                 <TeacherTableRow
                   key={teacher.id}
                   teacher={teacher}
@@ -2718,6 +2734,11 @@ export function LifeSkillApp() {
                   onDelete={deleteTeacher}
                 />
               ))}
+              {filteredTeachers.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm font-semibold text-[var(--muted)]">
+                  Không tìm thấy giáo viên phù hợp với từ khóa đang nhập.
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
