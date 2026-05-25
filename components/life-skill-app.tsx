@@ -150,6 +150,15 @@ type BulkLessonRow = LessonDraft & {
   id: string;
 };
 
+type TeacherImportDraft = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  specialty: string;
+  role: Role;
+};
+
 type ToastTone = "info" | "success" | "warning" | "error";
 
 type ToastMessage = {
@@ -1085,46 +1094,162 @@ export function LifeSkillApp() {
 
   async function addTeacher() {
     if (!teacherDraft.name || !teacherDraft.email) {
+      pushToast("Thiếu thông tin", "Vui lòng nhập Họ tên và Email Google trước khi thêm.", "warning");
       return;
     }
 
-    const teacher: Teacher = {
-      id: createId("t"),
-      name: teacherDraft.name,
-      email: teacherDraft.email,
-      phone: teacherDraft.phone || "Chưa cập nhật",
-      avatarUrl: "",
-      specialty: teacherDraft.specialty || "Kỹ năng sống",
-      active: true,
-    };
-
     try {
-      const savedTeacher = await saveRequest<Teacher>("Đang thêm giáo viên...", "/api/teachers", {
-        method: "POST",
-        body: JSON.stringify(teacher),
-      });
-      const savedUser = await saveRequest<User>("Đang tạo tài khoản...", "/api/users", {
-        method: "POST",
-        body: JSON.stringify({
-          id: `u-${savedTeacher.id}`,
-          name: savedTeacher.name,
-          email: savedTeacher.email,
-          role: teacherDraft.role,
-          teacherId: savedTeacher.id,
-          avatarUrl: savedTeacher.avatarUrl,
-          isActive: true,
-        }),
-      });
-      setTeachers((items) => [savedTeacher, ...items]);
-      setAppUsers((items) => [savedUser, ...items.filter((item) => item.id !== savedUser.id)]);
+      const { savedTeachers, savedUsers } = await createTeachersWithAccounts([teacherDraft], "Đang thêm giáo viên...");
+      setTeachers((items) => [...savedTeachers, ...items]);
+      setAppUsers((items) => [...savedUsers, ...items.filter((item) => !savedUsers.some((saved) => saved.id === item.id))]);
       setDataStatus("connected");
       setSaveError("");
+      pushToast("Đã thêm giáo viên", `Đã tạo ${savedTeachers.length} giáo viên và tài khoản liên kết.`, "success");
     } catch (error) {
       handleSaveError(error);
       return;
     }
 
     setTeacherDraft({ name: "", email: "", phone: "", specialty: "", role: "teacher" });
+  }
+
+  async function downloadTeacherSpreadsheetTemplate() {
+    const XLSX = await import("xlsx");
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([["Họ tên", "Email Google", "Số điện thoại", "Chuyên môn", "Quyền"]]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Giao vien");
+    const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+    const blob = new Blob([fileData], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "mau-giao-vien-life-skill.xlsx";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importTeachersFromSpreadsheet(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) {
+      return;
+    }
+
+    let rows: TeacherImportDraft[];
+    try {
+      rows = file.name.toLowerCase().endsWith(".xlsx")
+        ? await parseTeacherWorkbook(file)
+        : parseTeacherSpreadsheet(await file.text());
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Không đọc được file giáo viên.");
+      pushToast("Không đọc được file", "File import giáo viên không đúng định dạng.", "error");
+      return;
+    }
+
+    if (rows.length === 0) {
+      pushToast("Không có dữ liệu", "File import chưa có dòng giáo viên hợp lệ.", "warning");
+      return;
+    }
+
+    const rowErrors = rows
+      .map((row, index) => validateTeacherImportDraft(row, `Dòng ${index + 2}`))
+      .filter(Boolean);
+    if (rowErrors.length > 0) {
+      const preview = rowErrors.slice(0, 3).join(" | ");
+      setSaveError(preview);
+      pushToast("File còn lỗi dữ liệu", `Có ${rowErrors.length} dòng lỗi. Kiểm tra cột bắt buộc trong file mẫu.`, "warning");
+      return;
+    }
+
+    const duplicateFileEmails = findDuplicateEmails(rows.map((row) => row.email));
+    if (duplicateFileEmails.length > 0) {
+      pushToast("Email trùng trong file", `Email trùng: ${duplicateFileEmails.join(", ")}.`, "warning");
+      return;
+    }
+
+    const existingEmails = new Set([
+      ...teachers.map((teacher) => teacher.email.toLowerCase()),
+      ...appUsers.map((user) => user.email.toLowerCase()),
+    ]);
+    const duplicateExisting = rows.filter((row) => existingEmails.has(row.email.toLowerCase()));
+    if (duplicateExisting.length > 0) {
+      pushToast(
+        "Email đã tồn tại",
+        `Bỏ trùng giúp bạn: ${duplicateExisting.length} dòng có email đã có trong hệ thống.`,
+        "warning",
+      );
+      rows = rows.filter((row) => !existingEmails.has(row.email.toLowerCase()));
+    }
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    try {
+      const { savedTeachers, savedUsers } = await createTeachersWithAccounts(rows, "Đang import giáo viên...");
+      setTeachers((items) => [...savedTeachers, ...items]);
+      setAppUsers((items) => [...savedUsers, ...items.filter((item) => !savedUsers.some((saved) => saved.id === item.id))]);
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Import thành công", `Đã thêm ${savedTeachers.length} giáo viên từ file.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function createTeachersWithAccounts(
+    drafts: Array<Pick<TeacherImportDraft, "name" | "email" | "phone" | "specialty" | "role">>,
+    progressLabel: string,
+  ) {
+    const normalized = drafts.map((draft) => ({
+      name: draft.name.trim(),
+      email: draft.email.trim().toLowerCase(),
+      phone: draft.phone.trim(),
+      specialty: draft.specialty.trim(),
+      role: draft.role,
+    }));
+
+    const teacherPayload = normalized.map((draft) => ({
+      id: createId("t"),
+      name: draft.name,
+      email: draft.email,
+      phone: draft.phone || "Chưa cập nhật",
+      specialty: draft.specialty || "Kỹ năng sống",
+      active: true,
+    }));
+
+    const teacherResult = await saveRequest<{ teachers: Teacher[] } | Teacher>(progressLabel, "/api/teachers", {
+      method: "POST",
+      body: JSON.stringify({ teachers: teacherPayload }),
+    });
+    const savedTeachers = Array.isArray((teacherResult as { teachers?: Teacher[] }).teachers)
+      ? ((teacherResult as { teachers: Teacher[] }).teachers ?? [])
+      : [teacherResult as Teacher];
+
+    const roleByEmail = new Map(normalized.map((draft) => [draft.email, draft.role] as const));
+    const usersPayload = savedTeachers.map((teacher) => ({
+      id: `u-${teacher.id}`,
+      name: teacher.name,
+      email: teacher.email,
+      role: roleByEmail.get(teacher.email.toLowerCase()) ?? "teacher",
+      teacherId: teacher.id,
+      avatarUrl: teacher.avatarUrl,
+      isActive: true,
+    }));
+
+    const userResult = await saveRequest<{ users: User[] } | User>("Đang tạo tài khoản giáo viên...", "/api/users", {
+      method: "POST",
+      body: JSON.stringify({ users: usersPayload }),
+    });
+    const savedUsers = Array.isArray((userResult as { users?: User[] }).users)
+      ? ((userResult as { users: User[] }).users ?? [])
+      : [userResult as User];
+
+    return { savedTeachers, savedUsers };
   }
 
   async function updateTeacherRole(teacher: Teacher, nextRole: Role) {
@@ -2323,10 +2448,32 @@ export function LifeSkillApp() {
               <UserPlus size={18} />
               Thêm giáo viên
             </button>
+            <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-3">
+              <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Import Excel nhanh</p>
+              <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
+                Tải mẫu, điền đủ các cột bắt buộc: Họ tên, Email Google, Số điện thoại, Chuyên môn, Quyền.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={downloadTeacherSpreadsheetTemplate} className={ghostButtonClass}>
+                  <Download size={15} />
+                  Tải mẫu Excel
+                </button>
+                <label className={`${ghostButtonClass} cursor-pointer`}>
+                  <FileSpreadsheet size={15} />
+                  Import file
+                  <input
+                    type="file"
+                    accept=".xlsx,.csv,.tsv,text/csv,text/tab-separated-values,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    className="hidden"
+                    onChange={importTeachersFromSpreadsheet}
+                  />
+                </label>
+              </div>
+            </div>
           </div>
         </Panel>
         <Panel title="Danh sách giáo viên" action={`${teachers.length} người`}>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-3">
             {teachers.map((teacher) => (
               <TeacherCard
                 key={teacher.id}
@@ -3243,19 +3390,21 @@ function TeacherCard({
   const role = user?.role ?? "teacher";
 
   return (
-    <div className="group relative rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-lg">
-      <div className="flex items-center gap-3">
-        <img alt={teacher.name} src={teacher.avatarUrl} className="h-12 w-12 rounded-2xl object-cover" />
-        <div className="min-w-0">
-          <p className="truncate text-sm font-black text-[var(--brand-dark)]">{teacher.name}</p>
-          <p className="truncate text-xs font-bold text-[var(--muted)]">{teacher.specialty}</p>
+    <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm transition hover:border-cyan-200 hover:shadow-lg">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <img alt={teacher.name} src={teacher.avatarUrl} className="h-12 w-12 rounded-2xl object-cover" />
+          <div className="min-w-0">
+            <p className="truncate text-base font-black text-[var(--brand-dark)]">{teacher.name}</p>
+            <p className="truncate text-xs font-bold uppercase tracking-wide text-[var(--muted)]">{teacher.specialty}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs font-bold">
+          <span className="rounded-full bg-cyan-50 px-3 py-1 text-[var(--brand-dark)]">{teacher.email}</span>
+          <span className="rounded-full bg-orange-50 px-3 py-1 text-orange-700">{teacher.phone}</span>
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold">
-        <span className="rounded-full bg-cyan-50 px-3 py-1 text-[var(--brand-dark)]">{teacher.email}</span>
-        <span className="rounded-full bg-orange-50 px-3 py-1 text-orange-700">{teacher.phone}</span>
-      </div>
-      <div className="mt-4 grid gap-2">
+      <div className="mt-4 grid gap-2 md:max-w-xs">
         <span className="text-xs font-black uppercase text-[var(--brand-dark)]">Phân quyền</span>
         <select
           value={role}
@@ -3313,6 +3462,118 @@ function StatusChip({ status }: { status: Schedule["status"] }) {
       {statusLabels[status]}
     </span>
   );
+}
+
+function validateTeacherImportDraft(row: TeacherImportDraft, label = "Giáo viên") {
+  if (!row.name.trim()) {
+    return `${label}: Họ tên là bắt buộc.`;
+  }
+  if (!row.email.trim()) {
+    return `${label}: Email Google là bắt buộc.`;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email.trim())) {
+    return `${label}: Email Google không hợp lệ.`;
+  }
+  if (!["teacher", "admin"].includes(row.role)) {
+    return `${label}: Quyền phải là Giáo viên hoặc Quản trị.`;
+  }
+  return "";
+}
+
+function findDuplicateEmails(emails: string[]) {
+  const counts = new Map<string, number>();
+  for (const email of emails) {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) {
+      continue;
+    }
+    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([email]) => email);
+}
+
+function parseTeacherRole(value: string | undefined): Role {
+  const normalized = normalizeComparableText(value || "");
+  if (["admin", "quantri", "quantrivien", "quyenquantri"].includes(normalized)) {
+    return "admin";
+  }
+  return "teacher";
+}
+
+function parseTeacherSpreadsheet(text: string): TeacherImportDraft[] {
+  const cleanedText = text.replace(/^\uFEFF/, "").trim();
+  if (!cleanedText) {
+    throw new Error("File giáo viên đang trống.");
+  }
+  const delimiter = cleanedText.includes("\t") ? "\t" : ",";
+  return parseTeacherSpreadsheetRows(parseDelimitedRows(cleanedText, delimiter));
+}
+
+async function parseTeacherWorkbook(file: File): Promise<TeacherImportDraft[]> {
+  const XLSX = await import("xlsx");
+  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) {
+    throw new Error("File Excel không có sheet dữ liệu.");
+  }
+  const worksheet = workbook.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(worksheet, {
+    header: 1,
+    raw: false,
+    defval: "",
+    blankrows: false,
+  }) as unknown[][];
+  return parseTeacherSpreadsheetRows(rows.map((row) => row.map((cell) => String(cell ?? ""))));
+}
+
+function parseTeacherSpreadsheetRows(rows: string[][]): TeacherImportDraft[] {
+  const filledRows = rows.filter((cells) => cells.some((cell) => cell.trim()));
+  const [headers, ...dataRows] = filledRows;
+  if (!headers || dataRows.length === 0) {
+    throw new Error("File giáo viên cần có dòng tiêu đề và ít nhất một dòng dữ liệu.");
+  }
+
+  const headerMap = createTeacherHeaderMap(headers);
+  return dataRows.map((cells) => ({
+    id: createId("bulk-teacher"),
+    name: cells[headerMap.name]?.trim() ?? "",
+    email: (cells[headerMap.email]?.trim() ?? "").toLowerCase(),
+    phone: cells[headerMap.phone]?.trim() ?? "",
+    specialty: cells[headerMap.specialty]?.trim() ?? "",
+    role: parseTeacherRole(cells[headerMap.role]),
+  }));
+}
+
+function createTeacherHeaderMap(headers: string[]) {
+  const normalized = headers.map(normalizeHeader);
+  const headerMap = {
+    name: findHeaderIndex(normalized, ["hoten", "ten", "name"]),
+    email: findHeaderIndex(normalized, ["email", "emailgoogle"]),
+    phone: findHeaderIndex(normalized, ["sodienthoai", "phone", "dienthoai"]),
+    specialty: findHeaderIndex(normalized, ["chuyenmon", "specialty"]),
+    role: findHeaderIndex(normalized, ["quyen", "role"]),
+  };
+
+  const missingHeaders = Object.entries(headerMap)
+    .filter(([, index]) => index === -1)
+    .map(([key]) => {
+      const labels: Record<string, string> = {
+        name: "Họ tên",
+        email: "Email Google",
+        phone: "Số điện thoại",
+        specialty: "Chuyên môn",
+        role: "Quyền",
+      };
+      return labels[key] ?? key;
+    });
+
+  if (missingHeaders.length > 0) {
+    throw new Error(`File giáo viên thiếu cột: ${missingHeaders.join(", ")}.`);
+  }
+
+  return headerMap;
 }
 
 function createEmptyLessonDraft(): LessonDraft {
@@ -3695,6 +3956,9 @@ const compactInputClass =
 
 const primaryButtonClass =
   "inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--brand)] px-4 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]";
+
+const ghostButtonClass =
+  "inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:-translate-y-0.5 hover:border-cyan-300";
 
 function createId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;

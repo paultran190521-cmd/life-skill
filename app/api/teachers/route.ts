@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, createId } from "@/lib/api";
-import { appendSheetRow, readSheetRows } from "@/lib/google-sheets";
+import { appendSheetRow, appendSheetRows, readSheetRows } from "@/lib/google-sheets";
 import { getAvatarUrl } from "@/lib/avatar";
 
 export async function GET() {
@@ -15,20 +15,36 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const now = new Date().toISOString();
-    const teacher = {
-      id: body.id || createId("t"),
-      name: body.name,
-      email: body.email,
-      phone: body.phone || "Chưa cập nhật",
-      avatarUrl: body.avatarUrl || getAvatarUrl(body.email, body.name),
-      specialty: body.specialty || "Kỹ năng sống",
-      active: body.active ?? true,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const rawTeachers = Array.isArray(body?.teachers) ? body.teachers : Array.isArray(body) ? body : [body];
+    const teachers = rawTeachers.map((item: Record<string, unknown>, index: number) => {
+      const name = String(item.name || "").trim();
+      const email = String(item.email || "")
+        .trim()
+        .toLowerCase();
+      if (!name || !email) {
+        throw new Error(`Dòng giáo viên ${index + 1} thiếu Họ tên hoặc Email.`);
+      }
 
-    await appendSheetRow("Teachers", teacher);
-    return NextResponse.json(teacher);
+      return {
+        id: String(item.id || createId("t")),
+        name,
+        email,
+        phone: String(item.phone || "").trim() || "Chưa cập nhật",
+        avatarUrl: String(item.avatarUrl || "").trim() || getAvatarUrl(email, name),
+        specialty: String(item.specialty || "").trim() || "Kỹ năng sống",
+        active: item.active ?? true,
+        createdAt: now,
+        updatedAt: now,
+      };
+    });
+
+    if (teachers.length === 1) {
+      await appendSheetRow("Teachers", teachers[0]);
+      return NextResponse.json(teachers[0]);
+    }
+
+    await appendSheetRows("Teachers", teachers);
+    return NextResponse.json({ teachers });
   } catch (error) {
     return apiError(error);
   }
