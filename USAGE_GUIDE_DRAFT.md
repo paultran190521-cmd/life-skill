@@ -79,6 +79,7 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - Có sắp xếp theo ngày tăng dần, ngày giảm dần hoặc trạng thái; bộ lọc được ghi nhớ trên trình duyệt.
 - Có thống kê nhanh tổng lịch, lịch chờ xác nhận, đã nhận, đã điểm danh và đã hủy.
 - Có cảnh báo vận hành: lịch sắp dạy chưa xác nhận, lịch quá ngày chưa điểm danh và giáo viên có nhiều lịch hủy.
+- Khi bấm vào thẻ cảnh báo vận hành, hệ thống mở modal liệt kê từng lịch liên quan với ngày dạy, giáo viên, lớp, trường và tên chuyên đề; bấm tiếp vào một dòng để xem đầy đủ chi tiết lịch.
 - Có thao tác hàng loạt trong chi tiết ngày: chọn nhiều lịch để hủy, chuyển giáo viên hoặc gửi nhắc xác nhận.
 - Có lịch sử thao tác trên từng lịch, đọc từ `AuditLogs` để xem ai đã tạo, xác nhận, hủy, chuyển hoặc điểm danh.
 - Admin vẫn có thể hủy lịch hoặc chuyển lịch ngay trong danh sách chi tiết.

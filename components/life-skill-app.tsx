@@ -152,6 +152,14 @@ type CalendarFilters = {
   sort: CalendarSortMode;
 };
 
+type OperationalAlert = {
+  id: string;
+  title: string;
+  body: string;
+  className: string;
+  scheduleIds: string[];
+};
+
 type GasLessonPlanUploadResponse = {
   ok?: boolean;
   requestId?: string;
@@ -286,6 +294,7 @@ export function LifeSkillApp() {
   const [calendarFilters, setCalendarFilters] = useState<CalendarFilters>(() => loadCalendarFilters());
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
   const [selectedScheduleDetail, setSelectedScheduleDetail] = useState<Schedule | null>(null);
+  const [selectedOperationalAlert, setSelectedOperationalAlert] = useState<OperationalAlert | null>(null);
   const [bulkReassignTeacherId, setBulkReassignTeacherId] = useState("");
   const [expandedHistoryScheduleId, setExpandedHistoryScheduleId] = useState("");
   const calendarDetailRef = useRef<HTMLDivElement | null>(null);
@@ -609,6 +618,13 @@ export function LifeSkillApp() {
     () => buildOperationalAlerts(visibleSchedules, attendance, teachers),
     [attendance, teachers, visibleSchedules],
   );
+  const selectedOperationalAlertSchedules = useMemo(() => {
+    if (!selectedOperationalAlert) {
+      return [];
+    }
+    const scheduleIds = new Set(selectedOperationalAlert.scheduleIds);
+    return visibleSchedules.filter((schedule) => scheduleIds.has(schedule.id));
+  }, [selectedOperationalAlert, visibleSchedules]);
   const selectedDayScheduleIds = useMemo(
     () => new Set(selectedDaySchedules.map((schedule) => schedule.id)),
     [selectedDaySchedules],
@@ -2515,6 +2531,70 @@ export function LifeSkillApp() {
               </div>
             </div>
           ) : null}
+          {selectedOperationalAlert ? (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4 backdrop-blur-sm">
+              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-5xl overflow-y-auto rounded-3xl border border-orange-100 bg-white p-5 shadow-2xl ring-1 ring-cyan-100">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-50 text-[var(--accent)]">
+                      <Bell size={22} />
+                    </div>
+                    <h2 className="mt-4 text-xl font-black text-[var(--brand-dark)]">{selectedOperationalAlert.title}</h2>
+                    <p className="mt-1 text-sm font-bold text-[var(--muted)]">{selectedOperationalAlert.body}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOperationalAlert(null)}
+                    className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--brand-dark)] transition hover:bg-orange-50"
+                    aria-label="Đóng chi tiết cảnh báo"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="mt-5 grid gap-2">
+                  <div className="hidden rounded-2xl border border-cyan-100 bg-cyan-50/70 px-4 py-3 text-[11px] font-black uppercase text-[var(--brand-dark)] md:grid md:grid-cols-[120px_150px_110px_1fr_1.4fr] md:gap-3">
+                    <span>Ngày dạy</span>
+                    <span>Giáo viên</span>
+                    <span>Lớp</span>
+                    <span>Trường</span>
+                    <span>Tên chuyên đề</span>
+                  </div>
+                  {selectedOperationalAlertSchedules.length > 0 ? (
+                    selectedOperationalAlertSchedules.map((schedule) => {
+                      const meta = lookupSchedule(schedule);
+
+                      return (
+                        <button
+                          key={schedule.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedOperationalAlert(null);
+                            setSelectedScheduleDetail(schedule);
+                          }}
+                          className="grid gap-2 rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-left shadow-sm transition hover:border-orange-200 hover:bg-orange-50/30 hover:shadow-md md:grid-cols-[120px_150px_110px_1fr_1.4fr] md:gap-3"
+                        >
+                          <span className="text-sm font-black text-[var(--accent)]">{formatDate(schedule.date)}</span>
+                          <span className="text-sm font-black text-[var(--brand-dark)]">{meta.teacher?.name || "Chưa rõ"}</span>
+                          <span className="inline-flex w-fit rounded-full bg-orange-50 px-2 py-1 text-xs font-black text-orange-800">
+                            {meta.classRoom?.name || "Chưa rõ"}
+                          </span>
+                          <span className="text-sm font-bold text-cyan-800">{meta.school?.name || "Chưa rõ"}</span>
+                          <span className="text-sm font-black leading-5 text-[var(--brand-dark)]">
+                            {meta.lesson?.title || "Chưa rõ chuyên đề"}
+                          </span>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm font-bold text-slate-600">
+                      Không còn lịch phù hợp với cảnh báo trong bộ lọc hiện tại.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
           {selectedScheduleDetail ? (
             <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4 backdrop-blur-sm">
               <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
@@ -3196,10 +3276,16 @@ export function LifeSkillApp() {
           {operationalAlerts.length > 0 ? (
             <div className="mb-4 grid gap-2 md:grid-cols-3">
               {operationalAlerts.map((alert) => (
-                <div key={alert.id} className={`rounded-2xl border px-4 py-3 text-sm font-bold ${alert.className}`}>
+                <button
+                  key={alert.id}
+                  type="button"
+                  onClick={() => setSelectedOperationalAlert(alert)}
+                  className={`rounded-2xl border px-4 py-3 text-left text-sm font-bold transition hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-orange-300 ${alert.className}`}
+                >
                   <p className="font-black">{alert.title}</p>
                   <p className="mt-1 text-xs">{alert.body}</p>
-                </div>
+                  <p className="mt-2 text-[11px] font-black uppercase tracking-wide opacity-70">Bấm để xem chi tiết</p>
+                </button>
               ))}
             </div>
           ) : null}
@@ -5235,7 +5321,7 @@ function buildCalendarStats(schedules: Schedule[]) {
   };
 }
 
-function buildOperationalAlerts(schedules: Schedule[], attendanceRows: Attendance[], teachers: Teacher[]) {
+function buildOperationalAlerts(schedules: Schedule[], attendanceRows: Attendance[], teachers: Teacher[]): OperationalAlert[] {
   const today = currentDateKey();
   const attendanceScheduleIds = new Set(attendanceRows.map((item) => item.scheduleId));
   const unconfirmedSoon = schedules.filter(
@@ -5254,7 +5340,7 @@ function buildOperationalAlerts(schedules: Schedule[], attendanceRows: Attendanc
     }
   }
   const highCancelTeacher = Array.from(cancelledByTeacher.entries()).find(([, count]) => count >= 3);
-  const alerts: Array<{ id: string; title: string; body: string; className: string }> = [];
+  const alerts: OperationalAlert[] = [];
 
   if (unconfirmedSoon.length > 0) {
     alerts.push({
@@ -5262,6 +5348,7 @@ function buildOperationalAlerts(schedules: Schedule[], attendanceRows: Attendanc
       title: `${unconfirmedSoon.length} lịch sắp dạy chưa xác nhận`,
       body: "Ưu tiên gửi nhắc xác nhận cho các lịch này.",
       className: "border-amber-200 bg-amber-50 text-amber-800",
+      scheduleIds: unconfirmedSoon.map((schedule) => schedule.id),
     });
   }
   if (pastWithoutAttendance.length > 0) {
@@ -5270,15 +5357,20 @@ function buildOperationalAlerts(schedules: Schedule[], attendanceRows: Attendanc
       title: `${pastWithoutAttendance.length} lịch quá ngày chưa điểm danh`,
       body: "Cần kiểm tra lại với giáo viên hoặc giáo vụ phụ trách.",
       className: "border-rose-200 bg-rose-50 text-rose-800",
+      scheduleIds: pastWithoutAttendance.map((schedule) => schedule.id),
     });
   }
   if (highCancelTeacher) {
     const teacher = teachers.find((item) => item.id === highCancelTeacher[0]);
+    const cancelledSchedules = schedules.filter(
+      (schedule) => schedule.teacherId === highCancelTeacher[0] && schedule.status === "cancelled",
+    );
     alerts.push({
       id: "high-cancel-teacher",
       title: `${teacher?.name || "Một giáo viên"} có nhiều lịch hủy`,
       body: `${highCancelTeacher[1]} lịch đã hủy trong dữ liệu đang lọc.`,
       className: "border-violet-200 bg-violet-50 text-violet-800",
+      scheduleIds: cancelledSchedules.map((schedule) => schedule.id),
     });
   }
 
