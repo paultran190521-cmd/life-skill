@@ -11,7 +11,9 @@ import {
   Download,
   FileUp,
   FileSpreadsheet,
+  History,
   GraduationCap,
+  ListChecks,
   LayoutDashboard,
   LoaderCircle,
   Mail,
@@ -26,6 +28,7 @@ import {
   Settings2,
   ShieldCheck,
   Save,
+  SlidersHorizontal,
   Trash2,
   UploadCloud,
   UserPlus,
@@ -50,6 +53,7 @@ import {
 import { statusLabels, statusStyles } from "@/lib/status";
 import type {
   Attendance,
+  AuditLog,
   ChatMessage,
   ChatThread,
   ClassRoom,
@@ -103,6 +107,7 @@ type AppData = {
   chatThreads: ChatThread[];
   chatMessages: ChatMessage[];
   notifications: Notification[];
+  auditLogs: AuditLog[];
 };
 
 type AuthSession = {
@@ -132,6 +137,20 @@ type ScheduleUpdateResponse = Partial<Schedule> & {
 };
 
 type ClassCreateResponse = ClassRoom | { classes: ClassRoom[] };
+
+type CalendarViewMode = "month" | "week" | "day";
+type CalendarSortMode = "date-asc" | "date-desc" | "status";
+
+type CalendarFilters = {
+  status: string;
+  teacherId: string;
+  schoolId: string;
+  classId: string;
+  timeSlotId: string;
+  dateFrom: string;
+  dateTo: string;
+  sort: CalendarSortMode;
+};
 
 type GasLessonPlanUploadResponse = {
   ok?: boolean;
@@ -208,6 +227,17 @@ const supportedLessonPlanMimeTypes = new Set([
   "text/csv",
 ]);
 const supportedLessonPlanExtensions = [".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".txt", ".csv"];
+const calendarFilterStorageKey = "life-skill-calendar-filters-v1";
+const defaultCalendarFilters: CalendarFilters = {
+  status: "all",
+  teacherId: "all",
+  schoolId: "all",
+  classId: "all",
+  timeSlotId: "all",
+  dateFrom: "",
+  dateTo: "",
+  sort: "date-asc",
+};
 
 const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
@@ -241,6 +271,7 @@ export function LifeSkillApp() {
   const [schedules, setSchedules] = useState<Schedule[]>(seedSchedules);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>(seedLessonPlans);
   const [attendance, setAttendance] = useState<Attendance[]>(seedAttendance);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [chatThreads, setChatThreads] = useState<ChatThread[]>(seedThreads);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(seedMessages);
   const [notifications, setNotifications] = useState<Notification[]>(seedNotifications);
@@ -251,6 +282,11 @@ export function LifeSkillApp() {
   const [searchTerm, setSearchTerm] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => currentMonthKey());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
+  const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("month");
+  const [calendarFilters, setCalendarFilters] = useState<CalendarFilters>(() => loadCalendarFilters());
+  const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
+  const [bulkReassignTeacherId, setBulkReassignTeacherId] = useState("");
+  const [expandedHistoryScheduleId, setExpandedHistoryScheduleId] = useState("");
   const [lessonSearchTerm, setLessonSearchTerm] = useState("");
   const [lessonGradeFilter, setLessonGradeFilter] = useState("all");
   const [selectedThreadId, setSelectedThreadId] = useState(seedThreads[0]?.id ?? "");
@@ -423,6 +459,7 @@ export function LifeSkillApp() {
         setSchedules(data.schedules);
         setLessonPlans(data.lessonPlans);
         setAttendance(data.attendance);
+        setAuditLogs(data.auditLogs ?? []);
         setChatThreads(data.chatThreads);
         setChatMessages(data.chatMessages);
         setNotifications(data.notifications);
@@ -524,37 +561,60 @@ export function LifeSkillApp() {
     }
   }, [schools, classDraft.schoolId]);
 
+  useEffect(() => {
+    saveCalendarFilters(calendarFilters);
+  }, [calendarFilters]);
+
   const visibleSchedules = useMemo(() => {
     const scoped =
       role === "admin"
         ? schedules
         : schedules.filter((schedule) => schedule.teacherId === currentTeacherId);
 
-    if (!searchTerm.trim()) {
-      return scoped;
-    }
-
     const term = searchTerm.trim().toLowerCase();
-    return scoped.filter((schedule) => {
-      const teacher = teachers.find((item) => item.id === schedule.teacherId);
-      const school = schools.find((item) => item.id === schedule.schoolId);
-      const classRoom = classes.find((item) => item.id === schedule.classId);
-      const lesson = lessons.find((item) => item.id === schedule.lessonId);
-      return [teacher?.name, school?.name, classRoom?.name, lesson?.title, schedule.date]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(term);
-    });
-  }, [classes, currentTeacherId, lessons, role, schedules, schools, searchTerm, teachers]);
+    return sortSchedules(
+      scoped.filter((schedule) => {
+        if (!matchesCalendarFilters(schedule, calendarFilters)) {
+          return false;
+        }
+        if (!term) {
+          return true;
+        }
+
+        const teacher = teachers.find((item) => item.id === schedule.teacherId);
+        const school = schools.find((item) => item.id === schedule.schoolId);
+        const classRoom = classes.find((item) => item.id === schedule.classId);
+        const lesson = lessons.find((item) => item.id === schedule.lessonId);
+        return [teacher?.name, school?.name, classRoom?.name, lesson?.title, schedule.date]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(term);
+      }),
+      calendarFilters.sort,
+    );
+  }, [calendarFilters, classes, currentTeacherId, lessons, role, schedules, schools, searchTerm, teachers]);
   const calendarDays = useMemo(
-    () => buildCalendarDays(calendarMonth, visibleSchedules),
-    [calendarMonth, visibleSchedules],
+    () => buildCalendarDays(calendarMonth, selectedCalendarDate, calendarViewMode, visibleSchedules),
+    [calendarMonth, calendarViewMode, selectedCalendarDate, visibleSchedules],
   );
   const selectedDaySchedules = useMemo(
     () => visibleSchedules.filter((schedule) => schedule.date === selectedCalendarDate),
     [selectedCalendarDate, visibleSchedules],
   );
+  const calendarStats = useMemo(() => buildCalendarStats(visibleSchedules), [visibleSchedules]);
+  const operationalAlerts = useMemo(
+    () => buildOperationalAlerts(visibleSchedules, attendance, teachers),
+    [attendance, teachers, visibleSchedules],
+  );
+  const selectedDayScheduleIds = useMemo(
+    () => new Set(selectedDaySchedules.map((schedule) => schedule.id)),
+    [selectedDaySchedules],
+  );
+
+  useEffect(() => {
+    setSelectedScheduleIds((ids) => ids.filter((id) => selectedDayScheduleIds.has(id)));
+  }, [selectedDayScheduleIds]);
 
   const draftSchedulePreview = useMemo<Schedule[]>(
     () =>
@@ -862,6 +922,7 @@ export function LifeSkillApp() {
           : item,
       ),
     );
+    addLocalAudit("schedule.confirm", scheduleId, { status: "confirmed" });
     pushToast("Đã xác nhận lịch", "Lịch dạy đã được xác nhận thành công.", "success");
   }
 
@@ -1076,6 +1137,7 @@ export function LifeSkillApp() {
     setSchedules((items) =>
       items.map((item) => (item.id === schedule.id ? { ...item, status: "cancelled" } : item)),
     );
+    addLocalAudit("schedule.cancel", schedule.id, { status: "cancelled", teacherId: schedule.teacherId });
     pushToast("Đã hủy lịch", "Lịch dạy đã được hủy và đồng bộ lên Google Sheet.", "warning");
   }
 
@@ -1129,9 +1191,179 @@ export function LifeSkillApp() {
           : item,
       ),
     );
+    addLocalAudit("schedule.reassign", reassignTarget.id, {
+      status: "reassigned",
+      teacherId: replacement.id,
+      reassignedFrom: reassignTarget.teacherId,
+    });
     pushToast("Đã chuyển lịch", `Lịch đã chuyển sang giáo viên ${replacement.name}.`, "success");
     setReassignTarget(null);
     setReassignTeacherId("");
+  }
+
+  function toggleScheduleSelection(scheduleId: string) {
+    setSelectedScheduleIds((ids) =>
+      ids.includes(scheduleId) ? ids.filter((id) => id !== scheduleId) : [...ids, scheduleId],
+    );
+  }
+
+  function toggleSelectAllSelectedDay() {
+    const ids = selectedDaySchedules.map((schedule) => schedule.id);
+    setSelectedScheduleIds((current) => (current.length === ids.length ? [] : ids));
+  }
+
+  async function bulkCancelSchedules() {
+    const targets = selectedDaySchedules.filter((schedule) => selectedScheduleIds.includes(schedule.id));
+    if (targets.length === 0) {
+      return;
+    }
+
+    const confirmed = await openConfirmDialog({
+      title: "Hủy nhiều lịch",
+      message: `Bạn chắc chắn muốn hủy ${targets.length} lịch đã chọn?`,
+      confirmText: "Hủy lịch",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const responses = await Promise.all(
+        targets.map((schedule) =>
+          saveRequest<ScheduleUpdateResponse>("Đang hủy lịch hàng loạt...", `/api/schedules/${schedule.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "cancelled" }),
+          }),
+        ),
+      );
+      const newNotifications = responses.flatMap((response) => response.notifications ?? []);
+      if (newNotifications.length > 0) {
+        setNotifications((items) => [...newNotifications, ...items]);
+      }
+      setSchedules((items) =>
+        items.map((item) => (selectedScheduleIds.includes(item.id) ? { ...item, status: "cancelled" } : item)),
+      );
+      setAuditLogs((items) => [
+        ...targets.map((schedule) =>
+          createLocalAuditLog("schedule.cancel", schedule.id, { status: "cancelled", teacherId: schedule.teacherId }),
+        ),
+        ...items,
+      ]);
+      setSelectedScheduleIds([]);
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã hủy lịch", `Đã hủy ${targets.length} lịch đã chọn.`, "warning");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function bulkReassignSchedules() {
+    const targets = selectedDaySchedules.filter((schedule) => selectedScheduleIds.includes(schedule.id));
+    const replacement = teachers.find((teacher) => teacher.id === bulkReassignTeacherId);
+    if (targets.length === 0 || !replacement) {
+      return;
+    }
+
+    try {
+      const responses = await Promise.all(
+        targets.map((schedule) =>
+          saveRequest<ScheduleUpdateResponse>("Đang chuyển lịch hàng loạt...", `/api/schedules/${schedule.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: "reassigned",
+              teacherId: replacement.id,
+              reassignedFrom: schedule.teacherId,
+            }),
+          }),
+        ),
+      );
+      const newNotifications = responses.flatMap((response) => response.notifications ?? []);
+      if (newNotifications.length > 0) {
+        setNotifications((items) => [...newNotifications, ...items]);
+      }
+      setSchedules((items) =>
+        items.map((item) =>
+          selectedScheduleIds.includes(item.id)
+            ? {
+                ...item,
+                teacherId: replacement.id,
+                status: "reassigned",
+                reassignedFrom: item.teacherId,
+                sentAt: new Date().toISOString(),
+              }
+            : item,
+        ),
+      );
+      setAuditLogs((items) => [
+        ...targets.map((schedule) =>
+          createLocalAuditLog("schedule.reassign", schedule.id, {
+            status: "reassigned",
+            teacherId: replacement.id,
+            reassignedFrom: schedule.teacherId,
+          }),
+        ),
+        ...items,
+      ]);
+      setSelectedScheduleIds([]);
+      setBulkReassignTeacherId("");
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã chuyển lịch", `Đã chuyển ${targets.length} lịch sang ${replacement.name}.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function sendScheduleReminders() {
+    const targets = selectedDaySchedules.filter(
+      (schedule) => selectedScheduleIds.includes(schedule.id) && ["sent", "reassigned"].includes(schedule.status),
+    );
+    if (targets.length === 0) {
+      pushToast("Không có lịch cần nhắc", "Chọn các lịch đang chờ xác nhận để gửi nhắc.", "warning");
+      return;
+    }
+
+    const reminders = targets.map((schedule) => ({
+      id: createId("n"),
+      title: "Nhắc xác nhận lịch dạy",
+      body: `Bạn có lịch ngày ${formatDate(schedule.date)} chưa xác nhận. Vui lòng kiểm tra Lịch của tôi.`,
+      role: "teacher" as const,
+      createdAt: new Date().toISOString(),
+      read: false,
+    }));
+
+    try {
+      const response = await saveRequest<{ notifications: Notification[] }>("Đang gửi nhắc xác nhận...", "/api/notifications", {
+        method: "POST",
+        body: JSON.stringify({ notifications: reminders }),
+      });
+      setNotifications((items) => [...response.notifications, ...items]);
+      setSelectedScheduleIds([]);
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã gửi nhắc", `Đã gửi ${response.notifications.length} thông báo nhắc xác nhận.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  function addLocalAudit(action: string, entityId: string, metadata: Record<string, unknown>) {
+    setAuditLogs((items) => [createLocalAuditLog(action, entityId, metadata), ...items]);
+  }
+
+  function createLocalAuditLog(action: string, entityId: string, metadata: Record<string, unknown>): AuditLog {
+    return {
+      id: createId("audit-local"),
+      actorId: currentUser.id,
+      actorEmail: currentUser.email,
+      action,
+      entityType: "Schedule",
+      entityId,
+      metadata: JSON.stringify(metadata),
+      createdAt: new Date().toISOString(),
+    };
   }
 
   async function addTeacher() {
@@ -2699,11 +2931,13 @@ export function LifeSkillApp() {
 
   function CalendarPanel() {
     const todayKey = currentDateKey();
+    const calendarGridClass = calendarViewMode === "day" ? "grid-cols-1" : "grid-cols-7";
+    const bulkTargets = selectedDaySchedules.filter((schedule) => selectedScheduleIds.includes(schedule.id));
 
     return (
       <div className="space-y-5">
         <Panel title={role === "admin" ? "Lịch tổng quan" : "Lịch dạy của tôi"} action={formatMonthTitle(calendarMonth)}>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="mb-4 grid gap-3 xl:grid-cols-[1fr_auto]">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -2731,20 +2965,143 @@ export function LifeSkillApp() {
               >
                 Hôm nay
               </button>
+              <div className="ml-2 flex overflow-hidden rounded-xl border border-[var(--line)] bg-white">
+                {(["month", "week", "day"] as CalendarViewMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setCalendarViewMode(mode)}
+                    className={`h-10 px-3 text-xs font-black ${
+                      calendarViewMode === mode ? "bg-[var(--brand)] text-white" : "text-[var(--brand-dark)] hover:bg-cyan-50"
+                    }`}
+                  >
+                    {mode === "month" ? "Tháng" : mode === "week" ? "Tuần" : "Ngày"}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="flex flex-wrap gap-2 text-xs font-black">
-              <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-800">{countSchedulesByStatus(visibleSchedules, "sent")} chờ</span>
-              <span className="rounded-full bg-cyan-50 px-3 py-1 text-cyan-800">{countSchedulesByStatus(visibleSchedules, "confirmed")} đã nhận</span>
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-800">{countSchedulesByStatus(visibleSchedules, "attended")} điểm danh</span>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">{calendarStats.total} lịch</span>
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-800">{calendarStats.sent} chờ</span>
+              <span className="rounded-full bg-cyan-50 px-3 py-1 text-cyan-800">{calendarStats.confirmed} đã nhận</span>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-800">{calendarStats.attended} điểm danh</span>
+              <span className="rounded-full bg-rose-50 px-3 py-1 text-rose-800">{calendarStats.cancelled} hủy</span>
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-2 text-center text-[11px] font-black uppercase text-[var(--muted)]">
-            {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map((day) => (
-              <span key={day}>{day}</span>
-            ))}
+          <div className="mb-4 grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/45 p-3 md:grid-cols-2 xl:grid-cols-7">
+            <select
+              value={calendarFilters.status}
+              onChange={(event) => setCalendarFilters((current) => ({ ...current, status: event.target.value }))}
+              className={compactInputClass}
+            >
+              <option value="all">Tất cả trạng thái</option>
+              {Object.entries(statusLabels).map(([status, label]) => (
+                <option key={status} value={status}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={calendarFilters.teacherId}
+              onChange={(event) => setCalendarFilters((current) => ({ ...current, teacherId: event.target.value }))}
+              className={compactInputClass}
+            >
+              <option value="all">Tất cả giáo viên</option>
+              {teachers.map((teacher) => (
+                <option key={teacher.id} value={teacher.id}>
+                  {teacher.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={calendarFilters.schoolId}
+              onChange={(event) => setCalendarFilters((current) => ({ ...current, schoolId: event.target.value, classId: "all" }))}
+              className={compactInputClass}
+            >
+              <option value="all">Tất cả trường</option>
+              {schools.map((school) => (
+                <option key={school.id} value={school.id}>
+                  {school.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={calendarFilters.classId}
+              onChange={(event) => setCalendarFilters((current) => ({ ...current, classId: event.target.value }))}
+              className={compactInputClass}
+            >
+              <option value="all">Tất cả lớp</option>
+              {classes
+                .filter((classRoom) => calendarFilters.schoolId === "all" || classRoom.schoolId === calendarFilters.schoolId)
+                .map((classRoom) => (
+                  <option key={classRoom.id} value={classRoom.id}>
+                    {classRoom.name}
+                  </option>
+                ))}
+            </select>
+            <select
+              value={calendarFilters.timeSlotId}
+              onChange={(event) => setCalendarFilters((current) => ({ ...current, timeSlotId: event.target.value }))}
+              className={compactInputClass}
+            >
+              <option value="all">Tất cả khung giờ</option>
+              {timeSlots.map((slot) => (
+                <option key={slot.id} value={slot.id}>
+                  {slot.label} {slot.start}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              value={calendarFilters.dateFrom}
+              onChange={(event) => setCalendarFilters((current) => ({ ...current, dateFrom: event.target.value }))}
+              className={compactInputClass}
+            />
+            <input
+              type="date"
+              value={calendarFilters.dateTo}
+              onChange={(event) => setCalendarFilters((current) => ({ ...current, dateTo: event.target.value }))}
+              className={compactInputClass}
+            />
+            <select
+              value={calendarFilters.sort}
+              onChange={(event) => setCalendarFilters((current) => ({ ...current, sort: event.target.value as CalendarSortMode }))}
+              className={compactInputClass}
+            >
+              <option value="date-asc">Sớm nhất trước</option>
+              <option value="date-desc">Mới nhất trước</option>
+              <option value="status">Theo trạng thái</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setCalendarFilters(defaultCalendarFilters)}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50 xl:col-span-2"
+            >
+              <SlidersHorizontal size={15} />
+              Xóa lọc
+            </button>
           </div>
-          <div className="mt-2 grid grid-cols-7 gap-2">
+
+          {operationalAlerts.length > 0 ? (
+            <div className="mb-4 grid gap-2 md:grid-cols-3">
+              {operationalAlerts.map((alert) => (
+                <div key={alert.id} className={`rounded-2xl border px-4 py-3 text-sm font-bold ${alert.className}`}>
+                  <p className="font-black">{alert.title}</p>
+                  <p className="mt-1 text-xs">{alert.body}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {calendarViewMode !== "day" ? (
+            <div className="grid grid-cols-7 gap-2 text-center text-[11px] font-black uppercase text-[var(--muted)]">
+              {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map((day) => (
+                <span key={day}>{day}</span>
+              ))}
+            </div>
+          ) : null}
+          <div className={`mt-2 grid ${calendarGridClass} gap-2`}>
             {calendarDays.map((day) => {
               const isSelected = selectedCalendarDate === day.dateKey;
               const statusTone = day.schedules.some((schedule) => schedule.status === "sent")
@@ -2757,7 +3114,10 @@ export function LifeSkillApp() {
                 <button
                   key={day.dateKey}
                   type="button"
-                  onClick={() => setSelectedCalendarDate(day.dateKey)}
+                  onClick={() => {
+                    setSelectedCalendarDate(day.dateKey);
+                    setSelectedScheduleIds([]);
+                  }}
                   className={`min-h-[112px] rounded-2xl border p-3 text-left transition ${
                     isSelected
                       ? "border-[var(--brand)] bg-cyan-50 shadow-lg shadow-cyan-900/10"
@@ -2795,7 +3155,68 @@ export function LifeSkillApp() {
 
         {selectedCalendarDate ? (
           <Panel title={`Chi tiết ngày ${formatDate(selectedCalendarDate)}`} action={`${selectedDaySchedules.length} lịch`}>
-            <ScheduleList items={selectedDaySchedules} />
+            {role === "admin" && selectedDaySchedules.length > 0 ? (
+              <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3">
+                <button
+                  type="button"
+                  onClick={toggleSelectAllSelectedDay}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] ring-1 ring-cyan-100"
+                >
+                  <ListChecks size={15} />
+                  {selectedScheduleIds.length === selectedDaySchedules.length ? "Bỏ chọn" : "Chọn tất cả"}
+                </button>
+                <span className="text-xs font-black text-[var(--muted)]">{bulkTargets.length} lịch đã chọn</span>
+                <button
+                  type="button"
+                  onClick={bulkCancelSchedules}
+                  disabled={bulkTargets.length === 0}
+                  className="inline-flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+                >
+                  <Trash2 size={15} />
+                  Hủy hàng loạt
+                </button>
+                <button
+                  type="button"
+                  onClick={sendScheduleReminders}
+                  disabled={bulkTargets.length === 0}
+                  className="inline-flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-black text-amber-800 transition hover:bg-amber-100 disabled:opacity-50"
+                >
+                  <Bell size={15} />
+                  Nhắc xác nhận
+                </button>
+                <select
+                  value={bulkReassignTeacherId}
+                  onChange={(event) => setBulkReassignTeacherId(event.target.value)}
+                  className="min-w-[220px] rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] outline-none"
+                >
+                  <option value="">Chọn giáo viên chuyển</option>
+                  {activeTeachers.map((teacher) => (
+                    <option key={teacher.id} value={teacher.id}>
+                      {teacher.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={bulkReassignSchedules}
+                  disabled={bulkTargets.length === 0 || !bulkReassignTeacherId}
+                  className="inline-flex items-center gap-2 rounded-xl bg-cyan-50 px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-100 disabled:opacity-50"
+                >
+                  <RefreshCcw size={15} />
+                  Chuyển hàng loạt
+                </button>
+              </div>
+            ) : null}
+            <ScheduleList
+              items={selectedDaySchedules}
+              selectedIds={selectedScheduleIds}
+              onToggleSelect={role === "admin" ? toggleScheduleSelection : undefined}
+              auditLogs={auditLogs}
+              expandedHistoryId={expandedHistoryScheduleId}
+              onToggleHistory={(scheduleId) =>
+                setExpandedHistoryScheduleId((current) => (current === scheduleId ? "" : scheduleId))
+              }
+            />
           </Panel>
         ) : (
           <div className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 px-5 py-4 text-sm font-bold text-[var(--brand-dark)]">
@@ -3615,7 +4036,23 @@ export function LifeSkillApp() {
       </div>
     );
   }
-  function ScheduleList({ items, compact = false }: { items: Schedule[]; compact?: boolean }) {
+  function ScheduleList({
+    items,
+    compact = false,
+    selectedIds = [],
+    onToggleSelect,
+    auditLogs: rowAuditLogs = [],
+    expandedHistoryId = "",
+    onToggleHistory,
+  }: {
+    items: Schedule[];
+    compact?: boolean;
+    selectedIds?: string[];
+    onToggleSelect?: (scheduleId: string) => void;
+    auditLogs?: AuditLog[];
+    expandedHistoryId?: string;
+    onToggleHistory?: (scheduleId: string) => void;
+  }) {
     if (items.length === 0) {
       return (
         <div className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 p-8 text-center">
@@ -3630,53 +4067,94 @@ export function LifeSkillApp() {
         <div className="min-w-[860px] space-y-3">
           {items.map((schedule) => {
             const meta = lookupSchedule(schedule);
+            const scheduleLogs = rowAuditLogs
+              .filter((log) => log.entityType === "Schedule" && log.entityId === schedule.id)
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+            const isHistoryOpen = expandedHistoryId === schedule.id;
             return (
-              <div
-                key={schedule.id}
-                className="grid grid-cols-[130px_1fr_160px_170px] items-center gap-4 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-lg"
-              >
-                <div>
-                  <p className="text-sm font-black text-[var(--brand-dark)]">{formatDate(schedule.date)}</p>
-                  <p className="mt-1 text-xs font-bold text-[var(--muted)]">
-                    {meta.slot?.label} {meta.slot?.start}
-                  </p>
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title}</p>
-                  <p className="mt-1 truncate text-sm text-[var(--muted)]">
-                    {meta.school?.name} - Lớp {meta.classRoom?.name} - {meta.lesson?.objective}
-                  </p>
-                </div>
-                <TeacherHover teacher={meta.teacher} />
-                <div className="flex items-center justify-end gap-2">
-                  <StatusChip status={schedule.status} />
-                  {!compact && role === "admin" ? (
-                    <div className="flex gap-1">
-                      <button
-                        title="Chuyển lịch"
-                        onClick={() => reassignSchedule(schedule)}
-                        className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
-                      >
-                        <RefreshCcw size={16} />
-                      </button>
-                      <button
-                        title="Hủy lịch"
-                        onClick={() => cancelSchedule(schedule)}
-                        className="grid h-9 w-9 place-items-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+              <div key={schedule.id} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-lg">
+                <div className="grid grid-cols-[130px_1fr_160px_190px] items-center gap-4">
+                  <div className="flex items-start gap-2">
+                    {onToggleSelect ? (
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(schedule.id)}
+                        onChange={() => onToggleSelect(schedule.id)}
+                        className="mt-1"
+                      />
+                    ) : null}
+                    <div>
+                      <p className="text-sm font-black text-[var(--brand-dark)]">{formatDate(schedule.date)}</p>
+                      <p className="mt-1 text-xs font-bold text-[var(--muted)]">
+                        {meta.slot?.label} {meta.slot?.start}
+                      </p>
                     </div>
-                  ) : null}
-                  {!compact && role === "teacher" && ["sent", "reassigned"].includes(schedule.status) ? (
-                    <button
-                      onClick={() => confirmSchedule(schedule.id)}
-                      className="rounded-xl bg-[var(--brand)] px-3 py-2 text-xs font-black text-white"
-                    >
-                      Xác nhận
-                    </button>
-                  ) : null}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title}</p>
+                    <p className="mt-1 truncate text-sm text-[var(--muted)]">
+                      {meta.school?.name} - Lớp {meta.classRoom?.name} - {meta.lesson?.objective}
+                    </p>
+                  </div>
+                  <TeacherHover teacher={meta.teacher} />
+                  <div className="flex items-center justify-end gap-2">
+                    <StatusChip status={schedule.status} />
+                    {onToggleHistory ? (
+                      <button
+                        title="Lịch sử thao tác"
+                        onClick={() => onToggleHistory(schedule.id)}
+                        className="grid h-9 w-9 place-items-center rounded-xl bg-slate-50 text-[var(--brand-dark)] transition hover:bg-slate-100"
+                      >
+                        <History size={16} />
+                      </button>
+                    ) : null}
+                    {!compact && role === "admin" ? (
+                      <div className="flex gap-1">
+                        <button
+                          title="Chuyển lịch"
+                          onClick={() => reassignSchedule(schedule)}
+                          className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
+                        >
+                          <RefreshCcw size={16} />
+                        </button>
+                        <button
+                          title="Hủy lịch"
+                          onClick={() => cancelSchedule(schedule)}
+                          className="grid h-9 w-9 place-items-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ) : null}
+                    {!compact && role === "teacher" && ["sent", "reassigned"].includes(schedule.status) ? (
+                      <button
+                        onClick={() => confirmSchedule(schedule.id)}
+                        className="rounded-xl bg-[var(--brand)] px-3 py-2 text-xs font-black text-white"
+                      >
+                        Xác nhận
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
+                {isHistoryOpen ? (
+                  <div className="mt-4 rounded-2xl bg-slate-50 p-3">
+                    {scheduleLogs.length > 0 ? (
+                      <div className="space-y-2">
+                        {scheduleLogs.map((log) => (
+                          <div key={log.id} className="flex items-start justify-between gap-3 rounded-xl bg-white px-3 py-2 text-xs font-bold text-[var(--brand-dark)]">
+                            <div>
+                              <p className="font-black">{auditActionLabel(log.action)}</p>
+                              <p className="mt-1 text-[var(--muted)]">{log.actorEmail || log.actorId || "Hệ thống"}</p>
+                            </div>
+                            <span className="shrink-0 text-[var(--muted)]">{formatDateTime(log.createdAt)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs font-bold text-[var(--muted)]">Chưa có lịch sử thao tác cho lịch này.</p>
+                    )}
+                  </div>
+                ) : null}
               </div>
             );
           })}
@@ -4525,11 +5003,17 @@ function addMonths(monthKey: string, offset: number) {
   return toDateKey(date).slice(0, 7);
 }
 
-function buildCalendarDays(monthKey: string, schedules: Schedule[]) {
+function buildCalendarDays(monthKey: string, selectedDateKey: string, viewMode: CalendarViewMode, schedules: Schedule[]) {
   const [year, month] = monthKey.split("-").map(Number);
   const firstDay = new Date(year, month - 1, 1);
-  const startOffset = (firstDay.getDay() + 6) % 7;
-  const startDate = new Date(year, month - 1, 1 - startOffset);
+  const selectedDate = selectedDateKey ? new Date(`${selectedDateKey}T00:00:00`) : new Date();
+  const viewStart =
+    viewMode === "day"
+      ? selectedDate
+      : viewMode === "week"
+        ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() - ((selectedDate.getDay() + 6) % 7))
+        : new Date(year, month - 1, 1 - ((firstDay.getDay() + 6) % 7));
+  const dayCount = viewMode === "month" ? 42 : viewMode === "week" ? 7 : 1;
   const today = currentDateKey();
   const schedulesByDate = new Map<string, Schedule[]>();
 
@@ -4539,9 +5023,9 @@ function buildCalendarDays(monthKey: string, schedules: Schedule[]) {
     schedulesByDate.set(schedule.date, list);
   }
 
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(startDate);
-    date.setDate(startDate.getDate() + index);
+  return Array.from({ length: dayCount }, (_, index) => {
+    const date = new Date(viewStart);
+    date.setDate(viewStart.getDate() + index);
     const dateKey = toDateKey(date);
 
     return {
@@ -4556,6 +5040,155 @@ function buildCalendarDays(monthKey: string, schedules: Schedule[]) {
 
 function countSchedulesByStatus(schedules: Schedule[], status: Schedule["status"]) {
   return schedules.filter((schedule) => schedule.status === status).length;
+}
+
+function buildCalendarStats(schedules: Schedule[]) {
+  return {
+    total: schedules.length,
+    sent: countSchedulesByStatus(schedules, "sent") + countSchedulesByStatus(schedules, "reassigned"),
+    confirmed: countSchedulesByStatus(schedules, "confirmed"),
+    attended: countSchedulesByStatus(schedules, "attended"),
+    cancelled: countSchedulesByStatus(schedules, "cancelled"),
+  };
+}
+
+function buildOperationalAlerts(schedules: Schedule[], attendanceRows: Attendance[], teachers: Teacher[]) {
+  const today = currentDateKey();
+  const attendanceScheduleIds = new Set(attendanceRows.map((item) => item.scheduleId));
+  const unconfirmedSoon = schedules.filter(
+    (schedule) => ["sent", "reassigned"].includes(schedule.status) && schedule.date <= addDays(today, 2),
+  );
+  const pastWithoutAttendance = schedules.filter(
+    (schedule) =>
+      schedule.date < today &&
+      !attendanceScheduleIds.has(schedule.id) &&
+      !["cancelled", "draft"].includes(schedule.status),
+  );
+  const cancelledByTeacher = new Map<string, number>();
+  for (const schedule of schedules) {
+    if (schedule.status === "cancelled") {
+      cancelledByTeacher.set(schedule.teacherId, (cancelledByTeacher.get(schedule.teacherId) ?? 0) + 1);
+    }
+  }
+  const highCancelTeacher = Array.from(cancelledByTeacher.entries()).find(([, count]) => count >= 3);
+  const alerts: Array<{ id: string; title: string; body: string; className: string }> = [];
+
+  if (unconfirmedSoon.length > 0) {
+    alerts.push({
+      id: "unconfirmed-soon",
+      title: `${unconfirmedSoon.length} lịch sắp dạy chưa xác nhận`,
+      body: "Ưu tiên gửi nhắc xác nhận cho các lịch này.",
+      className: "border-amber-200 bg-amber-50 text-amber-800",
+    });
+  }
+  if (pastWithoutAttendance.length > 0) {
+    alerts.push({
+      id: "past-without-attendance",
+      title: `${pastWithoutAttendance.length} lịch quá ngày chưa điểm danh`,
+      body: "Cần kiểm tra lại với giáo viên hoặc giáo vụ phụ trách.",
+      className: "border-rose-200 bg-rose-50 text-rose-800",
+    });
+  }
+  if (highCancelTeacher) {
+    const teacher = teachers.find((item) => item.id === highCancelTeacher[0]);
+    alerts.push({
+      id: "high-cancel-teacher",
+      title: `${teacher?.name || "Một giáo viên"} có nhiều lịch hủy`,
+      body: `${highCancelTeacher[1]} lịch đã hủy trong dữ liệu đang lọc.`,
+      className: "border-violet-200 bg-violet-50 text-violet-800",
+    });
+  }
+
+  return alerts;
+}
+
+function matchesCalendarFilters(schedule: Schedule, filters: CalendarFilters) {
+  if (filters.status !== "all" && schedule.status !== filters.status) {
+    return false;
+  }
+  if (filters.teacherId !== "all" && schedule.teacherId !== filters.teacherId) {
+    return false;
+  }
+  if (filters.schoolId !== "all" && schedule.schoolId !== filters.schoolId) {
+    return false;
+  }
+  if (filters.classId !== "all" && schedule.classId !== filters.classId) {
+    return false;
+  }
+  if (filters.timeSlotId !== "all" && schedule.timeSlotId !== filters.timeSlotId) {
+    return false;
+  }
+  if (filters.dateFrom && schedule.date < filters.dateFrom) {
+    return false;
+  }
+  if (filters.dateTo && schedule.date > filters.dateTo) {
+    return false;
+  }
+  return true;
+}
+
+function sortSchedules(schedules: Schedule[], sortMode: CalendarSortMode) {
+  const statusOrder: Record<string, number> = {
+    sent: 0,
+    reassigned: 1,
+    confirmed: 2,
+    lesson_plan_uploaded: 3,
+    attended: 4,
+    cancelled: 5,
+    draft: 6,
+  };
+
+  return [...schedules].sort((a, b) => {
+    if (sortMode === "date-desc") {
+      return b.date.localeCompare(a.date);
+    }
+    if (sortMode === "status") {
+      const byStatus = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99);
+      return byStatus || a.date.localeCompare(b.date);
+    }
+    return a.date.localeCompare(b.date);
+  });
+}
+
+function loadCalendarFilters(): CalendarFilters {
+  if (typeof window === "undefined") {
+    return defaultCalendarFilters;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(calendarFilterStorageKey);
+    if (!stored) {
+      return defaultCalendarFilters;
+    }
+    return { ...defaultCalendarFilters, ...JSON.parse(stored) };
+  } catch {
+    return defaultCalendarFilters;
+  }
+}
+
+function saveCalendarFilters(filters: CalendarFilters) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(calendarFilterStorageKey, JSON.stringify(filters));
+}
+
+function addDays(dateKey: string, days: number) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return toDateKey(date);
+}
+
+function auditActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    "schedule.create": "Tạo lịch",
+    "schedule.confirm": "Xác nhận lịch",
+    "schedule.cancel": "Hủy lịch",
+    "schedule.reassign": "Chuyển lịch",
+    "schedule.attend": "Điểm danh",
+    "schedule.attended": "Điểm danh",
+  };
+  return labels[action] ?? action;
 }
 
 

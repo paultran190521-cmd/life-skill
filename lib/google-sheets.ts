@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import { getAvatarUrl } from "@/lib/avatar";
 import type {
   Attendance,
+  AuditLog,
   ChatMessage,
   ChatThread,
   ClassRoom,
@@ -235,6 +236,7 @@ export async function getAppDataFromSheets() {
     chatThreads,
     chatMessages,
     notifications,
+    auditLogs,
   ] = await Promise.all([
     readSheetRows("Teachers").then(toTeachers),
     readSheetRows("Users").then(toUsers),
@@ -248,6 +250,7 @@ export async function getAppDataFromSheets() {
     readSheetRows("ChatThreads").then(toChatThreads),
     readSheetRows("ChatMessages").then(toChatMessages),
     readSheetRows("Notifications").then(toNotifications),
+    readSheetRows("AuditLogs").then(toAuditLogs),
   ]);
 
   return {
@@ -263,6 +266,7 @@ export async function getAppDataFromSheets() {
     chatThreads,
     chatMessages,
     notifications,
+    auditLogs,
   };
 }
 
@@ -416,6 +420,19 @@ function toNotifications(rows: SheetRow[]): Notification[] {
     role: (row.role || "all") as Role | "all",
     createdAt: row.createdAt,
     read: parseBoolean(row.read, false),
+  }));
+}
+
+function toAuditLogs(rows: SheetRow[]): AuditLog[] {
+  return rows.map((row) => ({
+    id: row.id,
+    actorId: row.actorId,
+    actorEmail: row.actorEmail,
+    action: row.action,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    metadata: row.metadata || undefined,
+    createdAt: row.createdAt,
   }));
 }
 

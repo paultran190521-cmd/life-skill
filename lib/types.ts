@@ -119,3 +119,14 @@ export type Notification = {
   createdAt: string;
   read: boolean;
 };
+
+export type AuditLog = {
+  id: string;
+  actorId: string;
+  actorEmail: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  metadata?: string;
+  createdAt: string;
+};

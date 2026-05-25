@@ -33,6 +33,7 @@ export async function GET() {
       chatThreads: withFallback(data.chatThreads, fallbackChatThreads),
       chatMessages: withFallback(data.chatMessages, fallbackChatMessages),
       notifications: withFallback(data.notifications, fallbackNotifications),
+      auditLogs: data.auditLogs,
     });
   } catch (error) {
     return apiError(error);

@@ -67,14 +67,24 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - Ngày hiện tại luôn được làm nổi bật để giáo vụ nhận diện nhanh.
 - Mỗi ô ngày hiển thị số lượng lịch và bài học đại diện nếu ngày đó có lịch.
 - Khi bấm vào một ngày, hệ thống mở danh sách chi tiết của ngày đó theo giao diện dòng lịch hiện tại.
+- Có chế độ xem `Tháng`, `Tuần`, `Ngày`.
+- Có bộ lọc nâng cao theo trạng thái, giáo viên, trường, lớp, khung giờ và khoảng ngày.
+- Có sắp xếp theo ngày tăng dần, ngày giảm dần hoặc trạng thái; bộ lọc được ghi nhớ trên trình duyệt.
+- Có thống kê nhanh tổng lịch, lịch chờ xác nhận, đã nhận, đã điểm danh và đã hủy.
+- Có cảnh báo vận hành: lịch sắp dạy chưa xác nhận, lịch quá ngày chưa điểm danh và giáo viên có nhiều lịch hủy.
+- Có thao tác hàng loạt trong chi tiết ngày: chọn nhiều lịch để hủy, chuyển giáo viên hoặc gửi nhắc xác nhận.
+- Có lịch sử thao tác trên từng lịch, đọc từ `AuditLogs` để xem ai đã tạo, xác nhận, hủy, chuyển hoặc điểm danh.
 - Admin vẫn có thể hủy lịch hoặc chuyển lịch ngay trong danh sách chi tiết.
 - Giáo viên chỉ thấy lịch của mình và có thể xác nhận lịch trong danh sách chi tiết.
 
 ### Quy trình thao tác
 - Vào tab `Lịch tổng`.
 - Dùng nút mũi tên để chuyển tháng hoặc bấm `Hôm nay` để quay lại tháng hiện tại.
+- Chọn chế độ `Tháng`, `Tuần` hoặc `Ngày` tùy nhu cầu xem lịch.
+- Dùng vùng lọc để thu hẹp danh sách lịch theo trạng thái, giáo viên, trường, lớp, khung giờ hoặc ngày.
 - Bấm vào một ô ngày để xem toàn bộ lịch dạy trong ngày đó.
 - Thực hiện thao tác chi tiết trên từng lịch trong phần danh sách bên dưới.
+- Với quyền admin, có thể chọn nhiều lịch trong ngày để thao tác hàng loạt.
 
 ## 4. Ghi Chú Cập Nhật Tài Liệu
 
