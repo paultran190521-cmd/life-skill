@@ -35,7 +35,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   attendance as seedAttendance,
   chatMessages as seedMessages,
@@ -288,6 +288,7 @@ export function LifeSkillApp() {
   const [selectedScheduleDetail, setSelectedScheduleDetail] = useState<Schedule | null>(null);
   const [bulkReassignTeacherId, setBulkReassignTeacherId] = useState("");
   const [expandedHistoryScheduleId, setExpandedHistoryScheduleId] = useState("");
+  const calendarDetailRef = useRef<HTMLDivElement | null>(null);
   const [lessonSearchTerm, setLessonSearchTerm] = useState("");
   const [lessonGradeFilter, setLessonGradeFilter] = useState("all");
   const [selectedThreadId, setSelectedThreadId] = useState(seedThreads[0]?.id ?? "");
@@ -616,6 +617,15 @@ export function LifeSkillApp() {
   useEffect(() => {
     setSelectedScheduleIds((ids) => ids.filter((id) => selectedDayScheduleIds.has(id)));
   }, [selectedDayScheduleIds]);
+
+  useEffect(() => {
+    if (!selectedCalendarDate) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      calendarDetailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [selectedCalendarDate]);
 
   const draftSchedulePreview = useMemo<Schedule[]>(
     () =>
@@ -2507,14 +2517,14 @@ export function LifeSkillApp() {
           ) : null}
           {selectedScheduleDetail ? (
             <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4 backdrop-blur-sm">
-              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl">
+              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
                 {(() => {
                   const meta = lookupSchedule(selectedScheduleDetail);
                   return (
                     <>
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-50 text-[var(--brand-dark)]">
+                          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-50 text-[var(--accent)]">
                             <CalendarDays size={22} />
                           </div>
                           <h2 className="mt-4 text-xl font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Chi tiết lịch dạy"}</h2>
@@ -2544,7 +2554,7 @@ export function LifeSkillApp() {
                         <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Mục tiêu bài học</p>
                         <div className="mt-3 space-y-2">
                           {splitObjectiveLines(meta.lesson?.objective || "").map((line, index) => (
-                            <div key={`${line}-${index}`} className="rounded-xl bg-white px-3 py-2 text-sm font-bold leading-6 text-[var(--brand-dark)] shadow-sm">
+                            <div key={`${line}-${index}`} className="rounded-xl border border-orange-100 bg-white px-3 py-2 text-sm font-bold leading-6 text-[var(--brand-dark)] shadow-sm">
                               {line}
                             </div>
                           ))}
@@ -3192,10 +3202,10 @@ export function LifeSkillApp() {
                   className={`min-h-[112px] rounded-2xl border p-3 text-left transition ${
                     isSelected
                       ? "border-[var(--brand)] bg-cyan-50 shadow-lg shadow-cyan-900/10"
-                      : day.isToday
-                        ? "border-orange-300 bg-orange-50/60"
+                        : day.isToday
+                          ? "border-orange-400 bg-orange-50/80 shadow-md shadow-orange-500/10"
                         : day.inMonth
-                          ? "border-[var(--line)] bg-white hover:border-cyan-200 hover:bg-cyan-50/40"
+                          ? "border-[var(--line)] bg-white hover:border-orange-200 hover:bg-orange-50/30"
                           : "border-slate-100 bg-slate-50/70 text-slate-400"
                   }`}
                 >
@@ -3219,15 +3229,14 @@ export function LifeSkillApp() {
                         ))}
                       </div>
                     </div>
-                  ) : (
-                    <p className="mt-4 text-xs font-semibold text-[var(--muted)]">Trống</p>
-                  )}
+                  ) : null}
                 </button>
               );
             })}
           </div>
         </Panel>
 
+        <div ref={calendarDetailRef} />
         {selectedCalendarDate ? (
           <Panel title={`Chi tiết ngày ${formatDate(selectedCalendarDate)}`} action={`${selectedDaySchedules.length} lịch`}>
             {role === "admin" && selectedDaySchedules.length > 0 ? (
@@ -4150,13 +4159,26 @@ export function LifeSkillApp() {
               .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
             const isHistoryOpen = expandedHistoryId === schedule.id;
             return (
-              <div key={schedule.id} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-lg">
+              <div
+                key={schedule.id}
+                role={onOpenDetail ? "button" : undefined}
+                tabIndex={onOpenDetail ? 0 : undefined}
+                onClick={() => onOpenDetail?.(schedule)}
+                onKeyDown={(event) => {
+                  if (onOpenDetail && (event.key === "Enter" || event.key === " ")) {
+                    event.preventDefault();
+                    onOpenDetail(schedule);
+                  }
+                }}
+                className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-lg"
+              >
                 <div className="grid grid-cols-[130px_1fr_160px_190px] items-center gap-4">
                   <div className="flex items-start gap-2">
                     {onToggleSelect ? (
                       <input
                         type="checkbox"
                         checked={selectedIds.includes(schedule.id)}
+                        onClick={(event) => event.stopPropagation()}
                         onChange={() => onToggleSelect(schedule.id)}
                         className="mt-1"
                       />
@@ -4171,7 +4193,10 @@ export function LifeSkillApp() {
                   <div className="min-w-0">
                     <button
                       type="button"
-                      onClick={() => onOpenDetail?.(schedule)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenDetail?.(schedule);
+                      }}
                       className="block max-w-full truncate text-left text-sm font-black text-[var(--brand-dark)] transition hover:text-[var(--brand)]"
                     >
                       {meta.lesson?.title}
@@ -4186,7 +4211,10 @@ export function LifeSkillApp() {
                     {onToggleHistory ? (
                       <button
                         title="Lịch sử thao tác"
-                        onClick={() => onToggleHistory(schedule.id)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onToggleHistory(schedule.id);
+                        }}
                         className="grid h-9 w-9 place-items-center rounded-xl bg-slate-50 text-[var(--brand-dark)] transition hover:bg-slate-100"
                       >
                         <History size={16} />
@@ -4196,14 +4224,20 @@ export function LifeSkillApp() {
                       <div className="flex gap-1">
                         <button
                           title="Chuyển lịch"
-                          onClick={() => reassignSchedule(schedule)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            reassignSchedule(schedule);
+                          }}
                           className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
                         >
                           <RefreshCcw size={16} />
                         </button>
                         <button
                           title="Hủy lịch"
-                          onClick={() => cancelSchedule(schedule)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            cancelSchedule(schedule);
+                          }}
                           className="grid h-9 w-9 place-items-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
                         >
                           <Trash2 size={16} />
@@ -4212,7 +4246,10 @@ export function LifeSkillApp() {
                     ) : null}
                     {!compact && role === "teacher" && ["sent", "reassigned"].includes(schedule.status) ? (
                       <button
-                        onClick={() => confirmSchedule(schedule.id)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          confirmSchedule(schedule.id);
+                        }}
                         className="rounded-xl bg-[var(--brand)] px-3 py-2 text-xs font-black text-white"
                       >
                         Xác nhận
@@ -4312,7 +4349,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-cyan-100 bg-cyan-50/45 px-4 py-3">
+    <div className="rounded-2xl border border-cyan-100 bg-cyan-50/45 px-4 py-3 even:border-orange-100 even:bg-orange-50/45">
       <p className="text-[11px] font-black uppercase text-[var(--muted)]">{label}</p>
       <p className="mt-1 text-sm font-black text-[var(--brand-dark)]">{value}</p>
     </div>

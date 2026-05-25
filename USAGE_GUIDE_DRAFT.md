@@ -68,8 +68,11 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - Mỗi ô ngày hiển thị số lượng lịch và bài học đại diện nếu ngày đó có lịch.
 - Khi bấm vào một ngày, hệ thống mở danh sách chi tiết của ngày đó theo giao diện dòng lịch hiện tại.
 - Ở chế độ tháng, ô ngày chỉ hiển thị nhãn số lịch và tên giáo viên để giữ lịch gọn, không hiển thị tên chuyên đề.
-- Khi bấm vào một tiết trong danh sách chi tiết, hệ thống mở modal chi tiết lịch với đầy đủ trường/lớp/giáo viên/trạng thái/khung giờ.
+- Ngày không có lịch không hiển thị chữ `Trống`, giúp lưới tháng đỡ rối.
+- Khi bấm một ô ngày, màn hình tự cuộn xuống vùng chi tiết của ngày đó.
+- Khi bấm vào bất kỳ điểm nào trên dòng lịch chi tiết, hệ thống mở modal chi tiết lịch với đầy đủ trường/lớp/giáo viên/trạng thái/khung giờ.
 - Mục tiêu bài học trong modal được tách dòng để giáo vụ đọc nhanh từng mục tiêu.
+- Giao diện lịch sử dụng linh hoạt hai màu thương hiệu `#1992b0` và `#ff9500` để tạo điểm nhấn rõ hơn.
 - Có chế độ xem `Tháng`, `Tuần`, `Ngày`.
 - Có bộ lọc nâng cao theo trạng thái, giáo viên, trường, lớp, khung giờ và khoảng ngày.
 - Có sắp xếp theo ngày tăng dần, ngày giảm dần hoặc trạng thái; bộ lọc được ghi nhớ trên trình duyệt.
