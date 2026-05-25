@@ -402,14 +402,16 @@ export function LifeSkillApp() {
   useEffect(() => {
     setDraftSchedule((current) => {
       if (current.items.length === 0) {
+        const defaultSchoolId = schools[0]?.id ?? "";
+        const defaultClassId = classes.find((item) => item.schoolId === defaultSchoolId)?.id ?? "";
         return {
           ...current,
           items: [
             createDraftScheduleItem({
               date: current.items[0]?.date ?? "2026-05-23",
-              schoolId: schools[0]?.id ?? "",
-              classId: classes.find((item) => item.schoolId === (schools[0]?.id ?? ""))?.id ?? "",
-              lessonId: activeLessons[0]?.id ?? "",
+              schoolId: defaultSchoolId,
+              classId: defaultClassId,
+              lessonId: pickLessonIdForClass(defaultClassId, current.items[0]?.lessonId ?? "", classes, activeLessons),
               timeSlotId: activeTimeSlots[0]?.id ?? "",
             }),
           ],
@@ -644,6 +646,24 @@ export function LifeSkillApp() {
   }
 
   async function createSchedules() {
+    const rowsMissingLessons = draftSchedule.items
+      .map((item, index) => {
+        const classRoom = classes.find((entry) => entry.id === item.classId);
+        if (!classRoom) {
+          return null;
+        }
+        return lessonsForGrade(activeLessons, classRoom.grade).length === 0 ? index + 1 : null;
+      })
+      .filter((row): row is number => row !== null);
+    if (rowsMissingLessons.length > 0) {
+      pushToast(
+        "Thiếu bài học theo khối",
+        `Dòng ${rowsMissingLessons.join(", ")} chưa có bài học hoạt động đúng khối. Vui lòng cập nhật ở mục Bài học.`,
+        "warning",
+      );
+      return;
+    }
+
     const validItems = draftSchedule.items.filter(
       (item) => item.date && item.schoolId && item.classId && item.lessonId && item.timeSlotId,
     );
@@ -1975,20 +1995,23 @@ export function LifeSkillApp() {
                 <button
                   type="button"
                   onClick={() =>
-                    setDraftSchedule((current) => ({
-                      ...current,
-                      items: [
-                        ...current.items,
-                        createDraftScheduleItem({
-                          date: current.items[0]?.date ?? "2026-05-23",
-                          schoolId: current.items[0]?.schoolId ?? schools[0]?.id ?? "",
-                          classId:
-                            classes.find((item) => item.schoolId === (current.items[0]?.schoolId ?? schools[0]?.id))?.id ?? "",
-                          lessonId: current.items[0]?.lessonId ?? activeLessons[0]?.id ?? "",
-                          timeSlotId: current.items[0]?.timeSlotId ?? activeTimeSlots[0]?.id ?? "",
-                        }),
-                      ],
-                    }))
+                    setDraftSchedule((current) => {
+                      const schoolId = current.items[0]?.schoolId ?? schools[0]?.id ?? "";
+                      const classId = classes.find((entry) => entry.schoolId === schoolId)?.id ?? "";
+                      return {
+                        ...current,
+                        items: [
+                          ...current.items,
+                          createDraftScheduleItem({
+                            date: current.items[0]?.date ?? "2026-05-23",
+                            schoolId,
+                            classId,
+                            lessonId: pickLessonIdForClass(classId, current.items[0]?.lessonId ?? "", classes, activeLessons),
+                            timeSlotId: current.items[0]?.timeSlotId ?? activeTimeSlots[0]?.id ?? "",
+                          }),
+                        ],
+                      };
+                    })
                   }
                   className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--brand)] px-3 text-xs font-black text-white"
                 >
@@ -1999,6 +2022,8 @@ export function LifeSkillApp() {
               <div className="mt-3 grid gap-3">
                 {draftSchedule.items.map((item, index) => {
                   const rowClasses = classes.filter((classRoom) => classRoom.schoolId === item.schoolId);
+                  const rowClass = rowClasses.find((classRoom) => classRoom.id === item.classId);
+                  const rowLessons = rowClass ? lessonsForGrade(activeLessons, rowClass.grade) : activeLessons;
                   return (
                     <div key={item.id} className="rounded-2xl border border-cyan-100 bg-white p-3 shadow-sm">
                       <div className="mb-2 flex items-center justify-between">
@@ -2039,16 +2064,19 @@ export function LifeSkillApp() {
                           onChange={(event) =>
                             setDraftSchedule((current) => ({
                               ...current,
-                              items: current.items.map((currentItem) =>
-                                currentItem.id === item.id
-                                  ? {
-                                      ...currentItem,
-                                      schoolId: event.target.value,
-                                      classId:
-                                        classes.find((classRoom) => classRoom.schoolId === event.target.value)?.id ?? "",
-                                    }
-                                  : currentItem,
-                              ),
+                              items: current.items.map((currentItem) => {
+                                if (currentItem.id !== item.id) {
+                                  return currentItem;
+                                }
+                                const schoolId = event.target.value;
+                                const classId = classes.find((classRoom) => classRoom.schoolId === schoolId)?.id ?? "";
+                                return {
+                                  ...currentItem,
+                                  schoolId,
+                                  classId,
+                                  lessonId: pickLessonIdForClass(classId, currentItem.lessonId, classes, activeLessons),
+                                };
+                              }),
                             }))
                           }
                           className={inputClass}
@@ -2064,9 +2092,17 @@ export function LifeSkillApp() {
                           onChange={(event) =>
                             setDraftSchedule((current) => ({
                               ...current,
-                              items: current.items.map((currentItem) =>
-                                currentItem.id === item.id ? { ...currentItem, classId: event.target.value } : currentItem,
-                              ),
+                              items: current.items.map((currentItem) => {
+                                if (currentItem.id !== item.id) {
+                                  return currentItem;
+                                }
+                                const classId = event.target.value;
+                                return {
+                                  ...currentItem,
+                                  classId,
+                                  lessonId: pickLessonIdForClass(classId, currentItem.lessonId, classes, activeLessons),
+                                };
+                              }),
                             }))
                           }
                           className={inputClass}
@@ -2107,12 +2143,22 @@ export function LifeSkillApp() {
                           }
                           className={inputClass}
                         >
-                          {activeLessons.map((lesson) => (
-                            <option key={lesson.id} value={lesson.id}>
-                              {lesson.grade} - {lesson.title}
-                            </option>
-                          ))}
+                          {rowLessons.length === 0 ? (
+                            <option value="">Chưa có bài học phù hợp khối</option>
+                          ) : (
+                            rowLessons.map((lesson) => (
+                              <option key={lesson.id} value={lesson.id}>
+                                {lesson.grade} - {lesson.title}
+                              </option>
+                            ))
+                          )}
                         </select>
+                        {rowClass && rowLessons.length === 0 ? (
+                          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 md:col-span-2">
+                            Chưa có bài học đang hoạt động cho {rowClass.grade}. Vui lòng vào mục Bài học để thêm hoặc bật bài phù
+                            hợp.
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -3472,14 +3518,46 @@ function normalizeDraftScheduleItem(
   const classId = schoolClasses.some((classRoom) => classRoom.id === item.classId)
     ? item.classId
     : schoolClasses[0]?.id ?? "";
-  const lessonId = context.activeLessons.some((lesson) => lesson.id === item.lessonId)
-    ? item.lessonId
-    : context.activeLessons[0]?.id ?? "";
+  const lessonId = pickLessonIdForClass(classId, item.lessonId, context.classes, context.activeLessons);
   const timeSlotId = context.activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
     ? item.timeSlotId
     : context.activeTimeSlots[0]?.id ?? "";
   const date = /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : "2026-05-23";
   return { ...item, date, schoolId, classId, lessonId, timeSlotId };
+}
+
+function pickLessonIdForClass(
+  classId: string,
+  currentLessonId: string,
+  classRooms: ClassRoom[],
+  activeLessons: Lesson[],
+) {
+  const classRoom = classRooms.find((item) => item.id === classId);
+  if (!classRoom) {
+    return activeLessons.some((lesson) => lesson.id === currentLessonId) ? currentLessonId : activeLessons[0]?.id ?? "";
+  }
+
+  const lessons = lessonsForGrade(activeLessons, classRoom.grade);
+  if (lessons.length === 0) {
+    return "";
+  }
+  return lessons.some((lesson) => lesson.id === currentLessonId) ? currentLessonId : lessons[0].id;
+}
+
+function lessonsForGrade(lessons: Lesson[], grade: string) {
+  const normalizedGrade = normalizeComparableText(grade);
+  return lessons.filter((lesson) => normalizeComparableText(lesson.grade) === normalizedGrade);
+}
+
+function normalizeComparableText(value: string) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 const inputClass =

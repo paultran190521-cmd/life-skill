@@ -224,15 +224,18 @@ function validateScheduleInput(
     if (!data.schools.some((row) => normalizeId(row.id) === item.schoolId)) {
       return "Trường đã chọn không tồn tại.";
     }
-    if (
-      !data.classes.some(
-        (row) => normalizeId(row.id) === item.classId && normalizeId(row.schoolId) === item.schoolId,
-      )
-    ) {
+    const classRoom = data.classes.find(
+      (row) => normalizeId(row.id) === item.classId && normalizeId(row.schoolId) === item.schoolId,
+    );
+    if (!classRoom) {
       return "Lớp đã chọn không thuộc trường đã chọn.";
     }
-    if (!data.lessons.some((row) => normalizeId(row.id) === item.lessonId && isRowActive(row))) {
+    const lesson = data.lessons.find((row) => normalizeId(row.id) === item.lessonId && isRowActive(row));
+    if (!lesson) {
       return "Bài học đã chọn không tồn tại hoặc đang tắt.";
+    }
+    if (normalizeComparableText(classRoom.grade) !== normalizeComparableText(lesson.grade)) {
+      return "Bài học đã chọn không đúng khối của lớp.";
     }
     if (!data.slots.some((row) => normalizeId(row.id) === item.timeSlotId && isRowActive(row))) {
       return "Khung giờ đã chọn không tồn tại hoặc đang tắt.";
@@ -259,6 +262,17 @@ function isRowActive(row: Record<string, string>) {
     return true;
   }
   return !["false", "0", "no", "inactive", "disabled", "off"].includes(raw);
+}
+
+function normalizeComparableText(value: unknown) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 function createScheduleNotifications(schedules: Schedule[], emailResults: EmailResult[], now: string): Notification[] {
