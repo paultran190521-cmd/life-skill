@@ -242,8 +242,23 @@ export function LifeSkillApp() {
       createDraftScheduleItem({
         date: "2026-05-23",
         schoolId: seedSchools[0]?.id ?? "",
-        classId: seedClasses[0]?.id ?? "",
-        lessonId: seedLessons[0]?.id ?? "",
+        classId: pickClassIdForSchoolGrade(
+          seedSchools[0]?.id ?? "",
+          pickDefaultGradeForSchool(seedSchools[0]?.id ?? "", seedClasses[0]?.id ?? "", seedClasses),
+          seedClasses[0]?.id ?? "",
+          seedClasses,
+        ),
+        lessonId: pickLessonIdForClass(
+          pickClassIdForSchoolGrade(
+            seedSchools[0]?.id ?? "",
+            pickDefaultGradeForSchool(seedSchools[0]?.id ?? "", seedClasses[0]?.id ?? "", seedClasses),
+            seedClasses[0]?.id ?? "",
+            seedClasses,
+          ),
+          seedLessons[0]?.id ?? "",
+          seedClasses,
+          seedLessons,
+        ),
         timeSlotId: seedTimeSlots[0]?.id ?? "",
       }),
     ],
@@ -403,7 +418,13 @@ export function LifeSkillApp() {
     setDraftSchedule((current) => {
       if (current.items.length === 0) {
         const defaultSchoolId = schools[0]?.id ?? "";
-        const defaultClassId = classes.find((item) => item.schoolId === defaultSchoolId)?.id ?? "";
+        const defaultGrade = pickDefaultGradeForSchool(defaultSchoolId, current.items[0]?.classId ?? "", classes);
+        const defaultClassId = pickClassIdForSchoolGrade(
+          defaultSchoolId,
+          defaultGrade,
+          current.items[0]?.classId ?? "",
+          classes,
+        );
         return {
           ...current,
           items: [
@@ -411,7 +432,7 @@ export function LifeSkillApp() {
               date: current.items[0]?.date ?? "2026-05-23",
               schoolId: defaultSchoolId,
               classId: defaultClassId,
-              lessonId: pickLessonIdForClass(defaultClassId, current.items[0]?.lessonId ?? "", classes, activeLessons),
+              lessonId: pickLessonIdForGrade(defaultGrade, current.items[0]?.lessonId ?? "", activeLessons),
               timeSlotId: activeTimeSlots[0]?.id ?? "",
             }),
           ],
@@ -1997,7 +2018,8 @@ export function LifeSkillApp() {
                   onClick={() =>
                     setDraftSchedule((current) => {
                       const schoolId = current.items[0]?.schoolId ?? schools[0]?.id ?? "";
-                      const classId = classes.find((entry) => entry.schoolId === schoolId)?.id ?? "";
+                      const grade = pickDefaultGradeForSchool(schoolId, current.items[0]?.classId ?? "", classes);
+                      const classId = pickClassIdForSchoolGrade(schoolId, grade, current.items[0]?.classId ?? "", classes);
                       return {
                         ...current,
                         items: [
@@ -2006,7 +2028,7 @@ export function LifeSkillApp() {
                             date: current.items[0]?.date ?? "2026-05-23",
                             schoolId,
                             classId,
-                            lessonId: pickLessonIdForClass(classId, current.items[0]?.lessonId ?? "", classes, activeLessons),
+                            lessonId: pickLessonIdForGrade(grade, current.items[0]?.lessonId ?? "", activeLessons),
                             timeSlotId: current.items[0]?.timeSlotId ?? activeTimeSlots[0]?.id ?? "",
                           }),
                         ],
@@ -2021,9 +2043,11 @@ export function LifeSkillApp() {
               </div>
               <div className="mt-3 grid gap-3">
                 {draftSchedule.items.map((item, index) => {
-                  const rowClasses = classes.filter((classRoom) => classRoom.schoolId === item.schoolId);
-                  const rowClass = rowClasses.find((classRoom) => classRoom.id === item.classId);
-                  const rowLessons = rowClass ? lessonsForGrade(activeLessons, rowClass.grade) : activeLessons;
+                  const rowClasses = classesForSchool(classes, item.schoolId);
+                  const rowSelectedGrade = pickDefaultGradeForSchool(item.schoolId, item.classId, classes);
+                  const rowGradeClasses = classesForSchoolGrade(classes, item.schoolId, rowSelectedGrade);
+                  const rowLessons = lessonsForGrade(activeLessons, rowSelectedGrade);
+                  const rowGrades = gradesForClasses(rowClasses);
                   return (
                     <div key={item.id} className="rounded-2xl border border-cyan-100 bg-white p-3 shadow-sm">
                       <div className="mb-2 flex items-center justify-between">
@@ -2069,12 +2093,13 @@ export function LifeSkillApp() {
                                   return currentItem;
                                 }
                                 const schoolId = event.target.value;
-                                const classId = classes.find((classRoom) => classRoom.schoolId === schoolId)?.id ?? "";
+                                const grade = pickDefaultGradeForSchool(schoolId, currentItem.classId, classes);
+                                const classId = pickClassIdForSchoolGrade(schoolId, grade, currentItem.classId, classes);
                                 return {
                                   ...currentItem,
                                   schoolId,
                                   classId,
-                                  lessonId: pickLessonIdForClass(classId, currentItem.lessonId, classes, activeLessons),
+                                  lessonId: pickLessonIdForGrade(grade, currentItem.lessonId, activeLessons),
                                 };
                               }),
                             }))
@@ -2086,6 +2111,42 @@ export function LifeSkillApp() {
                               {school.name}
                             </option>
                           ))}
+                        </select>
+                        <select
+                          value={rowSelectedGrade}
+                          onChange={(event) =>
+                            setDraftSchedule((current) => ({
+                              ...current,
+                              items: current.items.map((currentItem) => {
+                                if (currentItem.id !== item.id) {
+                                  return currentItem;
+                                }
+                                const grade = event.target.value;
+                                const classId = pickClassIdForSchoolGrade(
+                                  currentItem.schoolId,
+                                  grade,
+                                  currentItem.classId,
+                                  classes,
+                                );
+                                return {
+                                  ...currentItem,
+                                  classId,
+                                  lessonId: pickLessonIdForGrade(grade, currentItem.lessonId, activeLessons),
+                                };
+                              }),
+                            }))
+                          }
+                          className={inputClass}
+                        >
+                          {rowGrades.length === 0 ? (
+                            <option value="">Chưa có khối trong trường</option>
+                          ) : (
+                            rowGrades.map((grade) => (
+                              <option key={grade} value={grade}>
+                                {grade}
+                              </option>
+                            ))
+                          )}
                         </select>
                         <select
                           value={item.classId}
@@ -2107,11 +2168,15 @@ export function LifeSkillApp() {
                           }
                           className={inputClass}
                         >
-                          {rowClasses.map((classRoom) => (
-                            <option key={classRoom.id} value={classRoom.id}>
-                              {classRoom.name} - {classRoom.grade}
-                            </option>
-                          ))}
+                          {rowGradeClasses.length === 0 ? (
+                            <option value="">Chưa có lớp trong khối</option>
+                          ) : (
+                            rowGradeClasses.map((classRoom) => (
+                              <option key={classRoom.id} value={classRoom.id}>
+                                {classRoom.name}
+                              </option>
+                            ))
+                          )}
                         </select>
                         <select
                           value={item.timeSlotId}
@@ -2148,14 +2213,14 @@ export function LifeSkillApp() {
                           ) : (
                             rowLessons.map((lesson) => (
                               <option key={lesson.id} value={lesson.id}>
-                                {lesson.grade} - {lesson.title}
+                                {lesson.title}
                               </option>
                             ))
                           )}
                         </select>
-                        {rowClass && rowLessons.length === 0 ? (
+                        {rowSelectedGrade && rowLessons.length === 0 ? (
                           <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 md:col-span-2">
-                            Chưa có bài học đang hoạt động cho {rowClass.grade}. Vui lòng vào mục Bài học để thêm hoặc bật bài phù
+                            Chưa có bài học đang hoạt động cho {rowSelectedGrade}. Vui lòng vào mục Bài học để thêm hoặc bật bài phù
                             hợp.
                           </p>
                         ) : null}
@@ -3514,10 +3579,8 @@ function normalizeDraftScheduleItem(
   const schoolId = context.schools.some((school) => school.id === item.schoolId)
     ? item.schoolId
     : context.schools[0]?.id ?? "";
-  const schoolClasses = context.classes.filter((classRoom) => classRoom.schoolId === schoolId);
-  const classId = schoolClasses.some((classRoom) => classRoom.id === item.classId)
-    ? item.classId
-    : schoolClasses[0]?.id ?? "";
+  const grade = pickDefaultGradeForSchool(schoolId, item.classId, context.classes);
+  const classId = pickClassIdForSchoolGrade(schoolId, grade, item.classId, context.classes);
   const lessonId = pickLessonIdForClass(classId, item.lessonId, context.classes, context.activeLessons);
   const timeSlotId = context.activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
     ? item.timeSlotId
@@ -3537,7 +3600,11 @@ function pickLessonIdForClass(
     return activeLessons.some((lesson) => lesson.id === currentLessonId) ? currentLessonId : activeLessons[0]?.id ?? "";
   }
 
-  const lessons = lessonsForGrade(activeLessons, classRoom.grade);
+  return pickLessonIdForGrade(classRoom.grade, currentLessonId, activeLessons);
+}
+
+function pickLessonIdForGrade(grade: string, currentLessonId: string, activeLessons: Lesson[]) {
+  const lessons = lessonsForGrade(activeLessons, grade);
   if (lessons.length === 0) {
     return "";
   }
@@ -3547,6 +3614,66 @@ function pickLessonIdForClass(
 function lessonsForGrade(lessons: Lesson[], grade: string) {
   const normalizedGrade = normalizeComparableText(grade);
   return lessons.filter((lesson) => normalizeComparableText(lesson.grade) === normalizedGrade);
+}
+
+function classesForSchool(classRooms: ClassRoom[], schoolId: string) {
+  return classRooms
+    .filter((classRoom) => classRoom.schoolId === schoolId)
+    .sort((a, b) => a.name.localeCompare(b.name, "vi", { numeric: true, sensitivity: "base" }));
+}
+
+function classesForSchoolGrade(classRooms: ClassRoom[], schoolId: string, grade: string) {
+  const normalizedGrade = normalizeComparableText(grade);
+  return classesForSchool(classRooms, schoolId).filter(
+    (classRoom) => normalizeComparableText(classRoom.grade) === normalizedGrade,
+  );
+}
+
+function gradesForClasses(classRooms: ClassRoom[]) {
+  const sorted = [...classRooms].sort((a, b) => compareGradeLabel(a.grade, b.grade));
+  const seen = new Set<string>();
+  const grades: string[] = [];
+  for (const classRoom of sorted) {
+    const normalizedGrade = normalizeComparableText(classRoom.grade);
+    if (!normalizedGrade || seen.has(normalizedGrade)) {
+      continue;
+    }
+    seen.add(normalizedGrade);
+    grades.push(classRoom.grade);
+  }
+  return grades;
+}
+
+function pickDefaultGradeForSchool(schoolId: string, currentClassId: string, classRooms: ClassRoom[]) {
+  const schoolClasses = classesForSchool(classRooms, schoolId);
+  const currentClass = schoolClasses.find((classRoom) => classRoom.id === currentClassId);
+  if (currentClass) {
+    return currentClass.grade;
+  }
+  return gradesForClasses(schoolClasses)[0] ?? "";
+}
+
+function pickClassIdForSchoolGrade(schoolId: string, grade: string, currentClassId: string, classRooms: ClassRoom[]) {
+  const gradeClasses = classesForSchoolGrade(classRooms, schoolId, grade);
+  if (gradeClasses.some((classRoom) => classRoom.id === currentClassId)) {
+    return currentClassId;
+  }
+  return gradeClasses[0]?.id ?? "";
+}
+
+function compareGradeLabel(a: string, b: string) {
+  const aIndex = gradeSortIndex(a);
+  const bIndex = gradeSortIndex(b);
+  if (aIndex !== bIndex) {
+    return aIndex - bIndex;
+  }
+  return a.localeCompare(b, "vi", { sensitivity: "base", numeric: true });
+}
+
+function gradeSortIndex(grade: string) {
+  const normalized = normalizeComparableText(grade);
+  const index = lessonGrades.findIndex((item) => normalizeComparableText(item) === normalized);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
 }
 
 function normalizeComparableText(value: string) {
