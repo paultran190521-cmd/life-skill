@@ -72,3 +72,7 @@ Sau mỗi lần nâng cấp phân hệ, cần bổ sung vào tài liệu này:
 - Bước 2: Cập nhật `USAGE_GUIDE_DRAFT.md` cho đúng phân hệ vừa làm (tính năng, thao tác, lưu ý).
 - Bước 3: Rà lại nhanh nội dung tài liệu để khớp hành vi thực tế trên UI/API.
 - Bước 4: Mới được commit và push.
+
+## 4. Cập Nhật Giao Diện Toàn Hệ Thống
+
+- Font chữ hiển thị chính đã chuyển từ `Be Vietnam Pro` sang `Quicksand` để thử nghiệm thẩm mỹ mới cho toàn bộ ứng dụng.
