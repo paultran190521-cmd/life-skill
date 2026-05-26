@@ -6813,14 +6813,14 @@ function createId(prefix: string) {
 
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
+  const headers = new Headers(init?.headers);
+  if (!isFormData && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const response = await fetch(url, {
     ...init,
-    headers: isFormData
-      ? init?.headers
-      : {
-          "Content-Type": "application/json",
-          ...init?.headers,
-        },
+    headers,
   });
 
   if (!response.ok) {
