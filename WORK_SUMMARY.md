@@ -12,6 +12,8 @@ Trạng thái đã hoàn tất đến hiện tại:
 - Dữ liệu chính đọc/ghi qua Google Sheets.
 - Google Apps Script được dùng cho email lịch dạy và upload/xóa file giáo án trên Google Drive.
 - UI chính đã chuyển sang font `Quicksand` và tăng độ dày chữ mặc định lên một cấp để dễ đọc hơn.
+- Đã mở rộng giao diện khỏi giới hạn 2 màu thương hiệu: thêm bảng màu semantic dịu cho trạng thái, khối, toast và các điểm nhấn.
+- Đã nâng cấp hiệu ứng giao diện: nền nhiều lớp, panel có chiều sâu, sidebar/header dạng glass, CTA gradient, hover mềm và toast có animation.
 - Đã thay `window.confirm`/`window.prompt` bằng dialog nội bộ và toast trong app.
 - Phân hệ Khung giờ đã chuyển vào `Cấu hình`, có quản trị bảng, sửa/bật/tắt/xóa mềm và import Excel chuẩn 45/90 phút.
 - Đã có quy trình bắt buộc: sau khi chốt tính năng phân hệ, cập nhật `USAGE_GUIDE_DRAFT.md`, build/test, commit và push lên `main`.

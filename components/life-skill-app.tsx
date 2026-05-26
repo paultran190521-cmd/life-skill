@@ -2508,9 +2508,9 @@ export function LifeSkillApp() {
   return (
     <main className="ui-polish min-h-screen bg-[var(--canvas)]">
       <div className="ui-enter grid min-h-screen lg:grid-cols-[280px_1fr]">
-        <aside className="border-r border-[var(--line)] bg-white px-4 py-5 shadow-[12px_0_32px_rgba(25,146,176,0.06)]">
+        <aside className="ui-shell-sidebar border-r border-white/70 px-4 py-5 shadow-[16px_0_44px_rgba(18,46,68,0.08)]">
           <div className="flex items-center gap-3 px-2">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[var(--brand)] text-white shadow-lg shadow-cyan-700/20">
+            <div className="ui-logo-mark grid h-11 w-11 place-items-center rounded-2xl text-white">
               <GraduationCap size={24} />
             </div>
             <div>
@@ -2519,7 +2519,7 @@ export function LifeSkillApp() {
             </div>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-cyan-100 bg-cyan-50 p-3">
+          <div className="ui-surface-lift mt-6 rounded-2xl border p-3">
             <label className="grid gap-2">
               <span className="text-xs font-black uppercase text-[var(--brand-dark)]">Tài khoản</span>
               <select
@@ -2534,7 +2534,7 @@ export function LifeSkillApp() {
                 ))}
               </select>
             </label>
-            <div className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)]">
+            <div className="mt-3 rounded-xl bg-gradient-to-r from-emerald-50 to-cyan-50 px-3 py-2 text-xs font-black text-[var(--brand-dark)]">
               {role === "admin" ? "Quyền quản trị" : "Quyền giáo viên"}
             </div>
           </div>
@@ -2547,8 +2547,8 @@ export function LifeSkillApp() {
                   key={item.id}
                   className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-bold transition ${
                     activeTab === item.id
-                      ? "bg-[var(--brand)] text-white shadow-lg shadow-cyan-800/20"
-                      : "text-[var(--brand-dark)] hover:bg-cyan-50 hover:text-[var(--brand-dark)]"
+                      ? "bg-gradient-to-r from-[var(--brand)] via-[var(--mint)] to-[var(--sky)] text-white shadow-lg shadow-cyan-800/20"
+                      : "text-[var(--brand-dark)] hover:bg-white hover:text-[var(--brand-dark)] hover:shadow-md hover:shadow-cyan-900/5"
                   }`}
                   onClick={() => setActiveTab(item.id)}
                 >
@@ -2562,7 +2562,7 @@ export function LifeSkillApp() {
         </aside>
 
         <section className="min-w-0">
-          <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-white/92 px-4 py-4 backdrop-blur md:px-7">
+          <header className="ui-glass-header sticky top-0 z-20 border-b border-white/70 px-4 py-4 backdrop-blur-xl md:px-7">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <p className="text-sm font-bold text-[var(--brand-dark)]">
@@ -2589,7 +2589,7 @@ export function LifeSkillApp() {
                       ? "Đang tải dữ liệu"
                       : "Dùng dữ liệu tạm"}
                 </span>
-                <label className="flex min-w-0 items-center gap-2 rounded-2xl border border-[var(--line)] bg-white px-3 py-2 shadow-sm transition focus-within:border-[var(--brand)]">
+                <label className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/80 bg-white/85 px-3 py-2 shadow-sm transition focus-within:border-[var(--brand)] focus-within:shadow-lg focus-within:shadow-cyan-900/10">
                   <Search size={17} className="text-[var(--muted)]" />
                   <input
                     value={searchTerm}
@@ -2598,7 +2598,7 @@ export function LifeSkillApp() {
                     className="min-w-0 bg-transparent text-sm text-[var(--brand-dark)] outline-none placeholder:text-slate-400"
                   />
                 </label>
-                <div className="flex items-center gap-2 rounded-2xl border border-[var(--line)] bg-white px-3 py-2 shadow-sm">
+                <div className="ui-surface-lift flex items-center gap-2 rounded-2xl border px-3 py-2">
                   <img
                     alt={currentUser.name}
                     src={currentUser.avatarUrl}
@@ -2612,22 +2612,22 @@ export function LifeSkillApp() {
                 {authStatus === "signed-in" ? (
                   <button
                     onClick={logout}
-                    className="h-11 rounded-2xl border border-[var(--line)] bg-white px-3 text-xs font-black text-[var(--brand-dark)] shadow-sm transition hover:border-cyan-200 hover:bg-cyan-50"
+                    className="h-11 rounded-2xl border border-white/80 bg-white/85 px-3 text-xs font-black text-[var(--brand-dark)] shadow-sm transition hover:border-cyan-200 hover:bg-cyan-50"
                   >
                     Đăng xuất
                   </button>
                 ) : (
                   <a
                     href="/api/auth/google"
-                    className="inline-flex h-11 items-center rounded-2xl bg-[var(--brand)] px-3 text-xs font-black text-white shadow-lg shadow-cyan-700/20 transition hover:bg-[var(--brand-dark)]"
+                    className="ui-primary-gradient inline-flex h-11 items-center rounded-2xl px-3 text-xs font-black text-white transition"
                   >
                     Google Login
                   </a>
                 )}
-                <button className="relative grid h-11 w-11 place-items-center rounded-2xl bg-[var(--accent)] text-white shadow-lg shadow-orange-500/20">
+                <button className="relative grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 text-white shadow-lg shadow-orange-500/25">
                   <Bell size={18} />
                   {unreadNotifications > 0 ? (
-                    <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-rose-600 px-1 text-[11px] font-black">
+                    <span className="ui-notification-dot absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-rose-600 px-1 text-[11px] font-black">
                       {unreadNotifications}
                     </span>
                   ) : null}
@@ -3051,16 +3051,16 @@ export function LifeSkillApp() {
               {toastMessages.map((toast) => (
                 <div
                   key={toast.id}
-                  className={`pointer-events-auto rounded-2xl border px-4 py-3 shadow-2xl transition duration-200 ${
+                  className={`ui-toast pointer-events-auto rounded-2xl border px-4 py-3 shadow-2xl transition duration-200 ${
                     toast.leaving ? "translate-x-4 opacity-0" : "translate-x-0 opacity-100"
                   } ${
                     toast.tone === "error"
-                      ? "border-rose-200 bg-rose-50 text-rose-900"
+                      ? "border-rose-200 bg-rose-50/95 text-rose-900 shadow-rose-900/10"
                       : toast.tone === "warning"
-                        ? "border-orange-200 bg-orange-50 text-orange-900"
+                        ? "border-amber-200 bg-amber-50/95 text-amber-950 shadow-amber-900/10"
                         : toast.tone === "success"
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                          : "border-cyan-200 bg-white text-[var(--brand-dark)]"
+                          ? "border-emerald-200 bg-emerald-50/95 text-emerald-950 shadow-emerald-900/10"
+                          : "border-sky-200 bg-white/95 text-[var(--brand-dark)] shadow-sky-900/10"
                   }`}
                 >
                   <div className="flex items-start gap-3">
@@ -4855,7 +4855,7 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-3xl border border-[var(--line)] bg-white p-5 shadow-[0_18px_48px_rgba(20,33,43,0.06)]">
+    <section className="rounded-3xl border border-white/75 bg-white/90 p-5 shadow-[0_20px_52px_rgba(18,46,68,0.09),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur">
       <div className={`${collapsed ? "" : "mb-5"} flex items-center justify-between gap-3`}>
         <h2 className="text-lg font-black tracking-tight text-[var(--brand-dark)]">{title}</h2>
         <div className="flex items-center gap-2">
@@ -4870,7 +4870,7 @@ function Panel({
               onClick={onToggleCollapse}
               title={collapsed ? "Mở rộng" : "Thu gọn"}
               aria-label={collapsed ? `Mở rộng ${title}` : `Thu gọn ${title}`}
-              className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
+              className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-cyan-50 to-sky-50 text-[var(--brand-dark)] shadow-sm transition hover:bg-cyan-100"
             >
               <ChevronRight size={18} className={`transition-transform ${collapsed ? "" : "rotate-90"}`} />
             </button>
@@ -4901,7 +4901,7 @@ function Stat({
   }[tone];
 
   return (
-    <div className="rounded-3xl border border-[var(--line)] bg-white p-5 shadow-[0_18px_48px_rgba(20,33,43,0.06)]">
+    <div className="rounded-3xl border border-white/75 bg-white/90 p-5 shadow-[0_18px_46px_rgba(18,46,68,0.08),inset_0_1px_0_rgba(255,255,255,0.88)] backdrop-blur">
       <div className={`grid h-12 w-12 place-items-center rounded-2xl ${toneClass}`}>
         <Icon size={22} />
       </div>
@@ -5776,16 +5776,16 @@ function normalizeComparableText(value: string) {
 }
 
 const inputClass =
-  "w-full rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm font-semibold text-[var(--brand-dark)] outline-none transition placeholder:text-slate-400 focus:border-[var(--brand)] focus:ring-4 focus:ring-cyan-100";
+  "w-full rounded-2xl border border-white/80 bg-white/90 px-4 py-3 text-sm font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-[var(--brand)] focus:bg-white focus:ring-4 focus:ring-cyan-100";
 
 const compactInputClass =
-  "w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-dark)] outline-none transition placeholder:text-slate-400 focus:border-[var(--brand)] focus:ring-4 focus:ring-cyan-100";
+  "w-full rounded-xl border border-white/80 bg-white/90 px-3 py-2 text-sm font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-[var(--brand)] focus:bg-white focus:ring-4 focus:ring-cyan-100";
 
 const primaryButtonClass =
-  "inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--brand)] px-4 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]";
+  "ui-primary-gradient inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-black text-white transition hover:-translate-y-0.5";
 
 const ghostButtonClass =
-  "inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:-translate-y-0.5 hover:border-cyan-300";
+  "inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white/90 px-3 py-2 text-xs font-black text-[var(--brand-dark)] shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:bg-sky-50";
 
 function createId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;

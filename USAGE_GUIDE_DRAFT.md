@@ -143,3 +143,5 @@ Sau mỗi lần nâng cấp phân hệ, cần bổ sung vào tài liệu này:
 
 - Font chữ hiển thị chính đã chuyển từ `Be Vietnam Pro` sang `Quicksand` để thử nghiệm thẩm mỹ mới cho toàn bộ ứng dụng.
 - Đã tăng độ dày chữ mặc định toàn hệ thống thêm 1 mức (`font-weight: 500`) để cải thiện độ rõ khi hiển thị.
+- Giao diện đã mở rộng bảng màu ngoài 2 màu thương hiệu, dùng thêm xanh lá, xanh dương, tím, hồng/đỏ và vàng hổ phách cho trạng thái và điểm nhấn.
+- Các panel, sidebar, header, nút chính, input và toast được tăng hiệu ứng hover, bóng đổ, glass nhẹ và animation để hệ thống mềm mại hơn.
