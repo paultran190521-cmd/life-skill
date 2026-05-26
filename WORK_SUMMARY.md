@@ -112,6 +112,9 @@ Các lỗi đã xử lý trong phân hệ này:
 
 - Thêm, sửa, xóa trường.
 - Thêm, sửa, xóa lớp.
+- Màn `Cấu hình` mặc định thu gọn các khối để xem tổng quan; bấm mũi tên để mở chi tiết.
+- Tách `Thêm lớp` thành một khối thu gọn/mở rộng riêng.
+- Đã bỏ khối `Cấu hình Google Workspace` khỏi giao diện vì không còn cần thao tác thường xuyên.
 - Khi thêm lớp có thể nhập nhiều tên lớp cùng lúc, cách nhau bằng dấu phẩy.
 - Hệ thống tự xác định khối từ tên lớp, ví dụ `10A1` thành `Khối 10`.
 - Dữ liệu trường/lớp ghi vào Google Sheet và được dùng lại trong phân hệ Giao lịch.

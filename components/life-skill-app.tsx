@@ -389,6 +389,11 @@ export function LifeSkillApp() {
     active: true,
   });
   const [selectedSlotIds, setSelectedSlotIds] = useState<string[]>([]);
+  const [collapsedSettingsSections, setCollapsedSettingsSections] = useState({
+    schools: true,
+    classes: true,
+    slots: true,
+  });
   const [schoolDraft, setSchoolDraft] = useState({
     name: "",
     district: "",
@@ -458,6 +463,12 @@ export function LifeSkillApp() {
       return nextItems.length === items.length ? items : nextItems;
     });
   }, [timeSlots]);
+
+  useEffect(() => {
+    if (activeTab === "settings") {
+      setCollapsedSettingsSections({ schools: true, classes: true, slots: true });
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2075,6 +2086,10 @@ export function LifeSkillApp() {
       const visibleIdSet = new Set(visibleIds);
       return items.filter((id) => !visibleIdSet.has(id));
     });
+  }
+
+  function toggleSettingsSection(section: keyof typeof collapsedSettingsSections) {
+    setCollapsedSettingsSections((current) => ({ ...current, [section]: !current[section] }));
   }
 
   async function updateSelectedSlotsActive(nextActive: boolean) {
@@ -4014,7 +4029,12 @@ export function LifeSkillApp() {
       orderedSlots.length > 0 && orderedSlots.every((slot) => selectedSlotIds.includes(slot.id));
 
     return (
-      <Panel title="Thiết lập Khung giờ dạy" action={`${timeSlots.length} khung • chuẩn 45/90 phút`}>
+      <Panel
+        title="Thiết lập Khung giờ dạy"
+        action={`${timeSlots.length} khung • chuẩn 45/90 phút`}
+        collapsed={collapsedSettingsSections.slots}
+        onToggleCollapse={() => toggleSettingsSection("slots")}
+      >
         <div className="grid gap-5 xl:grid-cols-[0.85fr_1.5fr]">
           <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3">
@@ -4441,260 +4461,214 @@ export function LifeSkillApp() {
   }
 
   function SettingsPanel() {
-    const sheets = [
-      "Users",
-      "Teachers",
-      "Schools",
-      "Classes",
-      "Lessons",
-      "TimeSlots",
-      "Schedules",
-      "LessonPlans",
-      "Attendance",
-      "ChatThreads",
-      "ChatMessages",
-      "Notifications",
-      "AuditLogs",
-    ];
-
     return (
       <div className="space-y-5">
-        <Panel title="Thiết lập Trường và Lớp" action={`${schools.length} trường • ${classes.length} lớp`}>
-          <div className="grid gap-5 lg:grid-cols-2">
-            <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <School2 className="text-[var(--brand)]" />
-                <h3 className="text-base font-black text-[var(--brand-dark)]">Thêm trường</h3>
-              </div>
-              <div className="mt-3 grid gap-3">
-                <input
-                  value={schoolDraft.name}
-                  onChange={(event) => setSchoolDraft({ ...schoolDraft, name: event.target.value })}
-                  placeholder="Tên trường"
-                  className={inputClass}
-                />
-                <input
-                  value={schoolDraft.district}
-                  onChange={(event) => setSchoolDraft({ ...schoolDraft, district: event.target.value })}
-                  placeholder="Quận/Huyện"
-                  className={inputClass}
-                />
-                <button onClick={addSchool} className={primaryButtonClass}>
-                  <Plus size={18} />
-                  Lưu trường
-                </button>
-              </div>
-              <div className="mt-4 space-y-2">
-                {schools.map((school) => (
-                  <div key={school.id} className="rounded-xl bg-cyan-50 px-3 py-2 text-sm font-semibold text-[var(--brand-dark)]">
-                    {editingSchoolId === school.id ? (
-                      <div className="grid gap-2">
-                        <input
-                          value={schoolEditDraft.name}
-                          onChange={(event) => setSchoolEditDraft((current) => ({ ...current, name: event.target.value }))}
-                          placeholder="Tên trường"
-                          className={compactInputClass}
-                        />
-                        <input
-                          value={schoolEditDraft.district}
-                          onChange={(event) =>
-                            setSchoolEditDraft((current) => ({ ...current, district: event.target.value }))
-                          }
-                          placeholder="Quận/Huyện"
-                          className={compactInputClass}
-                        />
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={cancelEditSchool}
-                            className="rounded-lg border border-[var(--line)] bg-white px-3 py-1 text-xs font-black text-[var(--brand-dark)]"
-                          >
-                            Hủy
-                          </button>
-                          <button
-                            onClick={() => saveSchoolEdit(school.id)}
-                            className="rounded-lg bg-[var(--brand)] px-3 py-1 text-xs font-black text-white"
-                          >
-                            Lưu
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate">{school.name}</p>
-                          <p className="truncate text-xs font-bold text-[var(--muted)]">{school.district}</p>
-                        </div>
-                        <div className="ml-auto flex gap-1">
-                          <button
-                            title="Sửa trường"
-                            onClick={() => startEditSchool(school)}
-                            className="grid h-8 w-8 place-items-center rounded-lg bg-white text-[var(--brand-dark)]"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            title="Xóa trường"
-                            onClick={() => deleteSchool(school.id)}
-                            className="grid h-8 w-8 place-items-center rounded-lg bg-rose-100 text-rose-700"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+        <Panel
+          title="Thiết lập Trường và Lớp"
+          action={`${schools.length} trường`}
+          collapsed={collapsedSettingsSections.schools}
+          onToggleCollapse={() => toggleSettingsSection("schools")}
+        >
+          <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <School2 className="text-[var(--brand)]" />
+              <h3 className="text-base font-black text-[var(--brand-dark)]">Thêm trường</h3>
             </div>
-            <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <BookOpen className="text-[var(--accent)]" />
-                <h3 className="text-base font-black text-[var(--brand-dark)]">Thêm lớp</h3>
-              </div>
-              <div className="mt-3 grid gap-3">
-                <select
-                  value={classDraft.schoolId}
-                  onChange={(event) => setClassDraft({ ...classDraft, schoolId: event.target.value })}
-                  className={inputClass}
-                >
-                  {schools.map((school) => (
-                    <option key={school.id} value={school.id}>
-                      {school.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  value={classDraft.name}
-                  onChange={(event) => setClassDraft({ ...classDraft, name: event.target.value })}
-                  placeholder="Tên lớp cách nhau dấu phẩy (ví dụ: 1A,1B,2A)"
-                  className={inputClass}
-                />
-                <p className="text-xs font-bold text-[var(--muted)]">
-                  Hệ thống tự xác định khối theo số trong tên lớp. Ví dụ: 10A sẽ thành Khối 10.
-                </p>
-                <button onClick={addClassRoom} className={primaryButtonClass}>
-                  <Plus size={18} />
-                  Lưu lớp
-                </button>
-              </div>
-              <div className="mt-4 space-y-2">
-                {classes.map((classRoom) => (
-                  <div key={classRoom.id} className="rounded-xl bg-cyan-50 px-3 py-2 text-sm font-semibold text-[var(--brand-dark)]">
-                    {editingClassId === classRoom.id ? (
-                      <div className="grid gap-2">
-                        <select
-                          value={classEditDraft.schoolId}
-                          onChange={(event) =>
-                            setClassEditDraft((current) => ({ ...current, schoolId: event.target.value }))
-                          }
-                          className={compactInputClass}
+            <div className="mt-3 grid gap-3">
+              <input
+                value={schoolDraft.name}
+                onChange={(event) => setSchoolDraft({ ...schoolDraft, name: event.target.value })}
+                placeholder="Tên trường"
+                className={inputClass}
+              />
+              <input
+                value={schoolDraft.district}
+                onChange={(event) => setSchoolDraft({ ...schoolDraft, district: event.target.value })}
+                placeholder="Quận/Huyện"
+                className={inputClass}
+              />
+              <button onClick={addSchool} className={primaryButtonClass}>
+                <Plus size={18} />
+                Lưu trường
+              </button>
+            </div>
+            <div className="mt-4 space-y-2">
+              {schools.map((school) => (
+                <div key={school.id} className="rounded-xl bg-cyan-50 px-3 py-2 text-sm font-semibold text-[var(--brand-dark)]">
+                  {editingSchoolId === school.id ? (
+                    <div className="grid gap-2">
+                      <input
+                        value={schoolEditDraft.name}
+                        onChange={(event) => setSchoolEditDraft((current) => ({ ...current, name: event.target.value }))}
+                        placeholder="Tên trường"
+                        className={compactInputClass}
+                      />
+                      <input
+                        value={schoolEditDraft.district}
+                        onChange={(event) => setSchoolEditDraft((current) => ({ ...current, district: event.target.value }))}
+                        placeholder="Quận/Huyện"
+                        className={compactInputClass}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={cancelEditSchool}
+                          className="rounded-lg border border-[var(--line)] bg-white px-3 py-1 text-xs font-black text-[var(--brand-dark)]"
                         >
-                          {schools.map((school) => (
-                            <option key={school.id} value={school.id}>
-                              {school.name}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          value={classEditDraft.name}
-                          onChange={(event) => setClassEditDraft((current) => ({ ...current, name: event.target.value }))}
-                          placeholder="Tên lớp"
-                          className={compactInputClass}
-                        />
-                        <input
-                          value={classEditDraft.grade}
-                          onChange={(event) => setClassEditDraft((current) => ({ ...current, grade: event.target.value }))}
-                          placeholder="Khối"
-                          className={compactInputClass}
-                        />
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={cancelEditClassRoom}
-                            className="rounded-lg border border-[var(--line)] bg-white px-3 py-1 text-xs font-black text-[var(--brand-dark)]"
-                          >
-                            Hủy
-                          </button>
-                          <button
-                            onClick={() => saveClassRoomEdit(classRoom.id)}
-                            className="rounded-lg bg-[var(--brand)] px-3 py-1 text-xs font-black text-white"
-                          >
-                            Lưu
-                          </button>
-                        </div>
+                          Hủy
+                        </button>
+                        <button
+                          onClick={() => saveSchoolEdit(school.id)}
+                          className="rounded-lg bg-[var(--brand)] px-3 py-1 text-xs font-black text-white"
+                        >
+                          Lưu
+                        </button>
                       </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate">
-                            {classRoom.name} - {classRoom.grade}
-                          </p>
-                          <p className="truncate text-xs font-bold text-[var(--muted)]">
-                            {schools.find((school) => school.id === classRoom.schoolId)?.name || "Không rõ trường"}
-                          </p>
-                        </div>
-                        <div className="ml-auto flex gap-1">
-                          <button
-                            title="Sửa lớp"
-                            onClick={() => startEditClassRoom(classRoom)}
-                            className="grid h-8 w-8 place-items-center rounded-lg bg-white text-[var(--brand-dark)]"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            title="Xóa lớp"
-                            onClick={() => deleteClassRoom(classRoom.id)}
-                            className="grid h-8 w-8 place-items-center rounded-lg bg-rose-100 text-rose-700"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate">{school.name}</p>
+                        <p className="truncate text-xs font-bold text-[var(--muted)]">{school.district}</p>
                       </div>
-                    )}
-                  </div>
+                      <div className="ml-auto flex gap-1">
+                        <button
+                          title="Sửa trường"
+                          onClick={() => startEditSchool(school)}
+                          className="grid h-8 w-8 place-items-center rounded-lg bg-white text-[var(--brand-dark)]"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          title="Xóa trường"
+                          onClick={() => deleteSchool(school.id)}
+                          className="grid h-8 w-8 place-items-center rounded-lg bg-rose-100 text-rose-700"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </Panel>
+
+        <Panel
+          title="Thêm lớp"
+          action={`${classes.length} lớp`}
+          collapsed={collapsedSettingsSections.classes}
+          onToggleCollapse={() => toggleSettingsSection("classes")}
+        >
+          <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <BookOpen className="text-[var(--accent)]" />
+              <h3 className="text-base font-black text-[var(--brand-dark)]">Thêm lớp</h3>
+            </div>
+            <div className="mt-3 grid gap-3">
+              <select
+                value={classDraft.schoolId}
+                onChange={(event) => setClassDraft({ ...classDraft, schoolId: event.target.value })}
+                className={inputClass}
+              >
+                {schools.map((school) => (
+                  <option key={school.id} value={school.id}>
+                    {school.name}
+                  </option>
                 ))}
-              </div>
+              </select>
+              <input
+                value={classDraft.name}
+                onChange={(event) => setClassDraft({ ...classDraft, name: event.target.value })}
+                placeholder="Tên lớp cách nhau dấu phẩy (ví dụ: 1A,1B,2A)"
+                className={inputClass}
+              />
+              <p className="text-xs font-bold text-[var(--muted)]">
+                Hệ thống tự xác định khối theo số trong tên lớp. Ví dụ: 10A sẽ thành Khối 10.
+              </p>
+              <button onClick={addClassRoom} className={primaryButtonClass}>
+                <Plus size={18} />
+                Lưu lớp
+              </button>
+            </div>
+            <div className="mt-4 space-y-2">
+              {classes.map((classRoom) => (
+                <div key={classRoom.id} className="rounded-xl bg-cyan-50 px-3 py-2 text-sm font-semibold text-[var(--brand-dark)]">
+                  {editingClassId === classRoom.id ? (
+                    <div className="grid gap-2">
+                      <select
+                        value={classEditDraft.schoolId}
+                        onChange={(event) => setClassEditDraft((current) => ({ ...current, schoolId: event.target.value }))}
+                        className={compactInputClass}
+                      >
+                        {schools.map((school) => (
+                          <option key={school.id} value={school.id}>
+                            {school.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={classEditDraft.name}
+                        onChange={(event) => setClassEditDraft((current) => ({ ...current, name: event.target.value }))}
+                        placeholder="Tên lớp"
+                        className={compactInputClass}
+                      />
+                      <input
+                        value={classEditDraft.grade}
+                        onChange={(event) => setClassEditDraft((current) => ({ ...current, grade: event.target.value }))}
+                        placeholder="Khối"
+                        className={compactInputClass}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={cancelEditClassRoom}
+                          className="rounded-lg border border-[var(--line)] bg-white px-3 py-1 text-xs font-black text-[var(--brand-dark)]"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          onClick={() => saveClassRoomEdit(classRoom.id)}
+                          className="rounded-lg bg-[var(--brand)] px-3 py-1 text-xs font-black text-white"
+                        >
+                          Lưu
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate">
+                          {classRoom.name} - {classRoom.grade}
+                        </p>
+                        <p className="truncate text-xs font-bold text-[var(--muted)]">
+                          {schools.find((school) => school.id === classRoom.schoolId)?.name || "Không rõ trường"}
+                        </p>
+                      </div>
+                      <div className="ml-auto flex gap-1">
+                        <button
+                          title="Sửa lớp"
+                          onClick={() => startEditClassRoom(classRoom)}
+                          className="grid h-8 w-8 place-items-center rounded-lg bg-white text-[var(--brand-dark)]"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          title="Xóa lớp"
+                          onClick={() => deleteClassRoom(classRoom.id)}
+                          className="grid h-8 w-8 place-items-center rounded-lg bg-rose-100 text-rose-700"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         </Panel>
 
         <SlotsPanel />
-
-        <Panel title="Cấu hình Google Workspace" action="Sẵn sàng nối API">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-3">
-                <School2 className="text-[var(--brand)]" />
-                <h3 className="text-base font-black text-[var(--brand-dark)]">
-                  Google Sheets là cơ sở dữ liệu chính
-                </h3>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-                Tạo spreadsheet với các tab đúng tên bên dưới, cấp quyền cho service account, sau đó điền
-                GOOGLE_SHEETS_SPREADSHEET_ID vào .env.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {sheets.map((sheet) => (
-                  <span key={sheet} className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-[var(--brand-dark)]">
-                    {sheet}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-3">
-                <Mail className="text-[var(--accent)]" />
-                <h3 className="text-base font-black text-[var(--brand-dark)]">Email và Google Drive</h3>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-                Email thông báo dùng GAS hoặc Resend. Giáo án tải lên sẽ lưu trên Google Drive và gắn metadata vào
-                tab LessonPlans.
-              </p>
-              <div className="mt-4 rounded-2xl bg-orange-50 p-4 text-sm font-bold text-orange-800">
-                Sau khi thêm hoặc sửa env trên server, cần redeploy để API route nhận biến môi trường mới.
-              </div>
-            </div>
-          </div>
-        </Panel>
       </div>
     );
   }
@@ -4870,23 +4844,40 @@ export function LifeSkillApp() {
 function Panel({
   title,
   action,
+  collapsed = false,
+  onToggleCollapse,
   children,
 }: {
   title: string;
   action?: string;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
   children: React.ReactNode;
 }) {
   return (
     <section className="rounded-3xl border border-[var(--line)] bg-white p-5 shadow-[0_18px_48px_rgba(20,33,43,0.06)]">
-      <div className="mb-5 flex items-center justify-between gap-3">
+      <div className={`${collapsed ? "" : "mb-5"} flex items-center justify-between gap-3`}>
         <h2 className="text-lg font-black tracking-tight text-[var(--brand-dark)]">{title}</h2>
-        {action ? (
-          <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-[var(--brand-dark)]">
-            {action}
-          </span>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {action ? (
+            <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-[var(--brand-dark)]">
+              {action}
+            </span>
+          ) : null}
+          {onToggleCollapse ? (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              title={collapsed ? "Mở rộng" : "Thu gọn"}
+              aria-label={collapsed ? `Mở rộng ${title}` : `Thu gọn ${title}`}
+              className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
+            >
+              <ChevronRight size={18} className={`transition-transform ${collapsed ? "" : "rotate-90"}`} />
+            </button>
+          ) : null}
+        </div>
       </div>
-      {children}
+      {collapsed ? null : children}
     </section>
   );
 }

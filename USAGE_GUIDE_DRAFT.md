@@ -64,6 +64,8 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 
 ### Tính năng hiện có
 - Khung giờ dạy đã được chuyển vào màn `Cấu hình` để quản trị cùng nhóm dữ liệu nền.
+- Các khối trong màn `Cấu hình` mặc định thu gọn để xem tổng quan; bấm mũi tên để mở rộng khi cần chỉnh dữ liệu.
+- Màn `Cấu hình` hiện giữ các khối vận hành cần dùng: `Thiết lập Trường và Lớp`, `Thêm lớp`, `Thiết lập Khung giờ dạy`.
 - Thêm khung giờ thủ công với tên, giờ bắt đầu và giờ kết thúc.
 - Danh sách khung giờ hiển thị dạng bảng với các cột: `Tên`, `Bắt đầu`, `Kết thúc`, `Số phút`, `Trạng thái`, `Thao tác`.
 - Hệ thống tự tính thời lượng từ giờ bắt đầu/kết thúc và chỉ chấp nhận 45 phút hoặc 90 phút.
@@ -75,6 +77,7 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 
 ### Quy trình thao tác
 - Vào tab `Cấu hình`.
+- Bấm mũi tên tại từng khối để mở rộng hoặc thu gọn nội dung chi tiết.
 - Tại khu vực `Thiết lập Khung giờ dạy`, nhập tên khung giờ, giờ bắt đầu và giờ kết thúc rồi bấm `Lưu khung giờ`.
 - Để import nhanh, bấm `Tải mẫu Excel`, điền dữ liệu theo mẫu rồi bấm `Import file`.
 - Dùng biểu tượng sửa để cập nhật tên hoặc giờ.
