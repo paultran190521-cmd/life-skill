@@ -15,9 +15,11 @@ import {
   GraduationCap,
   ListChecks,
   LayoutDashboard,
+  Link2,
   LoaderCircle,
   Mail,
   MessageSquareText,
+  Paperclip,
   Pencil,
   Phone,
   Plus,
@@ -137,6 +139,20 @@ type ScheduleCreateResponse = {
   emailResults?: EmailResult[];
 };
 
+type ChatThreadCreateResponse = {
+  thread: ChatThread;
+  created: boolean;
+};
+
+type ChatMessageCreateResponse = {
+  message: ChatMessage;
+};
+
+type ChatThreadReadResponse = {
+  updated: number;
+  readAt: string;
+};
+
 type ScheduleUpdateResponse = Partial<Schedule> & {
   id: string;
   notifications?: Notification[];
@@ -152,6 +168,7 @@ type ClassCreateResponse = ClassRoom | { classes: ClassRoom[] };
 
 type CalendarViewMode = "month" | "week" | "day";
 type CalendarSortMode = "date-asc" | "date-desc" | "status";
+type ChatThreadFilter = "all" | "teacher" | "schedule" | "unread";
 type LessonPlanAdminFocus = "uploaded" | "submitted" | "missing" | "upcoming-missing";
 type LessonPlanTeacherFocus = "uploaded" | "pending" | "submitted";
 type AttendanceAdminFocus = "all-today" | "checked-today" | "missing-today" | "late-today";
@@ -336,7 +353,11 @@ export function LifeSkillApp() {
   const [lessonPlanAdminFocus, setLessonPlanAdminFocus] = useState<LessonPlanAdminFocus>("uploaded");
   const [lessonPlanTeacherFocus, setLessonPlanTeacherFocus] = useState<LessonPlanTeacherFocus>("uploaded");
   const [selectedThreadId, setSelectedThreadId] = useState(seedThreads[0]?.id ?? "");
+  const [chatSearchTerm, setChatSearchTerm] = useState("");
+  const [chatThreadFilter, setChatThreadFilter] = useState<ChatThreadFilter>("all");
   const [chatDraft, setChatDraft] = useState("");
+  const [chatAttachmentName, setChatAttachmentName] = useState("");
+  const [chatAttachmentUrl, setChatAttachmentUrl] = useState("");
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
     teacherIds: [seedTeachers[0].id],
     items: [
@@ -553,6 +574,18 @@ export function LifeSkillApp() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== "chat") {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      refreshChatData();
+    }, 25_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!activeUsers.some((user) => user.id === currentUserId)) {
@@ -860,6 +893,24 @@ export function LifeSkillApp() {
     setSaveError(message);
     addNotification("Không lưu được dữ liệu", message, "admin", { showToast: false });
     pushToast("Không lưu được dữ liệu", message, "error");
+  }
+
+  async function refreshChatData() {
+    try {
+      const data = await apiRequest<AppData>("/api/app-data");
+      setChatThreads(data.chatThreads);
+      setChatMessages(data.chatMessages);
+      setDataStatus("connected");
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async function authorizedRequest<T>(url: string, init?: RequestInit) {
+    const headers = new Headers(init?.headers);
+    headers.set("x-app-user-id", currentUser.id);
+    headers.set("x-app-user-email", currentUser.email);
+    return apiRequest<T>(url, { ...init, headers });
   }
 
   async function saveRequest<T>(label: string, url: string, init?: RequestInit) {
@@ -2469,44 +2520,84 @@ export function LifeSkillApp() {
     }
   }
 
-  function sendChatMessage() {
-    if (!chatDraft.trim() || !selectedThreadId) {
+  async function sendChatMessage() {
+    const body = chatDraft.trim();
+    const attachmentName = chatAttachmentName.trim();
+    const attachmentUrl = chatAttachmentUrl.trim();
+    if ((!body && !attachmentUrl) || !selectedThreadId) {
       return;
     }
 
-    setChatMessages((items) => [
-      ...items,
-      {
-        id: createId("m"),
-        threadId: selectedThreadId,
-        senderId: currentUser.id,
-        senderName: currentUser.name,
-        senderRole: role,
-        body: chatDraft.trim(),
-        createdAt: new Date().toISOString(),
-      },
-    ]);
-    setChatDraft("");
+    try {
+      const response = await saveRequest<ChatMessageCreateResponse>("Đang gửi tin nhắn...", "/api/chat-messages", {
+        method: "POST",
+        body: JSON.stringify({
+          threadId: selectedThreadId,
+          body,
+          attachmentName,
+          attachmentUrl,
+        }),
+      });
+      setChatMessages((items) => [...items, response.message]);
+      setChatDraft("");
+      setChatAttachmentName("");
+      setChatAttachmentUrl("");
+      setDataStatus("connected");
+      setSaveError("");
+    } catch (error) {
+      handleSaveError(error);
+    }
   }
 
-  function openTeacherChat(teacherId: string) {
+  async function openTeacherChat(teacherId: string) {
     const teacher = teachers.find((item) => item.id === teacherId);
     const existingThread = chatThreads.find((thread) => thread.type === "teacher" && thread.teacherId === teacherId);
-    const thread =
-      existingThread ??
-      ({
-        id: `thread-${teacherId}`,
-        type: "teacher" as const,
-        teacherId,
-        title: `Trao đổi với ${teacher?.name || "giáo viên"}`,
-      } satisfies ChatThread);
 
-    if (!existingThread) {
-      setChatThreads((items) => [thread, ...items]);
+    if (existingThread) {
+      setSelectedThreadId(existingThread.id);
+      setActiveTab("chat");
+      pushToast("Đã mở kênh chat", `Trao đổi với ${teacher?.name || "giáo viên"} về giáo án.`, "info");
+      return;
     }
-    setSelectedThreadId(thread.id);
-    setActiveTab("chat");
-    pushToast("Đã mở kênh chat", `Trao đổi với ${teacher?.name || "giáo viên"} về giáo án.`, "info");
+
+    try {
+      const response = await saveRequest<ChatThreadCreateResponse>("Đang mở kênh chat...", "/api/chat-threads", {
+        method: "POST",
+        body: JSON.stringify({ type: "teacher", teacherId }),
+      });
+      setChatThreads((items) =>
+        items.some((item) => item.id === response.thread.id) ? items : [response.thread, ...items],
+      );
+      setSelectedThreadId(response.thread.id);
+      setActiveTab("chat");
+      pushToast("Đã mở kênh chat", `Trao đổi với ${teacher?.name || "giáo viên"} về giáo án.`, "info");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function markThreadRead(threadId: string) {
+    if (!threadId) {
+      return;
+    }
+
+    try {
+      const response = await authorizedRequest<ChatThreadReadResponse>(`/api/chat-threads/${threadId}/read`, {
+        method: "PATCH",
+      });
+      if (response.updated > 0) {
+        const readField: "readByAdminAt" | "readByTeacherAt" = role === "admin" ? "readByAdminAt" : "readByTeacherAt";
+        setChatMessages((items) =>
+          items.map((message) =>
+            message.threadId === threadId && message.senderRole !== role && !message[readField]
+              ? { ...message, [readField]: response.readAt }
+              : message,
+          ),
+        );
+      }
+    } catch (error) {
+      console.error(error);
+    }
   }
 
   function teacherName(teacherId: string) {
@@ -2545,6 +2636,12 @@ export function LifeSkillApp() {
     role === "admin"
       ? chatThreads
       : chatThreads.filter((thread) => thread.teacherId === currentTeacherId);
+
+  useEffect(() => {
+    if (activeTab === "chat" && selectedThreadId) {
+      markThreadRead(selectedThreadId);
+    }
+  }, [activeTab, selectedThreadId, role, chatMessages.length]);
 
   return (
     <main className="ui-polish min-h-screen bg-[var(--canvas)]">
@@ -5142,63 +5239,224 @@ export function LifeSkillApp() {
     const selectedMessages = selectedThread
       ? chatMessages.filter((message) => message.threadId === selectedThread.id)
       : [];
+    const threadSummaries = visibleThreads
+      .map((thread) => {
+        const messages = chatMessages
+          .filter((message) => message.threadId === thread.id)
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        const latestMessage = messages[messages.length - 1];
+        const unreadCount = messages.filter((message) => isUnreadChatMessage(message, role)).length;
+        const schedule = thread.scheduleId ? schedules.find((item) => item.id === thread.scheduleId) : undefined;
+        const meta = schedule ? lookupSchedule(schedule) : null;
+        const teacher = teachers.find((item) => item.id === thread.teacherId);
+        const searchableText = [
+          thread.title,
+          teacher?.name,
+          teacher?.phone,
+          teacher?.email,
+          latestMessage?.body,
+          meta?.school?.name,
+          meta?.classRoom?.name,
+          meta?.lesson?.title,
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return { thread, messages, latestMessage, unreadCount, schedule, meta, teacher, searchableText };
+      })
+      .filter((item) => {
+        const matchesSearch = normalizeComparableText(item.searchableText).includes(normalizeComparableText(chatSearchTerm));
+        const matchesFilter =
+          chatThreadFilter === "all" ||
+          (chatThreadFilter === "unread" && item.unreadCount > 0) ||
+          item.thread.type === chatThreadFilter;
+        return matchesSearch && matchesFilter;
+      })
+      .sort((a, b) => (b.latestMessage?.createdAt || "").localeCompare(a.latestMessage?.createdAt || ""));
+    const selectedSchedule = selectedThread?.scheduleId
+      ? schedules.find((schedule) => schedule.id === selectedThread.scheduleId)
+      : undefined;
+    const selectedMeta = selectedSchedule ? lookupSchedule(selectedSchedule) : null;
+    const selectedUnreadCount = selectedMessages.filter((message) => isUnreadChatMessage(message, role)).length;
+    const totalUnreadCount = visibleThreads.reduce(
+      (count, thread) =>
+        count + chatMessages.filter((message) => message.threadId === thread.id && isUnreadChatMessage(message, role)).length,
+      0,
+    );
 
     return (
       <div className="grid min-h-[620px] gap-5 xl:grid-cols-[340px_1fr]">
-        <Panel title="Kênh trao đổi" action="Theo giáo viên và từng tiết">
-          <div className="space-y-2">
-            {visibleThreads.map((thread) => (
-              <button
-                key={thread.id}
-                onClick={() => setSelectedThreadId(thread.id)}
-                className={`w-full rounded-2xl border p-3 text-left transition ${
-                  selectedThread?.id === thread.id
-                    ? "border-[var(--brand)] bg-cyan-50"
-                    : "border-[var(--line)] bg-white hover:border-cyan-200"
-                }`}
-              >
-                <p className="text-sm font-black text-[var(--brand-dark)]">{thread.title}</p>
-                <p className="mt-1 text-xs font-bold uppercase text-[var(--muted)]">
-                  {thread.type === "teacher" ? "Theo giáo viên" : "Theo tiết dạy"}
-                </p>
-              </button>
-            ))}
+        <Panel title="Kênh trao đổi" action={`${totalUnreadCount} tin mới`}>
+          <div className="space-y-3">
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={chatSearchTerm}
+                onChange={(event) => setChatSearchTerm(event.target.value)}
+                placeholder="Tìm giáo viên, lớp, nội dung..."
+                className="w-full rounded-2xl border border-sky-200 bg-white/90 py-3 pl-9 pr-3 text-sm font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs font-black">
+              {[
+                ["all", "Tất cả"],
+                ["unread", "Chưa đọc"],
+                ["teacher", "Giáo viên"],
+                ["schedule", "Theo tiết"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setChatThreadFilter(value as ChatThreadFilter)}
+                  className={`rounded-xl px-3 py-2 transition ${
+                    chatThreadFilter === value
+                      ? "bg-[var(--brand)] text-white"
+                      : "border border-cyan-100 bg-white text-[var(--brand-dark)] hover:bg-cyan-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="space-y-2">
+              {threadSummaries.length > 0 ? (
+                threadSummaries.map(({ thread, latestMessage, unreadCount, schedule, meta, teacher }) => (
+                  <button
+                    key={thread.id}
+                    onClick={() => setSelectedThreadId(thread.id)}
+                    className={`w-full rounded-2xl border p-3 text-left transition ${
+                      selectedThread?.id === thread.id
+                        ? "border-[var(--brand)] bg-cyan-50"
+                        : "border-[var(--line)] bg-white hover:border-cyan-200"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-[var(--brand-dark)]">{thread.title}</p>
+                        <p className="mt-1 text-xs font-bold uppercase text-[var(--muted)]">
+                          {thread.type === "teacher" ? "Theo giáo viên" : "Theo tiết dạy"}
+                        </p>
+                      </div>
+                      {unreadCount > 0 ? (
+                        <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-black text-white">
+                          {unreadCount}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-2 truncate text-xs font-bold text-slate-600">
+                      {latestMessage
+                        ? `${latestMessage.senderName}: ${latestMessage.body || latestMessage.attachmentName || "Đã gửi đính kèm"}`
+                        : "Chưa có tin nhắn"}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1 text-[11px] font-black">
+                      <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">
+                        {teacher?.name || "Chưa rõ giáo viên"}
+                      </span>
+                      {schedule ? (
+                        <>
+                          <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700">
+                            {formatDate(schedule.date)}
+                          </span>
+                          <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">
+                            {meta?.classRoom?.name || "Lớp ?"}
+                          </span>
+                        </>
+                      ) : null}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm font-bold text-slate-600">
+                  Không có kênh chat phù hợp.
+                </div>
+              )}
+            </div>
           </div>
         </Panel>
 
-        <Panel title={selectedThread?.title ?? "Chat"} action="Cập nhật định kỳ">
+        <Panel title={selectedThread?.title ?? "Chat"} action={selectedUnreadCount > 0 ? `${selectedUnreadCount} tin mới` : "Đã đọc"}>
           <div className="flex min-h-[510px] flex-col">
+            {selectedThread ? (
+              <div className="mb-4 grid gap-2 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-3 text-xs font-black text-[var(--brand-dark)] md:grid-cols-2">
+                <span>{selectedThread.type === "teacher" ? "Kênh theo giáo viên" : "Kênh theo tiết dạy"}</span>
+                <span>{teachers.find((item) => item.id === selectedThread.teacherId)?.name || "Chưa rõ giáo viên"}</span>
+                {selectedSchedule ? (
+                  <>
+                    <span>Ngày dạy {formatDate(selectedSchedule.date)}</span>
+                    <span>{selectedMeta?.school?.name || "Chưa rõ trường"}</span>
+                    <span>Lớp {selectedMeta?.classRoom?.name || "?"}</span>
+                    <span>{selectedMeta?.slot?.label || "Khung giờ"} {formatSlotRange(selectedMeta?.slot)}</span>
+                    <span className="md:col-span-2">{selectedMeta?.lesson?.title || "Chưa rõ chuyên đề"}</span>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
             <div className="app-scrollbar flex-1 space-y-3 overflow-y-auto pr-2">
-              {selectedMessages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`max-w-[82%] rounded-2xl p-3 ${
-                    message.senderRole === role
-                      ? "ml-auto bg-[var(--brand)] text-white"
-                      : "bg-cyan-50 text-[var(--brand-dark)]"
-                  }`}
-                >
-                  <p className="text-xs font-black opacity-80">{message.senderName}</p>
-                  <p className="mt-1 text-sm leading-6">{message.body}</p>
-                  <p className="mt-2 text-[11px] font-bold opacity-70">{formatDateTime(message.createdAt)}</p>
+              {selectedMessages.length > 0 ? (
+                selectedMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`max-w-[82%] rounded-2xl p-3 ${
+                      message.senderRole === role
+                        ? "ml-auto bg-[var(--brand)] text-white"
+                        : "bg-cyan-50 text-[var(--brand-dark)]"
+                    }`}
+                  >
+                    <p className="text-xs font-black opacity-80">{message.senderName}</p>
+                    {message.body ? <p className="mt-1 text-sm leading-6">{message.body}</p> : null}
+                    {message.attachmentUrl ? (
+                      <a
+                        href={message.attachmentUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex items-center gap-2 rounded-xl bg-white/20 px-3 py-2 text-xs font-black underline-offset-2 hover:underline"
+                      >
+                        <Paperclip size={14} />
+                        {message.attachmentName || "Mở đính kèm"}
+                      </a>
+                    ) : null}
+                    <p className="mt-2 text-[11px] font-bold opacity-70">{formatDateTime(message.createdAt)}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm font-bold text-slate-600">
+                  Chưa có tin nhắn trong kênh này.
                 </div>
-              ))}
+              )}
             </div>
-            <div className="mt-4 flex gap-2">
-              <input
-                value={chatDraft}
-                onChange={(event) => setChatDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    sendChatMessage();
-                  }
-                }}
-                placeholder="Nhập tin nhắn..."
-                className={inputClass}
-              />
-              <button onClick={sendChatMessage} className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--brand)] text-white">
-                <Send size={18} />
-              </button>
+            <div className="mt-4 space-y-2">
+              <div className="grid gap-2 md:grid-cols-[1fr_0.75fr]">
+                <input
+                  value={chatAttachmentName}
+                  onChange={(event) => setChatAttachmentName(event.target.value)}
+                  placeholder="Tên đính kèm"
+                  className={compactInputClass}
+                />
+                <div className="relative">
+                  <Link2 size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={chatAttachmentUrl}
+                    onChange={(event) => setChatAttachmentUrl(event.target.value)}
+                    placeholder="Link đính kèm"
+                    className="w-full rounded-xl border border-sky-200 bg-white/90 py-2 pl-9 pr-3 text-sm font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={chatDraft}
+                  onChange={(event) => setChatDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      sendChatMessage();
+                    }
+                  }}
+                  placeholder="Nhập tin nhắn..."
+                  className={inputClass}
+                />
+                <button onClick={sendChatMessage} className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--brand)] text-white">
+                  <Send size={18} />
+                </button>
+              </div>
             </div>
           </div>
         </Panel>
@@ -6919,6 +7177,14 @@ function buildAttendanceTeacherWarnings(
 
 function parseScheduleDateTime(date: string, time: string) {
   return new Date(`${date}T${time}:00`);
+}
+
+function isUnreadChatMessage(message: ChatMessage, role: Role) {
+  if (message.senderRole === role) {
+    return false;
+  }
+
+  return role === "admin" ? !message.readByAdminAt : !message.readByTeacherAt;
 }
 
 function auditActionLabel(action: string) {

@@ -176,7 +176,37 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - Admin bấm card `Điểm danh trễ hôm nay` để xem các tiết có điểm danh sau giờ bắt đầu.
 - Admin dùng khối `Cảnh báo điểm danh` để theo dõi giáo viên có thói quen thiếu/trễ điểm danh, sau đó bấm thẻ số lần để xem từng lịch cụ thể.
 
-## 7. Ghi Chú Cập Nhật Tài Liệu
+## 7. Phân Hệ Chat
+
+### Tính năng hiện có
+- Admin xem toàn bộ kênh chat trong hệ thống.
+- Teacher chỉ thấy các kênh chat thuộc giáo viên đang đăng nhập.
+- Kênh chat có 2 loại: theo giáo viên và theo từng tiết dạy.
+- Khi giao lịch, hệ thống tự tạo kênh chat theo từng tiết dạy.
+- Trong phân hệ giáo án, admin có thể bấm `Chat` nhanh để mở kênh trao đổi với giáo viên.
+- Tin nhắn gửi đi được lưu vào tab `ChatMessages` trên Google Sheet.
+- Hệ thống kiểm tra quyền trước khi tạo kênh, gửi tin nhắn hoặc đánh dấu đã đọc.
+- Danh sách kênh hiển thị tin nhắn mới nhất, số tin chưa đọc, giáo viên liên quan và ngữ cảnh ngày/lớp nếu có.
+- Có tìm kiếm kênh theo giáo viên, lớp, trường, chuyên đề hoặc nội dung tin nhắn.
+- Có bộ lọc: tất cả, chưa đọc, giáo viên, theo tiết.
+- Kênh theo tiết hiển thị ngữ cảnh lịch gồm ngày dạy, trường, lớp, bài học và khung giờ.
+- Tin nhắn hỗ trợ đính kèm bằng link.
+- Khi đang ở tab `Chat`, app tự tải lại dữ liệu chat định kỳ 25 giây/lần.
+
+### Quy trình thao tác
+- Admin vào tab `Chat` để xem toàn bộ trao đổi.
+- Teacher vào tab `Chat` để xem các trao đổi liên quan đến lịch/giáo án của mình.
+- Dùng ô tìm kiếm hoặc bộ lọc để thu hẹp danh sách kênh.
+- Chọn một kênh để đọc tin; hệ thống tự đánh dấu các tin của bên còn lại là đã đọc.
+- Nhập nội dung và bấm gửi hoặc nhấn Enter để gửi tin nhắn.
+- Nếu cần gửi tài liệu/link tham chiếu, nhập tên đính kèm và link đính kèm trước khi gửi.
+
+### Lưu ý vận hành
+- Đính kèm hiện là dạng link, chưa phải upload file trực tiếp vào Google Drive.
+- Tự tải lại định kỳ giúp cập nhật tin mới, nhưng chưa phải realtime WebSocket tức thời.
+- Các cột chat mở rộng (`attachmentName`, `attachmentUrl`, `readByAdminAt`, `readByTeacherAt`) được API chat tự bổ sung khi cần.
+
+## 8. Ghi Chú Cập Nhật Tài Liệu
 
 Sau mỗi lần nâng cấp phân hệ, cần bổ sung vào tài liệu này:
 - Danh sách tính năng mới.

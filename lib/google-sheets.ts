@@ -32,6 +32,8 @@ type SheetName =
   | "Notifications"
   | "AuditLogs";
 
+export type { SheetName };
+
 type SheetRow = Record<string, string>;
 
 let sheetsClient: ReturnType<typeof google.sheets> | null = null;
@@ -129,6 +131,30 @@ export async function appendSheetRow(sheetName: SheetName, row: Record<string, u
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [values] },
   });
+}
+
+export async function ensureSheetHeaders(sheetName: SheetName, requiredHeaders: string[]) {
+  const client = getSheetsClient();
+  const response = await client.spreadsheets.values.get({
+    spreadsheetId: spreadsheetId(),
+    range: `${quoteSheetName(sheetName)}!1:1`,
+  });
+
+  const headers = (response.data.values?.[0] || []).map((header) => normalizeSheetHeader(header));
+  const missingHeaders = requiredHeaders.filter((header) => !headers.includes(header));
+  if (missingHeaders.length === 0) {
+    return headers;
+  }
+
+  const nextHeaders = [...headers, ...missingHeaders];
+  await client.spreadsheets.values.update({
+    spreadsheetId: spreadsheetId(),
+    range: `${quoteSheetName(sheetName)}!A1:${columnName(nextHeaders.length)}1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [nextHeaders] },
+  });
+
+  return nextHeaders;
 }
 
 export async function appendSheetRows(sheetName: SheetName, rows: Array<Record<string, unknown>>) {
@@ -410,6 +436,10 @@ function toChatMessages(rows: SheetRow[]): ChatMessage[] {
     senderRole: (row.senderRole || "admin") as Role,
     body: row.body,
     createdAt: row.createdAt,
+    attachmentName: row.attachmentName || undefined,
+    attachmentUrl: row.attachmentUrl || undefined,
+    readByAdminAt: row.readByAdminAt || undefined,
+    readByTeacherAt: row.readByTeacherAt || undefined,
   }));
 }
 

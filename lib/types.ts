@@ -110,6 +110,10 @@ export type ChatMessage = {
   senderRole: Role;
   body: string;
   createdAt: string;
+  attachmentName?: string;
+  attachmentUrl?: string;
+  readByAdminAt?: string;
+  readByTeacherAt?: string;
 };
 
 export type Notification = {

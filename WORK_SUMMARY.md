@@ -163,7 +163,24 @@ Các lỗi đã xử lý trong phân hệ này:
 - API `/api/time-slots` hỗ trợ tạo nhiều khung giờ một lần.
 - API `/api/time-slots/[id]` hỗ trợ cập nhật/sửa/bật/tắt từng khung giờ.
 
-## 9. Email Lịch Dạy
+## 9. Phân Hệ Chat
+
+Đã hoàn tất:
+
+- Tin nhắn chat đã ghi thật vào Google Sheet tab `ChatMessages`, không còn chỉ lưu tạm trên trình duyệt.
+- Thêm API `/api/chat-messages` để gửi tin nhắn có kiểm tra đăng nhập và quyền theo kênh chat.
+- Thêm API `/api/chat-threads` để tạo nhanh kênh trao đổi theo giáo viên và lưu vào `ChatThreads`.
+- Thêm API `/api/chat-threads/[id]/read` để đánh dấu đã đọc các tin trong kênh.
+- Backend chat tự bổ sung các header còn thiếu cho `ChatMessages`: `attachmentName`, `attachmentUrl`, `readByAdminAt`, `readByTeacherAt`.
+- Admin xem toàn bộ kênh chat; teacher chỉ xem/gửi trong kênh thuộc giáo viên của mình.
+- Danh sách kênh chat có tìm kiếm theo giáo viên, lớp, trường, chuyên đề và nội dung tin nhắn.
+- Có bộ lọc kênh: tất cả, chưa đọc, theo giáo viên, theo tiết.
+- Mỗi kênh hiển thị tin nhắn mới nhất, số tin chưa đọc, giáo viên liên quan và ngữ cảnh ngày/lớp nếu là kênh theo tiết.
+- Khung chat theo tiết hiển thị ngữ cảnh lịch: ngày dạy, trường, lớp, bài học và khung giờ.
+- Tin nhắn hỗ trợ đính kèm bằng link với tên đính kèm.
+- Khi đang ở tab Chat, app tự tải lại dữ liệu chat định kỳ 25 giây/lần.
+
+## 10. Email Lịch Dạy
 
 Đã hoàn tất:
 
@@ -173,7 +190,7 @@ Các lỗi đã xử lý trong phân hệ này:
 - Mục tiêu bài học trong email được tách thành từng dòng.
 - Email tổng hợp có bảng lịch và nút xác nhận riêng cho từng dòng.
 
-## 10. Dữ Liệu Và Tích Hợp
+## 11. Dữ Liệu Và Tích Hợp
 
 Nguồn dữ liệu chính hiện tại là Google Sheets với các tab:
 
@@ -193,12 +210,12 @@ Nguồn dữ liệu chính hiện tại là Google Sheets với các tab:
 
 Các API/tích hợp đã dùng:
 
-- Next.js API routes cho dữ liệu ứng dụng, lịch, giáo viên, trường/lớp, bài học, khung giờ, giáo án, điểm danh, thông báo, auth.
+- Next.js API routes cho dữ liệu ứng dụng, lịch, giáo viên, trường/lớp, bài học, khung giờ, giáo án, điểm danh, chat, thông báo, auth.
 - Google Sheets cho đọc/ghi dữ liệu nghiệp vụ.
 - Google Drive qua GAS cho file giáo án.
 - GAS cho gửi email lịch dạy và xử lý file.
 
-## 11. Tài Liệu Và Quy Trình Làm Việc
+## 12. Tài Liệu Và Quy Trình Làm Việc
 
 Đã thiết lập quy trình:
 
@@ -207,11 +224,11 @@ Các API/tích hợp đã dùng:
 - Commit và push lên `main` để Vercel có thể deploy giao diện mới.
 - Mặc định push lên GitHub sau khi hoàn tất, không hỏi lại từng lần.
 
-## 12. Kiểm Tra Gần Nhất
+## 13. Kiểm Tra Gần Nhất
 
 Lần kiểm tra gần nhất:
 
 - Lệnh: `npm.cmd run -s build`
 - Kết quả: build thành công.
-- Cập nhật gần nhất: nâng cấp phân hệ điểm danh với dashboard admin, rule thời gian, kiểm quyền backend và cảnh báo giáo viên thiếu/trễ điểm danh.
+- Cập nhật gần nhất: nâng cấp phân hệ chat với lưu tin nhắn vào Google Sheet, kiểm quyền backend, unread/read, tìm kiếm/lọc kênh, ngữ cảnh lịch, đính kèm link và tự tải lại định kỳ.
 - Commit phân hệ giáo án theo vai trò đã push: `3695378 Split lesson plan views by role`

@@ -92,7 +92,19 @@ const SHEETS = [
   },
   {
     title: "ChatMessages",
-    headers: ["id", "threadId", "senderId", "senderName", "senderRole", "body", "createdAt"],
+    headers: [
+      "id",
+      "threadId",
+      "senderId",
+      "senderName",
+      "senderRole",
+      "body",
+      "createdAt",
+      "attachmentName",
+      "attachmentUrl",
+      "readByAdminAt",
+      "readByTeacherAt",
+    ],
   },
   {
     title: "Notifications",
