@@ -4851,8 +4851,15 @@ export function LifeSkillApp() {
     const scopedSchedules =
       role === "admin" ? schedules : schedules.filter((item) => item.teacherId === currentTeacherId);
     const today = currentDateKey();
+    const scopedScheduleIds = new Set(scopedSchedules.map((schedule) => schedule.id));
+    const attendanceToday = attendance.filter((record) => dateTimeDateKey(record.checkedInAt) === today);
     const todaySchedules = scopedSchedules.filter((schedule) => schedule.date === today && isAttendanceTrackedSchedule(schedule));
-    const checkedToday = todaySchedules.filter((schedule) => Boolean(lookupSchedule(schedule).checkIn));
+    const checkedToday = attendanceToday
+      .map((record) => schedules.find((schedule) => schedule.id === record.scheduleId))
+      .filter(
+        (schedule): schedule is Schedule =>
+          Boolean(schedule && scopedScheduleIds.has(schedule.id) && isAttendanceTrackedSchedule(schedule)),
+      );
     const missingToday = todaySchedules.filter((schedule) => !lookupSchedule(schedule).checkIn);
     const lateToday = checkedToday.filter((schedule) =>
       isLateAttendance(schedule, lookupSchedule(schedule).checkIn, timeSlots),
@@ -5047,6 +5054,8 @@ export function LifeSkillApp() {
         <div className="space-y-3">
           {scopedSchedules.map((schedule) => {
             const meta = lookupSchedule(schedule);
+            const isCheckedIn = Boolean(meta.checkIn);
+            const isCancelled = schedule.status === "cancelled";
             return (
               <div
                 key={schedule.id}
@@ -5079,11 +5088,15 @@ export function LifeSkillApp() {
                 </div>
                 <button
                   onClick={() => checkIn(schedule)}
-                  disabled={Boolean(meta.checkIn) || schedule.status === "cancelled"}
-                  className={primaryButtonClass}
+                  disabled={isCheckedIn || isCancelled}
+                  className={
+                    isCheckedIn || isCancelled
+                      ? "inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-200 px-4 py-3 text-sm font-black text-slate-500 shadow-none"
+                      : primaryButtonClass
+                  }
                 >
                   <CheckCircle2 size={18} />
-                  Điểm danh
+                  {isCheckedIn ? "Đã điểm danh" : "Điểm danh"}
                 </button>
               </div>
             );
@@ -5117,7 +5130,9 @@ export function LifeSkillApp() {
             ) : null}
           </div>
         </div>
-        <StatusChip status={schedule.status} />
+        <div className="justify-self-end self-start">
+          <StatusChip status={schedule.status} />
+        </div>
       </div>
     );
   }
@@ -6604,6 +6619,15 @@ function formatDateTime(value: string) {
 
 function currentDateKey() {
   return toDateKey(new Date());
+}
+
+function dateTimeDateKey(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return toDateKey(date);
 }
 
 function currentMonthKey() {
