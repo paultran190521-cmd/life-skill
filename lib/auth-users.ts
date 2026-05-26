@@ -10,14 +10,22 @@ export async function findAuthorizedUserByEmail(email: string) {
     (user) => normalizeEmail(user.email) === normalizedEmail && user.isActive !== false,
   );
 
-  if (existingUser) {
-    return existingUser;
-  }
-
   const teacherRows = await readSheetRows("Teachers");
   const teacher = teacherRows.find(
     (row) => normalizeEmail(row.email) === normalizedEmail && parseBoolean(row.active, true),
   );
+
+  if (existingUser) {
+    if (existingUser.role === "teacher" && !existingUser.teacherId && teacher) {
+      return {
+        ...existingUser,
+        teacherId: teacher.id,
+        name: existingUser.name || teacher.name,
+        avatarUrl: existingUser.avatarUrl || teacher.avatarUrl || getAvatarUrl(teacher.email, teacher.name),
+      } satisfies User;
+    }
+    return existingUser;
+  }
 
   if (!teacher) {
     return null;

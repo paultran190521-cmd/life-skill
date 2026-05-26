@@ -58,7 +58,7 @@ async function requireUser(request: Request) {
   if (session) {
     const userFromSession = await findAuthorizedUserFromSession(session.userId, session.email);
     if (userFromSession) {
-      return userFromSession;
+      return withTeacherHint(userFromSession, request);
     }
   }
 
@@ -67,10 +67,23 @@ async function requireUser(request: Request) {
     request.headers.get("x-app-user-email"),
   );
   if (userFromHeader) {
-    return userFromHeader;
+    return withTeacherHint(userFromHeader, request);
   }
 
   throw new RouteError(401, "Unauthorized");
+}
+
+function withTeacherHint(user: User, request: Request) {
+  if (user.role !== "teacher" || user.teacherId) {
+    return user;
+  }
+
+  const teacherId = String(request.headers.get("x-app-teacher-id") || "").trim();
+  if (!teacherId) {
+    return user;
+  }
+
+  return { ...user, teacherId };
 }
 
 function getTeacherThreadAuthorizationError(user: User, teacherId: string) {

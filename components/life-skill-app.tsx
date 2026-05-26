@@ -884,6 +884,10 @@ export function LifeSkillApp() {
       const headers = new Headers(init?.headers);
       headers.set("x-app-user-id", currentUser.id);
       headers.set("x-app-user-email", currentUser.email);
+      headers.set("x-app-user-role", currentUser.role);
+      if (currentTeacherId) {
+        headers.set("x-app-teacher-id", currentTeacherId);
+      }
       return await apiRequest<T>(url, { ...init, headers });
     } finally {
       setPendingAction("");
