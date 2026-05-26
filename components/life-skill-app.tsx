@@ -51,6 +51,14 @@ import {
   users,
 } from "@/lib/sample-data";
 import { statusLabels, statusStyles } from "@/lib/status";
+import {
+  allowedTimeSlotDurations,
+  getTimeSlotDurationMinutes,
+  isStandardTimeSlotDuration,
+  normalizeTimeSlotLabel,
+  normalizeTimeValue,
+  timeSlotDuplicateKey,
+} from "@/lib/time-slots";
 import type {
   Attendance,
   AuditLog,
@@ -74,7 +82,6 @@ type TabId =
   | "calendar"
   | "teachers"
   | "lessons"
-  | "slots"
   | "plans"
   | "attendance"
   | "chat"
@@ -178,6 +185,19 @@ type BulkLessonRow = LessonDraft & {
   id: string;
 };
 
+type TimeSlotDraft = {
+  label: string;
+  start: string;
+  end: string;
+  active?: boolean;
+};
+
+type TimeSlotImportDraft = TimeSlotDraft & {
+  id: string;
+  durationMinutes: number | "";
+  active: boolean;
+};
+
 type TeacherImportDraft = {
   id: string;
   name: string;
@@ -253,7 +273,6 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
   { id: "calendar", label: "Lịch tổng", icon: CalendarDays },
   { id: "teachers", label: "Giáo viên", icon: Users },
   { id: "lessons", label: "Bài học", icon: BookOpen },
-  { id: "slots", label: "Khung giờ", icon: Clock3 },
   { id: "plans", label: "Giáo án", icon: FileUp },
   { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
   { id: "chat", label: "Chat", icon: MessageSquareText },
@@ -357,10 +376,17 @@ export function LifeSkillApp() {
   const [lessonDeleteTarget, setLessonDeleteTarget] = useState<Lesson | null>(null);
   const [reassignTarget, setReassignTarget] = useState<Schedule | null>(null);
   const [reassignTeacherId, setReassignTeacherId] = useState("");
-  const [slotDraft, setSlotDraft] = useState({
+  const [slotDraft, setSlotDraft] = useState<TimeSlotDraft>({
     label: "",
     start: "07:30",
-    end: "08:05",
+    end: "08:15",
+  });
+  const [editingSlotId, setEditingSlotId] = useState("");
+  const [slotEditDraft, setSlotEditDraft] = useState<TimeSlotDraft>({
+    label: "",
+    start: "07:30",
+    end: "08:15",
+    active: true,
   });
   const [schoolDraft, setSchoolDraft] = useState({
     name: "",
@@ -852,7 +878,7 @@ export function LifeSkillApp() {
     }
 
     if (activeTimeSlots.length === 0) {
-      pushToast("Thiếu khung giờ", "Chưa có khung giờ hoạt động. Vào mục Khung giờ để tạo hoặc bật lại.", "warning");
+      pushToast("Thiếu khung giờ", "Chưa có khung giờ hoạt động. Vào Cấu hình để tạo hoặc bật lại.", "warning");
       return;
     }
 
@@ -1939,11 +1965,13 @@ export function LifeSkillApp() {
   }
 
   async function addSlot() {
-    if (!slotDraft.label) {
+    const error = validateTimeSlotDraft(slotDraft, timeSlots);
+    if (error) {
+      handleSaveError(new Error(error));
       return;
     }
 
-    const timeSlot = { id: createId("ts"), ...slotDraft };
+    const timeSlot = normalizeTimeSlotDraft({ id: createId("ts"), ...slotDraft });
 
     try {
       const savedTimeSlot = await saveRequest<TimeSlot>("Đang lưu khung giờ...", "/api/time-slots", {
@@ -1953,12 +1981,185 @@ export function LifeSkillApp() {
       setTimeSlots((items) => [savedTimeSlot, ...items]);
       setDataStatus("connected");
       setSaveError("");
+      pushToast("Đã thêm khung giờ", `${savedTimeSlot.label} đã sẵn sàng để giao lịch.`, "success");
     } catch (error) {
       handleSaveError(error);
       return;
     }
 
-    setSlotDraft({ label: "", start: "07:30", end: "08:05" });
+    setSlotDraft({ label: "", start: "07:30", end: "08:15" });
+  }
+
+  function startEditSlot(slot: TimeSlot) {
+    setEditingSlotId(slot.id);
+    setSlotEditDraft({
+      label: slot.label,
+      start: normalizeTimeValue(slot.start) || slot.start,
+      end: normalizeTimeValue(slot.end) || slot.end,
+      active: slot.active !== false,
+    });
+  }
+
+  function cancelEditSlot() {
+    setEditingSlotId("");
+    setSlotEditDraft({ label: "", start: "07:30", end: "08:15", active: true });
+  }
+
+  async function saveSlotEdit(slotId: string) {
+    const error = validateTimeSlotDraft(slotEditDraft, timeSlots, "Khung giờ", slotId);
+    if (error) {
+      handleSaveError(new Error(error));
+      return;
+    }
+
+    try {
+      const savedSlot = await saveRequest<TimeSlot>("Đang cập nhật khung giờ...", `/api/time-slots/${slotId}`, {
+        method: "PATCH",
+        body: JSON.stringify(normalizeTimeSlotDraft(slotEditDraft)),
+      });
+      setTimeSlots((items) => items.map((item) => (item.id === slotId ? { ...item, ...savedSlot } : item)));
+      cancelEditSlot();
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã cập nhật khung giờ", `${savedSlot.label} đã được lưu.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function toggleSlotActive(slot: TimeSlot) {
+    const nextActive = slot.active === false;
+    try {
+      const savedSlot = await saveRequest<TimeSlot>(
+        nextActive ? "Đang bật khung giờ..." : "Đang tắt khung giờ...",
+        `/api/time-slots/${slot.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ active: nextActive }),
+        },
+      );
+      setTimeSlots((items) => items.map((item) => (item.id === slot.id ? { ...item, ...savedSlot } : item)));
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast(
+        nextActive ? "Đã bật khung giờ" : "Đã tắt khung giờ",
+        `${slot.label} ${nextActive ? "có thể chọn khi giao lịch." : "sẽ không còn hiện khi giao lịch mới."}`,
+        nextActive ? "success" : "warning",
+      );
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function deleteSlot(slot: TimeSlot) {
+    const linkedSchedules = schedules.filter((schedule) => schedule.timeSlotId === slot.id).length;
+    const confirmed = await openConfirmDialog({
+      title: "Xóa khung giờ",
+      message:
+        linkedSchedules > 0
+          ? `"${slot.label}" đang có ${linkedSchedules} lịch liên quan. Hệ thống sẽ tắt khung giờ này để giữ lịch sử.`
+          : `Bạn chắc chắn muốn xóa mềm khung giờ "${slot.label}"?`,
+      confirmText: "Xóa mềm",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const savedSlot = await saveRequest<TimeSlot>("Đang xóa mềm khung giờ...", `/api/time-slots/${slot.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active: false }),
+      });
+      setTimeSlots((items) => items.map((item) => (item.id === slot.id ? { ...item, ...savedSlot, active: false } : item)));
+      if (editingSlotId === slot.id) {
+        cancelEditSlot();
+      }
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã xóa mềm khung giờ", `${slot.label} đã được tắt khỏi danh sách giao lịch mới.`, "warning");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function downloadTimeSlotSpreadsheetTemplate() {
+    const XLSX = await import("xlsx");
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ["Tên khung giờ", "Giờ bắt đầu", "Giờ kết thúc", "Số phút", "Trạng thái"],
+      ["Tiết 1", "07:30", "08:15", 45, "Bật"],
+      ["Ca chuyên đề", "13:30", "15:00", 90, "Bật"],
+    ]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Khung gio");
+    const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+    const blob = new Blob([fileData], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "mau-khung-gio-life-skill.xlsx";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importTimeSlotsFromSpreadsheet(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) {
+      return;
+    }
+
+    let rows: TimeSlotImportDraft[];
+    try {
+      rows = file.name.toLowerCase().endsWith(".xlsx")
+        ? await parseTimeSlotWorkbook(file)
+        : parseTimeSlotSpreadsheet(await file.text());
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Không đọc được file khung giờ.");
+      pushToast("Không đọc được file", "File import khung giờ không đúng định dạng.", "error");
+      return;
+    }
+
+    if (rows.length === 0) {
+      pushToast("Không có dữ liệu", "File import chưa có dòng khung giờ hợp lệ.", "warning");
+      return;
+    }
+
+    const errors = rows
+      .map((row, index) => validateTimeSlotDraft(row, timeSlots, `Dòng ${index + 2}`, undefined, row.durationMinutes))
+      .filter(Boolean);
+    if (errors.length > 0) {
+      setSaveError(errors.slice(0, 3).join(" | "));
+      pushToast("File còn lỗi dữ liệu", `Có ${errors.length} dòng lỗi. Kiểm tra lại file mẫu khung giờ.`, "warning");
+      return;
+    }
+
+    const duplicateLabels = findDuplicateValues(rows.map((row) => normalizeTimeSlotLabel(row.label)));
+    const duplicateTimes = findDuplicateValues(rows.map((row) => timeSlotDuplicateKey(normalizeTimeSlotDraft(row))));
+    if (duplicateLabels.length > 0 || duplicateTimes.length > 0) {
+      pushToast("Dữ liệu bị trùng", "File có khung giờ trùng tên hoặc trùng giờ bắt đầu/kết thúc.", "warning");
+      return;
+    }
+
+    try {
+      const response = await saveRequest<{ timeSlots: TimeSlot[] } | TimeSlot>("Đang import khung giờ...", "/api/time-slots", {
+        method: "POST",
+        body: JSON.stringify({ timeSlots: rows.map((row) => normalizeTimeSlotDraft({ ...row, id: createId("ts") })) }),
+      });
+      const savedSlots = Array.isArray((response as { timeSlots?: TimeSlot[] }).timeSlots)
+        ? ((response as { timeSlots: TimeSlot[] }).timeSlots ?? [])
+        : [response as TimeSlot];
+      setTimeSlots((items) => [...savedSlots, ...items]);
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Import thành công", `Đã thêm ${savedSlots.length} khung giờ từ file.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
   }
 
   async function addSchool() {
@@ -2195,9 +2396,6 @@ export function LifeSkillApp() {
     }
     if (activeTab === "lessons") {
       return LessonsPanel();
-    }
-    if (activeTab === "slots") {
-      return SlotsPanel();
     }
     if (activeTab === "plans") {
       return LessonPlansPanel();
@@ -3734,51 +3932,199 @@ export function LifeSkillApp() {
   }
 
   function SlotsPanel() {
+    const orderedSlots = [...timeSlots].sort((left, right) => left.start.localeCompare(right.start));
+
     return (
-      <div className="grid gap-5 xl:grid-cols-[0.75fr_1.35fr]">
-        <Panel title="Thêm khung giờ" action="Chọn nhanh khi giao lịch">
-          <div className="grid gap-3">
-            <input
-              value={slotDraft.label}
-              onChange={(event) => setSlotDraft({ ...slotDraft, label: event.target.value })}
-              placeholder="Ví dụ: Tiết 5"
-              className={inputClass}
-            />
-            <div className="grid grid-cols-2 gap-3">
-              <input
-                type="time"
-                value={slotDraft.start}
-                onChange={(event) => setSlotDraft({ ...slotDraft, start: event.target.value })}
-                className={inputClass}
-              />
-              <input
-                type="time"
-                value={slotDraft.end}
-                onChange={(event) => setSlotDraft({ ...slotDraft, end: event.target.value })}
-                className={inputClass}
-              />
+      <Panel title="Thiết lập Khung giờ dạy" action={`${timeSlots.length} khung • chuẩn 45/90 phút`}>
+        <div className="grid gap-5 xl:grid-cols-[0.85fr_1.5fr]">
+          <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <Clock3 className="text-[var(--brand)]" />
+              <h3 className="text-base font-black text-[var(--brand-dark)]">Thêm khung giờ</h3>
             </div>
-            <button onClick={addSlot} className={primaryButtonClass}>
-              <Clock3 size={18} />
-              Lưu khung giờ
-            </button>
-          </div>
-        </Panel>
-        <Panel title="Khung giờ làm việc" action={`${timeSlots.length} khung`}>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {timeSlots.map((slot) => (
-              <div key={slot.id} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
-                <p className="text-sm font-black text-[var(--brand-dark)]">{slot.label}</p>
-                <p className="mt-2 text-2xl font-black text-[var(--brand)]">
-                  {slot.start}
-                  <span className="text-[var(--muted)]"> - </span>
-                  {slot.end}
-                </p>
+            <div className="mt-3 grid gap-3">
+              <input
+                value={slotDraft.label}
+                onChange={(event) => setSlotDraft({ ...slotDraft, label: event.target.value })}
+                placeholder="Ví dụ: Tiết 1 hoặc Ca chuyên đề"
+                className={inputClass}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="time"
+                  value={slotDraft.start}
+                  onChange={(event) => setSlotDraft({ ...slotDraft, start: event.target.value })}
+                  className={inputClass}
+                />
+                <input
+                  type="time"
+                  value={slotDraft.end}
+                  onChange={(event) => setSlotDraft({ ...slotDraft, end: event.target.value })}
+                  className={inputClass}
+                />
               </div>
-            ))}
+              <p className="text-xs font-bold text-[var(--muted)]">
+                Thời lượng hiện tại: {getTimeSlotDurationLabel(slotDraft.start, slotDraft.end)}.
+              </p>
+              <button onClick={addSlot} className={primaryButtonClass}>
+                <Plus size={18} />
+                Lưu khung giờ
+              </button>
+            </div>
+            <div className="mt-5 rounded-2xl bg-cyan-50 p-4">
+              <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Import Excel nhanh</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--muted)]">
+                File mẫu chỉ nhận khung 45 phút hoặc 90 phút để đồng bộ với lịch dạy.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={downloadTimeSlotSpreadsheetTemplate}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-black text-[var(--brand-dark)] shadow-sm"
+                >
+                  <Download size={16} />
+                  Tải mẫu Excel
+                </button>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-[var(--brand)] px-3 py-2 text-sm font-black text-white shadow-sm">
+                  <UploadCloud size={16} />
+                  Import file
+                  <input
+                    type="file"
+                    accept=".xlsx,.csv,.tsv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/tab-separated-values"
+                    className="hidden"
+                    onChange={importTimeSlotsFromSpreadsheet}
+                  />
+                </label>
+              </div>
+            </div>
           </div>
-        </Panel>
-      </div>
+          <div className="overflow-x-auto rounded-2xl border border-[var(--line)] bg-white shadow-sm">
+            <div className="min-w-[860px]">
+              <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] gap-3 border-b border-[var(--line)] bg-cyan-50 px-4 py-3 text-xs font-black uppercase text-[var(--brand-dark)]">
+                <span>Tên</span>
+                <span>Bắt đầu</span>
+                <span>Kết thúc</span>
+                <span>Số phút</span>
+                <span>Trạng thái</span>
+                <span className="text-right">Thao tác</span>
+              </div>
+              <div className="divide-y divide-[var(--line)]">
+              {orderedSlots.map((slot) => {
+                const duration = getTimeSlotDurationMinutes(slot.start, slot.end);
+                const isEditing = editingSlotId === slot.id;
+                const standardDuration = isStandardTimeSlotDuration(slot.start, slot.end);
+                return (
+                  <div
+                    key={slot.id}
+                    className={`grid gap-3 px-4 py-3 text-sm font-semibold text-[var(--brand-dark)] lg:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] ${
+                      slot.active === false ? "bg-slate-50 opacity-75" : "bg-white"
+                    }`}
+                  >
+                    {isEditing ? (
+                      <>
+                        <input
+                          value={slotEditDraft.label}
+                          onChange={(event) => setSlotEditDraft((current) => ({ ...current, label: event.target.value }))}
+                          className={compactInputClass}
+                        />
+                        <input
+                          type="time"
+                          value={slotEditDraft.start}
+                          onChange={(event) => setSlotEditDraft((current) => ({ ...current, start: event.target.value }))}
+                          className={compactInputClass}
+                        />
+                        <input
+                          type="time"
+                          value={slotEditDraft.end}
+                          onChange={(event) => setSlotEditDraft((current) => ({ ...current, end: event.target.value }))}
+                          className={compactInputClass}
+                        />
+                        <span className="rounded-full bg-orange-50 px-3 py-2 text-xs font-black text-orange-700">
+                          {getTimeSlotDurationLabel(slotEditDraft.start, slotEditDraft.end)}
+                        </span>
+                        <label className="flex items-center gap-2 text-xs font-black text-[var(--muted)]">
+                          <input
+                            type="checkbox"
+                            checked={slotEditDraft.active !== false}
+                            onChange={(event) =>
+                              setSlotEditDraft((current) => ({ ...current, active: event.target.checked }))
+                            }
+                          />
+                          Bật
+                        </label>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            title="Hủy sửa"
+                            onClick={cancelEditSlot}
+                            className="grid h-8 w-8 place-items-center rounded-lg border border-[var(--line)] bg-white text-[var(--brand-dark)]"
+                          >
+                            <X size={14} />
+                          </button>
+                          <button
+                            title="Lưu khung giờ"
+                            onClick={() => saveSlotEdit(slot.id)}
+                            className="grid h-8 w-8 place-items-center rounded-lg bg-[var(--brand)] text-white"
+                          >
+                            <Save size={14} />
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="min-w-0 truncate">{slot.label}</span>
+                        <span>{slot.start}</span>
+                        <span>{slot.end}</span>
+                        <span
+                          className={`w-fit rounded-full px-3 py-1 text-xs font-black ${
+                            standardDuration ? "bg-orange-50 text-orange-700" : "bg-rose-50 text-rose-700"
+                          }`}
+                        >
+                          {duration > 0 ? `${duration} phút` : "Sai giờ"}
+                        </span>
+                        <span
+                          className={`w-fit rounded-full px-3 py-1 text-xs font-black ${
+                            slot.active === false ? "bg-slate-100 text-slate-600" : "bg-emerald-50 text-emerald-700"
+                          }`}
+                        >
+                          {slot.active === false ? "Tắt" : "Bật"}
+                        </span>
+                        <div className="flex justify-end gap-1">
+                          <button
+                            title="Sửa khung giờ"
+                            onClick={() => startEditSlot(slot)}
+                            className="grid h-8 w-8 place-items-center rounded-lg bg-cyan-50 text-[var(--brand-dark)]"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            title={slot.active === false ? "Bật khung giờ" : "Tắt khung giờ"}
+                            onClick={() => toggleSlotActive(slot)}
+                            className={`grid h-8 w-8 place-items-center rounded-lg ${
+                              slot.active === false ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {slot.active === false ? <CheckCircle2 size={14} /> : <X size={14} />}
+                          </button>
+                          <button
+                            title="Xóa mềm khung giờ"
+                            onClick={() => deleteSlot(slot)}
+                            className="grid h-8 w-8 place-items-center rounded-lg bg-rose-50 text-rose-700"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+                {orderedSlots.length === 0 ? (
+                  <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Chưa có khung giờ.</div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      </Panel>
     );
   }
 
@@ -4196,6 +4542,8 @@ export function LifeSkillApp() {
             </div>
           </div>
         </Panel>
+
+        <SlotsPanel />
 
         <Panel title="Cấu hình Google Workspace" action="Sẵn sàng nối API">
           <div className="grid gap-4 lg:grid-cols-2">
@@ -4856,6 +5204,157 @@ function validateLessonDraft(row: LessonDraft, label = "Bài học") {
   }
 
   return "";
+}
+
+function normalizeTimeSlotDraft<T extends TimeSlotDraft & { id?: string }>(row: T) {
+  return {
+    ...row,
+    label: row.label.trim(),
+    start: normalizeTimeValue(row.start),
+    end: normalizeTimeValue(row.end),
+    active: row.active ?? true,
+  };
+}
+
+function validateTimeSlotDraft(
+  row: TimeSlotDraft,
+  existingSlots: TimeSlot[],
+  label = "Khung giờ",
+  ignoreId?: string,
+  declaredDuration?: number | "",
+) {
+  const normalized = normalizeTimeSlotDraft(row);
+  if (!normalized.label) {
+    return `${label}: Tên khung giờ là bắt buộc.`;
+  }
+  if (!normalized.start || !normalized.end) {
+    return `${label}: Giờ bắt đầu và giờ kết thúc phải đúng định dạng HH:mm.`;
+  }
+
+  const duration = getTimeSlotDurationMinutes(normalized.start, normalized.end);
+  if (duration <= 0) {
+    return `${label}: Giờ kết thúc phải sau giờ bắt đầu.`;
+  }
+  if (declaredDuration !== undefined && declaredDuration !== "" && Number(declaredDuration) !== duration) {
+    return `${label}: Số phút phải khớp với giờ bắt đầu/kết thúc.`;
+  }
+  if (!allowedTimeSlotDurations.includes(duration as (typeof allowedTimeSlotDurations)[number])) {
+    return `${label}: Thời lượng chỉ được là 45 hoặc 90 phút.`;
+  }
+
+  const labelKey = normalizeTimeSlotLabel(normalized.label);
+  const timeKey = timeSlotDuplicateKey(normalized);
+  const duplicated = existingSlots.some((slot) => {
+    if (slot.id === ignoreId) {
+      return false;
+    }
+    return normalizeTimeSlotLabel(slot.label) === labelKey || timeSlotDuplicateKey(slot) === timeKey;
+  });
+  if (duplicated) {
+    return `${label}: Khung giờ bị trùng tên hoặc trùng giờ bắt đầu/kết thúc.`;
+  }
+
+  return "";
+}
+
+function getTimeSlotDurationLabel(start: string, end: string) {
+  const duration = getTimeSlotDurationMinutes(normalizeTimeValue(start), normalizeTimeValue(end));
+  if (duration <= 0) {
+    return "chưa hợp lệ";
+  }
+  return `${duration} phút`;
+}
+
+function parseTimeSlotSpreadsheet(text: string): TimeSlotImportDraft[] {
+  const cleanedText = text.replace(/^\uFEFF/, "").trim();
+  if (!cleanedText) {
+    throw new Error("File khung giờ đang trống.");
+  }
+  const delimiter = cleanedText.includes("\t") ? "\t" : ",";
+  return parseTimeSlotSpreadsheetRows(parseDelimitedRows(cleanedText, delimiter));
+}
+
+async function parseTimeSlotWorkbook(file: File): Promise<TimeSlotImportDraft[]> {
+  const XLSX = await import("xlsx");
+  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) {
+    throw new Error("File Excel không có sheet dữ liệu.");
+  }
+
+  const worksheet = workbook.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(worksheet, {
+    header: 1,
+    raw: false,
+    defval: "",
+    blankrows: false,
+  }) as unknown[][];
+
+  return parseTimeSlotSpreadsheetRows(rows.map((row) => row.map((cell) => String(cell ?? ""))));
+}
+
+function parseTimeSlotSpreadsheetRows(rows: string[][]) {
+  const filledRows = rows.filter((cells) => cells.some((cell) => cell.trim()));
+  const [headers, ...dataRows] = filledRows;
+  if (!headers || dataRows.length === 0) {
+    throw new Error("File khung giờ cần có dòng tiêu đề và ít nhất một dòng dữ liệu.");
+  }
+
+  const headerMap = createTimeSlotHeaderMap(headers);
+  return dataRows.map((cells) => ({
+    id: createId("bulk-slot"),
+    label: cells[headerMap.label]?.trim() ?? "",
+    start: normalizeTimeValue(cells[headerMap.start]),
+    end: normalizeTimeValue(cells[headerMap.end]),
+    durationMinutes: normalizeDuration(cells[headerMap.durationMinutes]),
+    active: headerMap.active === -1 ? true : parseTimeSlotActive(cells[headerMap.active]),
+  }));
+}
+
+function createTimeSlotHeaderMap(headers: string[]) {
+  const normalized = headers.map(normalizeHeader);
+  const headerMap = {
+    label: findHeaderIndex(normalized, ["tenkhunggio", "khunggio", "ten", "label"]),
+    start: findHeaderIndex(normalized, ["giobatdau", "batdau", "start"]),
+    end: findHeaderIndex(normalized, ["gioketthuc", "ketthuc", "end"]),
+    durationMinutes: findHeaderIndex(normalized, ["sophut", "thoiluong", "durationminutes", "duration"]),
+    active: findHeaderIndex(normalized, ["trangthai", "active", "status"]),
+  };
+
+  const requiredLabels: Record<string, string> = {
+    label: "Tên khung giờ",
+    start: "Giờ bắt đầu",
+    end: "Giờ kết thúc",
+    durationMinutes: "Số phút",
+  };
+  const missingHeaders = Object.entries(requiredLabels)
+    .filter(([key]) => headerMap[key as keyof typeof headerMap] === -1)
+    .map(([, value]) => value);
+
+  if (missingHeaders.length > 0) {
+    throw new Error(`File khung giờ thiếu cột: ${missingHeaders.join(", ")}.`);
+  }
+
+  return headerMap;
+}
+
+function parseTimeSlotActive(value: string | undefined) {
+  const normalized = normalizeComparableText(value || "");
+  return !["tat", "inactive", "off", "false", "0", "xoa"].includes(normalized);
+}
+
+function findDuplicateValues(values: string[]) {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized) {
+      continue;
+    }
+    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([value]) => value);
 }
 
 function parseLessonClipboard(text: string): BulkLessonRow[] {

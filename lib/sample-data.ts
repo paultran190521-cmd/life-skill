@@ -105,11 +105,11 @@ export const lessons: Lesson[] = [
 ];
 
 export const timeSlots: TimeSlot[] = [
-  { id: "ts1", label: "Tiết 1", start: "07:30", end: "08:05" },
-  { id: "ts2", label: "Tiết 2", start: "08:15", end: "08:50" },
-  { id: "ts3", label: "Tiết 3", start: "09:10", end: "09:45" },
-  { id: "ts4", label: "Tiết 4", start: "10:00", end: "10:35" },
-  { id: "ts5", label: "Chiều 1", start: "13:30", end: "14:10" },
+  { id: "ts1", label: "Tiết 1", start: "07:30", end: "08:15" },
+  { id: "ts2", label: "Tiết 2", start: "08:25", end: "09:10" },
+  { id: "ts3", label: "Tiết 3", start: "09:25", end: "10:10" },
+  { id: "ts4", label: "Tiết 4", start: "10:20", end: "11:05" },
+  { id: "ts5", label: "Ca chuyên đề chiều", start: "13:30", end: "15:00" },
 ];
 
 export const schedules: Schedule[] = [

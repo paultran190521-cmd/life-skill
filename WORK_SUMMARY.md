@@ -1,6 +1,6 @@
 # WORK SUMMARY - Life Skill Scheduler
 
-Ngày cập nhật: 25/05/2026
+Ngày cập nhật: 26/05/2026
 Nhánh hiện tại: `main`
 
 ## 1. Tổng Quan Trạng Thái
@@ -13,6 +13,7 @@ Trạng thái đã hoàn tất đến hiện tại:
 - Google Apps Script được dùng cho email lịch dạy và upload/xóa file giáo án trên Google Drive.
 - UI chính đã chuyển sang font `Quicksand` và tăng độ dày chữ mặc định lên một cấp để dễ đọc hơn.
 - Đã thay `window.confirm`/`window.prompt` bằng dialog nội bộ và toast trong app.
+- Phân hệ Khung giờ đã chuyển vào `Cấu hình`, có quản trị bảng, sửa/bật/tắt/xóa mềm và import Excel chuẩn 45/90 phút.
 - Đã có quy trình bắt buộc: sau khi chốt tính năng phân hệ, cập nhật `USAGE_GUIDE_DRAFT.md`, build/test, commit và push lên `main`.
 
 ## 2. Phân Hệ Giao Lịch
@@ -115,7 +116,25 @@ Các lỗi đã xử lý trong phân hệ này:
 - Hệ thống tự xác định khối từ tên lớp, ví dụ `10A1` thành `Khối 10`.
 - Dữ liệu trường/lớp ghi vào Google Sheet và được dùng lại trong phân hệ Giao lịch.
 
-## 7. Email Lịch Dạy
+## 7. Phân Hệ Khung Giờ
+
+Đã hoàn tất:
+
+- Chuyển quản lý khung giờ vào tab `Cấu hình` để gom cùng dữ liệu nền.
+- Bỏ tab `Khung giờ` riêng khỏi sidebar admin.
+- Thêm khung giờ thủ công với validate giờ bắt đầu/kết thúc.
+- Chỉ chấp nhận khung giờ có thời lượng 45 phút hoặc 90 phút.
+- Hiển thị danh sách khung giờ dạng bảng với tên, giờ bắt đầu, giờ kết thúc, số phút, trạng thái và thao tác.
+- Sửa nhanh từng khung giờ ngay trên bảng.
+- Bật/tắt khung giờ; khung giờ tắt không được chọn khi giao lịch mới.
+- Xóa mềm khung giờ bằng cách chuyển trạng thái sang tắt, giữ an toàn cho lịch sử.
+- Tải mẫu Excel khung giờ.
+- Import hàng loạt khung giờ từ `.xlsx`, `.csv`, `.tsv`.
+- Import có validate cột bắt buộc, định dạng `HH:mm`, thời lượng 45/90 phút, số phút khớp giờ và chặn trùng tên/trùng giờ.
+- API `/api/time-slots` hỗ trợ tạo nhiều khung giờ một lần.
+- API `/api/time-slots/[id]` hỗ trợ cập nhật/sửa/bật/tắt từng khung giờ.
+
+## 8. Email Lịch Dạy
 
 Đã hoàn tất:
 
@@ -125,7 +144,7 @@ Các lỗi đã xử lý trong phân hệ này:
 - Mục tiêu bài học trong email được tách thành từng dòng.
 - Email tổng hợp có bảng lịch và nút xác nhận riêng cho từng dòng.
 
-## 8. Dữ Liệu Và Tích Hợp
+## 9. Dữ Liệu Và Tích Hợp
 
 Nguồn dữ liệu chính hiện tại là Google Sheets với các tab:
 
@@ -150,7 +169,7 @@ Các API/tích hợp đã dùng:
 - Google Drive qua GAS cho file giáo án.
 - GAS cho gửi email lịch dạy và xử lý file.
 
-## 9. Tài Liệu Và Quy Trình Làm Việc
+## 10. Tài Liệu Và Quy Trình Làm Việc
 
 Đã thiết lập quy trình:
 
@@ -159,7 +178,7 @@ Các API/tích hợp đã dùng:
 - Commit và push lên `main` để Vercel có thể deploy giao diện mới.
 - Mặc định push lên GitHub sau khi hoàn tất, không hỏi lại từng lần.
 
-## 10. Kiểm Tra Gần Nhất
+## 11. Kiểm Tra Gần Nhất
 
 Lần kiểm tra gần nhất:
 

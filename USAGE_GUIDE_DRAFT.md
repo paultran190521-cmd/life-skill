@@ -60,7 +60,34 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - `Tắt`: giáo viên tạm ngưng, không mất dữ liệu lịch sử; hệ thống không cho chọn để giao lịch mới.
 - Khi tắt, tài khoản `Users` liên kết cũng chuyển sang trạng thái không hoạt động.
 
-## 3. Phân Hệ Lịch Tổng
+## 3. Phân Hệ Khung Giờ
+
+### Tính năng hiện có
+- Khung giờ dạy đã được chuyển vào màn `Cấu hình` để quản trị cùng nhóm dữ liệu nền.
+- Thêm khung giờ thủ công với tên, giờ bắt đầu và giờ kết thúc.
+- Danh sách khung giờ hiển thị dạng bảng với các cột: `Tên`, `Bắt đầu`, `Kết thúc`, `Số phút`, `Trạng thái`, `Thao tác`.
+- Hệ thống tự tính thời lượng từ giờ bắt đầu/kết thúc và chỉ chấp nhận 45 phút hoặc 90 phút.
+- Có sửa nhanh từng khung giờ ngay trên bảng.
+- Có bật/tắt khung giờ; khung giờ bị tắt không còn hiện trong danh sách chọn khi giao lịch mới.
+- Có xóa mềm khung giờ bằng cách chuyển trạng thái sang `Tắt`, giữ an toàn cho lịch sử lịch dạy đã tạo.
+- Có tải mẫu Excel và import hàng loạt khung giờ từ `.xlsx`, `.csv`, `.tsv`.
+
+### Quy trình thao tác
+- Vào tab `Cấu hình`.
+- Tại khu vực `Thiết lập Khung giờ dạy`, nhập tên khung giờ, giờ bắt đầu và giờ kết thúc rồi bấm `Lưu khung giờ`.
+- Để import nhanh, bấm `Tải mẫu Excel`, điền dữ liệu theo mẫu rồi bấm `Import file`.
+- Dùng biểu tượng sửa để cập nhật tên hoặc giờ.
+- Dùng biểu tượng bật/tắt để kiểm soát khung giờ nào được phép chọn khi giao lịch.
+- Dùng biểu tượng xóa để xóa mềm khung giờ khỏi luồng giao lịch mới.
+
+### Kiểm tra dữ liệu
+- Bắt buộc có `Tên khung giờ`, `Giờ bắt đầu`, `Giờ kết thúc`, `Số phút` khi import.
+- Giờ phải đúng định dạng `HH:mm`.
+- Số phút chỉ được là `45` hoặc `90`.
+- Số phút trong file phải khớp với chênh lệch giữa giờ bắt đầu và giờ kết thúc.
+- Chặn khung giờ trùng tên hoặc trùng cặp giờ bắt đầu/kết thúc.
+
+## 4. Phân Hệ Lịch Tổng
 
 ### Tính năng hiện có
 - Hiển thị lịch tổng theo dạng lưới tháng, chia thành các ô theo từng ngày.
@@ -94,7 +121,7 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - Thực hiện thao tác chi tiết trên từng lịch trong phần danh sách bên dưới.
 - Với quyền admin, có thể chọn nhiều lịch trong ngày để thao tác hàng loạt.
 
-## 4. Ghi Chú Cập Nhật Tài Liệu
+## 5. Ghi Chú Cập Nhật Tài Liệu
 
 Sau mỗi lần nâng cấp phân hệ, cần bổ sung vào tài liệu này:
 - Danh sách tính năng mới.
@@ -107,7 +134,7 @@ Sau mỗi lần nâng cấp phân hệ, cần bổ sung vào tài liệu này:
 - Bước 3: Rà lại nhanh nội dung tài liệu để khớp hành vi thực tế trên UI/API.
 - Bước 4: Mới được commit và push.
 
-## 5. Cập Nhật Giao Diện Toàn Hệ Thống
+## 6. Cập Nhật Giao Diện Toàn Hệ Thống
 
 - Font chữ hiển thị chính đã chuyển từ `Be Vietnam Pro` sang `Quicksand` để thử nghiệm thẩm mỹ mới cho toàn bộ ứng dụng.
 - Đã tăng độ dày chữ mặc định toàn hệ thống thêm 1 mức (`font-weight: 500`) để cải thiện độ rõ khi hiển thị.
