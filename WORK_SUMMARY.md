@@ -124,10 +124,10 @@ Các lỗi đã xử lý trong phân hệ này:
 - API điểm danh đã kiểm tra đăng nhập/quyền: teacher chỉ điểm danh lịch của mình, admin có quyền toàn hệ thống.
 - API chặn điểm danh trùng cho cùng một lịch.
 - API chặn điểm danh lịch đã hủy.
-- Rule thời gian hiện tại: chỉ cho điểm danh sớm tối đa 30 phút trước giờ bắt đầu và muộn tối đa 90 phút sau giờ kết thúc tiết.
+- Rule thời gian hiện tại: chặn điểm danh sớm quá 30 phút trước giờ bắt đầu; các lần điểm danh sau giờ bắt đầu vẫn được lưu và được tính là trễ để admin theo dõi.
 - Admin có màn tổng quan điểm danh theo ngày hiện tại với các card: tiết hôm nay, đã điểm danh hôm nay, chưa điểm danh hôm nay và điểm danh trễ hôm nay.
 - Bấm vào từng card sẽ mở modal danh sách lịch tương ứng, hiển thị giáo viên, trường/lớp, chuyên đề, khung giờ, trạng thái và số phút trễ nếu có.
-- Admin có cảnh báo giáo viên cần theo dõi khi giáo viên có từ 2 lần chưa điểm danh hoặc từ 2 lần điểm danh trễ trong dữ liệu lịch quá ngày.
+- Admin có cảnh báo giáo viên cần theo dõi khi giáo viên có từ 2 lần chưa điểm danh hoặc từ 2 lần điểm danh trễ trong dữ liệu lịch quá ngày; bấm vào từng thẻ cảnh báo sẽ mở danh sách các lịch cụ thể.
 - Admin có danh sách lịch sử điểm danh gần nhất.
 - Giao diện teacher vẫn giữ dạng điểm danh từng tiết, bổ sung hiển thị giờ bắt đầu và giờ kết thúc của tiết.
 

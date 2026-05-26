@@ -160,11 +160,12 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - Admin có màn tổng quan điểm danh với các card: `Tiết hôm nay`, `Đã điểm danh hôm nay`, `Chưa điểm danh hôm nay`, `Điểm danh trễ hôm nay`.
 - Admin bấm vào từng card để mở modal danh sách chi tiết tương ứng.
 - Admin có cảnh báo giáo viên thường chưa điểm danh hoặc điểm danh trễ, tính từ dữ liệu lịch quá ngày.
+- Trong cảnh báo giáo viên, admin bấm vào thẻ số lần chưa điểm danh/trễ để xem danh sách lịch cụ thể.
 - Admin có danh sách lịch sử điểm danh gần nhất để kiểm tra nhanh các lần bấm điểm danh mới.
 
 ### Rule điểm danh
 - Cho phép điểm danh sớm tối đa 30 phút trước giờ bắt đầu tiết.
-- Cho phép điểm danh muộn tối đa 90 phút sau giờ kết thúc tiết.
+- Không chặn các lần điểm danh sau giờ bắt đầu; hệ thống vẫn lưu để tránh mất dữ liệu vận hành.
 - Nếu thời gian điểm danh sau giờ bắt đầu tiết, hệ thống tính là điểm danh trễ và hiển thị số phút trễ trong danh sách admin.
 - Giáo viên được đưa vào cảnh báo khi có từ 2 lần chưa điểm danh hoặc từ 2 lần điểm danh trễ trong dữ liệu lịch quá ngày.
 
@@ -173,7 +174,7 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - Admin vào tab `Điểm danh` để xem tổng quan trong ngày.
 - Admin bấm card `Chưa điểm danh hôm nay` để kiểm tra danh sách giáo viên chưa bấm.
 - Admin bấm card `Điểm danh trễ hôm nay` để xem các tiết có điểm danh sau giờ bắt đầu.
-- Admin dùng khối `Cảnh báo điểm danh` để theo dõi giáo viên có thói quen thiếu/trễ điểm danh.
+- Admin dùng khối `Cảnh báo điểm danh` để theo dõi giáo viên có thói quen thiếu/trễ điểm danh, sau đó bấm thẻ số lần để xem từng lịch cụ thể.
 
 ## 7. Ghi Chú Cập Nhật Tài Liệu
 

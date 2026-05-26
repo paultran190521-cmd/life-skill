@@ -38,7 +38,8 @@ export async function POST(request: Request) {
 
     const slots = await readSheetRows("TimeSlots");
     const slot = slots.find((item) => item.id === schedule.timeSlotId);
-    const timeError = validateAttendanceTime(schedule.date, slot?.start, slot?.end, checkedInAt);
+    const timeValidation = validateAttendanceTime(schedule.date, slot?.start, slot?.end, checkedInAt);
+    const timeError = timeValidation.error;
     if (timeError) {
       return NextResponse.json({ error: timeError }, { status: 400 });
     }
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
       scheduleId,
       teacherId: schedule.teacherId,
       checkedInAt,
-      note: body.note || "",
+      note: body.note || timeValidation.note,
       createdAt: now,
       updatedAt: now,
     };
@@ -108,7 +109,7 @@ function getAuthorizationError(user: User, scheduleTeacherId: string) {
 
 function validateAttendanceTime(date: string | undefined, start: string | undefined, end: string | undefined, value: string) {
   if (!date || !start || !end) {
-    return "Lịch thiếu ngày dạy hoặc khung giờ.";
+    return { error: "Lịch thiếu ngày dạy hoặc khung giờ.", note: "" };
   }
 
   const checkedInAt = new Date(value);
@@ -118,18 +119,18 @@ function validateAttendanceTime(date: string | undefined, start: string | undefi
   const windowEnd = new Date(endsAt.getTime() + attendanceLateAfterEndMinutes * 60_000);
 
   if (Number.isNaN(checkedInAt.getTime())) {
-    return "Thời gian điểm danh không hợp lệ.";
+    return { error: "Thời gian điểm danh không hợp lệ.", note: "" };
   }
 
   if (checkedInAt < windowStart) {
-    return `Chỉ được điểm danh sớm tối đa ${attendanceEarlyMinutes} phút trước giờ bắt đầu.`;
+    return { error: `Chỉ được điểm danh sớm tối đa ${attendanceEarlyMinutes} phút trước giờ bắt đầu.`, note: "" };
   }
 
   if (checkedInAt > windowEnd) {
-    return `Đã quá thời hạn điểm danh ${attendanceLateAfterEndMinutes} phút sau giờ kết thúc.`;
+    return { error: "", note: `late_after_deadline_${attendanceLateAfterEndMinutes}_minutes` };
   }
 
-  return "";
+  return { error: "", note: "" };
 }
 
 function parseScheduleDateTime(date: string, time: string) {

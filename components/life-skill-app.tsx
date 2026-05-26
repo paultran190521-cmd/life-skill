@@ -155,6 +155,10 @@ type CalendarSortMode = "date-asc" | "date-desc" | "status";
 type LessonPlanAdminFocus = "uploaded" | "submitted" | "missing" | "upcoming-missing";
 type LessonPlanTeacherFocus = "uploaded" | "pending" | "submitted";
 type AttendanceAdminFocus = "all-today" | "checked-today" | "missing-today" | "late-today";
+type AttendanceWarningFocus = {
+  teacherId: string;
+  kind: "missing" | "late";
+};
 
 type CalendarFilters = {
   status: string;
@@ -426,6 +430,7 @@ export function LifeSkillApp() {
     grade: "Khối 1",
   });
   const [attendanceAdminFocus, setAttendanceAdminFocus] = useState<AttendanceAdminFocus | null>(null);
+  const [attendanceWarningFocus, setAttendanceWarningFocus] = useState<AttendanceWarningFocus | null>(null);
   const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
   const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
 
@@ -4869,6 +4874,20 @@ export function LifeSkillApp() {
       "late-today": "Điểm danh trễ hôm nay",
     }[attendanceAdminFocus ?? "all-today"];
     const teacherWarnings = buildAttendanceTeacherWarnings(schedules, attendance, teachers, timeSlots);
+    const selectedWarning = attendanceWarningFocus
+      ? teacherWarnings.find((warning) => warning.teacher.id === attendanceWarningFocus.teacherId)
+      : undefined;
+    const selectedWarningRows =
+      selectedWarning && attendanceWarningFocus?.kind === "missing"
+        ? selectedWarning.missingSchedules
+        : selectedWarning && attendanceWarningFocus?.kind === "late"
+          ? selectedWarning.lateSchedules
+          : [];
+    const selectedWarningTitle = selectedWarning
+      ? `${selectedWarning.teacher.name} - ${
+          attendanceWarningFocus?.kind === "missing" ? "các lần chưa điểm danh" : "các lần điểm danh trễ"
+        }`
+      : "";
 
     if (role === "admin") {
       return (
@@ -4918,12 +4937,20 @@ export function LifeSkillApp() {
                         {warning.teacher.phone || "Chưa có SĐT"} · {warning.teacher.email}
                       </p>
                     </div>
-                    <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-rose-700">
+                    <button
+                      type="button"
+                      onClick={() => setAttendanceWarningFocus({ teacherId: warning.teacher.id, kind: "missing" })}
+                      className="rounded-full bg-white px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-100"
+                    >
                       {warning.missingCount} lần chưa điểm danh
-                    </span>
-                    <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-orange-700">
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAttendanceWarningFocus({ teacherId: warning.teacher.id, kind: "late" })}
+                      className="rounded-full bg-white px-3 py-2 text-xs font-black text-orange-700 transition hover:bg-orange-100"
+                    >
                       {warning.lateCount} lần trễ
-                    </span>
+                    </button>
                   </div>
                 ))
               ) : (
@@ -4977,6 +5004,40 @@ export function LifeSkillApp() {
               </div>
             </div>
           ) : null}
+
+          {attendanceWarningFocus ? (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4 backdrop-blur-sm">
+              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-4xl overflow-y-auto rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-black text-[var(--brand-dark)]">{selectedWarningTitle}</h2>
+                    <p className="mt-1 text-sm font-bold text-[var(--muted)]">
+                      {selectedWarningRows.length} lịch cần kiểm tra
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    title="Đóng"
+                    onClick={() => setAttendanceWarningFocus(null)}
+                    className="grid h-10 w-10 place-items-center rounded-xl bg-slate-50 text-[var(--brand-dark)] transition hover:bg-slate-100"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {selectedWarningRows.length > 0 ? (
+                    selectedWarningRows.map((schedule) => (
+                      <AttendanceScheduleRow key={schedule.id} schedule={schedule} showLateDetail />
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm font-bold text-slate-600">
+                      Không có lịch phù hợp.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       );
     }
@@ -4998,10 +5059,16 @@ export function LifeSkillApp() {
                   <p className="mt-1 text-sm text-[var(--muted)]">
                     {meta.teacher?.name} tại {meta.school?.name}, lớp {meta.classRoom?.name}
                   </p>
-                  <p className="mt-2 inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">
-                    <Clock3 size={14} />
-                    Bắt đầu {meta.slot?.start || "--:--"} · Kết thúc {meta.slot?.end || "--:--"}
-                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs font-black">
+                    <span className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-cyan-800">
+                      <CalendarDays size={14} />
+                      Ngày dạy {formatDate(schedule.date)}
+                    </span>
+                    <span className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-indigo-700">
+                      <Clock3 size={14} />
+                      Bắt đầu {meta.slot?.start || "--:--"} · Kết thúc {meta.slot?.end || "--:--"}
+                    </span>
+                  </div>
                   {meta.checkIn ? (
                     <p className="mt-2 text-sm font-bold text-emerald-700">
                       Đã điểm danh lúc {formatDateTime(meta.checkIn.checkedInAt)}
@@ -5038,6 +5105,7 @@ export function LifeSkillApp() {
             {meta.classRoom?.name || "?"}
           </p>
           <div className="mt-2 flex flex-wrap gap-2 text-xs font-black">
+            <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">Ngày dạy {formatDate(schedule.date)}</span>
             <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">
               {meta.slot?.label || "Khung giờ"} {formatSlotRange(meta.slot)}
             </span>
@@ -6787,7 +6855,10 @@ function buildAttendanceTeacherWarnings(
 ) {
   const today = currentDateKey();
   const attendanceBySchedule = new Map(attendanceRows.map((item) => [item.scheduleId, item]));
-  const summary = new Map<string, { teacher: Teacher; missingCount: number; lateCount: number }>();
+  const summary = new Map<
+    string,
+    { teacher: Teacher; missingCount: number; lateCount: number; missingSchedules: Schedule[]; lateSchedules: Schedule[] }
+  >();
 
   for (const schedule of schedules) {
     if (schedule.date >= today || !isAttendanceTrackedSchedule(schedule)) {
@@ -6799,12 +6870,20 @@ function buildAttendanceTeacherWarnings(
       continue;
     }
 
-    const item = summary.get(teacher.id) ?? { teacher, missingCount: 0, lateCount: 0 };
+    const item = summary.get(teacher.id) ?? {
+      teacher,
+      missingCount: 0,
+      lateCount: 0,
+      missingSchedules: [],
+      lateSchedules: [],
+    };
     const record = attendanceBySchedule.get(schedule.id);
     if (!record) {
       item.missingCount += 1;
+      item.missingSchedules.push(schedule);
     } else if (isLateAttendance(schedule, record, slots)) {
       item.lateCount += 1;
+      item.lateSchedules.push(schedule);
     }
     summary.set(teacher.id, item);
   }
