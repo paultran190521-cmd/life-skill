@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { apiError, createId } from "@/lib/api";
 import { sessionCookieName, verifySessionToken } from "@/lib/auth-session";
 import { findAuthorizedUserFromHint, findAuthorizedUserFromSession } from "@/lib/auth-users";
-import { appendSheetRow, ensureSheetHeaders, readSheetRowById } from "@/lib/google-sheets";
+import { appendSheetRowWithHeaders } from "@/lib/google-sheets";
 import type { ChatMessage, User } from "@/lib/types";
 
 const chatMessageHeaders = [
@@ -25,6 +25,7 @@ export async function POST(request: Request) {
     const currentUser = await requireUser(request);
     const body = await request.json();
     const threadId = String(body.threadId || "").trim();
+    const threadTeacherId = String(body.threadTeacherId || "").trim();
     const text = String(body.body || "").trim();
     const attachmentName = String(body.attachmentName || "").trim();
     const attachmentUrl = String(body.attachmentUrl || "").trim();
@@ -40,17 +41,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Link đính kèm không hợp lệ." }, { status: 400 });
     }
 
-    const thread = await readSheetRowById("ChatThreads", threadId);
-    if (!thread) {
-      return NextResponse.json({ error: "Không tìm thấy kênh chat." }, { status: 404 });
-    }
-
-    const authError = getThreadAuthorizationError(currentUser, thread.teacherId || "");
+    const authError = getThreadAuthorizationError(currentUser, threadTeacherId);
     if (authError) {
       return NextResponse.json({ error: authError }, { status: 403 });
     }
-
-    await ensureSheetHeaders("ChatMessages", chatMessageHeaders);
 
     const message: ChatMessage = {
       id: body.id || createId("m"),
@@ -66,7 +60,7 @@ export async function POST(request: Request) {
       readByTeacherAt: currentUser.role === "teacher" ? now : undefined,
     };
 
-    await appendSheetRow("ChatMessages", message);
+    await appendSheetRowWithHeaders("ChatMessages", chatMessageHeaders, message);
     return NextResponse.json({ message });
   } catch (error) {
     if (error instanceof RouteError) {
@@ -98,6 +92,9 @@ async function requireUser(request: Request) {
 }
 
 function getThreadAuthorizationError(user: User, teacherId: string) {
+  if (!teacherId) {
+    return "Thiếu giáo viên của kênh chat.";
+  }
   if (user.role === "admin" || user.teacherId === teacherId) {
     return "";
   }

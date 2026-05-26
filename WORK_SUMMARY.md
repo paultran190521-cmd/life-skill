@@ -170,15 +170,15 @@ Các lỗi đã xử lý trong phân hệ này:
 - Tin nhắn chat đã ghi thật vào Google Sheet tab `ChatMessages`, không còn chỉ lưu tạm trên trình duyệt.
 - Thêm API `/api/chat-messages` để gửi tin nhắn có kiểm tra đăng nhập và quyền theo kênh chat.
 - Thêm API `/api/chat-threads` để tạo nhanh kênh trao đổi theo giáo viên và lưu vào `ChatThreads`.
-- Thêm API `/api/chat-threads/[id]/read` để đánh dấu đã đọc các tin trong kênh.
-- Backend chat tự bổ sung các header còn thiếu cho `ChatMessages`: `attachmentName`, `attachmentUrl`, `readByAdminAt`, `readByTeacherAt`.
+- Thêm API `/api/chat-threads/[id]/read` để hỗ trợ đánh dấu đã đọc khi cần.
+- Script setup Google Sheets đã bổ sung các header mở rộng cho `ChatMessages`: `attachmentName`, `attachmentUrl`, `readByAdminAt`, `readByTeacherAt`; API đọc/đánh dấu đã đọc cũng có thể bổ sung header khi cần.
 - Admin xem toàn bộ kênh chat; teacher chỉ xem/gửi trong kênh thuộc giáo viên của mình.
 - Danh sách kênh chat có tìm kiếm theo giáo viên, lớp, trường, chuyên đề và nội dung tin nhắn.
 - Có bộ lọc kênh: tất cả, chưa đọc, theo giáo viên, theo tiết.
 - Mỗi kênh hiển thị tin nhắn mới nhất, số tin chưa đọc, giáo viên liên quan và ngữ cảnh ngày/lớp nếu là kênh theo tiết.
 - Khung chat theo tiết hiển thị ngữ cảnh lịch: ngày dạy, trường, lớp, bài học và khung giờ.
 - Tin nhắn hỗ trợ đính kèm bằng link với tên đính kèm.
-- Khi đang ở tab Chat, app tự tải lại dữ liệu chat định kỳ 25 giây/lần.
+- Đã bỏ tự tải lại định kỳ để tránh vượt quota đọc Google Sheets; trạng thái đã đọc được cập nhật tức thời trên phiên đang mở.
 
 ## 10. Email Lịch Dạy
 
@@ -230,5 +230,5 @@ Lần kiểm tra gần nhất:
 
 - Lệnh: `npm.cmd run -s build`
 - Kết quả: build thành công.
-- Cập nhật gần nhất: nâng cấp phân hệ chat với lưu tin nhắn vào Google Sheet, kiểm quyền backend, unread/read, tìm kiếm/lọc kênh, ngữ cảnh lịch, đính kèm link và tự tải lại định kỳ.
+- Cập nhật gần nhất: tối ưu phân hệ chat để giảm read quota Google Sheets khi gửi tin, bỏ polling tự động, giữ lưu tin nhắn vào Google Sheet và UI unread trong phiên đang mở.
 - Commit phân hệ giáo án theo vai trò đã push: `3695378 Split lesson plan views by role`

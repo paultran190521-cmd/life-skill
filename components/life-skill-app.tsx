@@ -148,11 +148,6 @@ type ChatMessageCreateResponse = {
   message: ChatMessage;
 };
 
-type ChatThreadReadResponse = {
-  updated: number;
-  readAt: string;
-};
-
 type ScheduleUpdateResponse = Partial<Schedule> & {
   id: string;
   notifications?: Notification[];
@@ -576,18 +571,6 @@ export function LifeSkillApp() {
   }, []);
 
   useEffect(() => {
-    if (activeTab !== "chat") {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      refreshChatData();
-    }, 25_000);
-
-    return () => window.clearInterval(intervalId);
-  }, [activeTab]);
-
-  useEffect(() => {
     if (!activeUsers.some((user) => user.id === currentUserId)) {
       setCurrentUserId(activeUsers[0]?.id ?? users[0].id);
     }
@@ -893,24 +876,6 @@ export function LifeSkillApp() {
     setSaveError(message);
     addNotification("Không lưu được dữ liệu", message, "admin", { showToast: false });
     pushToast("Không lưu được dữ liệu", message, "error");
-  }
-
-  async function refreshChatData() {
-    try {
-      const data = await apiRequest<AppData>("/api/app-data");
-      setChatThreads(data.chatThreads);
-      setChatMessages(data.chatMessages);
-      setDataStatus("connected");
-    } catch (error) {
-      console.error(error);
-    }
-  }
-
-  async function authorizedRequest<T>(url: string, init?: RequestInit) {
-    const headers = new Headers(init?.headers);
-    headers.set("x-app-user-id", currentUser.id);
-    headers.set("x-app-user-email", currentUser.email);
-    return apiRequest<T>(url, { ...init, headers });
   }
 
   async function saveRequest<T>(label: string, url: string, init?: RequestInit) {
@@ -2527,12 +2492,18 @@ export function LifeSkillApp() {
     if ((!body && !attachmentUrl) || !selectedThreadId) {
       return;
     }
+    const thread = chatThreads.find((item) => item.id === selectedThreadId);
+    if (!thread) {
+      handleSaveError(new Error("Không tìm thấy kênh chat đang chọn."));
+      return;
+    }
 
     try {
       const response = await saveRequest<ChatMessageCreateResponse>("Đang gửi tin nhắn...", "/api/chat-messages", {
         method: "POST",
         body: JSON.stringify({
           threadId: selectedThreadId,
+          threadTeacherId: thread.teacherId,
           body,
           attachmentName,
           attachmentUrl,
@@ -2576,30 +2547,6 @@ export function LifeSkillApp() {
     }
   }
 
-  async function markThreadRead(threadId: string) {
-    if (!threadId) {
-      return;
-    }
-
-    try {
-      const response = await authorizedRequest<ChatThreadReadResponse>(`/api/chat-threads/${threadId}/read`, {
-        method: "PATCH",
-      });
-      if (response.updated > 0) {
-        const readField: "readByAdminAt" | "readByTeacherAt" = role === "admin" ? "readByAdminAt" : "readByTeacherAt";
-        setChatMessages((items) =>
-          items.map((message) =>
-            message.threadId === threadId && message.senderRole !== role && !message[readField]
-              ? { ...message, [readField]: response.readAt }
-              : message,
-          ),
-        );
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  }
-
   function teacherName(teacherId: string) {
     return teachers.find((teacher) => teacher.id === teacherId)?.name ?? "Giáo viên";
   }
@@ -2638,10 +2585,20 @@ export function LifeSkillApp() {
       : chatThreads.filter((thread) => thread.teacherId === currentTeacherId);
 
   useEffect(() => {
-    if (activeTab === "chat" && selectedThreadId) {
-      markThreadRead(selectedThreadId);
+    if (activeTab !== "chat" || !selectedThreadId) {
+      return;
     }
-  }, [activeTab, selectedThreadId, role, chatMessages.length]);
+
+    const readField: "readByAdminAt" | "readByTeacherAt" = role === "admin" ? "readByAdminAt" : "readByTeacherAt";
+    const readAt = new Date().toISOString();
+    setChatMessages((items) =>
+      items.map((message) =>
+        message.threadId === selectedThreadId && message.senderRole !== role && !message[readField]
+          ? { ...message, [readField]: readAt }
+          : message,
+      ),
+    );
+  }, [activeTab, selectedThreadId, role]);
 
   return (
     <main className="ui-polish min-h-screen bg-[var(--canvas)]">

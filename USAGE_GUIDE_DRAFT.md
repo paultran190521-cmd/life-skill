@@ -185,26 +185,26 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - Khi giao lịch, hệ thống tự tạo kênh chat theo từng tiết dạy.
 - Trong phân hệ giáo án, admin có thể bấm `Chat` nhanh để mở kênh trao đổi với giáo viên.
 - Tin nhắn gửi đi được lưu vào tab `ChatMessages` trên Google Sheet.
-- Hệ thống kiểm tra quyền trước khi tạo kênh, gửi tin nhắn hoặc đánh dấu đã đọc.
+- Hệ thống kiểm tra quyền trước khi tạo kênh hoặc gửi tin nhắn.
 - Danh sách kênh hiển thị tin nhắn mới nhất, số tin chưa đọc, giáo viên liên quan và ngữ cảnh ngày/lớp nếu có.
 - Có tìm kiếm kênh theo giáo viên, lớp, trường, chuyên đề hoặc nội dung tin nhắn.
 - Có bộ lọc: tất cả, chưa đọc, giáo viên, theo tiết.
 - Kênh theo tiết hiển thị ngữ cảnh lịch gồm ngày dạy, trường, lớp, bài học và khung giờ.
 - Tin nhắn hỗ trợ đính kèm bằng link.
-- Khi đang ở tab `Chat`, app tự tải lại dữ liệu chat định kỳ 25 giây/lần.
+- Trạng thái tin chưa đọc được cập nhật ngay trong phiên đang mở; hệ thống không tự tải lại định kỳ để tránh vượt quota Google Sheets.
 
 ### Quy trình thao tác
 - Admin vào tab `Chat` để xem toàn bộ trao đổi.
 - Teacher vào tab `Chat` để xem các trao đổi liên quan đến lịch/giáo án của mình.
 - Dùng ô tìm kiếm hoặc bộ lọc để thu hẹp danh sách kênh.
-- Chọn một kênh để đọc tin; hệ thống tự đánh dấu các tin của bên còn lại là đã đọc.
+- Chọn một kênh để đọc tin; hệ thống tự bỏ nhãn chưa đọc trong phiên đang mở.
 - Nhập nội dung và bấm gửi hoặc nhấn Enter để gửi tin nhắn.
 - Nếu cần gửi tài liệu/link tham chiếu, nhập tên đính kèm và link đính kèm trước khi gửi.
 
 ### Lưu ý vận hành
 - Đính kèm hiện là dạng link, chưa phải upload file trực tiếp vào Google Drive.
-- Tự tải lại định kỳ giúp cập nhật tin mới, nhưng chưa phải realtime WebSocket tức thời.
-- Các cột chat mở rộng (`attachmentName`, `attachmentUrl`, `readByAdminAt`, `readByTeacherAt`) được API chat tự bổ sung khi cần.
+- Không dùng tự tải lại định kỳ để hạn chế số lần đọc Google Sheets; khi cần tin mới sau thời gian dài, tải lại trang để đồng bộ.
+- Các cột chat mở rộng (`attachmentName`, `attachmentUrl`, `readByAdminAt`, `readByTeacherAt`) đã có trong script setup Google Sheets; API đọc/đánh dấu đã đọc cũng có thể bổ sung header khi cần.
 
 ## 8. Ghi Chú Cập Nhật Tài Liệu
 

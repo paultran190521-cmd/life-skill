@@ -133,6 +133,22 @@ export async function appendSheetRow(sheetName: SheetName, row: Record<string, u
   });
 }
 
+export async function appendSheetRowWithHeaders(
+  sheetName: SheetName,
+  headers: string[],
+  row: Record<string, unknown>,
+) {
+  const values = headers.map((header) => stringifyCell(row[header]));
+
+  await getSheetsClient().spreadsheets.values.append({
+    spreadsheetId: spreadsheetId(),
+    range: quoteSheetName(sheetName),
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: [values] },
+  });
+}
+
 export async function ensureSheetHeaders(sheetName: SheetName, requiredHeaders: string[]) {
   const client = getSheetsClient();
   const response = await client.spreadsheets.values.get({
