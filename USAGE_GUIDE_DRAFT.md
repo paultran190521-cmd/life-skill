@@ -148,7 +148,34 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - File giáo án tối đa 10MB/file.
 - Định dạng hỗ trợ: `pdf`, `doc`, `docx`, `ppt`, `pptx`, `xls`, `xlsx`, `txt`, `csv`.
 
-## 6. Ghi Chú Cập Nhật Tài Liệu
+## 6. Phân Hệ Điểm Danh
+
+### Tính năng hiện có
+- Teacher có màn `Điểm danh` theo từng tiết của chính mình.
+- Mỗi tiết hiển thị chuyên đề, giáo viên, trường/lớp, giờ bắt đầu và giờ kết thúc.
+- Khi teacher bấm `Điểm danh`, hệ thống lưu thời gian bấm vào tab `Attendance`, cập nhật lịch sang trạng thái `Đã điểm danh` và ghi lịch sử thao tác vào `AuditLogs`.
+- Hệ thống chặn điểm danh trùng cho cùng một tiết.
+- Hệ thống chặn điểm danh lịch đã hủy.
+- Teacher chỉ được điểm danh lịch thuộc tài khoản giáo viên của mình.
+- Admin có màn tổng quan điểm danh với các card: `Tiết hôm nay`, `Đã điểm danh hôm nay`, `Chưa điểm danh hôm nay`, `Điểm danh trễ hôm nay`.
+- Admin bấm vào từng card để mở modal danh sách chi tiết tương ứng.
+- Admin có cảnh báo giáo viên thường chưa điểm danh hoặc điểm danh trễ, tính từ dữ liệu lịch quá ngày.
+- Admin có danh sách lịch sử điểm danh gần nhất để kiểm tra nhanh các lần bấm điểm danh mới.
+
+### Rule điểm danh
+- Cho phép điểm danh sớm tối đa 30 phút trước giờ bắt đầu tiết.
+- Cho phép điểm danh muộn tối đa 90 phút sau giờ kết thúc tiết.
+- Nếu thời gian điểm danh sau giờ bắt đầu tiết, hệ thống tính là điểm danh trễ và hiển thị số phút trễ trong danh sách admin.
+- Giáo viên được đưa vào cảnh báo khi có từ 2 lần chưa điểm danh hoặc từ 2 lần điểm danh trễ trong dữ liệu lịch quá ngày.
+
+### Quy trình thao tác
+- Teacher vào tab `Điểm danh`, kiểm tra đúng tiết, giờ bắt đầu/kết thúc và bấm `Điểm danh`.
+- Admin vào tab `Điểm danh` để xem tổng quan trong ngày.
+- Admin bấm card `Chưa điểm danh hôm nay` để kiểm tra danh sách giáo viên chưa bấm.
+- Admin bấm card `Điểm danh trễ hôm nay` để xem các tiết có điểm danh sau giờ bắt đầu.
+- Admin dùng khối `Cảnh báo điểm danh` để theo dõi giáo viên có thói quen thiếu/trễ điểm danh.
+
+## 7. Ghi Chú Cập Nhật Tài Liệu
 
 Sau mỗi lần nâng cấp phân hệ, cần bổ sung vào tài liệu này:
 - Danh sách tính năng mới.

@@ -116,7 +116,22 @@ Các lỗi đã xử lý trong phân hệ này:
 - Xóa file giáo án trên Google Drive qua GAS.
 - Backend kiểm tra quyền: teacher chỉ xử lý giáo án của mình, admin có toàn quyền.
 
-## 6. Phân Hệ Cấu Hình Trường/Lớp
+## 6. Phân Hệ Điểm Danh
+
+Đã hoàn tất:
+
+- Backend điểm danh chuyển sang một endpoint kiểm soát tập trung: ghi `Attendance`, cập nhật `Schedules` sang `attended` và ghi `AuditLogs`.
+- API điểm danh đã kiểm tra đăng nhập/quyền: teacher chỉ điểm danh lịch của mình, admin có quyền toàn hệ thống.
+- API chặn điểm danh trùng cho cùng một lịch.
+- API chặn điểm danh lịch đã hủy.
+- Rule thời gian hiện tại: chỉ cho điểm danh sớm tối đa 30 phút trước giờ bắt đầu và muộn tối đa 90 phút sau giờ kết thúc tiết.
+- Admin có màn tổng quan điểm danh theo ngày hiện tại với các card: tiết hôm nay, đã điểm danh hôm nay, chưa điểm danh hôm nay và điểm danh trễ hôm nay.
+- Bấm vào từng card sẽ mở modal danh sách lịch tương ứng, hiển thị giáo viên, trường/lớp, chuyên đề, khung giờ, trạng thái và số phút trễ nếu có.
+- Admin có cảnh báo giáo viên cần theo dõi khi giáo viên có từ 2 lần chưa điểm danh hoặc từ 2 lần điểm danh trễ trong dữ liệu lịch quá ngày.
+- Admin có danh sách lịch sử điểm danh gần nhất.
+- Giao diện teacher vẫn giữ dạng điểm danh từng tiết, bổ sung hiển thị giờ bắt đầu và giờ kết thúc của tiết.
+
+## 7. Phân Hệ Cấu Hình Trường/Lớp
 
 Đã hoàn tất:
 
@@ -129,7 +144,7 @@ Các lỗi đã xử lý trong phân hệ này:
 - Hệ thống tự xác định khối từ tên lớp, ví dụ `10A1` thành `Khối 10`.
 - Dữ liệu trường/lớp ghi vào Google Sheet và được dùng lại trong phân hệ Giao lịch.
 
-## 7. Phân Hệ Khung Giờ
+## 8. Phân Hệ Khung Giờ
 
 Đã hoàn tất:
 
@@ -148,7 +163,7 @@ Các lỗi đã xử lý trong phân hệ này:
 - API `/api/time-slots` hỗ trợ tạo nhiều khung giờ một lần.
 - API `/api/time-slots/[id]` hỗ trợ cập nhật/sửa/bật/tắt từng khung giờ.
 
-## 8. Email Lịch Dạy
+## 9. Email Lịch Dạy
 
 Đã hoàn tất:
 
@@ -158,7 +173,7 @@ Các lỗi đã xử lý trong phân hệ này:
 - Mục tiêu bài học trong email được tách thành từng dòng.
 - Email tổng hợp có bảng lịch và nút xác nhận riêng cho từng dòng.
 
-## 9. Dữ Liệu Và Tích Hợp
+## 10. Dữ Liệu Và Tích Hợp
 
 Nguồn dữ liệu chính hiện tại là Google Sheets với các tab:
 
@@ -183,7 +198,7 @@ Các API/tích hợp đã dùng:
 - Google Drive qua GAS cho file giáo án.
 - GAS cho gửi email lịch dạy và xử lý file.
 
-## 10. Tài Liệu Và Quy Trình Làm Việc
+## 11. Tài Liệu Và Quy Trình Làm Việc
 
 Đã thiết lập quy trình:
 
@@ -192,10 +207,11 @@ Các API/tích hợp đã dùng:
 - Commit và push lên `main` để Vercel có thể deploy giao diện mới.
 - Mặc định push lên GitHub sau khi hoàn tất, không hỏi lại từng lần.
 
-## 11. Kiểm Tra Gần Nhất
+## 12. Kiểm Tra Gần Nhất
 
 Lần kiểm tra gần nhất:
 
 - Lệnh: `npm.cmd run -s build`
 - Kết quả: build thành công.
+- Cập nhật gần nhất: nâng cấp phân hệ điểm danh với dashboard admin, rule thời gian, kiểm quyền backend và cảnh báo giáo viên thiếu/trễ điểm danh.
 - Commit phân hệ giáo án theo vai trò đã push: `3695378 Split lesson plan views by role`

@@ -387,6 +387,7 @@ function toAttendance(rows: SheetRow[]): Attendance[] {
     scheduleId: row.scheduleId,
     teacherId: row.teacherId,
     checkedInAt: row.checkedInAt,
+    note: row.note || undefined,
   }));
 }
 

@@ -89,6 +89,7 @@ export type Attendance = {
   scheduleId: string;
   teacherId: string;
   checkedInAt: string;
+  note?: string;
 };
 
 export type ChatThreadType = "teacher" | "schedule";

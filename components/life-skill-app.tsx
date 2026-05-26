@@ -143,12 +143,18 @@ type ScheduleUpdateResponse = Partial<Schedule> & {
   emailResult?: EmailResult | null;
 };
 
+type AttendanceCreateResponse = {
+  attendance: Attendance;
+  schedule: Partial<Schedule> & { id: string };
+};
+
 type ClassCreateResponse = ClassRoom | { classes: ClassRoom[] };
 
 type CalendarViewMode = "month" | "week" | "day";
 type CalendarSortMode = "date-asc" | "date-desc" | "status";
 type LessonPlanAdminFocus = "uploaded" | "submitted" | "missing" | "upcoming-missing";
 type LessonPlanTeacherFocus = "uploaded" | "pending" | "submitted";
+type AttendanceAdminFocus = "all-today" | "checked-today" | "missing-today" | "late-today";
 
 type CalendarFilters = {
   status: string;
@@ -419,6 +425,7 @@ export function LifeSkillApp() {
     name: "",
     grade: "Khối 1",
   });
+  const [attendanceAdminFocus, setAttendanceAdminFocus] = useState<AttendanceAdminFocus | null>(null);
   const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
   const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
 
@@ -1174,14 +1181,11 @@ export function LifeSkillApp() {
       checkedInAt: new Date().toISOString(),
     };
 
+    let response: AttendanceCreateResponse;
     try {
-      await saveRequest("Đang điểm danh...", "/api/attendance", {
+      response = await saveRequest<AttendanceCreateResponse>("Đang điểm danh...", "/api/attendance", {
         method: "POST",
         body: JSON.stringify(record),
-      });
-      await saveRequest("Đang cập nhật trạng thái lịch...", `/api/schedules/${schedule.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "attended" }),
       });
       setDataStatus("connected");
       setSaveError("");
@@ -1191,11 +1195,11 @@ export function LifeSkillApp() {
     }
 
     setAttendance((items) => [
-      record,
+      response.attendance,
       ...items,
     ]);
     setSchedules((items) =>
-      items.map((item) => (item.id === schedule.id ? { ...item, status: "attended" } : item)),
+      items.map((item) => (item.id === schedule.id ? { ...item, ...response.schedule } : item)),
     );
     addNotification("Đã điểm danh", `${teacherName(schedule.teacherId)} đã điểm danh tiết dạy.`, "admin", {
       tone: "success",
@@ -4841,6 +4845,141 @@ export function LifeSkillApp() {
   function AttendancePanel() {
     const scopedSchedules =
       role === "admin" ? schedules : schedules.filter((item) => item.teacherId === currentTeacherId);
+    const today = currentDateKey();
+    const todaySchedules = scopedSchedules.filter((schedule) => schedule.date === today && isAttendanceTrackedSchedule(schedule));
+    const checkedToday = todaySchedules.filter((schedule) => Boolean(lookupSchedule(schedule).checkIn));
+    const missingToday = todaySchedules.filter((schedule) => !lookupSchedule(schedule).checkIn);
+    const lateToday = checkedToday.filter((schedule) =>
+      isLateAttendance(schedule, lookupSchedule(schedule).checkIn, timeSlots),
+    );
+    const selectedAttendanceRows =
+      attendanceAdminFocus === "all-today"
+        ? todaySchedules
+        : attendanceAdminFocus === "checked-today"
+          ? checkedToday
+          : attendanceAdminFocus === "missing-today"
+            ? missingToday
+            : attendanceAdminFocus === "late-today"
+              ? lateToday
+              : [];
+    const selectedAttendanceTitle = {
+      "all-today": "Tất cả tiết hôm nay",
+      "checked-today": "Đã điểm danh hôm nay",
+      "missing-today": "Chưa điểm danh hôm nay",
+      "late-today": "Điểm danh trễ hôm nay",
+    }[attendanceAdminFocus ?? "all-today"];
+    const teacherWarnings = buildAttendanceTeacherWarnings(schedules, attendance, teachers, timeSlots);
+
+    if (role === "admin") {
+      return (
+        <div className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Stat
+              icon={CalendarDays}
+              label="Tiết hôm nay"
+              value={todaySchedules.length}
+              tone="cyan"
+              onClick={() => setAttendanceAdminFocus("all-today")}
+            />
+            <Stat
+              icon={CheckCircle2}
+              label="Đã điểm danh hôm nay"
+              value={checkedToday.length}
+              tone="emerald"
+              onClick={() => setAttendanceAdminFocus("checked-today")}
+            />
+            <Stat
+              icon={Users}
+              label="Chưa điểm danh hôm nay"
+              value={missingToday.length}
+              tone="rose"
+              onClick={() => setAttendanceAdminFocus("missing-today")}
+            />
+            <Stat
+              icon={Clock3}
+              label="Điểm danh trễ hôm nay"
+              value={lateToday.length}
+              tone="orange"
+              onClick={() => setAttendanceAdminFocus("late-today")}
+            />
+          </div>
+
+          <Panel title="Cảnh báo điểm danh" action={`${teacherWarnings.length} giáo viên cần theo dõi`}>
+            <div className="space-y-3">
+              {teacherWarnings.length > 0 ? (
+                teacherWarnings.map((warning) => (
+                  <div
+                    key={warning.teacher.id}
+                    className="grid gap-3 rounded-2xl border border-rose-100 bg-rose-50/60 p-4 md:grid-cols-[1fr_auto_auto]"
+                  >
+                    <div>
+                      <p className="text-sm font-black text-[var(--brand-dark)]">{warning.teacher.name}</p>
+                      <p className="mt-1 text-xs font-bold text-slate-600">
+                        {warning.teacher.phone || "Chưa có SĐT"} · {warning.teacher.email}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-rose-700">
+                      {warning.missingCount} lần chưa điểm danh
+                    </span>
+                    <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-orange-700">
+                      {warning.lateCount} lần trễ
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-5 text-sm font-bold text-emerald-800">
+                  Chưa có giáo viên vượt ngưỡng cảnh báo trong dữ liệu hiện tại.
+                </div>
+              )}
+            </div>
+          </Panel>
+
+          <Panel title="Lịch sử điểm danh gần nhất" action={`${attendance.length} bản ghi`}>
+            <div className="space-y-3">
+              {attendance.slice(0, 8).map((record) => {
+                const schedule = schedules.find((item) => item.id === record.scheduleId);
+                if (!schedule) {
+                  return null;
+                }
+                return <AttendanceScheduleRow key={record.id} schedule={schedule} />;
+              })}
+            </div>
+          </Panel>
+
+          {attendanceAdminFocus ? (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4 backdrop-blur-sm">
+              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-4xl overflow-y-auto rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-black text-[var(--brand-dark)]">{selectedAttendanceTitle}</h2>
+                    <p className="mt-1 text-sm font-bold text-[var(--muted)]">{formatDate(today)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    title="Đóng"
+                    onClick={() => setAttendanceAdminFocus(null)}
+                    className="grid h-10 w-10 place-items-center rounded-xl bg-slate-50 text-[var(--brand-dark)] transition hover:bg-slate-100"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {selectedAttendanceRows.length > 0 ? (
+                    selectedAttendanceRows.map((schedule) => (
+                      <AttendanceScheduleRow key={schedule.id} schedule={schedule} showLateDetail />
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm font-bold text-slate-600">
+                      Không có tiết phù hợp.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      );
+    }
 
     return (
       <Panel title="Điểm danh từng tiết" action="Lưu thời gian bấm">
@@ -4858,6 +4997,10 @@ export function LifeSkillApp() {
                   </p>
                   <p className="mt-1 text-sm text-[var(--muted)]">
                     {meta.teacher?.name} tại {meta.school?.name}, lớp {meta.classRoom?.name}
+                  </p>
+                  <p className="mt-2 inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-black text-indigo-700">
+                    <Clock3 size={14} />
+                    Bắt đầu {meta.slot?.start || "--:--"} · Kết thúc {meta.slot?.end || "--:--"}
                   </p>
                   {meta.checkIn ? (
                     <p className="mt-2 text-sm font-bold text-emerald-700">
@@ -4880,6 +5023,34 @@ export function LifeSkillApp() {
           })}
         </div>
       </Panel>
+    );
+  }
+
+  function AttendanceScheduleRow({ schedule, showLateDetail = false }: { schedule: Schedule; showLateDetail?: boolean }) {
+    const meta = lookupSchedule(schedule);
+    const lateMinutes = getAttendanceLateMinutes(schedule, meta.checkIn, timeSlots);
+    return (
+      <div className="grid gap-3 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm md:grid-cols-[1fr_auto]">
+        <div>
+          <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Chưa rõ chuyên đề"}</p>
+          <p className="mt-1 text-sm font-bold text-[var(--muted)]">
+            {meta.teacher?.name || "Chưa rõ giáo viên"} · {meta.school?.name || "Chưa rõ trường"} · Lớp{" "}
+            {meta.classRoom?.name || "?"}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs font-black">
+            <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">
+              {meta.slot?.label || "Khung giờ"} {formatSlotRange(meta.slot)}
+            </span>
+            <span className={`rounded-full px-2 py-1 ${meta.checkIn ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
+              {meta.checkIn ? `Đã điểm danh ${formatDateTime(meta.checkIn.checkedInAt)}` : "Chưa điểm danh"}
+            </span>
+            {showLateDetail && lateMinutes > 0 ? (
+              <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700">Trễ {lateMinutes} phút</span>
+            ) : null}
+          </div>
+        </div>
+        <StatusChip status={schedule.status} />
+      </div>
     );
   }
 
@@ -6571,6 +6742,80 @@ function addDays(dateKey: string, days: number) {
   const date = new Date(`${dateKey}T00:00:00`);
   date.setDate(date.getDate() + days);
   return toDateKey(date);
+}
+
+function isAttendanceTrackedSchedule(schedule: Schedule) {
+  return !["cancelled", "draft"].includes(schedule.status);
+}
+
+function formatSlotRange(slot: TimeSlot | undefined) {
+  if (!slot?.start || !slot?.end) {
+    return "";
+  }
+
+  return `${slot.start}-${slot.end}`;
+}
+
+function getAttendanceLateMinutes(schedule: Schedule, record: Attendance | undefined, slots: TimeSlot[]) {
+  if (!record) {
+    return 0;
+  }
+
+  const slot = slots.find((item) => item.id === schedule.timeSlotId);
+  if (!slot?.start) {
+    return 0;
+  }
+
+  const checkedInAt = new Date(record.checkedInAt);
+  const startsAt = parseScheduleDateTime(schedule.date, slot.start);
+  if (Number.isNaN(checkedInAt.getTime()) || Number.isNaN(startsAt.getTime()) || checkedInAt <= startsAt) {
+    return 0;
+  }
+
+  return Math.ceil((checkedInAt.getTime() - startsAt.getTime()) / 60_000);
+}
+
+function isLateAttendance(schedule: Schedule, record: Attendance | undefined, slots: TimeSlot[]) {
+  return getAttendanceLateMinutes(schedule, record, slots) > 0;
+}
+
+function buildAttendanceTeacherWarnings(
+  schedules: Schedule[],
+  attendanceRows: Attendance[],
+  teachers: Teacher[],
+  slots: TimeSlot[],
+) {
+  const today = currentDateKey();
+  const attendanceBySchedule = new Map(attendanceRows.map((item) => [item.scheduleId, item]));
+  const summary = new Map<string, { teacher: Teacher; missingCount: number; lateCount: number }>();
+
+  for (const schedule of schedules) {
+    if (schedule.date >= today || !isAttendanceTrackedSchedule(schedule)) {
+      continue;
+    }
+
+    const teacher = teachers.find((item) => item.id === schedule.teacherId);
+    if (!teacher) {
+      continue;
+    }
+
+    const item = summary.get(teacher.id) ?? { teacher, missingCount: 0, lateCount: 0 };
+    const record = attendanceBySchedule.get(schedule.id);
+    if (!record) {
+      item.missingCount += 1;
+    } else if (isLateAttendance(schedule, record, slots)) {
+      item.lateCount += 1;
+    }
+    summary.set(teacher.id, item);
+  }
+
+  return Array.from(summary.values())
+    .filter((item) => item.missingCount >= 2 || item.lateCount >= 2)
+    .sort((a, b) => b.missingCount + b.lateCount - (a.missingCount + a.lateCount));
+}
+
+function parseScheduleDateTime(date: string, time: string) {
+  return new Date(`${date}T${time}:00`);
 }
 
 function auditActionLabel(action: string) {
