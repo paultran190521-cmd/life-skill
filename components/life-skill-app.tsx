@@ -319,6 +319,8 @@ export function LifeSkillApp() {
   const calendarDetailRef = useRef<HTMLDivElement | null>(null);
   const [lessonSearchTerm, setLessonSearchTerm] = useState("");
   const [lessonGradeFilter, setLessonGradeFilter] = useState("all");
+  const [lessonPlanTeacherFilter, setLessonPlanTeacherFilter] = useState("all");
+  const [lessonPlanStatusFilter, setLessonPlanStatusFilter] = useState<"all" | "uploaded" | "missing">("all");
   const [selectedThreadId, setSelectedThreadId] = useState(seedThreads[0]?.id ?? "");
   const [chatDraft, setChatDraft] = useState("");
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
@@ -4263,86 +4265,319 @@ export function LifeSkillApp() {
   }
 
   function LessonPlansPanel() {
-    const scopedSchedules =
-      role === "admin" ? schedules : schedules.filter((item) => item.teacherId === currentTeacherId);
+    return role === "admin" ? AdminLessonPlansPanel() : TeacherLessonPlansPanel();
+  }
+
+  function AdminLessonPlansPanel() {
+    const searchableTerm = searchTerm.trim().toLowerCase();
+    const operationalSchedules = schedules.filter((schedule) => schedule.status !== "cancelled");
+    const submittedScheduleIds = new Set(lessonPlans.map((plan) => plan.scheduleId));
+    const missingSchedules = operationalSchedules
+      .filter((schedule) => !submittedScheduleIds.has(schedule.id))
+      .sort((left, right) => left.date.localeCompare(right.date));
+    const upcomingMissingSchedules = missingSchedules.filter((schedule) => isWithinNextDays(schedule.date, 3));
+    const latestPlanRows = lessonPlans
+      .map((plan) => {
+        const schedule = schedules.find((item) => item.id === plan.scheduleId);
+        return schedule ? { plan, schedule, meta: lookupSchedule(schedule) } : null;
+      })
+      .filter((item): item is { plan: LessonPlan; schedule: Schedule; meta: ReturnType<typeof lookupSchedule> } => Boolean(item))
+      .sort((left, right) => right.plan.uploadedAt.localeCompare(left.plan.uploadedAt));
+
+    const filteredPlanRows = latestPlanRows.filter(({ plan, schedule, meta }) => {
+      const matchesTeacher = lessonPlanTeacherFilter === "all" || plan.teacherId === lessonPlanTeacherFilter;
+      const matchesStatus =
+        lessonPlanStatusFilter === "all" ||
+        (lessonPlanStatusFilter === "uploaded" && submittedScheduleIds.has(schedule.id));
+      const matchesTerm =
+        !searchableTerm ||
+        [plan.fileName, meta.teacher?.name, meta.lesson?.title, meta.school?.name, meta.classRoom?.name]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(searchableTerm);
+      return matchesTeacher && matchesStatus && matchesTerm;
+    });
+
+    const filteredMissingSchedules = missingSchedules.filter((schedule) => {
+      const meta = lookupSchedule(schedule);
+      const matchesTeacher = lessonPlanTeacherFilter === "all" || schedule.teacherId === lessonPlanTeacherFilter;
+      const matchesStatus = lessonPlanStatusFilter === "all" || lessonPlanStatusFilter === "missing";
+      const matchesTerm =
+        !searchableTerm ||
+        [meta.teacher?.name, meta.lesson?.title, meta.school?.name, meta.classRoom?.name]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(searchableTerm);
+      return matchesTeacher && matchesStatus && matchesTerm;
+    });
 
     return (
-      <Panel title="Trung tâm giáo án" action="Sẵn sàng Google Drive">
-        <div className="space-y-3">
-          {scopedSchedules.map((schedule) => {
-            const meta = lookupSchedule(schedule);
-            return (
-              <div
-                key={schedule.id}
-                className="grid gap-4 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm lg:grid-cols-[1fr_auto]"
-              >
-                <div>
-                  <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title}</p>
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    {meta.teacher?.name} - {meta.school?.name} - Lớp {meta.classRoom?.name} -{" "}
-                    {formatDate(schedule.date)}
-                  </p>
-                  {meta.plans.length > 0 ? (
-                    <div className="mt-3 space-y-2">
-                      {meta.plans.map((plan) => (
-                        <div key={plan.id} className="flex items-center justify-between gap-2">
-                          <a
-                            href={plan.driveUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex min-w-0 items-center gap-2 rounded-xl bg-cyan-50 px-3 py-2 text-sm font-bold text-[var(--brand-dark)]"
-                          >
-                            <UploadCloud size={16} />
-                            <span className="truncate">{plan.fileName}</span>
-                          </a>
-                          {canManageLessonPlan(plan) ? (
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                title="Sửa tên giáo án"
-                                onClick={() => editLessonPlan(plan)}
-                                className="grid h-8 w-8 place-items-center rounded-lg bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
-                              >
-                                <Pencil size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                title="Xóa giáo án"
-                                onClick={() => deleteLessonPlan(plan)}
-                                className="grid h-8 w-8 place-items-center rounded-lg bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
+      <Panel title="Tổng quan giáo án" action={`${lessonPlans.length} file • ${missingSchedules.length} lịch chưa có`}>
+        <div className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Stat icon={FileSpreadsheet} label="Giáo án đã nộp" value={lessonPlans.length} tone="blue" />
+            <Stat icon={CheckCircle2} label="Lịch đã có giáo án" value={submittedScheduleIds.size} tone="emerald" />
+            <Stat icon={Clock3} label="Lịch chưa có giáo án" value={missingSchedules.length} tone="orange" />
+            <Stat icon={Bell} label="Sắp dạy còn thiếu" value={upcomingMissingSchedules.length} tone="rose" />
+          </div>
+
+          <div className="grid gap-3 rounded-2xl border border-white/75 bg-white/85 p-4 shadow-sm md:grid-cols-2 xl:grid-cols-[1fr_1fr_auto]">
+            <select
+              value={lessonPlanTeacherFilter}
+              onChange={(event) => setLessonPlanTeacherFilter(event.target.value)}
+              className={inputClass}
+            >
+              <option value="all">Tất cả giáo viên</option>
+              {teachers.map((teacher) => (
+                <option key={teacher.id} value={teacher.id}>
+                  {teacher.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={lessonPlanStatusFilter}
+              onChange={(event) => setLessonPlanStatusFilter(event.target.value as "all" | "uploaded" | "missing")}
+              className={inputClass}
+            >
+              <option value="all">Tất cả trạng thái giáo án</option>
+              <option value="uploaded">Đã nộp giáo án</option>
+              <option value="missing">Chưa có giáo án</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => {
+                setLessonPlanTeacherFilter("all");
+                setLessonPlanStatusFilter("all");
+              }}
+              className={ghostButtonClass}
+            >
+              <RefreshCcw size={15} />
+              Xóa lọc
+            </button>
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-[1.35fr_0.9fr]">
+            <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
+              <div className="border-b border-[var(--line)] bg-gradient-to-r from-sky-50 to-cyan-50 px-4 py-3">
+                <p className="text-sm font-black text-[var(--brand-dark)]">Giáo án mới nhất</p>
+                <p className="mt-1 text-xs font-bold text-[var(--muted)]">Theo thời gian upload mới nhất</p>
+              </div>
+              <div className="divide-y divide-[var(--line)]">
+                {filteredPlanRows.map(({ plan, schedule, meta }) => (
+                  <div key={plan.id} className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_auto]">
+                    <div className="min-w-0">
+                      <a
+                        href={plan.driveUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex max-w-full items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-sm font-black text-sky-800"
+                      >
+                        <UploadCloud size={16} />
+                        <span className="truncate">{plan.fileName}</span>
+                      </a>
+                      <p className="mt-2 text-sm font-bold text-[var(--brand-dark)]">
+                        {meta.lesson?.title || "Bài học"} • {meta.teacher?.name || "Giáo viên"}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
+                        {meta.school?.name} • Lớp {meta.classRoom?.name} • Dạy ngày {formatDate(schedule.date)}
+                      </p>
                     </div>
-                  ) : (
-                    <p className="mt-3 text-sm font-semibold text-orange-700">Chưa có giáo án</p>
-                  )}
-                </div>
-                {role === "teacher" || role === "admin" ? (
-                  <label className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 text-sm font-black text-white shadow-lg shadow-orange-500/20 transition hover:-translate-y-0.5">
-                    <FileUp size={17} />
-                    Tải lên
-                    <input
-                      type="file"
-                      multiple
-                      accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv"
-                      className="hidden"
-                      onChange={(event) => {
-                        uploadLessonPlans(schedule, event.target.files);
-                        event.currentTarget.value = "";
-                      }}
-                    />
-                  </label>
+                    <div className="flex items-center justify-between gap-2 lg:justify-end">
+                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+                        {formatDateTime(plan.uploadedAt)}
+                      </span>
+                      <LessonPlanActions plan={plan} />
+                    </div>
+                  </div>
+                ))}
+                {filteredPlanRows.length === 0 ? (
+                  <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Chưa có giáo án phù hợp bộ lọc.</div>
                 ) : null}
               </div>
-            );
-          })}
+            </div>
+
+            <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                <Bell className="text-amber-700" />
+                <div>
+                  <p className="text-sm font-black text-amber-900">Lịch chưa có giáo án</p>
+                  <p className="text-xs font-bold text-amber-800/75">Ưu tiên các lịch sắp dạy</p>
+                </div>
+              </div>
+              <div className="mt-4 space-y-3">
+                {filteredMissingSchedules.slice(0, 8).map((schedule) => {
+                  const meta = lookupSchedule(schedule);
+                  return (
+                    <div key={schedule.id} className="rounded-2xl border border-white/80 bg-white/90 p-3 shadow-sm">
+                      <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
+                      <p className="mt-1 text-xs font-bold text-[var(--muted)]">
+                        {meta.teacher?.name} • {meta.school?.name} • Lớp {meta.classRoom?.name}
+                      </p>
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">
+                          {formatDate(schedule.date)}
+                        </span>
+                        <LessonPlanUploadButton schedule={schedule} compact />
+                      </div>
+                    </div>
+                  );
+                })}
+                {filteredMissingSchedules.length === 0 ? (
+                  <p className="rounded-2xl bg-white/80 px-3 py-4 text-sm font-semibold text-emerald-700">
+                    Không còn lịch thiếu giáo án theo bộ lọc.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </div>
         </div>
       </Panel>
+    );
+  }
+
+  function TeacherLessonPlansPanel() {
+    const scopedSchedules = schedules.filter((item) => item.teacherId === currentTeacherId && item.status !== "cancelled");
+    const submittedScheduleIds = new Set(
+      lessonPlans.filter((plan) => plan.teacherId === currentTeacherId).map((plan) => plan.scheduleId),
+    );
+    const pendingSchedules = scopedSchedules
+      .filter((schedule) => !submittedScheduleIds.has(schedule.id))
+      .sort((left, right) => left.date.localeCompare(right.date));
+    const myPlanRows = lessonPlans
+      .filter((plan) => plan.teacherId === currentTeacherId)
+      .map((plan) => {
+        const schedule = schedules.find((item) => item.id === plan.scheduleId);
+        return schedule ? { plan, schedule, meta: lookupSchedule(schedule) } : null;
+      })
+      .filter((item): item is { plan: LessonPlan; schedule: Schedule; meta: ReturnType<typeof lookupSchedule> } => Boolean(item))
+      .sort((left, right) => right.plan.uploadedAt.localeCompare(left.plan.uploadedAt));
+
+    return (
+      <Panel title="Giáo án của tôi" action={`${myPlanRows.length} file • ${pendingSchedules.length} cần nộp`}>
+        <div className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Stat icon={FileSpreadsheet} label="Giáo án đã gửi" value={myPlanRows.length} tone="blue" />
+            <Stat icon={Clock3} label="Lịch cần nộp" value={pendingSchedules.length} tone="orange" />
+            <Stat icon={CheckCircle2} label="Lịch đã có giáo án" value={submittedScheduleIds.size} tone="emerald" />
+          </div>
+
+          <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <FileUp className="text-amber-700" />
+              <div>
+                <p className="text-sm font-black text-amber-900">Cần nộp giáo án</p>
+                <p className="text-xs font-bold text-amber-800/75">Các lịch chưa có file giáo án</p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {pendingSchedules.slice(0, 6).map((schedule) => {
+                const meta = lookupSchedule(schedule);
+                return (
+                  <div key={schedule.id} className="rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm">
+                    <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
+                    <p className="mt-1 text-xs font-bold text-[var(--muted)]">
+                      {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatDate(schedule.date)}
+                    </p>
+                    <div className="mt-3">
+                      <LessonPlanUploadButton schedule={schedule} />
+                    </div>
+                  </div>
+                );
+              })}
+              {pendingSchedules.length === 0 ? (
+                <p className="rounded-2xl bg-white/80 px-4 py-5 text-sm font-semibold text-emerald-700">
+                  Tất cả lịch của bạn đã có giáo án.
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
+            <div className="border-b border-[var(--line)] bg-gradient-to-r from-sky-50 to-cyan-50 px-4 py-3">
+              <p className="text-sm font-black text-[var(--brand-dark)]">Giáo án mới nhất</p>
+              <p className="mt-1 text-xs font-bold text-[var(--muted)]">Sắp xếp theo thời gian upload mới nhất</p>
+            </div>
+            <div className="divide-y divide-[var(--line)]">
+              {myPlanRows.map(({ plan, schedule, meta }) => (
+                <div key={plan.id} className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_auto]">
+                  <div className="min-w-0">
+                    <a
+                      href={plan.driveUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex max-w-full items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-sm font-black text-sky-800"
+                    >
+                      <UploadCloud size={16} />
+                      <span className="truncate">{plan.fileName}</span>
+                    </a>
+                    <p className="mt-2 text-sm font-bold text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
+                    <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
+                      {meta.school?.name} • Lớp {meta.classRoom?.name} • Dạy ngày {formatDate(schedule.date)}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 lg:justify-end">
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+                      {formatDateTime(plan.uploadedAt)}
+                    </span>
+                    <LessonPlanActions plan={plan} />
+                  </div>
+                </div>
+              ))}
+              {myPlanRows.length === 0 ? (
+                <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Bạn chưa tải giáo án nào.</div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </Panel>
+    );
+  }
+
+  function LessonPlanActions({ plan }: { plan: LessonPlan }) {
+    return canManageLessonPlan(plan) ? (
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          title="Sửa tên giáo án"
+          onClick={() => editLessonPlan(plan)}
+          className="grid h-8 w-8 place-items-center rounded-lg bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
+        >
+          <Pencil size={14} />
+        </button>
+        <button
+          type="button"
+          title="Xóa giáo án"
+          onClick={() => deleteLessonPlan(plan)}
+          className="grid h-8 w-8 place-items-center rounded-lg bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+    ) : null;
+  }
+
+  function LessonPlanUploadButton({ schedule, compact = false }: { schedule: Schedule; compact?: boolean }) {
+    return (
+      <label
+        className={`inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 text-sm font-black text-white shadow-lg shadow-orange-500/20 transition hover:-translate-y-0.5 ${
+          compact ? "h-9 px-3 text-xs" : "h-11 px-4"
+        }`}
+      >
+        <FileUp size={compact ? 15 : 17} />
+        Tải lên
+        <input
+          type="file"
+          multiple
+          accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv"
+          className="hidden"
+          onChange={(event) => {
+            uploadLessonPlans(schedule, event.target.files);
+            event.currentTarget.value = "";
+          }}
+        />
+      </label>
     );
   }
 
@@ -4891,13 +5126,14 @@ function Stat({
   icon: React.ElementType;
   label: string;
   value: number;
-  tone: "cyan" | "emerald" | "blue" | "orange";
+  tone: "cyan" | "emerald" | "blue" | "orange" | "rose";
 }) {
   const toneClass = {
     cyan: "bg-cyan-50 text-[var(--brand)]",
     emerald: "bg-emerald-50 text-emerald-700",
     blue: "bg-blue-50 text-blue-700",
     orange: "bg-orange-50 text-orange-700",
+    rose: "bg-rose-50 text-rose-700",
   }[tone];
 
   return (
@@ -5861,6 +6097,13 @@ function currentDateKey() {
 
 function currentMonthKey() {
   return currentDateKey().slice(0, 7);
+}
+
+function isWithinNextDays(dateKey: string, days: number) {
+  const today = new Date(`${currentDateKey()}T00:00:00`);
+  const target = new Date(`${dateKey}T00:00:00`);
+  const diffDays = Math.floor((target.getTime() - today.getTime()) / 86_400_000);
+  return diffDays >= 0 && diffDays <= days;
 }
 
 function toDateKey(date: Date) {

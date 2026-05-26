@@ -128,6 +128,24 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 
 ## 5. Ghi Chú Cập Nhật Tài Liệu
 
+## 5. Phân Hệ Giáo Án
+
+### Tính năng hiện có
+- Màn giáo án đã tách trải nghiệm theo vai trò.
+- Quản trị thấy `Tổng quan giáo án` với thống kê giáo án đã nộp, lịch đã có giáo án, lịch chưa có giáo án và lịch sắp dạy còn thiếu.
+- Quản trị có bảng giáo án mới nhất theo thời gian upload, kèm giáo viên, bài học, trường/lớp, ngày dạy và thao tác sửa/xóa.
+- Quản trị có danh sách lịch chưa có giáo án để theo dõi và có thể tải lên thay khi cần.
+- Giáo viên thấy `Giáo án của tôi`, gồm nhóm lịch cần nộp giáo án và danh sách giáo án mới nhất của chính mình.
+- Giáo viên có thể tải nhiều file giáo án, mở file Google Drive, sửa tên hoặc xóa giáo án của mình.
+
+### Kiểm tra dữ liệu và phân quyền
+- Teacher chỉ thấy lịch và giáo án thuộc tài khoản giáo viên của mình.
+- Admin thấy toàn bộ dữ liệu giáo án và có quyền thao tác toàn hệ thống.
+- File giáo án tối đa 10MB/file.
+- Định dạng hỗ trợ: `pdf`, `doc`, `docx`, `ppt`, `pptx`, `xls`, `xlsx`, `txt`, `csv`.
+
+## 6. Ghi Chú Cập Nhật Tài Liệu
+
 Sau mỗi lần nâng cấp phân hệ, cần bổ sung vào tài liệu này:
 - Danh sách tính năng mới.
 - Quy trình thao tác thực tế cho người dùng.
@@ -139,7 +157,7 @@ Sau mỗi lần nâng cấp phân hệ, cần bổ sung vào tài liệu này:
 - Bước 3: Rà lại nhanh nội dung tài liệu để khớp hành vi thực tế trên UI/API.
 - Bước 4: Mới được commit và push.
 
-## 6. Cập Nhật Giao Diện Toàn Hệ Thống
+## 7. Cập Nhật Giao Diện Toàn Hệ Thống
 
 - Font chữ hiển thị chính đã chuyển từ `Be Vietnam Pro` sang `Quicksand` để thử nghiệm thẩm mỹ mới cho toàn bộ ứng dụng.
 - Đã tăng độ dày chữ mặc định toàn hệ thống thêm 1 mức (`font-weight: 500`) để cải thiện độ rõ khi hiển thị.

@@ -102,7 +102,10 @@ Các lỗi đã xử lý trong phân hệ này:
 - Hỗ trợ upload nhiều file trong một lần.
 - Giới hạn mỗi file 10MB.
 - Mỗi lịch có thể lưu nhiều giáo án.
-- Hiện danh sách giáo án theo từng lịch.
+- Tách giao diện giáo án theo vai trò admin/teacher.
+- Admin có màn tổng quan giáo án với thống kê đã nộp, chưa nộp, lịch sắp dạy còn thiếu và bảng giáo án mới nhất.
+- Teacher có màn giáo án của tôi, ưu tiên lịch cần nộp và danh sách giáo án mới nhất theo thời gian upload.
+- Hiện danh sách giáo án theo từng lịch và theo dòng file mới nhất.
 - Sửa tên giáo án.
 - Xóa bản ghi giáo án trên Google Sheet.
 - Xóa file giáo án trên Google Drive qua GAS.
