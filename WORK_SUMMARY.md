@@ -188,4 +188,4 @@ Lần kiểm tra gần nhất:
 
 - Lệnh: `npm.cmd run -s build`
 - Kết quả: build thành công.
-- Commit nâng cấp khung giờ đã push: `a799b30 Upgrade time slot configuration`
+- Commit thu gọn/mở rộng cấu hình đã push: `e8cdc99 Add collapsible settings sections`
