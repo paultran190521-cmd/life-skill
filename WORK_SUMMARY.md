@@ -193,4 +193,4 @@ Lần kiểm tra gần nhất:
 
 - Lệnh: `npm.cmd run -s build`
 - Kết quả: build thành công.
-- Commit thu gọn/mở rộng cấu hình đã push: `e8cdc99 Add collapsible settings sections`
+- Commit phân hệ giáo án theo vai trò đã push: `3695378 Split lesson plan views by role`
