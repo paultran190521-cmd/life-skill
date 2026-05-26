@@ -69,6 +69,7 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - Hệ thống tự tính thời lượng từ giờ bắt đầu/kết thúc và chỉ chấp nhận 45 phút hoặc 90 phút.
 - Có sửa nhanh từng khung giờ ngay trên bảng.
 - Có bật/tắt khung giờ; khung giờ bị tắt không còn hiện trong danh sách chọn khi giao lịch mới.
+- Có chọn nhiều khung giờ rồi bật/tắt hàng loạt để thao tác nhanh.
 - Có xóa mềm khung giờ bằng cách chuyển trạng thái sang `Tắt`, giữ an toàn cho lịch sử lịch dạy đã tạo.
 - Có tải mẫu Excel và import hàng loạt khung giờ từ `.xlsx`, `.csv`, `.tsv`.
 
@@ -78,6 +79,7 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 - Để import nhanh, bấm `Tải mẫu Excel`, điền dữ liệu theo mẫu rồi bấm `Import file`.
 - Dùng biểu tượng sửa để cập nhật tên hoặc giờ.
 - Dùng biểu tượng bật/tắt để kiểm soát khung giờ nào được phép chọn khi giao lịch.
+- Tick chọn nhiều dòng hoặc checkbox chọn tất cả, sau đó bấm `Bật đã chọn` hoặc `Tắt đã chọn`.
 - Dùng biểu tượng xóa để xóa mềm khung giờ khỏi luồng giao lịch mới.
 
 ### Kiểm tra dữ liệu

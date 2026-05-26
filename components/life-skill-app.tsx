@@ -388,6 +388,7 @@ export function LifeSkillApp() {
     end: "08:15",
     active: true,
   });
+  const [selectedSlotIds, setSelectedSlotIds] = useState<string[]>([]);
   const [schoolDraft, setSchoolDraft] = useState({
     name: "",
     district: "",
@@ -449,6 +450,14 @@ export function LifeSkillApp() {
     });
   }, [activeLessons, lessonGradeFilter, lessonSearchTerm]);
   const isBusy = Boolean(pendingAction);
+
+  useEffect(() => {
+    const slotIds = new Set(timeSlots.map((slot) => slot.id));
+    setSelectedSlotIds((items) => {
+      const nextItems = items.filter((id) => slotIds.has(id));
+      return nextItems.length === items.length ? items : nextItems;
+    });
+  }, [timeSlots]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2044,6 +2053,73 @@ export function LifeSkillApp() {
       pushToast(
         nextActive ? "Đã bật khung giờ" : "Đã tắt khung giờ",
         `${slot.label} ${nextActive ? "có thể chọn khi giao lịch." : "sẽ không còn hiện khi giao lịch mới."}`,
+        nextActive ? "success" : "warning",
+      );
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  function toggleSlotSelection(slotId: string, selected: boolean) {
+    setSelectedSlotIds((items) =>
+      selected ? Array.from(new Set([...items, slotId])) : items.filter((id) => id !== slotId),
+    );
+  }
+
+  function toggleAllVisibleSlots(slots: TimeSlot[], selected: boolean) {
+    const visibleIds = slots.map((slot) => slot.id);
+    setSelectedSlotIds((items) => {
+      if (selected) {
+        return Array.from(new Set([...items, ...visibleIds]));
+      }
+      const visibleIdSet = new Set(visibleIds);
+      return items.filter((id) => !visibleIdSet.has(id));
+    });
+  }
+
+  async function updateSelectedSlotsActive(nextActive: boolean) {
+    const selectedIdSet = new Set(selectedSlotIds);
+    const slotsToUpdate = timeSlots.filter((slot) => selectedIdSet.has(slot.id) && (slot.active !== false) !== nextActive);
+    if (selectedSlotIds.length === 0) {
+      pushToast("Chưa chọn khung giờ", "Chọn ít nhất một khung giờ trước khi bật/tắt hàng loạt.", "warning");
+      return;
+    }
+    if (slotsToUpdate.length === 0) {
+      pushToast(
+        "Không có thay đổi",
+        `Các khung giờ đã chọn đều đang ở trạng thái ${nextActive ? "bật" : "tắt"}.`,
+        "info",
+      );
+      return;
+    }
+
+    try {
+      const savedSlots: TimeSlot[] = [];
+      for (const slot of slotsToUpdate) {
+        const savedSlot = await saveRequest<TimeSlot>(
+          nextActive ? "Đang bật khung giờ đã chọn..." : "Đang tắt khung giờ đã chọn...",
+          `/api/time-slots/${slot.id}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ active: nextActive }),
+          },
+        );
+        savedSlots.push(savedSlot);
+      }
+
+      const savedById = new Map(savedSlots.map((slot) => [slot.id, slot]));
+      setTimeSlots((items) =>
+        items.map((item) => {
+          const savedSlot = savedById.get(item.id);
+          return savedSlot ? { ...item, ...savedSlot } : item;
+        }),
+      );
+      setSelectedSlotIds([]);
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast(
+        nextActive ? "Đã bật hàng loạt" : "Đã tắt hàng loạt",
+        `Đã cập nhật ${savedSlots.length} khung giờ.`,
         nextActive ? "success" : "warning",
       );
     } catch (error) {
@@ -3933,6 +4009,9 @@ export function LifeSkillApp() {
 
   function SlotsPanel() {
     const orderedSlots = [...timeSlots].sort((left, right) => left.start.localeCompare(right.start));
+    const selectedSlotCount = selectedSlotIds.length;
+    const allVisibleSlotsSelected =
+      orderedSlots.length > 0 && orderedSlots.every((slot) => selectedSlotIds.includes(slot.id));
 
     return (
       <Panel title="Thiết lập Khung giờ dạy" action={`${timeSlots.length} khung • chuẩn 45/90 phút`}>
@@ -3998,8 +4077,36 @@ export function LifeSkillApp() {
             </div>
           </div>
           <div className="overflow-x-auto rounded-2xl border border-[var(--line)] bg-white shadow-sm">
-            <div className="min-w-[860px]">
-              <div className="grid grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] gap-3 border-b border-[var(--line)] bg-cyan-50 px-4 py-3 text-xs font-black uppercase text-[var(--brand-dark)]">
+            <div className="min-w-[960px]">
+              <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)] px-4 py-3">
+                <span className="mr-auto text-sm font-black text-[var(--brand-dark)]">
+                  {selectedSlotCount > 0 ? `Đã chọn ${selectedSlotCount} khung giờ` : "Chọn nhiều để bật/tắt nhanh"}
+                </span>
+                <button
+                  onClick={() => updateSelectedSlotsActive(true)}
+                  disabled={selectedSlotCount === 0 || isBusy}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <CheckCircle2 size={16} />
+                  Bật đã chọn
+                </button>
+                <button
+                  onClick={() => updateSelectedSlotsActive(false)}
+                  disabled={selectedSlotCount === 0 || isBusy}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-black text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <X size={16} />
+                  Tắt đã chọn
+                </button>
+              </div>
+              <div className="grid grid-cols-[40px_1.2fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] gap-3 border-b border-[var(--line)] bg-cyan-50 px-4 py-3 text-xs font-black uppercase text-[var(--brand-dark)]">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSlotsSelected}
+                  onChange={(event) => toggleAllVisibleSlots(orderedSlots, event.target.checked)}
+                  aria-label="Chọn tất cả khung giờ"
+                  className="h-4 w-4 accent-[var(--brand)]"
+                />
                 <span>Tên</span>
                 <span>Bắt đầu</span>
                 <span>Kết thúc</span>
@@ -4015,10 +4122,17 @@ export function LifeSkillApp() {
                 return (
                   <div
                     key={slot.id}
-                    className={`grid gap-3 px-4 py-3 text-sm font-semibold text-[var(--brand-dark)] lg:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] ${
+                    className={`grid gap-3 px-4 py-3 text-sm font-semibold text-[var(--brand-dark)] lg:grid-cols-[40px_1.2fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] ${
                       slot.active === false ? "bg-slate-50 opacity-75" : "bg-white"
                     }`}
                   >
+                    <input
+                      type="checkbox"
+                      checked={selectedSlotIds.includes(slot.id)}
+                      onChange={(event) => toggleSlotSelection(slot.id, event.target.checked)}
+                      aria-label={`Chọn ${slot.label}`}
+                      className="mt-1 h-4 w-4 accent-[var(--brand)]"
+                    />
                     {isEditing ? (
                       <>
                         <input

@@ -127,6 +127,7 @@ Các lỗi đã xử lý trong phân hệ này:
 - Hiển thị danh sách khung giờ dạng bảng với tên, giờ bắt đầu, giờ kết thúc, số phút, trạng thái và thao tác.
 - Sửa nhanh từng khung giờ ngay trên bảng.
 - Bật/tắt khung giờ; khung giờ tắt không được chọn khi giao lịch mới.
+- Chọn nhiều khung giờ và bật/tắt hàng loạt ngay trên bảng.
 - Xóa mềm khung giờ bằng cách chuyển trạng thái sang tắt, giữ an toàn cho lịch sử.
 - Tải mẫu Excel khung giờ.
 - Import hàng loạt khung giờ từ `.xlsx`, `.csv`, `.tsv`.
