@@ -11,7 +11,7 @@
   --amber: #f59e0b;
   --ink: #17364a;
   --muted: #687789;
-  --line: #dce7ef;
+  --line: #b9dff0;
   --canvas: #f5f8fc;
   --surface: #ffffff;
   --surface-soft: #fafdff;
@@ -136,6 +136,7 @@ button:disabled {
 .ui-polish :is(section, div, article, li)[class*="rounded-3xl"][class*="bg-white"][class*="border"],
 .ui-polish :is(section, div, article, li)[class*="rounded-2xl"][class*="bg-white"][class*="border"] {
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(250, 253, 255, 0.9));
+  border-color: rgba(59, 130, 246, 0.2);
   box-shadow: var(--shadow-soft);
   transition:
     transform 0.24s var(--ease-smooth),
@@ -183,7 +184,7 @@ button:disabled {
 .ui-polish input:hover,
 .ui-polish select:hover,
 .ui-polish textarea:hover {
-  border-color: rgba(25, 146, 176, 0.45);
+  border-color: rgba(124, 58, 237, 0.34);
 }
 
 .ui-polish input:focus,

@@ -14,6 +14,7 @@ Trạng thái đã hoàn tất đến hiện tại:
 - UI chính đã chuyển sang font `Quicksand` và tăng độ dày chữ mặc định lên một cấp để dễ đọc hơn.
 - Đã mở rộng giao diện khỏi giới hạn 2 màu thương hiệu: thêm bảng màu semantic dịu cho trạng thái, khối, toast và các điểm nhấn.
 - Đã nâng cấp hiệu ứng giao diện: nền nhiều lớp, panel có chiều sâu, sidebar/header dạng glass, CTA gradient, hover mềm và toast có animation.
+- Viền card, ô lọc và ô tìm kiếm đã được tăng màu nhấn để nổi bật hơn trên nền giao diện.
 - Đã thay `window.confirm`/`window.prompt` bằng dialog nội bộ và toast trong app.
 - Phân hệ Khung giờ đã chuyển vào `Cấu hình`, có quản trị bảng, sửa/bật/tắt/xóa mềm và import Excel chuẩn 45/90 phút.
 - Đã có quy trình bắt buộc: sau khi chốt tính năng phân hệ, cập nhật `USAGE_GUIDE_DRAFT.md`, build/test, commit và push lên `main`.
@@ -104,7 +105,11 @@ Các lỗi đã xử lý trong phân hệ này:
 - Mỗi lịch có thể lưu nhiều giáo án.
 - Tách giao diện giáo án theo vai trò admin/teacher.
 - Admin có màn tổng quan giáo án với thống kê đã nộp, chưa nộp, lịch sắp dạy còn thiếu và bảng giáo án mới nhất.
+- Các card thống kê giáo án có thể bấm để lọc nhanh danh sách tương ứng.
+- Admin có nút chat nhanh với giáo viên ngay trên dòng giáo án/lịch giáo án.
+- Admin không còn nút tải lên theo từng giáo án trong giao diện giám sát.
 - Teacher có màn giáo án của tôi, ưu tiên lịch cần nộp và danh sách giáo án mới nhất theo thời gian upload.
+- Teacher có thể bấm các card thống kê để mở nhanh danh sách giáo án/lịch phù hợp.
 - Hiện danh sách giáo án theo từng lịch và theo dòng file mới nhất.
 - Sửa tên giáo án.
 - Xóa bản ghi giáo án trên Google Sheet.

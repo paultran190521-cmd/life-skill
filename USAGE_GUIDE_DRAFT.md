@@ -133,10 +133,14 @@ Tài liệu này được cập nhật sau mỗi phân hệ để tổng hợp �
 ### Tính năng hiện có
 - Màn giáo án đã tách trải nghiệm theo vai trò.
 - Quản trị thấy `Tổng quan giáo án` với thống kê giáo án đã nộp, lịch đã có giáo án, lịch chưa có giáo án và lịch sắp dạy còn thiếu.
+- Quản trị có thể bấm từng card thống kê để đổi nhanh danh sách bên dưới theo đúng nhóm dữ liệu.
 - Quản trị có bảng giáo án mới nhất theo thời gian upload, kèm giáo viên, bài học, trường/lớp, ngày dạy và thao tác sửa/xóa.
 - Quản trị có danh sách lịch chưa có giáo án để theo dõi và có thể tải lên thay khi cần.
+- Quản trị có nút chat nhanh với giáo viên trên từng dòng giáo án/lịch để trao đổi về giáo án.
 - Giáo viên thấy `Giáo án của tôi`, gồm nhóm lịch cần nộp giáo án và danh sách giáo án mới nhất của chính mình.
+- Giáo viên có thể bấm card thống kê để mở danh sách giáo án đã gửi, lịch cần nộp hoặc lịch đã có giáo án.
 - Giáo viên có thể tải nhiều file giáo án, mở file Google Drive, sửa tên hoặc xóa giáo án của mình.
+- Các lịch dạy trong phân hệ giáo án hiển thị đủ ngày, tên khung giờ và giờ bắt đầu/kết thúc.
 
 ### Kiểm tra dữ liệu và phân quyền
 - Teacher chỉ thấy lịch và giáo án thuộc tài khoản giáo viên của mình.
@@ -163,3 +167,4 @@ Sau mỗi lần nâng cấp phân hệ, cần bổ sung vào tài liệu này:
 - Đã tăng độ dày chữ mặc định toàn hệ thống thêm 1 mức (`font-weight: 500`) để cải thiện độ rõ khi hiển thị.
 - Giao diện đã mở rộng bảng màu ngoài 2 màu thương hiệu, dùng thêm xanh lá, xanh dương, tím, hồng/đỏ và vàng hổ phách cho trạng thái và điểm nhấn.
 - Các panel, sidebar, header, nút chính, input và toast được tăng hiệu ứng hover, bóng đổ, glass nhẹ và animation để hệ thống mềm mại hơn.
+- Card, ô lọc và ô tìm kiếm có viền màu nổi bật hơn để dễ nhận diện vùng thao tác.

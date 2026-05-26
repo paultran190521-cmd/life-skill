@@ -147,6 +147,8 @@ type ClassCreateResponse = ClassRoom | { classes: ClassRoom[] };
 
 type CalendarViewMode = "month" | "week" | "day";
 type CalendarSortMode = "date-asc" | "date-desc" | "status";
+type LessonPlanAdminFocus = "uploaded" | "submitted" | "missing" | "upcoming-missing";
+type LessonPlanTeacherFocus = "uploaded" | "pending" | "submitted";
 
 type CalendarFilters = {
   status: string;
@@ -321,6 +323,8 @@ export function LifeSkillApp() {
   const [lessonGradeFilter, setLessonGradeFilter] = useState("all");
   const [lessonPlanTeacherFilter, setLessonPlanTeacherFilter] = useState("all");
   const [lessonPlanStatusFilter, setLessonPlanStatusFilter] = useState<"all" | "uploaded" | "missing">("all");
+  const [lessonPlanAdminFocus, setLessonPlanAdminFocus] = useState<LessonPlanAdminFocus>("uploaded");
+  const [lessonPlanTeacherFocus, setLessonPlanTeacherFocus] = useState<LessonPlanTeacherFocus>("uploaded");
   const [selectedThreadId, setSelectedThreadId] = useState(seedThreads[0]?.id ?? "");
   const [chatDraft, setChatDraft] = useState("");
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
@@ -730,6 +734,12 @@ export function LifeSkillApp() {
 
   function canManageLessonPlan(plan: LessonPlan) {
     return role === "admin" || plan.teacherId === currentTeacherId;
+  }
+
+  function formatScheduleDateTime(schedule: Schedule) {
+    const slot = timeSlots.find((item) => item.id === schedule.timeSlotId);
+    const timeText = slot ? `${slot.label} ${slot.start}-${slot.end}` : "Chưa có khung giờ";
+    return `${formatDate(schedule.date)} • ${timeText}`;
   }
 
   function dismissToast(id: string) {
@@ -1403,7 +1413,7 @@ export function LifeSkillApp() {
     const reminders = targets.map((schedule) => ({
       id: createId("n"),
       title: "Nhắc xác nhận lịch dạy",
-      body: `Bạn có lịch ngày ${formatDate(schedule.date)} chưa xác nhận. Vui lòng kiểm tra Lịch của tôi.`,
+      body: `Bạn có lịch ${formatScheduleDateTime(schedule)} chưa xác nhận. Vui lòng kiểm tra Lịch của tôi.`,
       role: "teacher" as const,
       createdAt: new Date().toISOString(),
       read: false,
@@ -2470,6 +2480,26 @@ export function LifeSkillApp() {
     setChatDraft("");
   }
 
+  function openTeacherChat(teacherId: string) {
+    const teacher = teachers.find((item) => item.id === teacherId);
+    const existingThread = chatThreads.find((thread) => thread.type === "teacher" && thread.teacherId === teacherId);
+    const thread =
+      existingThread ??
+      ({
+        id: `thread-${teacherId}`,
+        type: "teacher" as const,
+        teacherId,
+        title: `Trao đổi với ${teacher?.name || "giáo viên"}`,
+      } satisfies ChatThread);
+
+    if (!existingThread) {
+      setChatThreads((items) => [thread, ...items]);
+    }
+    setSelectedThreadId(thread.id);
+    setActiveTab("chat");
+    pushToast("Đã mở kênh chat", `Trao đổi với ${teacher?.name || "giáo viên"} về giáo án.`, "info");
+  }
+
   function teacherName(teacherId: string) {
     return teachers.find((teacher) => teacher.id === teacherId)?.name ?? "Giáo viên";
   }
@@ -2591,7 +2621,7 @@ export function LifeSkillApp() {
                       ? "Đang tải dữ liệu"
                       : "Dùng dữ liệu tạm"}
                 </span>
-                <label className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/80 bg-white/85 px-3 py-2 shadow-sm transition focus-within:border-[var(--brand)] focus-within:shadow-lg focus-within:shadow-cyan-900/10">
+                <label className="flex min-w-0 items-center gap-2 rounded-2xl border border-sky-200 bg-white/85 px-3 py-2 shadow-sm transition focus-within:border-violet-300 focus-within:shadow-lg focus-within:shadow-cyan-900/10">
                   <Search size={17} className="text-[var(--muted)]" />
                   <input
                     value={searchTerm}
@@ -2780,7 +2810,7 @@ export function LifeSkillApp() {
                 </div>
                 <h2 className="mt-4 text-xl font-black text-[var(--brand-dark)]">Chuyển lịch dạy</h2>
                 <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-                  Chọn giáo viên mới cho lịch ngày {formatDate(reassignTarget.date)}. Hệ thống sẽ cập nhật Google Sheet
+                  Chọn giáo viên mới cho lịch {formatScheduleDateTime(reassignTarget)}. Hệ thống sẽ cập nhật Google Sheet
                   và gửi email xác nhận cho giáo viên mới.
                 </p>
                 <div className="mt-5 grid gap-2">
@@ -2844,8 +2874,8 @@ export function LifeSkillApp() {
                 </div>
 
                 <div className="mt-5 grid gap-2">
-                  <div className="hidden rounded-2xl border border-cyan-100 bg-cyan-50/70 px-4 py-3 text-[11px] font-black uppercase text-[var(--brand-dark)] md:grid md:grid-cols-[120px_150px_110px_1fr_1.4fr] md:gap-3">
-                    <span>Ngày dạy</span>
+                  <div className="hidden rounded-2xl border border-cyan-100 bg-cyan-50/70 px-4 py-3 text-[11px] font-black uppercase text-[var(--brand-dark)] md:grid md:grid-cols-[170px_150px_110px_1fr_1.4fr] md:gap-3">
+                    <span>Ngày/giờ dạy</span>
                     <span>Giáo viên</span>
                     <span>Lớp</span>
                     <span>Trường</span>
@@ -2863,9 +2893,9 @@ export function LifeSkillApp() {
                             setSelectedOperationalAlert(null);
                             setSelectedScheduleDetail(schedule);
                           }}
-                          className="grid gap-2 rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-left shadow-sm transition hover:border-orange-200 hover:bg-orange-50/30 hover:shadow-md md:grid-cols-[120px_150px_110px_1fr_1.4fr] md:gap-3"
+                          className="grid gap-2 rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-left shadow-sm transition hover:border-orange-200 hover:bg-orange-50/30 hover:shadow-md md:grid-cols-[170px_150px_110px_1fr_1.4fr] md:gap-3"
                         >
-                          <span className="text-sm font-black text-[var(--accent)]">{formatDate(schedule.date)}</span>
+                          <span className="text-sm font-black text-[var(--accent)]">{formatScheduleDateTime(schedule)}</span>
                           <span className="text-sm font-black text-[var(--brand-dark)]">{meta.teacher?.name || "Chưa rõ"}</span>
                           <span className="inline-flex w-fit rounded-full bg-orange-50 px-2 py-1 text-xs font-black text-orange-800">
                             {meta.classRoom?.name || "Chưa rõ"}
@@ -2932,7 +2962,7 @@ export function LifeSkillApp() {
                           </div>
                           <h2 className="mt-4 text-xl font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Chi tiết lịch dạy"}</h2>
                           <p className="mt-1 text-sm font-bold text-[var(--muted)]">
-                            {formatDate(selectedScheduleDetail.date)} - {meta.slot?.label} {meta.slot?.start}-{meta.slot?.end}
+                            {formatScheduleDateTime(selectedScheduleDetail)}
                           </p>
                         </div>
                         <button
@@ -4312,15 +4342,75 @@ export function LifeSkillApp() {
           .includes(searchableTerm);
       return matchesTeacher && matchesStatus && matchesTerm;
     });
+    const filteredSubmittedSchedules = operationalSchedules
+      .filter((schedule) => submittedScheduleIds.has(schedule.id))
+      .filter((schedule) => {
+        const meta = lookupSchedule(schedule);
+        const matchesTeacher = lessonPlanTeacherFilter === "all" || schedule.teacherId === lessonPlanTeacherFilter;
+        const matchesStatus = lessonPlanStatusFilter === "all" || lessonPlanStatusFilter === "uploaded";
+        const matchesTerm =
+          !searchableTerm ||
+          [meta.teacher?.name, meta.lesson?.title, meta.school?.name, meta.classRoom?.name]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(searchableTerm);
+        return matchesTeacher && matchesStatus && matchesTerm;
+      })
+      .sort((left, right) => left.date.localeCompare(right.date));
+    const focusedMissingSchedules =
+      lessonPlanAdminFocus === "upcoming-missing"
+        ? filteredMissingSchedules.filter((schedule) => isWithinNextDays(schedule.date, 3))
+        : filteredMissingSchedules;
+    const adminFocusTitle = {
+      uploaded: "Giáo án đã tải lên",
+      submitted: "Lịch đã có giáo án",
+      missing: "Lịch chưa có giáo án",
+      "upcoming-missing": "Sắp dạy còn thiếu giáo án",
+    }[lessonPlanAdminFocus];
+    const adminFocusSubtitle = {
+      uploaded: "Theo thời gian upload mới nhất",
+      submitted: "Các lịch đã nhận được ít nhất một file",
+      missing: "Các lịch chưa có file giáo án",
+      "upcoming-missing": "Các lịch trong 3 ngày tới chưa có giáo án",
+    }[lessonPlanAdminFocus];
 
     return (
       <Panel title="Tổng quan giáo án" action={`${lessonPlans.length} file • ${missingSchedules.length} lịch chưa có`}>
         <div className="space-y-5">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Stat icon={FileSpreadsheet} label="Giáo án đã nộp" value={lessonPlans.length} tone="blue" />
-            <Stat icon={CheckCircle2} label="Lịch đã có giáo án" value={submittedScheduleIds.size} tone="emerald" />
-            <Stat icon={Clock3} label="Lịch chưa có giáo án" value={missingSchedules.length} tone="orange" />
-            <Stat icon={Bell} label="Sắp dạy còn thiếu" value={upcomingMissingSchedules.length} tone="rose" />
+            <Stat
+              icon={FileSpreadsheet}
+              label="Giáo án đã nộp"
+              value={lessonPlans.length}
+              tone="blue"
+              active={lessonPlanAdminFocus === "uploaded"}
+              onClick={() => setLessonPlanAdminFocus("uploaded")}
+            />
+            <Stat
+              icon={CheckCircle2}
+              label="Lịch đã có giáo án"
+              value={submittedScheduleIds.size}
+              tone="emerald"
+              active={lessonPlanAdminFocus === "submitted"}
+              onClick={() => setLessonPlanAdminFocus("submitted")}
+            />
+            <Stat
+              icon={Clock3}
+              label="Lịch chưa có giáo án"
+              value={missingSchedules.length}
+              tone="orange"
+              active={lessonPlanAdminFocus === "missing"}
+              onClick={() => setLessonPlanAdminFocus("missing")}
+            />
+            <Stat
+              icon={Bell}
+              label="Sắp dạy còn thiếu"
+              value={upcomingMissingSchedules.length}
+              tone="rose"
+              active={lessonPlanAdminFocus === "upcoming-missing"}
+              onClick={() => setLessonPlanAdminFocus("upcoming-missing")}
+            />
           </div>
 
           <div className="grid gap-3 rounded-2xl border border-white/75 bg-white/85 p-4 shadow-sm md:grid-cols-2 xl:grid-cols-[1fr_1fr_auto]">
@@ -4361,40 +4451,40 @@ export function LifeSkillApp() {
           <div className="grid gap-5 xl:grid-cols-[1.35fr_0.9fr]">
             <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
               <div className="border-b border-[var(--line)] bg-gradient-to-r from-sky-50 to-cyan-50 px-4 py-3">
-                <p className="text-sm font-black text-[var(--brand-dark)]">Giáo án mới nhất</p>
-                <p className="mt-1 text-xs font-bold text-[var(--muted)]">Theo thời gian upload mới nhất</p>
+                <p className="text-sm font-black text-[var(--brand-dark)]">{adminFocusTitle}</p>
+                <p className="mt-1 text-xs font-bold text-[var(--muted)]">{adminFocusSubtitle}</p>
               </div>
               <div className="divide-y divide-[var(--line)]">
-                {filteredPlanRows.map(({ plan, schedule, meta }) => (
-                  <div key={plan.id} className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_auto]">
-                    <div className="min-w-0">
-                      <a
-                        href={plan.driveUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex max-w-full items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-sm font-black text-sky-800"
-                      >
-                        <UploadCloud size={16} />
-                        <span className="truncate">{plan.fileName}</span>
-                      </a>
-                      <p className="mt-2 text-sm font-bold text-[var(--brand-dark)]">
-                        {meta.lesson?.title || "Bài học"} • {meta.teacher?.name || "Giáo viên"}
-                      </p>
-                      <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
-                        {meta.school?.name} • Lớp {meta.classRoom?.name} • Dạy ngày {formatDate(schedule.date)}
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 lg:justify-end">
-                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-                        {formatDateTime(plan.uploadedAt)}
-                      </span>
-                      <LessonPlanActions plan={plan} />
-                    </div>
-                  </div>
-                ))}
-                {filteredPlanRows.length === 0 ? (
-                  <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Chưa có giáo án phù hợp bộ lọc.</div>
-                ) : null}
+                {lessonPlanAdminFocus === "uploaded" ? (
+                  <>
+                    {filteredPlanRows.map(({ plan, schedule, meta }) => (
+                      <LessonPlanFileRow key={plan.id} plan={plan} schedule={schedule} meta={meta} showTeacherChat />
+                    ))}
+                    {filteredPlanRows.length === 0 ? (
+                      <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Chưa có giáo án phù hợp bộ lọc.</div>
+                    ) : null}
+                  </>
+                ) : lessonPlanAdminFocus === "submitted" ? (
+                  <>
+                    {filteredSubmittedSchedules.map((schedule) => {
+                      const meta = lookupSchedule(schedule);
+                      return <LessonPlanScheduleRow key={schedule.id} schedule={schedule} meta={meta} showTeacherChat />;
+                    })}
+                    {filteredSubmittedSchedules.length === 0 ? (
+                      <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Chưa có lịch đã nộp giáo án phù hợp bộ lọc.</div>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    {focusedMissingSchedules.map((schedule) => {
+                      const meta = lookupSchedule(schedule);
+                      return <MissingLessonPlanRow key={schedule.id} schedule={schedule} meta={meta} showTeacherChat />;
+                    })}
+                    {focusedMissingSchedules.length === 0 ? (
+                      <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Không có lịch thiếu giáo án phù hợp.</div>
+                    ) : null}
+                  </>
+                )}
               </div>
             </div>
 
@@ -4417,9 +4507,16 @@ export function LifeSkillApp() {
                       </p>
                       <div className="mt-3 flex items-center justify-between gap-2">
                         <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">
-                          {formatDate(schedule.date)}
+                          {formatScheduleDateTime(schedule)}
                         </span>
-                        <LessonPlanUploadButton schedule={schedule} compact />
+                        <button
+                          type="button"
+                          onClick={() => openTeacherChat(schedule.teacherId)}
+                          className="inline-flex h-9 items-center gap-2 rounded-xl bg-white px-3 text-xs font-black text-amber-800 shadow-sm transition hover:bg-amber-100"
+                        >
+                          <MessageSquareText size={15} />
+                          Chat
+                        </button>
                       </div>
                     </div>
                   );
@@ -4445,6 +4542,9 @@ export function LifeSkillApp() {
     const pendingSchedules = scopedSchedules
       .filter((schedule) => !submittedScheduleIds.has(schedule.id))
       .sort((left, right) => left.date.localeCompare(right.date));
+    const submittedSchedules = scopedSchedules
+      .filter((schedule) => submittedScheduleIds.has(schedule.id))
+      .sort((left, right) => left.date.localeCompare(right.date));
     const myPlanRows = lessonPlans
       .filter((plan) => plan.teacherId === currentTeacherId)
       .map((plan) => {
@@ -4453,14 +4553,45 @@ export function LifeSkillApp() {
       })
       .filter((item): item is { plan: LessonPlan; schedule: Schedule; meta: ReturnType<typeof lookupSchedule> } => Boolean(item))
       .sort((left, right) => right.plan.uploadedAt.localeCompare(left.plan.uploadedAt));
+    const teacherFocusTitle = {
+      uploaded: "Giáo án mới nhất",
+      pending: "Lịch cần nộp giáo án",
+      submitted: "Lịch đã có giáo án",
+    }[lessonPlanTeacherFocus];
+    const teacherFocusSubtitle = {
+      uploaded: "Sắp xếp theo thời gian upload mới nhất",
+      pending: "Các lịch chưa có file giáo án",
+      submitted: "Các lịch đã có ít nhất một file",
+    }[lessonPlanTeacherFocus];
 
     return (
       <Panel title="Giáo án của tôi" action={`${myPlanRows.length} file • ${pendingSchedules.length} cần nộp`}>
         <div className="space-y-5">
           <div className="grid gap-4 md:grid-cols-3">
-            <Stat icon={FileSpreadsheet} label="Giáo án đã gửi" value={myPlanRows.length} tone="blue" />
-            <Stat icon={Clock3} label="Lịch cần nộp" value={pendingSchedules.length} tone="orange" />
-            <Stat icon={CheckCircle2} label="Lịch đã có giáo án" value={submittedScheduleIds.size} tone="emerald" />
+            <Stat
+              icon={FileSpreadsheet}
+              label="Giáo án đã gửi"
+              value={myPlanRows.length}
+              tone="blue"
+              active={lessonPlanTeacherFocus === "uploaded"}
+              onClick={() => setLessonPlanTeacherFocus("uploaded")}
+            />
+            <Stat
+              icon={Clock3}
+              label="Lịch cần nộp"
+              value={pendingSchedules.length}
+              tone="orange"
+              active={lessonPlanTeacherFocus === "pending"}
+              onClick={() => setLessonPlanTeacherFocus("pending")}
+            />
+            <Stat
+              icon={CheckCircle2}
+              label="Lịch đã có giáo án"
+              value={submittedScheduleIds.size}
+              tone="emerald"
+              active={lessonPlanTeacherFocus === "submitted"}
+              onClick={() => setLessonPlanTeacherFocus("submitted")}
+            />
           </div>
 
           <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4 shadow-sm">
@@ -4478,7 +4609,7 @@ export function LifeSkillApp() {
                   <div key={schedule.id} className="rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm">
                     <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
                     <p className="mt-1 text-xs font-bold text-[var(--muted)]">
-                      {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatDate(schedule.date)}
+                      {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatScheduleDateTime(schedule)}
                     </p>
                     <div className="mt-3">
                       <LessonPlanUploadButton schedule={schedule} />
@@ -4496,42 +4627,168 @@ export function LifeSkillApp() {
 
           <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
             <div className="border-b border-[var(--line)] bg-gradient-to-r from-sky-50 to-cyan-50 px-4 py-3">
-              <p className="text-sm font-black text-[var(--brand-dark)]">Giáo án mới nhất</p>
-              <p className="mt-1 text-xs font-bold text-[var(--muted)]">Sắp xếp theo thời gian upload mới nhất</p>
+              <p className="text-sm font-black text-[var(--brand-dark)]">{teacherFocusTitle}</p>
+              <p className="mt-1 text-xs font-bold text-[var(--muted)]">{teacherFocusSubtitle}</p>
             </div>
             <div className="divide-y divide-[var(--line)]">
-              {myPlanRows.map(({ plan, schedule, meta }) => (
-                <div key={plan.id} className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_auto]">
-                  <div className="min-w-0">
-                    <a
-                      href={plan.driveUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex max-w-full items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-sm font-black text-sky-800"
-                    >
-                      <UploadCloud size={16} />
-                      <span className="truncate">{plan.fileName}</span>
-                    </a>
-                    <p className="mt-2 text-sm font-bold text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
-                    <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
-                      {meta.school?.name} • Lớp {meta.classRoom?.name} • Dạy ngày {formatDate(schedule.date)}
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 lg:justify-end">
-                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-                      {formatDateTime(plan.uploadedAt)}
-                    </span>
-                    <LessonPlanActions plan={plan} />
-                  </div>
-                </div>
-              ))}
-              {myPlanRows.length === 0 ? (
-                <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Bạn chưa tải giáo án nào.</div>
-              ) : null}
+              {lessonPlanTeacherFocus === "uploaded" ? (
+                <>
+                  {myPlanRows.map(({ plan, schedule, meta }) => (
+                    <LessonPlanFileRow key={plan.id} plan={plan} schedule={schedule} meta={meta} />
+                  ))}
+                  {myPlanRows.length === 0 ? (
+                    <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Bạn chưa tải giáo án nào.</div>
+                  ) : null}
+                </>
+              ) : lessonPlanTeacherFocus === "pending" ? (
+                <>
+                  {pendingSchedules.map((schedule) => {
+                    const meta = lookupSchedule(schedule);
+                    return <MissingLessonPlanRow key={schedule.id} schedule={schedule} meta={meta} allowUpload />;
+                  })}
+                  {pendingSchedules.length === 0 ? (
+                    <div className="px-4 py-6 text-sm font-semibold text-emerald-700">Bạn không còn lịch thiếu giáo án.</div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  {submittedSchedules.map((schedule) => {
+                    const meta = lookupSchedule(schedule);
+                    return <LessonPlanScheduleRow key={schedule.id} schedule={schedule} meta={meta} />;
+                  })}
+                  {submittedSchedules.length === 0 ? (
+                    <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Chưa có lịch đã nộp giáo án.</div>
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
         </div>
       </Panel>
+    );
+  }
+
+  function LessonPlanFileRow({
+    plan,
+    schedule,
+    meta,
+    showTeacherChat = false,
+  }: {
+    plan: LessonPlan;
+    schedule: Schedule;
+    meta: ReturnType<typeof lookupSchedule>;
+    showTeacherChat?: boolean;
+  }) {
+    return (
+      <div className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_auto]">
+        <div className="min-w-0">
+          <a
+            href={plan.driveUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex max-w-full items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-sm font-black text-sky-800"
+          >
+            <UploadCloud size={16} />
+            <span className="truncate">{plan.fileName}</span>
+          </a>
+          <p className="mt-2 text-sm font-bold text-[var(--brand-dark)]">
+            {meta.lesson?.title || "Bài học"} • {meta.teacher?.name || "Giáo viên"}
+          </p>
+          <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
+            {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatScheduleDateTime(schedule)}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 lg:justify-end">
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+            {formatDateTime(plan.uploadedAt)}
+          </span>
+          {showTeacherChat ? <TeacherChatButton teacherId={plan.teacherId} /> : null}
+          <LessonPlanActions plan={plan} />
+        </div>
+      </div>
+    );
+  }
+
+  function LessonPlanScheduleRow({
+    schedule,
+    meta,
+    showTeacherChat = false,
+  }: {
+    schedule: Schedule;
+    meta: ReturnType<typeof lookupSchedule>;
+    showTeacherChat?: boolean;
+  }) {
+    return (
+      <div className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_auto]">
+        <div className="min-w-0">
+          <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
+          <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
+            {meta.teacher?.name || "Giáo viên"} • {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatScheduleDateTime(schedule)}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {meta.plans.map((plan) => (
+              <a
+                key={plan.id}
+                href={plan.driveUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex max-w-full items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-xs font-black text-sky-800"
+              >
+                <UploadCloud size={14} />
+                <span className="truncate">{plan.fileName}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-2 lg:justify-end">
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+            {meta.plans.length} file
+          </span>
+          {showTeacherChat ? <TeacherChatButton teacherId={schedule.teacherId} /> : null}
+        </div>
+      </div>
+    );
+  }
+
+  function MissingLessonPlanRow({
+    schedule,
+    meta,
+    allowUpload = false,
+    showTeacherChat = false,
+  }: {
+    schedule: Schedule;
+    meta: ReturnType<typeof lookupSchedule>;
+    allowUpload?: boolean;
+    showTeacherChat?: boolean;
+  }) {
+    return (
+      <div className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_auto]">
+        <div className="min-w-0">
+          <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
+          <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
+            {meta.teacher?.name || "Giáo viên"} • {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatScheduleDateTime(schedule)}
+          </p>
+        </div>
+        <div className="flex items-center justify-between gap-2 lg:justify-end">
+          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">Chưa có giáo án</span>
+          {allowUpload ? <LessonPlanUploadButton schedule={schedule} compact /> : null}
+          {showTeacherChat ? <TeacherChatButton teacherId={schedule.teacherId} /> : null}
+        </div>
+      </div>
+    );
+  }
+
+  function TeacherChatButton({ teacherId }: { teacherId: string }) {
+    return (
+      <button
+        type="button"
+        title="Chat với giáo viên"
+        onClick={() => openTeacherChat(teacherId)}
+        className="inline-flex h-8 items-center gap-2 rounded-lg bg-violet-50 px-3 text-xs font-black text-violet-700 transition hover:bg-violet-100"
+      >
+        <MessageSquareText size={14} />
+        Chat
+      </button>
     );
   }
 
@@ -4971,7 +5228,7 @@ export function LifeSkillApp() {
                       />
                     ) : null}
                     <div>
-                      <p className="text-sm font-black text-[var(--brand-dark)]">{formatDate(schedule.date)}</p>
+                      <p className="text-sm font-black text-[var(--brand-dark)]">{formatScheduleDateTime(schedule)}</p>
                       <p className="mt-1 inline-flex rounded-full bg-indigo-50 px-2 py-1 text-xs font-black text-indigo-700">
                         {meta.slot?.label} {meta.slot?.start}
                       </p>
@@ -5122,11 +5379,15 @@ function Stat({
   label,
   value,
   tone,
+  active = false,
+  onClick,
 }: {
   icon: React.ElementType;
   label: string;
   value: number;
   tone: "cyan" | "emerald" | "blue" | "orange" | "rose";
+  active?: boolean;
+  onClick?: () => void;
 }) {
   const toneClass = {
     cyan: "bg-cyan-50 text-[var(--brand)]",
@@ -5136,14 +5397,25 @@ function Stat({
     rose: "bg-rose-50 text-rose-700",
   }[tone];
 
-  return (
-    <div className="rounded-3xl border border-white/75 bg-white/90 p-5 shadow-[0_18px_46px_rgba(18,46,68,0.08),inset_0_1px_0_rgba(255,255,255,0.88)] backdrop-blur">
+  const className = `rounded-3xl border bg-white/90 p-5 text-left shadow-[0_18px_46px_rgba(18,46,68,0.08),inset_0_1px_0_rgba(255,255,255,0.88)] backdrop-blur transition ${
+    active ? "border-sky-300 ring-4 ring-sky-100" : "border-sky-100 hover:border-sky-200"
+  }`;
+  const content = (
+    <>
       <div className={`grid h-12 w-12 place-items-center rounded-2xl ${toneClass}`}>
         <Icon size={22} />
       </div>
       <p className="mt-5 text-3xl font-black tracking-tight text-[var(--brand-dark)]">{value}</p>
       <p className="mt-1 text-sm font-bold text-[var(--muted)]">{label}</p>
-    </div>
+    </>
+  );
+
+  return onClick ? (
+    <button type="button" onClick={onClick} className={className}>
+      {content}
+    </button>
+  ) : (
+    <div className={className}>{content}</div>
   );
 }
 
@@ -6012,10 +6284,10 @@ function normalizeComparableText(value: string) {
 }
 
 const inputClass =
-  "w-full rounded-2xl border border-white/80 bg-white/90 px-4 py-3 text-sm font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-[var(--brand)] focus:bg-white focus:ring-4 focus:ring-cyan-100";
+  "w-full rounded-2xl border border-sky-200 bg-white/90 px-4 py-3 text-sm font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100";
 
 const compactInputClass =
-  "w-full rounded-xl border border-white/80 bg-white/90 px-3 py-2 text-sm font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-[var(--brand)] focus:bg-white focus:ring-4 focus:ring-cyan-100";
+  "w-full rounded-xl border border-sky-200 bg-white/90 px-3 py-2 text-sm font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100";
 
 const primaryButtonClass =
   "ui-primary-gradient inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-black text-white transition hover:-translate-y-0.5";
