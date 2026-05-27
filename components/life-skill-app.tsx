@@ -429,6 +429,8 @@ export function LifeSkillApp() {
   const [attendanceWarningFocus, setAttendanceWarningFocus] = useState<AttendanceWarningFocus | null>(null);
   const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
   const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
+  const notificationPanelRef = useRef<HTMLDivElement | null>(null);
 
   const activeUsers = useMemo(() => appUsers.filter((user) => user.isActive !== false), [appUsers]);
   const currentUser =
@@ -749,11 +751,41 @@ export function LifeSkillApp() {
       ? draftSchedulePreview
       : draftSchedulePreview.filter((schedule) => schedule.teacherId === assignmentPreviewTeacherId);
 
-  const unreadNotifications = notifications.filter(
-    (item) => !item.read && (item.role === role || item.role === "all"),
-  ).length;
+  const roleNotifications = useMemo(
+    () =>
+      notifications
+        .filter((item) => item.role === role || item.role === "all")
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [notifications, role],
+  );
+  const unreadNotifications = roleNotifications.filter((item) => !item.read).length;
   const searchPlaceholder =
     activeTab === "teachers" ? "Tìm nhanh giáo viên theo tên, SĐT, email..." : "Tìm lịch, giáo viên, lớp...";
+
+  useEffect(() => {
+    if (!notificationPanelOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!notificationPanelRef.current?.contains(event.target as Node)) {
+        setNotificationPanelOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setNotificationPanelOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [notificationPanelOpen]);
 
   function lookupSchedule(schedule: Schedule) {
     return {
@@ -1850,6 +1882,23 @@ export function LifeSkillApp() {
     setCurrentUserId(activeUsers.find((user) => user.role === "admin")?.id ?? activeUsers[0]?.id ?? "");
   }
 
+  function markNotificationAsRead(notificationId: string) {
+    setNotifications((items) =>
+      items.map((item) => (item.id === notificationId ? { ...item, read: true } : item)),
+    );
+  }
+
+  function markAllRoleNotificationsAsRead() {
+    const readableIds = new Set(roleNotifications.filter((item) => !item.read).map((item) => item.id));
+    if (readableIds.size === 0) {
+      return;
+    }
+
+    setNotifications((items) =>
+      items.map((item) => (readableIds.has(item.id) ? { ...item, read: true } : item)),
+    );
+  }
+
   function updateBulkLessonRow(id: string, patch: Partial<LessonDraft>) {
     setBulkLessonRows((items) => items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
     setBulkLessonErrors((items) => {
@@ -2647,14 +2696,69 @@ export function LifeSkillApp() {
                     Google Login
                   </a>
                 )}
-                <button className="relative grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 text-white shadow-lg shadow-orange-500/25">
-                  <Bell size={18} />
-                  {unreadNotifications > 0 ? (
-                    <span className="ui-notification-dot absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-rose-600 px-1 text-[11px] font-black">
-                      {unreadNotifications}
-                    </span>
+                <div ref={notificationPanelRef} className="relative">
+                  <button
+                    type="button"
+                    title="Thông báo"
+                    aria-label="Mở danh sách thông báo"
+                    aria-expanded={notificationPanelOpen}
+                    onClick={() => setNotificationPanelOpen((open) => !open)}
+                    className="relative grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 text-white shadow-lg shadow-orange-500/25"
+                  >
+                    <Bell size={18} />
+                    {unreadNotifications > 0 ? (
+                      <span className="ui-notification-dot absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-rose-600 px-1 text-[11px] font-black">
+                        {unreadNotifications}
+                      </span>
+                    ) : null}
+                  </button>
+                  {notificationPanelOpen ? (
+                    <div className="absolute right-0 top-14 z-40 w-[min(92vw,420px)] rounded-2xl border border-cyan-100 bg-white/95 p-3 shadow-2xl shadow-cyan-900/15 backdrop-blur">
+                      <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                        <div>
+                          <p className="text-sm font-black text-[var(--brand-dark)]">Thông báo</p>
+                          <p className="text-xs font-semibold text-[var(--muted)]">
+                            {unreadNotifications} chưa đọc / {roleNotifications.length} tổng
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={markAllRoleNotificationsAsRead}
+                          className="rounded-lg bg-cyan-50 px-2 py-1 text-[11px] font-black text-cyan-800 transition hover:bg-cyan-100"
+                        >
+                          Đánh dấu đã đọc
+                        </button>
+                      </div>
+                      <div className="app-scrollbar max-h-96 space-y-2 overflow-y-auto pr-1">
+                        {roleNotifications.length === 0 ? (
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-4 text-center text-sm font-semibold text-slate-600">
+                            Chưa có thông báo nào.
+                          </div>
+                        ) : (
+                          roleNotifications.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => markNotificationAsRead(item.id)}
+                              className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                                item.read
+                                  ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                                  : "border-cyan-200 bg-cyan-50/80 text-[var(--brand-dark)] hover:bg-cyan-100/80"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="text-sm font-extrabold">{item.title}</p>
+                                {!item.read ? <span className="mt-0.5 h-2.5 w-2.5 rounded-full bg-rose-500" /> : null}
+                              </div>
+                              <p className="mt-1 text-xs font-semibold text-[var(--muted)]">{item.body}</p>
+                              <p className="mt-2 text-[11px] font-bold text-slate-500">{formatDateTime(item.createdAt)}</p>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
                   ) : null}
-                </button>
+                </div>
               </div>
             </div>
           </header>
@@ -3150,10 +3254,7 @@ export function LifeSkillApp() {
           </Panel>
           <Panel title="Thông báo vận hành" action={`${unreadNotifications} mới`}>
             <div className="space-y-3">
-              {notifications
-                .filter((item) => item.role === role || item.role === "all")
-                .slice(0, 5)
-                .map((item) => (
+              {roleNotifications.slice(0, 5).map((item) => (
                   <div key={item.id} className="rounded-2xl border border-[var(--line)] bg-slate-50 p-4">
                     <p className="text-sm font-extrabold text-[var(--brand-dark)]">{item.title}</p>
                     <p className="mt-1 text-sm text-[var(--muted)]">{item.body}</p>
