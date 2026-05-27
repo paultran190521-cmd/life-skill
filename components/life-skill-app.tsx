@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Clock3,
   Download,
+  ExternalLink,
   FileUp,
   FileSpreadsheet,
   History,
@@ -17,6 +18,7 @@ import {
   LayoutDashboard,
   LoaderCircle,
   Mail,
+  MessageSquare,
   Pencil,
   Phone,
   Plus,
@@ -100,6 +102,12 @@ type AppData = {
 
 type AuthSession = {
   user: User | null;
+};
+
+type UserFeedbackDraft = {
+  upgradeTarget: string;
+  menuName: string;
+  desiredFlow: string;
 };
 
 type EmailResult = {
@@ -428,6 +436,11 @@ export function LifeSkillApp() {
   });
   const [attendanceAdminFocus, setAttendanceAdminFocus] = useState<AttendanceAdminFocus | null>(null);
   const [attendanceWarningFocus, setAttendanceWarningFocus] = useState<AttendanceWarningFocus | null>(null);
+  const [feedbackDraft, setFeedbackDraft] = useState<UserFeedbackDraft>({
+    upgradeTarget: "",
+    menuName: "",
+    desiredFlow: "",
+  });
   const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
   const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
@@ -763,6 +776,13 @@ export function LifeSkillApp() {
         .filter((item) => item.role === role || item.role === "all")
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [notifications, role],
+  );
+  const feedbackNotifications = useMemo(
+    () =>
+      notifications
+        .filter((item) => item.title.startsWith("Feedback | "))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [notifications],
   );
   const unreadNotifications = roleNotifications.filter((item) => !item.read).length;
   const searchPlaceholder =
@@ -1500,6 +1520,40 @@ export function LifeSkillApp() {
       setDataStatus("connected");
       setSaveError("");
       pushToast("Đã gửi nhắc", `Đã gửi ${response.notifications.length} thông báo nhắc xác nhận.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function submitFeedback() {
+    const upgradeTarget = feedbackDraft.upgradeTarget.trim();
+    const menuName = feedbackDraft.menuName.trim();
+    const desiredFlow = feedbackDraft.desiredFlow.trim();
+    if (!upgradeTarget || !menuName || !desiredFlow) {
+      pushToast("Thiếu nội dung", "Vui lòng điền đủ 3 trường feedback trước khi gửi.", "warning");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const payload = {
+      id: createId("n"),
+      title: `Feedback | ${menuName}`,
+      body: `Cần cập nhật/nâng cấp: ${upgradeTarget}\nMenu: ${menuName}\nQuy trình mong muốn: ${desiredFlow}`,
+      role: "admin" as const,
+      createdAt: now,
+      read: false,
+    };
+
+    try {
+      const response = await saveRequest<{ notifications: Notification[] }>("Đang lưu feedback...", "/api/notifications", {
+        method: "POST",
+        body: JSON.stringify({ notifications: [payload] }),
+      });
+      setNotifications((items) => [...response.notifications, ...items]);
+      setFeedbackDraft({ upgradeTarget: "", menuName: "", desiredFlow: "" });
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã nhận feedback", "Feedback đã được lưu vào hệ thống để theo dõi nâng cấp.", "success");
     } catch (error) {
       handleSaveError(error);
     }
@@ -5470,8 +5524,106 @@ export function LifeSkillApp() {
   }
 
   function SettingsPanel() {
+    const usageGuideUrl = "/huong-dan-su-dung/";
     return (
       <div className="space-y-5">
+        <Panel title="Hướng dẫn sử dụng & Feedback" action="Dành cho admin">
+          <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+            <div className="rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-sky-50 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-cyan-100 text-cyan-800">
+                  <BookOpen size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-[var(--brand-dark)]">Hướng dẫn sử dụng trực quan</h3>
+                  <p className="mt-1 text-sm font-semibold text-[var(--muted)]">
+                    Tổng hợp tính năng của từng phân hệ và cách dùng nhanh theo tác vụ thực tế.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 rounded-xl border border-cyan-200 bg-white p-3">
+                <p className="text-xs font-black uppercase text-cyan-800">File index hướng dẫn</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--brand-dark)]">Mở tài liệu hướng dẫn đầy đủ ở tab mới</p>
+                <a
+                  href={usageGuideUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-3 py-2 text-sm font-black text-white transition hover:bg-cyan-700"
+                >
+                  <ExternalLink size={16} />
+                  Mở hướng dẫn sử dụng
+                </a>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-violet-100 text-violet-700">
+                  <MessageSquare size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-[var(--brand-dark)]">Tiếp nhận feedback nâng cấp</h3>
+                  <p className="mt-1 text-sm font-semibold text-[var(--muted)]">
+                    Ghi nhận nhanh nhu cầu cập nhật tính năng và quy trình mong muốn của người dùng.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                <input
+                  value={feedbackDraft.upgradeTarget}
+                  onChange={(event) => setFeedbackDraft((current) => ({ ...current, upgradeTarget: event.target.value }))}
+                  placeholder="Cập nhật/nâng cấp tính năng nào?"
+                  className={inputClass}
+                />
+                <input
+                  value={feedbackDraft.menuName}
+                  onChange={(event) => setFeedbackDraft((current) => ({ ...current, menuName: event.target.value }))}
+                  placeholder="Trong menu/phân hệ nào?"
+                  className={inputClass}
+                />
+                <textarea
+                  value={feedbackDraft.desiredFlow}
+                  onChange={(event) => setFeedbackDraft((current) => ({ ...current, desiredFlow: event.target.value }))}
+                  placeholder="Quy trình mong muốn (ví dụ: Bấm A ra B, bấm B ra C, rồi xác nhận)."
+                  rows={4}
+                  className={`${inputClass} resize-y`}
+                />
+                <p className="rounded-xl bg-violet-100/70 px-3 py-2 text-xs font-bold text-violet-800">
+                  Gợi ý để dễ hình dung: Bắt đầu từ màn hình nào? Cần bấm các nút gì theo thứ tự? Kết quả cuối cùng mong muốn là gì?
+                </p>
+                <button type="button" onClick={submitFeedback} disabled={isBusy} className={primaryButtonClass}>
+                  <Send size={16} />
+                  Gửi feedback
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-black text-[var(--brand-dark)]">Feedback gần đây</h3>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
+                {feedbackNotifications.length} phản hồi
+              </span>
+            </div>
+            <div className="space-y-2">
+              {feedbackNotifications.slice(0, 8).map((item) => (
+                <div key={item.id} className="rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-3">
+                  <p className="text-sm font-black text-violet-900">{item.title.replace("Feedback | ", "")}</p>
+                  <p className="mt-1 whitespace-pre-line text-xs font-semibold text-violet-800">{item.body}</p>
+                  <p className="mt-2 text-[11px] font-bold text-violet-700">{formatDateTime(item.createdAt)}</p>
+                </div>
+              ))}
+              {feedbackNotifications.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-sm font-semibold text-slate-600">
+                  Chưa có feedback nào.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </Panel>
+
         <Panel
           title="Thiết lập Trường và Lớp"
           action={`${schools.length} trường`}

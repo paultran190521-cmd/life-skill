@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hướng dẫn sử dụng - Life Skill</title>
+    <style>
+      :root {
+        --ink: #0f3554;
+        --muted: #4b6478;
+        --bg: #eef5fb;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Arial", sans-serif;
+        background: linear-gradient(160deg, #f1f8ff 0%, #ffffff 48%, #f7f5ff 100%);
+        color: var(--ink);
+      }
+
+      .wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 28px 16px 56px;
+      }
+
+      .hero {
+        border: 1px solid #cde8ff;
+        border-radius: 20px;
+        padding: 22px;
+        background: linear-gradient(135deg, #dff3ff 0%, #ffffff 50%, #efe7ff 100%);
+        box-shadow: 0 18px 36px rgba(14, 49, 84, 0.1);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 34px;
+      }
+
+      .sub {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.45;
+      }
+
+      .chip-row {
+        margin-top: 16px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .chip {
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 7px 12px;
+      }
+
+      .chip-blue {
+        background: #d9efff;
+        color: #0c5688;
+      }
+
+      .chip-green {
+        background: #d7f8ea;
+        color: #0b7c54;
+      }
+
+      .chip-violet {
+        background: #ece2ff;
+        color: #5937a8;
+      }
+
+      h2 {
+        margin: 28px 0 12px;
+        font-size: 24px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .card {
+        border-radius: 16px;
+        border: 1px solid #d7e9f8;
+        padding: 16px;
+        background: #fff;
+        box-shadow: 0 8px 18px rgba(15, 53, 84, 0.06);
+      }
+
+      .card h3 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .c1 { background: linear-gradient(140deg, #e4f4ff 0%, #ffffff 70%); border-color: #bde3ff; }
+      .c2 { background: linear-gradient(140deg, #e7fff3 0%, #ffffff 70%); border-color: #bfead4; }
+      .c3 { background: linear-gradient(140deg, #fff6e5 0%, #ffffff 70%); border-color: #f6d9a2; }
+      .c4 { background: linear-gradient(140deg, #fde9ef 0%, #ffffff 70%); border-color: #f4c2d0; }
+      .c5 { background: linear-gradient(140deg, #efeaff 0%, #ffffff 70%); border-color: #d7c9ff; }
+      .c6 { background: linear-gradient(140deg, #e6f8f7 0%, #ffffff 70%); border-color: #bfe8e4; }
+
+      .span-6 { grid-column: span 6; }
+      .span-4 { grid-column: span 4; }
+      .span-12 { grid-column: span 12; }
+
+      .flow {
+        margin-top: 12px;
+        font-size: 14px;
+        font-weight: 700;
+        color: #1c4d75;
+      }
+
+      ul {
+        margin: 8px 0 0;
+        padding-left: 18px;
+        color: #244d68;
+      }
+
+      li { margin: 4px 0; }
+
+      .feedback {
+        margin-top: 18px;
+        border: 1px dashed #c2c9ff;
+        border-radius: 14px;
+        padding: 14px;
+        background: #f7f6ff;
+      }
+
+      .footer {
+        margin-top: 22px;
+        color: #516d83;
+        font-size: 13px;
+      }
+
+      @media (max-width: 900px) {
+        .span-6,
+        .span-4 {
+          grid-column: span 12;
+        }
+
+        h1 {
+          font-size: 28px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <section class="hero">
+        <h1>Hướng dẫn sử dụng hệ thống Life Skill</h1>
+        <p class="sub">
+          Tài liệu này dành cho giáo vụ/admin để theo dõi nhanh chức năng từng phân hệ, luồng thao tác chuẩn,
+          và các điểm cần kiểm tra trước khi gửi lịch hoặc chốt điểm danh.
+        </p>
+        <div class="chip-row">
+          <span class="chip chip-blue">Phiên bản hướng dẫn: 2026.05</span>
+          <span class="chip chip-green">Áp dụng: Admin + Giáo viên</span>
+          <span class="chip chip-violet">Mục tiêu: thao tác nhanh, đúng quy trình</span>
+        </div>
+      </section>
+
+      <h2>Các phân hệ chính</h2>
+      <section class="grid">
+        <article class="card c1 span-4">
+          <h3>1) Tổng quan</h3>
+          <p>Hiển thị số liệu quan trọng theo vai trò: lịch dạy, giáo án, điểm danh, cảnh báo.</p>
+        </article>
+        <article class="card c2 span-4">
+          <h3>2) Giao lịch</h3>
+          <p>Tạo nhiều lịch cùng lúc, chọn môi trường dạy học, xem trước theo giáo viên trước khi gửi.</p>
+        </article>
+        <article class="card c3 span-4">
+          <h3>3) Lịch của tôi</h3>
+          <p>Giáo viên theo dõi lịch theo ngày/tuần/tháng, nhận lịch, kiểm tra khung giờ và trạng thái.</p>
+        </article>
+        <article class="card c4 span-4">
+          <h3>4) Giáo án</h3>
+          <p>Upload giáo án theo lịch, lọc đã gửi/chưa gửi, theo dõi tiến độ nộp cho từng tiết.</p>
+        </article>
+        <article class="card c5 span-4">
+          <h3>5) Điểm danh</h3>
+          <p>Điểm danh theo từng tiết; admin xem được danh sách trễ, thiếu điểm danh và lịch sử chi tiết.</p>
+        </article>
+        <article class="card c6 span-4">
+          <h3>6) Cấu hình</h3>
+          <p>Quản lý trường, lớp, khung giờ, cùng tài liệu hướng dẫn và khu vực nhận feedback nâng cấp.</p>
+        </article>
+      </section>
+
+      <h2>Luồng thao tác mẫu (Admin)</h2>
+      <section class="grid">
+        <article class="card span-6">
+          <h3>Luồng A: Giao lịch hàng loạt</h3>
+          <p class="flow">Bấm <strong>Giao lịch</strong> → chọn giáo viên → thêm các dòng tiết → xem trước theo giáo viên → Gửi lịch.</p>
+          <ul>
+            <li>Luôn kiểm tra ngày dạy và khung giờ trước khi gửi.</li>
+            <li>Nhớ chọn môi trường dạy học đúng KPI: Trong lớp / Ngoài sân / Nhà thi đấu / Báo cáo sân trường.</li>
+            <li>Nếu có thay đổi, dùng chuyển lịch hoặc gán giáo viên thay thế.</li>
+          </ul>
+        </article>
+        <article class="card span-6">
+          <h3>Luồng B: Theo dõi điểm danh</h3>
+          <p class="flow">Bấm <strong>Điểm danh</strong> → xem card đã/chưa/trễ → bấm card để mở danh sách chi tiết.</p>
+          <ul>
+            <li>Ưu tiên xử lý nhóm “chưa điểm danh”.</li>
+            <li>Dùng cảnh báo để phát hiện giáo viên thường trễ hoặc bỏ sót điểm danh.</li>
+            <li>Đối chiếu với lịch sử thao tác khi cần truy vết.</li>
+          </ul>
+        </article>
+      </section>
+
+      <h2>Mẫu feedback nâng cấp</h2>
+      <section class="feedback">
+        <p><strong>Mẫu đề xuất:</strong></p>
+        <ul>
+          <li>Cập nhật/nâng cấp tính năng nào?</li>
+          <li>Trong menu/phân hệ nào?</li>
+          <li>Quy trình mong muốn: ví dụ “Bấm A ra B, bấm B ra C, rồi xác nhận”.</li>
+        </ul>
+        <p class="footer">
+          Bạn có thể nhập feedback trực tiếp trong mục <strong>Cấu hình → Hướng dẫn sử dụng & Feedback</strong>.
+        </p>
+      </section>
+    </div>
+  </body>
+</html>
