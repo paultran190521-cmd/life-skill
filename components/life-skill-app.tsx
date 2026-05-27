@@ -321,6 +321,7 @@ export function LifeSkillApp() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [appUsers, setAppUsers] = useState<User[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
+  const [sessionUserId, setSessionUserId] = useState("");
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
@@ -433,12 +434,14 @@ export function LifeSkillApp() {
   const notificationPanelRef = useRef<HTMLDivElement | null>(null);
 
   const activeUsers = useMemo(() => appUsers.filter((user) => user.isActive !== false), [appUsers]);
+  const sessionUser = appUsers.find((user) => user.id === sessionUserId) ?? null;
   const currentUser =
     activeUsers.find((user) => user.id === currentUserId) ??
     activeUsers.find((user) => user.role === "admin") ??
     activeUsers[0] ??
     fallbackCurrentUser;
   const role = currentUser.role;
+  const hasAdminAccess = sessionUser?.role === "admin";
   const currentTeacherId = currentUser.teacherId ?? "";
   const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.active !== false), [teachers]);
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
@@ -504,14 +507,17 @@ export function LifeSkillApp() {
               ? items.map((item) => (item.id === sessionUser.id ? { ...item, ...sessionUser } : item))
               : [sessionUser, ...items],
           );
+          setSessionUserId(sessionUser.id);
           setCurrentUserId(sessionUser.id);
           setAuthStatus("signed-in");
         } else {
+          setSessionUserId("");
           setAuthStatus("signed-out");
         }
       } catch (error) {
         console.error(error);
         if (!cancelled) {
+          setSessionUserId("");
           setAuthStatus("signed-out");
         }
       }
@@ -1879,6 +1885,7 @@ export function LifeSkillApp() {
       console.error(error);
     }
     setAuthStatus("signed-out");
+    setSessionUserId("");
     setCurrentUserId(activeUsers.find((user) => user.role === "admin")?.id ?? activeUsers[0]?.id ?? "");
   }
 
@@ -2588,7 +2595,7 @@ export function LifeSkillApp() {
           <div className="ui-surface-lift mt-6 rounded-2xl border p-3">
             <label className="grid gap-2">
               <span className="text-xs font-black uppercase text-[var(--brand-dark)]">Tài khoản</span>
-              {role === "admin" ? (
+              {hasAdminAccess ? (
                 <select
                   value={currentUser.id}
                   onChange={(event) => setCurrentUserId(event.target.value)}
