@@ -151,6 +151,17 @@ type AttendanceWarningFocus = {
   teacherId: string;
   kind: "missing" | "late";
 };
+type TeacherOverviewFocus =
+  | "taught"
+  | "upcoming"
+  | "late"
+  | "missing-attendance"
+  | "plan-submitted"
+  | "plan-missing"
+  | "env-in-class"
+  | "env-outdoor"
+  | "env-gym"
+  | "env-schoolyard-report";
 
 type CalendarFilters = {
   status: string;
@@ -306,6 +317,7 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
 ];
 
 const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
+  { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "calendar", label: "Lịch của tôi", icon: CalendarDays },
   { id: "plans", label: "Giáo án", icon: FileUp },
   { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
@@ -346,6 +358,9 @@ export function LifeSkillApp() {
   const [lessonPlanStatusFilter, setLessonPlanStatusFilter] = useState<"all" | "uploaded" | "missing">("all");
   const [lessonPlanAdminFocus, setLessonPlanAdminFocus] = useState<LessonPlanAdminFocus>("uploaded");
   const [lessonPlanTeacherFocus, setLessonPlanTeacherFocus] = useState<LessonPlanTeacherFocus>("uploaded");
+  const [teacherOverviewDateFrom, setTeacherOverviewDateFrom] = useState("");
+  const [teacherOverviewDateTo, setTeacherOverviewDateTo] = useState("");
+  const [teacherOverviewFocus, setTeacherOverviewFocus] = useState<TeacherOverviewFocus | null>(null);
   const [assignmentPreviewTeacherId, setAssignmentPreviewTeacherId] = useState("all");
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
     teacherIds: [seedTeachers[0].id],
@@ -571,7 +586,7 @@ export function LifeSkillApp() {
   useEffect(() => {
     const allowedTabs = role === "admin" ? adminTabs : teacherTabs;
     if (!allowedTabs.some((tab) => tab.id === activeTab)) {
-      setActiveTab(role === "admin" ? "dashboard" : "calendar");
+      setActiveTab("dashboard");
     }
   }, [activeTab, role]);
 
@@ -3134,6 +3149,10 @@ export function LifeSkillApp() {
   );
 
   function Dashboard() {
+    if (role === "teacher") {
+      return TeacherOverviewPanel();
+    }
+
     const confirmed = schedules.filter((item) => item.status === "confirmed").length;
     const uploaded = lessonPlans.length;
     const attended = attendance.length;
@@ -4738,6 +4757,227 @@ export function LifeSkillApp() {
           </span>
           <LessonPlanActions plan={plan} />
         </div>
+      </div>
+    );
+  }
+
+  function TeacherOverviewPanel() {
+    const teacher = teachers.find((item) => item.id === currentTeacherId);
+    const today = currentDateKey();
+    const scopedSchedules = schedules.filter(
+      (schedule) =>
+        schedule.teacherId === currentTeacherId &&
+        schedule.status !== "cancelled" &&
+        isDateWithinRange(schedule.date, teacherOverviewDateFrom, teacherOverviewDateTo),
+    );
+    const attendanceBySchedule = new Map(
+      attendance
+        .filter((record) => record.teacherId === currentTeacherId)
+        .map((record) => [record.scheduleId, record] as const),
+    );
+    const taughtSchedules = scopedSchedules.filter(
+      (schedule) => isAttendanceTrackedSchedule(schedule) && attendanceBySchedule.has(schedule.id),
+    );
+    const upcomingSchedules = scopedSchedules.filter((schedule) => schedule.date >= today);
+    const pastTrackedSchedules = scopedSchedules.filter(
+      (schedule) => schedule.date < today && isAttendanceTrackedSchedule(schedule),
+    );
+    const lateAttendanceSchedules = taughtSchedules.filter((schedule) =>
+      isLateAttendance(schedule, attendanceBySchedule.get(schedule.id), timeSlots),
+    );
+    const missingAttendanceSchedules = pastTrackedSchedules.filter((schedule) => !attendanceBySchedule.has(schedule.id));
+    const submittedPlanScheduleIds = new Set(
+      lessonPlans.filter((plan) => plan.teacherId === currentTeacherId).map((plan) => plan.scheduleId),
+    );
+    const submittedPlanSchedules = scopedSchedules.filter((schedule) => submittedPlanScheduleIds.has(schedule.id));
+    const missingPlanSchedules = scopedSchedules.filter((schedule) => !submittedPlanScheduleIds.has(schedule.id));
+    const taughtInClassSchedules = taughtSchedules.filter(
+      (schedule) => normalizeTeachingEnvironmentValue(schedule.teachingEnvironment) === "in_class",
+    );
+    const taughtOutdoorSchedules = taughtSchedules.filter(
+      (schedule) => normalizeTeachingEnvironmentValue(schedule.teachingEnvironment) === "outdoor",
+    );
+    const taughtGymSchedules = taughtSchedules.filter(
+      (schedule) => normalizeTeachingEnvironmentValue(schedule.teachingEnvironment) === "gym",
+    );
+    const taughtSchoolyardReportSchedules = taughtSchedules.filter(
+      (schedule) => normalizeTeachingEnvironmentValue(schedule.teachingEnvironment) === "schoolyard_report",
+    );
+
+    const detailRows: Record<TeacherOverviewFocus, Schedule[]> = {
+      taught: taughtSchedules,
+      upcoming: upcomingSchedules,
+      late: lateAttendanceSchedules,
+      "missing-attendance": missingAttendanceSchedules,
+      "plan-submitted": submittedPlanSchedules,
+      "plan-missing": missingPlanSchedules,
+      "env-in-class": taughtInClassSchedules,
+      "env-outdoor": taughtOutdoorSchedules,
+      "env-gym": taughtGymSchedules,
+      "env-schoolyard-report": taughtSchoolyardReportSchedules,
+    };
+    const detailTitles: Record<TeacherOverviewFocus, string> = {
+      taught: "Các tiết đã dạy",
+      upcoming: "Các tiết sắp dạy",
+      late: "Các lần điểm danh trễ",
+      "missing-attendance": "Các lịch chưa điểm danh",
+      "plan-submitted": "Các lịch đã gửi giáo án",
+      "plan-missing": "Các lịch chưa gửi giáo án",
+      "env-in-class": "Tiết đã dạy: Trong lớp",
+      "env-outdoor": "Tiết đã dạy: Ngoài sân",
+      "env-gym": "Tiết đã dạy: Nhà thi đấu",
+      "env-schoolyard-report": "Tiết đã dạy: Báo cáo sân trường",
+    };
+    const selectedRows = teacherOverviewFocus ? detailRows[teacherOverviewFocus] : [];
+    const selectedTitle = teacherOverviewFocus ? detailTitles[teacherOverviewFocus] : "";
+    const dateRangeLabel =
+      teacherOverviewDateFrom || teacherOverviewDateTo
+        ? `${teacherOverviewDateFrom || "..."} đến ${teacherOverviewDateTo || "..."}`
+        : "Toàn thời gian";
+
+    return (
+      <div className="space-y-5">
+        <Panel title={`Tổng quan giáo viên ${teacher?.name || ""}`} action={dateRangeLabel}>
+          <div className="space-y-4">
+            <div className="grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3 md:grid-cols-[1fr_1fr_auto]">
+              <input
+                type="date"
+                value={teacherOverviewDateFrom}
+                onChange={(event) => setTeacherOverviewDateFrom(event.target.value)}
+                className={compactInputClass}
+              />
+              <input
+                type="date"
+                value={teacherOverviewDateTo}
+                onChange={(event) => setTeacherOverviewDateTo(event.target.value)}
+                className={compactInputClass}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setTeacherOverviewDateFrom("");
+                  setTeacherOverviewDateTo("");
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"
+              >
+                <SlidersHorizontal size={15} />
+                Xóa lọc thời gian
+              </button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <Stat
+                icon={CalendarDays}
+                label="Số lịch đã dạy"
+                value={taughtSchedules.length}
+                tone="cyan"
+                active={teacherOverviewFocus === "taught"}
+                onClick={() => setTeacherOverviewFocus("taught")}
+              />
+              <Stat
+                icon={Clock3}
+                label="Số lịch sắp dạy"
+                value={upcomingSchedules.length}
+                tone="blue"
+                active={teacherOverviewFocus === "upcoming"}
+                onClick={() => setTeacherOverviewFocus("upcoming")}
+              />
+              <Stat
+                icon={Clock3}
+                label="Số lần điểm danh trễ"
+                value={lateAttendanceSchedules.length}
+                tone="orange"
+                active={teacherOverviewFocus === "late"}
+                onClick={() => setTeacherOverviewFocus("late")}
+              />
+              <Stat
+                icon={Users}
+                label="Số lần không điểm danh"
+                value={missingAttendanceSchedules.length}
+                tone="rose"
+                active={teacherOverviewFocus === "missing-attendance"}
+                onClick={() => setTeacherOverviewFocus("missing-attendance")}
+              />
+              <Stat
+                icon={FileUp}
+                label="Giáo án đã gửi"
+                value={submittedPlanSchedules.length}
+                tone="emerald"
+                active={teacherOverviewFocus === "plan-submitted"}
+                onClick={() => setTeacherOverviewFocus("plan-submitted")}
+              />
+              <Stat
+                icon={FileUp}
+                label="Giáo án chưa gửi"
+                value={missingPlanSchedules.length}
+                tone="orange"
+                active={teacherOverviewFocus === "plan-missing"}
+                onClick={() => setTeacherOverviewFocus("plan-missing")}
+              />
+            </div>
+
+            <Panel title="Tổng số tiết đã dạy theo môi trường" action={`${taughtSchedules.length} tiết`}>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <Stat
+                  icon={School2}
+                  label="Trong lớp"
+                  value={taughtInClassSchedules.length}
+                  tone="cyan"
+                  active={teacherOverviewFocus === "env-in-class"}
+                  onClick={() => setTeacherOverviewFocus("env-in-class")}
+                />
+                <Stat
+                  icon={School2}
+                  label="Ngoài sân"
+                  value={taughtOutdoorSchedules.length}
+                  tone="emerald"
+                  active={teacherOverviewFocus === "env-outdoor"}
+                  onClick={() => setTeacherOverviewFocus("env-outdoor")}
+                />
+                <Stat
+                  icon={School2}
+                  label="Nhà thi đấu"
+                  value={taughtGymSchedules.length}
+                  tone="blue"
+                  active={teacherOverviewFocus === "env-gym"}
+                  onClick={() => setTeacherOverviewFocus("env-gym")}
+                />
+                <Stat
+                  icon={School2}
+                  label="Báo cáo sân trường"
+                  value={taughtSchoolyardReportSchedules.length}
+                  tone="orange"
+                  active={teacherOverviewFocus === "env-schoolyard-report"}
+                  onClick={() => setTeacherOverviewFocus("env-schoolyard-report")}
+                />
+              </div>
+            </Panel>
+          </div>
+        </Panel>
+
+        {teacherOverviewFocus ? (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4 backdrop-blur-sm">
+            <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-5xl overflow-y-auto rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-black text-[var(--brand-dark)]">{selectedTitle}</h2>
+                  <p className="mt-1 text-sm font-bold text-[var(--muted)]">
+                    {selectedRows.length} lịch • {dateRangeLabel}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  title="Đóng"
+                  onClick={() => setTeacherOverviewFocus(null)}
+                  className="grid h-10 w-10 place-items-center rounded-xl bg-slate-50 text-[var(--brand-dark)] transition hover:bg-slate-100"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <ScheduleList items={selectedRows} compact />
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -6708,6 +6948,16 @@ function buildOperationalAlerts(schedules: Schedule[], attendanceRows: Attendanc
   }
 
   return alerts;
+}
+
+function isDateWithinRange(date: string, from: string, to: string) {
+  if (from && date < from) {
+    return false;
+  }
+  if (to && date > to) {
+    return false;
+  }
+  return true;
 }
 
 function matchesCalendarFilters(schedule: Schedule, filters: CalendarFilters) {
