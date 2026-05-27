@@ -2539,17 +2539,23 @@ export function LifeSkillApp() {
           <div className="ui-surface-lift mt-6 rounded-2xl border p-3">
             <label className="grid gap-2">
               <span className="text-xs font-black uppercase text-[var(--brand-dark)]">Tài khoản</span>
-              <select
-                value={currentUser.id}
-                onChange={(event) => setCurrentUserId(event.target.value)}
-                className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-bold text-[var(--brand-dark)] outline-none"
-              >
-                {activeUsers.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name} - {user.role === "admin" ? "Quản trị" : "Giáo viên"}
-                  </option>
-                ))}
-              </select>
+              {role === "admin" ? (
+                <select
+                  value={currentUser.id}
+                  onChange={(event) => setCurrentUserId(event.target.value)}
+                  className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-bold text-[var(--brand-dark)] outline-none"
+                >
+                  {activeUsers.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name} - {user.role === "admin" ? "Quản trị" : "Giáo viên"}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="w-full rounded-xl border border-cyan-100 bg-slate-50 px-3 py-2 text-sm font-bold text-[var(--brand-dark)]">
+                  {currentUser.name} - Giáo viên
+                </div>
+              )}
             </label>
             <div className="mt-3 rounded-xl bg-gradient-to-r from-emerald-50 to-cyan-50 px-3 py-2 text-xs font-black text-[var(--brand-dark)]">
               {role === "admin" ? "Quyền quản trị" : "Quyền giáo viên"}
