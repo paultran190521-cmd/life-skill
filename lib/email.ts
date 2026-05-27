@@ -30,6 +30,8 @@ type ResendResponse = {
   error?: string;
 };
 
+const scheduleEmailTemplateVersion = "mettasoul-schedule-email-2026-05-27";
+
 export async function sendScheduleEmail(input: ScheduleEmailInput) {
   return sendScheduleDigestEmail({
     teacher: input.teacher,
@@ -87,7 +89,10 @@ async function sendViaGas({
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({
+        action: "sendScheduleEmail",
         secret,
+        requestId: createEmailRequestId(),
+        templateVersion: scheduleEmailTemplateVersion,
         to,
         subject,
         html,
@@ -170,7 +175,17 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
         <p style="margin:0 0 8px;font-size:15px">Chào ${escapeHtml(input.teacher.name || "Thầy/Cô")}, giáo vụ vừa giao lịch dạy cho ${escapeHtml(weekText)}.</p>
         <p style="margin:0 0 20px;font-size:13px;color:#667985">Mỗi dòng bên dưới là một tiết dạy cần xác nhận.</p>
 
-        <table style="width:100%;border-collapse:collapse;margin:0 0 20px;font-size:13px;border:2px solid #ff9500">
+        <!-- ${scheduleEmailTemplateVersion} -->
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 20px;font-size:13px;border:2px solid #ff9500">
+          <colgroup>
+            <col style="width:10%">
+            <col style="width:12%">
+            <col style="width:17%">
+            <col style="width:7%">
+            <col style="width:15%">
+            <col style="width:28%">
+            <col style="width:11%">
+          </colgroup>
           <thead>
             <tr>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">NGÀY</th>
@@ -190,7 +205,7 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
                 return `
                   <tr>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(formatDate(row.schedule.date))}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(slotTime || "Chưa cập nhật")}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;white-space:nowrap">${escapeHtml(slotTime || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.school?.name || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.classRoom?.name || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.lesson?.title || "Chưa cập nhật")}</td>
@@ -220,6 +235,10 @@ function buildConfirmUrl(schedule: Schedule) {
   const url = new URL(`/api/schedules/${schedule.id}/confirm`, baseUrl);
   url.searchParams.set("token", token);
   return url.toString();
+}
+
+function createEmailRequestId() {
+  return `mail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function buildConfirmAllUrl(schedules: Schedule[]) {

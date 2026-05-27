@@ -2,12 +2,15 @@ const WEBHOOK_SECRET = "ls_gas_8409e821_f67f_40f0_8a3b_64dbcc1eb42b";
 const LESSON_PLAN_FOLDER_ID = "1Tn0cqAsXjbrLlV8G2MTewMd8TL6P44tD";
 const SPREADSHEET_ID = "1wTbm61GHwmvza94UmNeptTAmhSlLEPHQaoCLC7uMni0";
 
+const APP_NAME = "HỌC VIỆN METTASOUL";
+const GAS_WEBHOOK_VERSION = "mettasoul-gas-2026-05-27";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 function doPost(e) {
-  const startedAt = new Date();
-  let payload;
-  let requestId = "n/a";
+  var startedAt = new Date();
+  var payload = null;
+  var requestId = "n/a";
+
   try {
     payload = parsePayload(e);
     requestId = asText(payload.requestId) || createRequestId();
@@ -17,47 +20,59 @@ function doPost(e) {
     }
 
     if (payload.action === "uploadLessonPlan") {
-      const result = uploadLessonPlan(payload, requestId);
+      var uploadResult = uploadLessonPlan(payload, requestId);
       logInfo("uploadLessonPlan.success", requestId, {
-        scheduleId: result.lessonPlan.scheduleId,
-        teacherId: result.lessonPlan.teacherId,
-        driveFileId: result.lessonPlan.driveFileId,
+        scheduleId: uploadResult.lessonPlan.scheduleId,
+        teacherId: uploadResult.lessonPlan.teacherId,
+        driveFileId: uploadResult.lessonPlan.driveFileId,
         latencyMs: new Date().getTime() - startedAt.getTime(),
       });
       return json({
         ok: true,
-        requestId,
+        requestId: requestId,
+        version: GAS_WEBHOOK_VERSION,
         message: "Lesson plan uploaded successfully.",
-        lessonPlan: result.lessonPlan,
+        lessonPlan: uploadResult.lessonPlan,
       });
     }
 
     if (payload.action === "deleteLessonPlan") {
-      const result = deleteLessonPlan(payload, requestId);
+      var deleteResult = deleteLessonPlan(payload, requestId);
       logInfo("deleteLessonPlan.success", requestId, {
-        lessonPlanId: result.lessonPlanId,
-        driveFileId: result.driveFileId,
+        lessonPlanId: deleteResult.lessonPlanId,
+        driveFileId: deleteResult.driveFileId,
       });
       return json({
         ok: true,
-        requestId,
+        requestId: requestId,
+        version: GAS_WEBHOOK_VERSION,
         message: "Lesson plan deleted successfully.",
-        lessonPlanId: result.lessonPlanId,
+        lessonPlanId: deleteResult.lessonPlanId,
+      });
+    }
+
+    if (payload.action === "sendScheduleEmail" || (payload.to && payload.subject && payload.html)) {
+      sendScheduleEmail(payload, requestId);
+      return json({
+        ok: true,
+        requestId: requestId,
+        version: GAS_WEBHOOK_VERSION,
+        message: "Email sent.",
       });
     }
 
     if (payload.action === "ping") {
-      return json({ ok: true, requestId, message: "HỌC VIỆN METTASOUL GAS webhook is ready." });
-    }
-
-    if (payload.to && payload.subject && payload.html) {
-      sendScheduleEmail(payload);
-      return json({ ok: true, requestId, message: "Email sent." });
+      return json({
+        ok: true,
+        requestId: requestId,
+        version: GAS_WEBHOOK_VERSION,
+        message: APP_NAME + " GAS webhook is ready.",
+      });
     }
 
     throw appError("UNKNOWN_ACTION", "Unknown action: " + payload.action);
   } catch (error) {
-    const normalized = normalizeError(error, requestId);
+    var normalized = normalizeError(error, requestId);
     logError("webhook.error", requestId, {
       code: normalized.errorCode,
       message: normalized.message,
@@ -66,7 +81,8 @@ function doPost(e) {
     });
     return json({
       ok: false,
-      requestId,
+      requestId: requestId,
+      version: GAS_WEBHOOK_VERSION,
       errorCode: normalized.errorCode,
       error: normalized.message,
     });
@@ -77,6 +93,7 @@ function parsePayload(e) {
   if (!e || !e.postData || !e.postData.contents) {
     throw appError("PAYLOAD_MISSING", "Request payload is missing.");
   }
+
   try {
     return JSON.parse(e.postData.contents);
   } catch (error) {
@@ -84,35 +101,65 @@ function parsePayload(e) {
   }
 }
 
-function sendScheduleEmail(payload) {
+function sendScheduleEmail(payload, requestId) {
+  var html = normalizeScheduleEmailHtml(asText(payload.html));
+  var subject = normalizeScheduleEmailSubject(asText(payload.subject));
+
+  if (!asText(payload.to) || !subject || !html) {
+    throw appError("EMAIL_FIELDS_MISSING", "Missing required email fields.");
+  }
+
   MailApp.sendEmail({
-    to: payload.to,
-    subject: payload.subject,
-    htmlBody: payload.html,
-    name: "HỌC VIỆN METTASOUL",
+    to: asText(payload.to),
+    subject: subject,
+    htmlBody: html,
+    name: APP_NAME,
   });
+
+  logInfo("sendScheduleEmail.success", requestId, {
+    to: asText(payload.to),
+    subject: subject,
+    templateVersion: asText(payload.templateVersion),
+  });
+}
+
+function normalizeScheduleEmailSubject(subject) {
+  return subject
+    .replace(/Life Skill/gi, APP_NAME)
+    .replace(/Mettasoul/gi, "METTASOUL")
+    .toUpperCase();
+}
+
+function normalizeScheduleEmailHtml(html) {
+  return html
+    .replace(/HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ TRỐNG\s*\|\s*HỌC VIỆN METTASOUL/gi, "HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL")
+    .replace(/HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ TRỐNG\s*\|\s*METTASOUL/gi, "HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL")
+    .replace(/KỸ TRỐNG/gi, "KỸ NĂNG SỐNG")
+    .replace(/Life Skill/gi, APP_NAME)
+    .replace(/giáo vụ vừa lịch giảng dạy/gi, "giáo vụ vừa giao lịch dạy")
+    .replace(/mở webapp/gi, "mở ứng dụng web");
 }
 
 function uploadLessonPlan(payload, requestId) {
   validateUploadPayload(payload);
 
-  const bytes = Utilities.base64Decode(payload.fileData);
-  const blob = Utilities.newBlob(
+  var bytes = Utilities.base64Decode(payload.fileData);
+  var blob = Utilities.newBlob(
     bytes,
     asText(payload.mimeType) || "application/octet-stream",
-    asText(payload.fileName),
+    asText(payload.fileName)
   );
 
-  let file;
+  var file;
   try {
     file = DriveApp.getFolderById(LESSON_PLAN_FOLDER_ID).createFile(blob);
   } catch (error) {
-    const message = String(error && error.message ? error.message : error);
+    var message = String(error && error.message ? error.message : error);
     if (message.indexOf("permission") !== -1 || message.indexOf("Permission") !== -1) {
       throw appError(
         "DRIVE_PERMISSION_DENIED",
         "Apps Script deployment does not have Drive permission. Re-authorize and deploy new version.",
-        error,
+        error
       );
     }
     if (message.indexOf("Folder") !== -1 || message.indexOf("folder") !== -1) {
@@ -121,8 +168,8 @@ function uploadLessonPlan(payload, requestId) {
     throw appError("DRIVE_UPLOAD_FAILED", "Cannot create file in Google Drive.", error);
   }
 
-  const now = new Date().toISOString();
-  const lessonPlan = {
+  var now = new Date().toISOString();
+  var lessonPlan = {
     id: createId("lp"),
     scheduleId: asText(payload.scheduleId),
     teacherId: asText(payload.teacherId),
@@ -144,9 +191,9 @@ function uploadLessonPlan(payload, requestId) {
   try {
     updateScheduleStatus(asText(payload.scheduleId), now);
   } catch (error) {
-    const message = String(error && error.message ? error.message : error);
-    if (message.indexOf("Cannot find schedule") !== -1) {
-      throw appError("SCHEDULE_NOT_FOUND", message, error);
+    var statusMessage = String(error && error.message ? error.message : error);
+    if (statusMessage.indexOf("Cannot find schedule") !== -1) {
+      throw appError("SCHEDULE_NOT_FOUND", statusMessage, error);
     }
     throw appError("SHEET_UPDATE_FAILED", "Cannot update schedule status in Google Sheets.", error);
   }
@@ -155,11 +202,11 @@ function uploadLessonPlan(payload, requestId) {
 }
 
 function validateUploadPayload(payload) {
-  const scheduleId = asText(payload.scheduleId);
-  const teacherId = asText(payload.teacherId);
-  const fileName = asText(payload.fileName);
-  const fileData = asText(payload.fileData);
-  const fileSize = Number(payload.fileSize || 0);
+  var scheduleId = asText(payload.scheduleId);
+  var teacherId = asText(payload.teacherId);
+  var fileName = asText(payload.fileName);
+  var fileData = asText(payload.fileData);
+  var fileSize = Number(payload.fileSize || 0);
 
   if (!scheduleId || !teacherId || !fileName || !fileData) {
     throw appError("UPLOAD_FIELDS_MISSING", "Missing required upload fields.");
@@ -175,33 +222,38 @@ function validateUploadPayload(payload) {
 }
 
 function appendRecord(sheetName, record) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
+  var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
   if (!sheet) {
     throw new Error("Missing sheet: " + sheetName);
   }
 
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  sheet.appendRow(
-    headers.map(function (header) {
-      return Object.prototype.hasOwnProperty.call(record, header) ? record[header] : "";
-    }),
-  );
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var row = [];
+  for (var i = 0; i < headers.length; i += 1) {
+    var header = asText(headers[i]);
+    row.push(Object.prototype.hasOwnProperty.call(record, header) ? record[header] : "");
+  }
+  sheet.appendRow(row);
 }
 
 function updateScheduleStatus(scheduleId, now) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("Schedules");
+  var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("Schedules");
   if (!sheet) {
     throw new Error("Missing sheet: Schedules");
   }
 
-  const values = sheet.getDataRange().getValues();
-  const headers = values[0];
-  const idIndex = headers.indexOf("id");
-  const statusIndex = headers.indexOf("status");
-  const updatedAtIndex = headers.indexOf("updatedAt");
+  var values = sheet.getDataRange().getValues();
+  var headers = values[0] || [];
+  var idIndex = headers.indexOf("id");
+  var statusIndex = headers.indexOf("status");
+  var updatedAtIndex = headers.indexOf("updatedAt");
+
+  if (idIndex === -1 || statusIndex === -1) {
+    throw appError("SHEET_HEADER_MISSING", "Schedules sheet must contain 'id' and 'status' columns.");
+  }
 
   for (var rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
-    if (String(values[rowIndex][idIndex]) === scheduleId) {
+    if (String(values[rowIndex][idIndex] || "") === scheduleId) {
       sheet.getRange(rowIndex + 1, statusIndex + 1).setValue("lesson_plan_uploaded");
       if (updatedAtIndex !== -1) {
         sheet.getRange(rowIndex + 1, updatedAtIndex + 1).setValue(now);
@@ -214,20 +266,20 @@ function updateScheduleStatus(scheduleId, now) {
 }
 
 function deleteLessonPlan(payload, requestId) {
-  const lessonPlanId = asText(payload.lessonPlanId);
+  var lessonPlanId = asText(payload.lessonPlanId);
   if (!lessonPlanId) {
     throw appError("DELETE_FIELDS_MISSING", "Missing lessonPlanId.");
   }
 
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("LessonPlans");
+  var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("LessonPlans");
   if (!sheet) {
     throw appError("SHEET_NOT_FOUND", "Missing sheet: LessonPlans");
   }
 
-  const values = sheet.getDataRange().getValues();
-  const headers = values[0] || [];
-  const idIndex = headers.indexOf("id");
-  const driveFileIdIndex = headers.indexOf("driveFileId");
+  var values = sheet.getDataRange().getValues();
+  var headers = values[0] || [];
+  var idIndex = headers.indexOf("id");
+  var driveFileIdIndex = headers.indexOf("driveFileId");
 
   if (idIndex === -1) {
     throw appError("SHEET_HEADER_MISSING", "LessonPlans sheet must contain 'id' column.");
@@ -291,7 +343,7 @@ function asText(value) {
 }
 
 function appError(code, message, cause) {
-  const err = new Error(message);
+  var err = new Error(message);
   err.code = code;
   if (cause) {
     err.cause = cause;
