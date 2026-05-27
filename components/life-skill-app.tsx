@@ -4843,55 +4843,57 @@ export function LifeSkillApp() {
               </button>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <Stat
-                icon={CalendarDays}
-                label="Số lịch đã dạy"
-                value={taughtSchedules.length}
-                tone="cyan"
-                active={teacherOverviewFocus === "taught"}
-                onClick={() => setTeacherOverviewFocus("taught")}
-              />
-              <Stat
-                icon={Clock3}
-                label="Số lịch sắp dạy"
-                value={upcomingSchedules.length}
-                tone="blue"
-                active={teacherOverviewFocus === "upcoming"}
-                onClick={() => setTeacherOverviewFocus("upcoming")}
-              />
-              <Stat
-                icon={Clock3}
-                label="Số lần điểm danh trễ"
-                value={lateAttendanceSchedules.length}
-                tone="orange"
-                active={teacherOverviewFocus === "late"}
-                onClick={() => setTeacherOverviewFocus("late")}
-              />
-              <Stat
-                icon={Users}
-                label="Số lần không điểm danh"
-                value={missingAttendanceSchedules.length}
-                tone="rose"
-                active={teacherOverviewFocus === "missing-attendance"}
-                onClick={() => setTeacherOverviewFocus("missing-attendance")}
-              />
-              <Stat
-                icon={FileUp}
-                label="Giáo án đã gửi"
-                value={submittedPlanSchedules.length}
-                tone="emerald"
-                active={teacherOverviewFocus === "plan-submitted"}
-                onClick={() => setTeacherOverviewFocus("plan-submitted")}
-              />
-              <Stat
-                icon={FileUp}
-                label="Giáo án chưa gửi"
-                value={missingPlanSchedules.length}
-                tone="orange"
-                active={teacherOverviewFocus === "plan-missing"}
-                onClick={() => setTeacherOverviewFocus("plan-missing")}
-              />
+            <div className="overflow-x-auto pb-1">
+              <div className="grid min-w-[1320px] grid-cols-6 gap-4">
+                <Stat
+                  icon={CalendarDays}
+                  label="Số lịch đã dạy"
+                  value={taughtSchedules.length}
+                  tone="cyan"
+                  active={teacherOverviewFocus === "taught"}
+                  onClick={() => setTeacherOverviewFocus("taught")}
+                />
+                <Stat
+                  icon={Clock3}
+                  label="Số lịch sắp dạy"
+                  value={upcomingSchedules.length}
+                  tone="blue"
+                  active={teacherOverviewFocus === "upcoming"}
+                  onClick={() => setTeacherOverviewFocus("upcoming")}
+                />
+                <Stat
+                  icon={Clock3}
+                  label="Số lần điểm danh trễ"
+                  value={lateAttendanceSchedules.length}
+                  tone="amber"
+                  active={teacherOverviewFocus === "late"}
+                  onClick={() => setTeacherOverviewFocus("late")}
+                />
+                <Stat
+                  icon={Users}
+                  label="Số lần không điểm danh"
+                  value={missingAttendanceSchedules.length}
+                  tone="rose"
+                  active={teacherOverviewFocus === "missing-attendance"}
+                  onClick={() => setTeacherOverviewFocus("missing-attendance")}
+                />
+                <Stat
+                  icon={FileUp}
+                  label="Giáo án đã gửi"
+                  value={submittedPlanSchedules.length}
+                  tone="emerald"
+                  active={teacherOverviewFocus === "plan-submitted"}
+                  onClick={() => setTeacherOverviewFocus("plan-submitted")}
+                />
+                <Stat
+                  icon={FileUp}
+                  label="Giáo án chưa gửi"
+                  value={missingPlanSchedules.length}
+                  tone="violet"
+                  active={teacherOverviewFocus === "plan-missing"}
+                  onClick={() => setTeacherOverviewFocus("plan-missing")}
+                />
+              </div>
             </div>
 
             <Panel title="Tổng số tiết đã dạy theo môi trường" action={`${taughtSchedules.length} tiết`}>
@@ -5799,28 +5801,72 @@ function Stat({
   icon: React.ElementType;
   label: string;
   value: number;
-  tone: "cyan" | "emerald" | "blue" | "orange" | "rose";
+  tone: "cyan" | "emerald" | "blue" | "orange" | "rose" | "amber" | "violet";
   active?: boolean;
   onClick?: () => void;
 }) {
-  const toneClass = {
-    cyan: "bg-cyan-50 text-[var(--brand)]",
-    emerald: "bg-emerald-50 text-emerald-700",
-    blue: "bg-blue-50 text-blue-700",
-    orange: "bg-orange-50 text-orange-700",
-    rose: "bg-rose-50 text-rose-700",
+  const toneClasses = {
+    cyan: {
+      icon: "bg-cyan-100 text-cyan-700",
+      card: "border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-cyan-100/60",
+      active: "ring-cyan-200 shadow-cyan-300/35",
+      value: "text-cyan-900",
+      label: "text-cyan-800/85",
+    },
+    emerald: {
+      icon: "bg-emerald-100 text-emerald-700",
+      card: "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-emerald-100/70",
+      active: "ring-emerald-200 shadow-emerald-300/35",
+      value: "text-emerald-900",
+      label: "text-emerald-800/85",
+    },
+    blue: {
+      icon: "bg-blue-100 text-blue-700",
+      card: "border-blue-200 bg-gradient-to-br from-blue-50 via-white to-blue-100/70",
+      active: "ring-blue-200 shadow-blue-300/35",
+      value: "text-blue-900",
+      label: "text-blue-800/85",
+    },
+    orange: {
+      icon: "bg-orange-100 text-orange-700",
+      card: "border-orange-200 bg-gradient-to-br from-orange-50 via-white to-orange-100/70",
+      active: "ring-orange-200 shadow-orange-300/35",
+      value: "text-orange-900",
+      label: "text-orange-800/85",
+    },
+    rose: {
+      icon: "bg-rose-100 text-rose-700",
+      card: "border-rose-200 bg-gradient-to-br from-rose-50 via-white to-rose-100/70",
+      active: "ring-rose-200 shadow-rose-300/35",
+      value: "text-rose-900",
+      label: "text-rose-800/85",
+    },
+    amber: {
+      icon: "bg-amber-100 text-amber-700",
+      card: "border-amber-200 bg-gradient-to-br from-amber-50 via-white to-amber-100/70",
+      active: "ring-amber-200 shadow-amber-300/35",
+      value: "text-amber-900",
+      label: "text-amber-800/85",
+    },
+    violet: {
+      icon: "bg-violet-100 text-violet-700",
+      card: "border-violet-200 bg-gradient-to-br from-violet-50 via-white to-violet-100/70",
+      active: "ring-violet-200 shadow-violet-300/35",
+      value: "text-violet-900",
+      label: "text-violet-800/85",
+    },
   }[tone];
 
-  const className = `rounded-3xl border bg-white/90 p-5 text-left shadow-[0_18px_46px_rgba(18,46,68,0.08),inset_0_1px_0_rgba(255,255,255,0.88)] backdrop-blur transition ${
-    active ? "border-sky-300 ring-4 ring-sky-100" : "border-sky-100 hover:border-sky-200"
+  const className = `rounded-3xl border p-5 text-left shadow-[0_18px_46px_rgba(18,46,68,0.08),inset_0_1px_0_rgba(255,255,255,0.88)] backdrop-blur transition ${toneClasses.card} ${
+    active ? `ring-4 ${toneClasses.active}` : "hover:-translate-y-0.5 hover:shadow-lg"
   }`;
   const content = (
     <>
-      <div className={`grid h-12 w-12 place-items-center rounded-2xl ${toneClass}`}>
+      <div className={`grid h-14 w-14 place-items-center rounded-2xl ${toneClasses.icon}`}>
         <Icon size={22} />
       </div>
-      <p className="mt-5 text-3xl font-black tracking-tight text-[var(--brand-dark)]">{value}</p>
-      <p className="mt-1 text-sm font-bold text-[var(--muted)]">{label}</p>
+      <p className={`mt-5 text-4xl font-black tracking-tight ${toneClasses.value}`}>{value}</p>
+      <p className={`mt-1 text-base font-black ${toneClasses.label}`}>{label}</p>
     </>
   );
 
