@@ -1,4 +1,4 @@
-﻿import { createScheduleConfirmationToken } from "@/lib/schedule-confirmation";
+﻿import { createScheduleConfirmationBatchToken, createScheduleConfirmationToken } from "@/lib/schedule-confirmation";
 import type { Schedule } from "@/lib/types";
 
 type ScheduleEmailInput = {
@@ -161,25 +161,25 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
   });
 
   const weekText = buildWeekLabel(input.schedules);
-
+  const confirmAllUrl = buildConfirmAllUrl(rows.map((row) => row.schedule));
   return `
     <div style="font-family:Arial,sans-serif;background:#f6fafb;padding:24px;color:#16313a">
       <div style="max-width:920px;margin:0 auto;background:#ffffff;border:1px solid #dce8eb;border-radius:16px;padding:24px">
-        <p style="margin:0 0 12px;font-size:14px;color:#1992b0;font-weight:700;text-align:center">HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG METTASOUL</p>
+        <p style="margin:0 0 12px;font-size:14px;color:#1992b0;font-weight:700;text-align:center">HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL</p>
         <h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;color:#0b6f89;text-align:center">Bạn có lịch dạy mới</h1>
         <p style="margin:0 0 8px;font-size:15px">Chào ${escapeHtml(input.teacher.name || "Thầy/Cô")}, giáo vụ vừa giao lịch dạy cho ${escapeHtml(weekText)}.</p>
         <p style="margin:0 0 20px;font-size:13px;color:#667985">Mỗi dòng bên dưới là một tiết dạy cần xác nhận.</p>
 
-        <table style="width:100%;border-collapse:collapse;margin:0 0 20px;font-size:13px">
+        <table style="width:100%;border-collapse:collapse;margin:0 0 20px;font-size:13px;border:2px solid #ff9500">
           <thead>
             <tr>
-              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:left">Ngày</th>
-              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:left">Khung giờ</th>
-              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:left">Trường</th>
-              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:left">Lớp</th>
-              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:left">Bài học</th>
-              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:left">Mục tiêu</th>
-              <th style="padding:10px;border:1px solid #edf3f5;background:#f8fcfd;text-align:center">Xác nhận</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:left">Ngày</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:left">Khung giờ</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:left">Trường</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:left">Lớp</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:left">Bài học</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:left">Mục tiêu</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">XÁC NHẬN</th>
             </tr>
           </thead>
           <tbody>
@@ -189,16 +189,16 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
                 const confirmUrl = buildConfirmUrl(row.schedule);
                 return `
                   <tr>
-                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top">${escapeHtml(formatDate(row.schedule.date))}</td>
-                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top">${escapeHtml(
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:top">${escapeHtml(formatDate(row.schedule.date))}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:top">${escapeHtml(
                       `${row.slot?.label || ""}${slotTime ? ` (${slotTime})` : ""}` || "Chưa cập nhật",
                     )}</td>
-                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top">${escapeHtml(row.school?.name || "Chưa cập nhật")}</td>
-                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top">${escapeHtml(row.classRoom?.name || "Chưa cập nhật")}</td>
-                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top">${escapeHtml(row.lesson?.title || "Chưa cập nhật")}</td>
-                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top">${formatObjectives(row.lesson?.objective || "")}</td>
-                    <td style="padding:10px;border:1px solid #edf3f5;vertical-align:top;text-align:center">
-                      <a href="${confirmUrl}" style="display:inline-block;background:#ff9500;color:#ffffff;text-decoration:none;border-radius:10px;padding:8px 12px;font-weight:700">Xác nhận</a>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:top">${escapeHtml(row.school?.name || "Chưa cập nhật")}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:top">${escapeHtml(row.classRoom?.name || "Chưa cập nhật")}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:top">${escapeHtml(row.lesson?.title || "Chưa cập nhật")}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:top">${formatObjectives(row.lesson?.objective || "")}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:top;text-align:center">
+                      <a href="${confirmUrl}" style="display:inline-block;background:#ff9500;color:#ffffff;text-decoration:none;border-radius:10px;padding:8px 12px;font-weight:700">XÁC NHẬN</a>
                     </td>
                   </tr>
                 `;
@@ -208,9 +208,9 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
         </table>
 
         <div style="text-align:center">
-          <a href="${buildCalendarUrl()}" style="display:inline-block;background:#0b6f89;color:#ffffff;text-decoration:none;border-radius:12px;padding:12px 18px;font-weight:700;text-align:center">Xác nhận lịch dạy</a>
+          <a href="${confirmAllUrl}" style="display:inline-block;background:#0b6f89;color:#ffffff;text-decoration:none;border-radius:12px;padding:12px 18px;font-weight:700;text-align:center">XÁC NHẬN TẤT CẢ (TẤT CẢ LỊCH ĐƯỢC XÁC NHẬN)</a>
         </div>
-        <p style="margin:20px 0 0;font-size:12px;color:#667985">Nếu nút không mở được, hãy đăng nhập hệ thống và xác nhận trong mục Lịch của tôi.</p>
+        <p style="margin:20px 0 0;font-size:12px;color:#667985">Nút này sẽ xác nhận toàn bộ lịch trong email và mở webapp ngay sau khi hoàn tất.</p>
       </div>
     </div>
   `;
@@ -224,14 +224,19 @@ function buildConfirmUrl(schedule: Schedule) {
   return url.toString();
 }
 
-function buildCalendarUrl() {
+function buildConfirmAllUrl(schedules: Schedule[]) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  return new URL("/", baseUrl).toString();
+  const teacherId = schedules[0]?.teacherId || "";
+  const scheduleIds = schedules.map((schedule) => schedule.id);
+  const token = createScheduleConfirmationBatchToken(scheduleIds, teacherId);
+  const url = new URL("/api/schedules/confirm-all", baseUrl);
+  url.searchParams.set("token", token);
+  return url.toString();
 }
 
 function buildScheduleWeekSubject(schedules: Schedule[]) {
   const { weekRangeText, yearText } = computeWeekRange(schedules.map((schedule) => schedule.date));
-  return `Lịch dạy tuần ${weekRangeText} năm ${yearText}`;
+  return `LỊCH DẠY TUẦN ${weekRangeText} NĂM ${yearText}`;
 }
 
 function buildWeekLabel(schedules: Schedule[]) {
@@ -309,3 +314,4 @@ function formatDate(value: string) {
     year: "numeric",
   }).format(new Date(`${value}T00:00:00`));
 }
+

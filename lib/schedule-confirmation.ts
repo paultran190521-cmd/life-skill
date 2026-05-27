@@ -6,6 +6,12 @@ type ConfirmationPayload = {
   exp: number;
 };
 
+type ConfirmationBatchPayload = {
+  scheduleIds: string[];
+  teacherId: string;
+  exp: number;
+};
+
 export function createScheduleConfirmationToken(scheduleId: string, teacherId: string) {
   const payload: ConfirmationPayload = {
     scheduleId,
@@ -32,6 +38,47 @@ export function verifyScheduleConfirmationToken(token: string | null | undefined
       return null;
     }
     return payload;
+  } catch {
+    return null;
+  }
+}
+
+export function createScheduleConfirmationBatchToken(scheduleIds: string[], teacherId: string) {
+  const payload: ConfirmationBatchPayload = {
+    scheduleIds: Array.from(new Set(scheduleIds.filter(Boolean))),
+    teacherId,
+    exp: Date.now() + 1000 * 60 * 60 * 24 * 14,
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  return `${encodedPayload}.${sign(encodedPayload)}`;
+}
+
+export function verifyScheduleConfirmationBatchToken(token: string | null | undefined) {
+  if (!token) {
+    return null;
+  }
+
+  const [encodedPayload, signature] = token.split(".");
+  if (!encodedPayload || !signature || !safeEqual(signature, sign(encodedPayload))) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as ConfirmationBatchPayload;
+    if (!payload.teacherId || !Array.isArray(payload.scheduleIds) || payload.scheduleIds.length === 0 || payload.exp < Date.now()) {
+      return null;
+    }
+
+    const scheduleIds = payload.scheduleIds.map((id) => String(id || "").trim()).filter(Boolean);
+    if (scheduleIds.length === 0) {
+      return null;
+    }
+
+    return {
+      teacherId: payload.teacherId,
+      scheduleIds: Array.from(new Set(scheduleIds)),
+      exp: payload.exp,
+    };
   } catch {
     return null;
   }
