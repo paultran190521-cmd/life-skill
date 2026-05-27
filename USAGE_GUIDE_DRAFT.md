@@ -229,3 +229,4 @@ Tài liệu này mô tả đầy đủ các phân hệ đang hoạt động củ
 - Cập nhật rule nghiệp vụ nếu thay đổi.
 - Đối chiếu lại hành vi UI/API thực tế trước khi commit.
 - Chỉ commit/push sau khi tài liệu phản ánh đúng trạng thái hệ thống.
+- Quy định bắt buộc: mỗi hạng mục hoàn tất phải commit và push ngay lên GitHub, không để dồn phiên.
