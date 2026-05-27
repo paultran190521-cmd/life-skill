@@ -4,7 +4,7 @@ import { apiError, createId } from "@/lib/api";
 import { findAuthorizedUserFromHint, findAuthorizedUserFromSession } from "@/lib/auth-users";
 import { sessionCookieName, verifySessionToken } from "@/lib/auth-session";
 import { sendScheduleDigestEmail } from "@/lib/email";
-import { appendSheetRows, ensureSheetHeaders, readSheetRows } from "@/lib/google-sheets";
+import { appendSheetRows, readSheetRows, readSheetRowsBatch } from "@/lib/google-sheets";
 import type { Notification, Schedule, TeachingEnvironment } from "@/lib/types";
 
 type ScheduleDraftItem = {
@@ -47,32 +47,12 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     const teacherIds = parseTeacherIds(body);
     const items = parseScheduleItems(body);
-    await ensureSheetHeaders("Schedules", [
-      "id",
-      "date",
-      "teacherId",
-      "schoolId",
-      "classId",
-      "lessonId",
-      "timeSlotId",
-      "teachingEnvironment",
-      "status",
-      "sentAt",
-      "confirmedAt",
-      "reassignedFrom",
-      "cancelledAt",
-      "createdBy",
-      "createdAt",
-      "updatedAt",
-    ]);
-
-    const [teachers, schools, classes, lessons, slots] = await Promise.all([
-      readSheetRows("Teachers"),
-      readSheetRows("Schools"),
-      readSheetRows("Classes"),
-      readSheetRows("Lessons"),
-      readSheetRows("TimeSlots"),
-    ]);
+    const dataRows = await readSheetRowsBatch(["Teachers", "Schools", "Classes", "Lessons", "TimeSlots"] as const);
+    const teachers = dataRows.Teachers;
+    const schools = dataRows.Schools;
+    const classes = dataRows.Classes;
+    const lessons = dataRows.Lessons;
+    const slots = dataRows.TimeSlots;
 
     const validationError = validateScheduleInput(body, teacherIds, items, {
       teachers,

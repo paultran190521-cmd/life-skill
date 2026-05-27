@@ -2,6 +2,10 @@ import { readSheetRows } from "@/lib/google-sheets";
 import { getAvatarUrl } from "@/lib/avatar";
 import type { Role, User } from "@/lib/types";
 
+const authCacheTtlMs = 30 * 1000;
+let usersCache: { expiresAt: number; value: User[] } | null = null;
+let teachersCache: { expiresAt: number; value: Array<Record<string, string>> } | null = null;
+
 export async function findAuthorizedUserByEmail(email: string) {
   const normalizedEmail = normalizeEmail(email);
   const users = await readUsers();
@@ -9,7 +13,7 @@ export async function findAuthorizedUserByEmail(email: string) {
     (user) => normalizeEmail(user.email) === normalizedEmail && user.isActive !== false,
   );
 
-  const teacherRows = await readSheetRows("Teachers");
+  const teacherRows = await readTeachers();
   const teacher = teacherRows.find(
     (row) => normalizeEmail(row.email) === normalizedEmail && parseBoolean(row.active, true),
   );
@@ -79,8 +83,12 @@ export async function findAuthorizedUserFromHint(userId?: string | null, email?:
 }
 
 async function readUsers() {
+  if (usersCache && usersCache.expiresAt > Date.now()) {
+    return usersCache.value;
+  }
+
   const rows = await readSheetRows("Users");
-  return rows.map<User>((row) => ({
+  const users = rows.map<User>((row) => ({
     id: row.id,
     name: row.name,
     email: row.email,
@@ -89,6 +97,24 @@ async function readUsers() {
     avatarUrl: row.avatarUrl || getAvatarUrl(row.email, row.name),
     isActive: parseBoolean(row.isActive, true),
   }));
+  usersCache = {
+    expiresAt: Date.now() + authCacheTtlMs,
+    value: users,
+  };
+  return users;
+}
+
+async function readTeachers() {
+  if (teachersCache && teachersCache.expiresAt > Date.now()) {
+    return teachersCache.value;
+  }
+
+  const rows = await readSheetRows("Teachers");
+  teachersCache = {
+    expiresAt: Date.now() + authCacheTtlMs,
+    value: rows,
+  };
+  return rows;
 }
 
 function normalizeEmail(email: string) {

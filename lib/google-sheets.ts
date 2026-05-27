@@ -94,21 +94,33 @@ export async function readSheetRows(sheetName: SheetName) {
     range: quoteSheetName(sheetName),
   });
 
-  const values = response.data.values || [];
-  const [headers = [], ...rows] = values;
-  const normalizedHeaders = headers.map((header) => normalizeSheetHeader(header));
+  return toRows(response.data.values || []);
+}
 
-  return rows
-    .filter((row) => row.some((cell) => String(cell || "").trim()))
-    .map((row) =>
-      normalizedHeaders.reduce<SheetRow>((record, header, index) => {
-        if (!header) {
-          return record;
-        }
-        record[header] = String(row[index] ?? "");
-        return record;
-      }, {}),
-    );
+export async function readSheetRowsBatch<T extends SheetName>(sheetNames: readonly T[]) {
+  const uniqueNames = Array.from(new Set(sheetNames)) as T[];
+  if (uniqueNames.length === 0) {
+    return {} as Record<T, SheetRow[]>;
+  }
+
+  const response = await getSheetsClient().spreadsheets.values.batchGet({
+    spreadsheetId: spreadsheetId(),
+    ranges: uniqueNames.map((sheetName) => quoteSheetName(sheetName)),
+  });
+
+  const batches = response.data.valueRanges || [];
+  const bySheet = {} as Record<T, SheetRow[]>;
+
+  for (const sheetName of uniqueNames) {
+    const rangePrefix = `${quoteSheetName(sheetName)}!`;
+    const values = batches.find((batch) => {
+      const range = String(batch.range || "");
+      return range === quoteSheetName(sheetName) || range.startsWith(rangePrefix);
+    })?.values;
+    bySheet[sheetName] = toRows(values || []);
+  }
+
+  return bySheet;
 }
 
 export async function readSheetRowById(sheetName: SheetName, id: string) {
@@ -321,6 +333,23 @@ function normalizeSheetHeader(value: unknown) {
   return String(value ?? "")
     .replace(/^\uFEFF/, "")
     .trim();
+}
+
+function toRows(values: unknown[][]): SheetRow[] {
+  const [headers = [], ...rows] = values;
+  const normalizedHeaders = headers.map((header) => normalizeSheetHeader(header));
+
+  return rows
+    .filter((row) => row.some((cell) => String(cell || "").trim()))
+    .map((row) =>
+      normalizedHeaders.reduce<SheetRow>((record, header, index) => {
+        if (!header) {
+          return record;
+        }
+        record[header] = String(row[index] ?? "");
+        return record;
+      }, {}),
+    );
 }
 
 function toUsers(rows: SheetRow[]): User[] {
