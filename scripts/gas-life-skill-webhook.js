@@ -136,8 +136,14 @@ function normalizeScheduleEmailHtml(html) {
     .replace(/HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ TRỐNG\s*\|\s*METTASOUL/gi, "HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL")
     .replace(/KỸ TRỐNG/gi, "KỸ NĂNG SỐNG")
     .replace(/Life Skill/gi, APP_NAME)
+    .replace(/Th phân cảm và trắc ẩn/gi, "Thấu cảm và trắc ẩn")
     .replace(/giáo vụ vừa lịch giảng dạy/gi, "giáo vụ vừa giao lịch dạy")
-    .replace(/mở webapp/gi, "mở ứng dụng web");
+    .replace(/mở webapp/gi, "mở ứng dụng web")
+    .replace(/>Trường</g, ">TRƯỜNG<")
+    .replace(/>học</g, ">LỚP<")
+    .replace(/>tiêu đề</gi, ">MỤC TIÊU<")
+    .replace(/>Xác định</g, ">XÁC NHẬN<")
+    .replace(/Xác định không thể/gi, "XÁC NHẬN TẤT CẢ (TẤT CẢ LỊCH ĐƯỢC XÁC NHẬN)");
 }
 
 function uploadLessonPlan(payload, requestId) {
