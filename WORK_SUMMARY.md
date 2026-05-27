@@ -1,5 +1,50 @@
 ﻿# WORK SUMMARY - HỌC VIỆN METTASOUL Scheduler
 
+## Cập Nhật Cuối Phiên 27/05/2026
+
+Trạng thái cuối phiên:
+
+- Đã tiếp tục hoàn thiện phân hệ Giao lịch, đặc biệt là luồng gửi lịch hàng loạt, xem trước lịch, email xác nhận và đọc/ghi dữ liệu Google Sheets.
+- Đã xử lý lỗi quota Google Sheets khi gửi lịch bằng cách giảm số lần đọc riêng lẻ và chuyển một phần đọc dữ liệu sang batch read.
+- Đã sửa lỗi `Trường đã chọn không tồn tại` khi bấm gửi lịch. Nguyên nhân chính là `batchGet` của Google Sheets trả range không khớp format code cũ đang so sánh, làm dữ liệu `Schools` bị đọc rỗng. Đã sửa mapping batch theo thứ tự response và bổ sung fallback theo tên sheet.
+- Đã bổ sung chuẩn hóa header Google Sheet để nhận các biến thể như `ID`, `Id`, `id`, `schoolId`, `timeSlotId`, cũng như một số header tiếng Việt như `Tiêu đề`, `Bài học`, `Tên bài học`, `Mục tiêu`.
+- Đã gia cố API tạo lịch để resolve dữ liệu theo cả ID và tên hiển thị cho trường, lớp, bài học, khung giờ.
+- Đã bổ sung luồng email xác nhận tất cả lịch trong một email bằng nút `XÁC NHẬN TẤT CẢ (TẤT CẢ LỊCH ĐƯỢC XÁC NHẬN)`.
+- Đã cập nhật format email lịch dạy: subject in hoa, bảng viền cam `#ff9500`, nút từng dòng là `XÁC NHẬN`, cột `KHUNG GIỜ` hiển thị gọn dạng giờ, các header bảng viết in hoa.
+- Đã cập nhật lại `scripts/gas-life-skill-webhook.js` để GAS có webhook chuẩn trong repo, có `requestId`, `templateVersion`, sender name `HỌC VIỆN METTASOUL`, và có lớp normalize nội dung email trước khi gửi.
+- Đã xác nhận email vẫn còn lỗi chính tả ở cuối phiên: Gmail sender đã đổi sang `HỌC VIỆN METTASOUL`, chứng tỏ GAS mới có chạy; tuy nhiên HTML email vẫn còn nội dung cũ như `KỸ TRỐNG` và câu `giáo vụ vừa lịch giảng dạy`. Cần tiếp tục kiểm tra nguồn HTML thực tế hoặc phiên bản deploy app/GAS ở phiên sau.
+- Đã rebrand giao diện/app sang `HỌC VIỆN METTASOUL` và đặt mặc định `Lịch tổng`, `Lịch của tôi` ở chế độ xem tuần.
+- Đã thêm môi trường dạy học trong phân hệ Giao lịch gồm: `Trong lớp`, `Ngoài sân`, `Nhà thi đấu`, `Báo cáo sân trường`; môi trường hiển thị dạng badge và dùng cho thống kê/KPI sau này.
+- Đã tinh gọn hiển thị khung giờ trong danh sách lịch: bỏ nhãn buổi như `tiết sáng`, chỉ hiển thị giờ để dễ đọc.
+- Đã thêm menu Tổng quan cho giáo viên, có lọc thời gian, thống kê lịch đã dạy/sắp dạy, điểm danh trễ, không điểm danh, giáo án đã gửi/chưa gửi và thống kê theo môi trường dạy học.
+- Đã chỉnh quyền xem Tổng quan giáo viên: admin được chọn/xem tài khoản khác; giáo viên chỉ xem dữ liệu của chính họ.
+- Đã nâng cấp giao diện các card tổng quan giáo viên: nằm gọn trên một hàng, mỗi card có màu phân biệt theo nội dung và font số lớn hơn.
+- Đã nâng cấp chuông thông báo để mở danh sách thông báo thay vì chỉ hiện badge.
+- Đã thêm phân hệ `Hướng dẫn sử dụng` trong `Cấu hình`, tạo trang HTML hướng dẫn trực quan tại `public/huong-dan-su-dung/index.html`.
+- Đã thêm chức năng feedback cho admin và giáo viên, mở modal nhập góp ý về tính năng/menu/quy trình mong muốn.
+- Đã mở rộng hướng dẫn sử dụng theo các phân hệ, dùng font Quicksand và tham khảo `USAGE_GUIDE_DRAFT.md`.
+- Đã bỏ phân hệ chat khỏi kế hoạch sử dụng hiện tại theo yêu cầu. Các phần chat từng làm trước đó được xem là không tiếp tục phát triển trong phiên kế tiếp, trừ khi có yêu cầu khôi phục.
+
+Các commit chính đã push trong phiên:
+
+- `18e3357` - Rebrand app to HOC VIEN METTASOUL and default calendar to week.
+- `0d8c35c` - Refine schedule email format and add confirm-all link flow.
+- `ac4d983` - Reduce Google Sheets read load on schedule creation.
+- `19aafc3` - Harden Sheets header normalization for schedule send validation.
+- `4f2e28f` - Make schedule creation resilient to id/name mismatches.
+- `a4fb708` - Fix batch Google Sheets range mapping.
+- `2c69bb7` - Polish schedule email layout and lesson header mapping.
+- `09642a4` - Harden GAS schedule email delivery.
+- `8786db7` - Add GAS email legacy content sanitizer.
+- `856124a` - Force normalize schedule email content in GAS.
+
+Việc cần ưu tiên khi bắt đầu phiên sau:
+
+- Kiểm tra triệt để nguồn HTML email thực tế trước khi GAS gửi: log `payload.templateVersion`, một đoạn đầu `payload.html`, và xác nhận app deploy đang chạy đúng commit mới.
+- Nếu vẫn còn `KỸ TRỐNG`, cần kiểm tra có template email nào khác ngoài `lib/email.ts` hoặc có Apps Script file cũ nào vẫn được deploy.
+- Xem lại dữ liệu bài học trong Google Sheet tab `Lessons` để xác nhận `title` đúng là `Thấu cảm và trắc ẩn`, không phải dữ liệu sai đã lưu trong sheet.
+- Sau khi sửa email triệt để, gửi lại một lịch test và chụp lại email để xác nhận: sender, subject, tiêu đề hệ thống, câu chào, tên bài, khung giờ, header bảng và CTA đều đúng.
+
 NgÃ y cáº­p nháº­t: 26/05/2026
 NhÃ¡nh hiá»‡n táº¡i: `main`
 
@@ -232,4 +277,5 @@ Láº§n kiá»ƒm tra gáº§n nháº¥t:
 - Káº¿t quáº£: build thÃ nh cÃ´ng.
 - Cáº­p nháº­t gáº§n nháº¥t: tá»‘i Æ°u phÃ¢n há»‡ chat Ä‘á»ƒ giáº£m read quota Google Sheets khi gá»­i tin, bá» polling tá»± Ä‘á»™ng, giá»¯ lÆ°u tin nháº¯n vÃ o Google Sheet vÃ  UI unread trong phiÃªn Ä‘ang má»Ÿ.
 - Commit phÃ¢n há»‡ giÃ¡o Ã¡n theo vai trÃ² Ä‘Ã£ push: `3695378 Split lesson plan views by role`
+
 
