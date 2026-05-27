@@ -111,16 +111,23 @@ export async function readSheetRowsBatch<T extends SheetName>(sheetNames: readon
   const batches = response.data.valueRanges || [];
   const bySheet = {} as Record<T, SheetRow[]>;
 
-  for (const sheetName of uniqueNames) {
-    const rangePrefix = `${quoteSheetName(sheetName)}!`;
-    const values = batches.find((batch) => {
-      const range = String(batch.range || "");
-      return range === quoteSheetName(sheetName) || range.startsWith(rangePrefix);
-    })?.values;
+  for (const [index, sheetName] of uniqueNames.entries()) {
+    const values = batches[index]?.values ?? findBatchValuesBySheetName(batches, sheetName);
     bySheet[sheetName] = toRows(values || []);
   }
 
   return bySheet;
+}
+
+function findBatchValuesBySheetName(
+  batches: Array<{ range?: string | null; values?: unknown[][] | null }>,
+  sheetName: SheetName,
+) {
+  const expectedNames = new Set([sheetName, quoteSheetName(sheetName)]);
+  return batches.find((batch) => {
+    const title = String(batch.range || "").split("!")[0] || "";
+    return expectedNames.has(title);
+  })?.values;
 }
 
 export async function readSheetRowById(sheetName: SheetName, id: string) {
