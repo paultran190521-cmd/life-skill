@@ -346,6 +346,10 @@ function normalizeSheetHeader(value: unknown) {
   }
 
   const normalizedKey = raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
     .toLowerCase()
     .replace(/[\s_-]+/g, "")
     .replace(/[^\p{L}\p{N}]/gu, "");
@@ -373,10 +377,18 @@ function normalizeSheetHeader(value: unknown) {
     lessonid: "lessonId",
     timeslotid: "timeSlotId",
     grade: "grade",
+    khoi: "grade",
     title: "title",
+    tieude: "title",
+    baihoc: "title",
+    tenbai: "title",
+    tenbaihoc: "title",
     objective: "objective",
+    muctieu: "objective",
     durationminutes: "durationMinutes",
+    thoiluong: "durationMinutes",
     sampleplanurl: "samplePlanUrl",
+    giaoanmau: "samplePlanUrl",
     label: "label",
     start: "start",
     end: "end",
