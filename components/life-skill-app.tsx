@@ -35,18 +35,6 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  attendance as seedAttendance,
-  classes as seedClasses,
-  lessonPlans as seedLessonPlans,
-  lessons as seedLessons,
-  notifications as seedNotifications,
-  schedules as seedSchedules,
-  schools as seedSchools,
-  teachers as seedTeachers,
-  timeSlots as seedTimeSlots,
-  users,
-} from "@/lib/sample-data";
 import { statusLabels, statusStyles } from "@/lib/status";
 import {
   allowedTimeSlotDurations,
@@ -304,6 +292,12 @@ const teachingEnvironmentOptions = [
   },
 ];
 const defaultTeachingEnvironment = teachingEnvironmentOptions[0].value;
+const fallbackCurrentUser: User = {
+  id: "",
+  name: "Chưa đăng nhập",
+  email: "",
+  role: "admin",
+};
 
 const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
@@ -325,18 +319,18 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
 
 export function LifeSkillApp() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
-  const [appUsers, setAppUsers] = useState<User[]>(users);
-  const [currentUserId, setCurrentUserId] = useState(users[0].id);
-  const [teachers, setTeachers] = useState<Teacher[]>(seedTeachers);
-  const [schools, setSchools] = useState<School[]>(seedSchools);
-  const [classes, setClasses] = useState<ClassRoom[]>(seedClasses);
-  const [lessons, setLessons] = useState<Lesson[]>(seedLessons);
-  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(seedTimeSlots);
-  const [schedules, setSchedules] = useState<Schedule[]>(seedSchedules);
-  const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>(seedLessonPlans);
-  const [attendance, setAttendance] = useState<Attendance[]>(seedAttendance);
+  const [appUsers, setAppUsers] = useState<User[]>([]);
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [classes, setClasses] = useState<ClassRoom[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
+  const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>(seedNotifications);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [dataStatus, setDataStatus] = useState<"loading" | "connected" | "offline">("loading");
   const [authStatus, setAuthStatus] = useState<"checking" | "signed-in" | "signed-out">("checking");
   const [saveError, setSaveError] = useState("");
@@ -363,31 +357,8 @@ export function LifeSkillApp() {
   const [teacherOverviewFocus, setTeacherOverviewFocus] = useState<TeacherOverviewFocus | null>(null);
   const [assignmentPreviewTeacherId, setAssignmentPreviewTeacherId] = useState("all");
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
-    teacherIds: [seedTeachers[0].id],
-    items: [
-      createDraftScheduleItem({
-        date: "2026-05-23",
-        schoolId: seedSchools[0]?.id ?? "",
-        classId: pickClassIdForSchoolGrade(
-          seedSchools[0]?.id ?? "",
-          pickDefaultGradeForSchool(seedSchools[0]?.id ?? "", seedClasses[0]?.id ?? "", seedClasses),
-          seedClasses[0]?.id ?? "",
-          seedClasses,
-        ),
-        lessonId: pickLessonIdForClass(
-          pickClassIdForSchoolGrade(
-            seedSchools[0]?.id ?? "",
-            pickDefaultGradeForSchool(seedSchools[0]?.id ?? "", seedClasses[0]?.id ?? "", seedClasses),
-            seedClasses[0]?.id ?? "",
-            seedClasses,
-          ),
-          seedLessons[0]?.id ?? "",
-          seedClasses,
-          seedLessons,
-        ),
-        timeSlotId: seedTimeSlots[0]?.id ?? "",
-      }),
-    ],
+    teacherIds: [],
+    items: [createDraftScheduleItem()],
   });
   const [teacherDraft, setTeacherDraft] = useState({
     name: "",
@@ -445,7 +416,7 @@ export function LifeSkillApp() {
     district: "",
   });
   const [classDraft, setClassDraft] = useState({
-    schoolId: seedSchools[0]?.id ?? "",
+    schoolId: "",
     name: "",
   });
   const [editingClassId, setEditingClassId] = useState("");
@@ -463,7 +434,8 @@ export function LifeSkillApp() {
   const currentUser =
     activeUsers.find((user) => user.id === currentUserId) ??
     activeUsers.find((user) => user.role === "admin") ??
-    users[0];
+    activeUsers[0] ??
+    fallbackCurrentUser;
   const role = currentUser.role;
   const currentTeacherId = currentUser.teacherId ?? "";
   const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.active !== false), [teachers]);
@@ -579,7 +551,7 @@ export function LifeSkillApp() {
 
   useEffect(() => {
     if (!activeUsers.some((user) => user.id === currentUserId)) {
-      setCurrentUserId(activeUsers[0]?.id ?? users[0].id);
+      setCurrentUserId(activeUsers[0]?.id ?? "");
     }
   }, [activeUsers, currentUserId]);
 
@@ -605,7 +577,7 @@ export function LifeSkillApp() {
           ...current,
           items: [
             createDraftScheduleItem({
-              date: current.items[0]?.date ?? "2026-05-23",
+              date: current.items[0]?.date ?? currentDateKey(),
               schoolId: defaultSchoolId,
               classId: defaultClassId,
               lessonId: pickLessonIdForGrade(defaultGrade, current.items[0]?.lessonId ?? "", activeLessons),
@@ -1875,7 +1847,7 @@ export function LifeSkillApp() {
       console.error(error);
     }
     setAuthStatus("signed-out");
-    setCurrentUserId(activeUsers.find((user) => user.role === "admin")?.id ?? users[0].id);
+    setCurrentUserId(activeUsers.find((user) => user.role === "admin")?.id ?? activeUsers[0]?.id ?? "");
   }
 
   function updateBulkLessonRow(id: string, patch: Partial<LessonDraft>) {
@@ -3208,7 +3180,7 @@ export function LifeSkillApp() {
                         items: [
                           ...current.items,
                           createDraftScheduleItem({
-                            date: current.items[0]?.date ?? "2026-05-23",
+                            date: current.items[0]?.date ?? currentDateKey(),
                             schoolId,
                             classId,
                             lessonId: pickLessonIdForGrade(grade, current.items[0]?.lessonId ?? "", activeLessons),
@@ -6591,7 +6563,7 @@ function escapeCsvCell(value: string) {
 function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftScheduleItem {
   return {
     id: seed?.id || createId("draft"),
-    date: seed?.date || "2026-05-23",
+    date: seed?.date || currentDateKey(),
     schoolId: seed?.schoolId || "",
     classId: seed?.classId || "",
     lessonId: seed?.lessonId || "",
@@ -6618,7 +6590,7 @@ function normalizeDraftScheduleItem(
   const timeSlotId = context.activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
     ? item.timeSlotId
     : context.activeTimeSlots[0]?.id ?? "";
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : "2026-05-23";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : currentDateKey();
   return {
     ...item,
     date,

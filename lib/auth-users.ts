@@ -1,6 +1,5 @@
 import { readSheetRows } from "@/lib/google-sheets";
 import { getAvatarUrl } from "@/lib/avatar";
-import { users as fallbackUsers } from "@/lib/sample-data";
 import type { Role, User } from "@/lib/types";
 
 export async function findAuthorizedUserByEmail(email: string) {
@@ -81,7 +80,7 @@ export async function findAuthorizedUserFromHint(userId?: string | null, email?:
 
 async function readUsers() {
   const rows = await readSheetRows("Users");
-  const sheetUsers = rows.map<User>((row) => ({
+  return rows.map<User>((row) => ({
     id: row.id,
     name: row.name,
     email: row.email,
@@ -90,17 +89,6 @@ async function readUsers() {
     avatarUrl: row.avatarUrl || getAvatarUrl(row.email, row.name),
     isActive: parseBoolean(row.isActive, true),
   }));
-
-  if (sheetUsers.length === 0) {
-    return fallbackUsers;
-  }
-
-  const keys = new Set(sheetUsers.flatMap((user) => [user.id, normalizeEmail(user.email)]));
-  const missingFallbackAdmins = fallbackUsers.filter(
-    (user) => user.role === "admin" && !keys.has(user.id) && !keys.has(normalizeEmail(user.email)),
-  );
-
-  return [...sheetUsers, ...missingFallbackAdmins];
 }
 
 function normalizeEmail(email: string) {
