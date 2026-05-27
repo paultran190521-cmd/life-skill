@@ -58,6 +58,7 @@ const SHEETS = [
       "classId",
       "lessonId",
       "timeSlotId",
+      "teachingEnvironment",
       "status",
       "sentAt",
       "confirmedAt",

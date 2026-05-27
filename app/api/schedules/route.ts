@@ -4,8 +4,8 @@ import { apiError, createId } from "@/lib/api";
 import { findAuthorizedUserFromHint, findAuthorizedUserFromSession } from "@/lib/auth-users";
 import { sessionCookieName, verifySessionToken } from "@/lib/auth-session";
 import { sendScheduleDigestEmail } from "@/lib/email";
-import { appendSheetRows, readSheetRows } from "@/lib/google-sheets";
-import type { Notification, Schedule } from "@/lib/types";
+import { appendSheetRows, ensureSheetHeaders, readSheetRows } from "@/lib/google-sheets";
+import type { Notification, Schedule, TeachingEnvironment } from "@/lib/types";
 
 type ScheduleDraftItem = {
   date: string;
@@ -13,6 +13,7 @@ type ScheduleDraftItem = {
   classId: string;
   lessonId: string;
   timeSlotId: string;
+  teachingEnvironment: TeachingEnvironment;
 };
 
 type EmailResult = {
@@ -46,6 +47,24 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     const teacherIds = parseTeacherIds(body);
     const items = parseScheduleItems(body);
+    await ensureSheetHeaders("Schedules", [
+      "id",
+      "date",
+      "teacherId",
+      "schoolId",
+      "classId",
+      "lessonId",
+      "timeSlotId",
+      "teachingEnvironment",
+      "status",
+      "sentAt",
+      "confirmedAt",
+      "reassignedFrom",
+      "cancelledAt",
+      "createdBy",
+      "createdAt",
+      "updatedAt",
+    ]);
 
     const [teachers, schools, classes, lessons, slots] = await Promise.all([
       readSheetRows("Teachers"),
@@ -75,6 +94,7 @@ export async function POST(request: Request) {
         classId: item.classId,
         lessonId: item.lessonId,
         timeSlotId: item.timeSlotId,
+        teachingEnvironment: item.teachingEnvironment,
         status: "sent",
         sentAt: now,
       })),
@@ -166,6 +186,7 @@ function parseScheduleItems(body: Record<string, unknown>): ScheduleDraftItem[] 
           classId: normalizeId(entry.classId),
           lessonId: normalizeId(entry.lessonId),
           timeSlotId: normalizeId(entry.timeSlotId),
+          teachingEnvironment: normalizeTeachingEnvironment(entry.teachingEnvironment),
         };
       })
       .filter((item) => item.date && item.schoolId && item.classId && item.lessonId && item.timeSlotId);
@@ -177,6 +198,7 @@ function parseScheduleItems(body: Record<string, unknown>): ScheduleDraftItem[] 
     classId: normalizeId(body.classId),
     lessonId: normalizeId(body.lessonId),
     timeSlotId: normalizeId(body.timeSlotId),
+    teachingEnvironment: normalizeTeachingEnvironment(body.teachingEnvironment),
   };
   return fallbackItem.date && fallbackItem.schoolId && fallbackItem.classId && fallbackItem.lessonId && fallbackItem.timeSlotId
     ? [fallbackItem]
@@ -257,6 +279,12 @@ function normalizeComparableText(value: unknown) {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+function normalizeTeachingEnvironment(value: unknown): TeachingEnvironment {
+  const normalized = normalizeId(value) as TeachingEnvironment;
+  const allowed: TeachingEnvironment[] = ["in_class", "outdoor", "gym", "schoolyard_report"];
+  return allowed.includes(normalized) ? normalized : "in_class";
 }
 
 function createScheduleNotifications(schedules: Schedule[], emailResults: EmailResult[], now: string): Notification[] {

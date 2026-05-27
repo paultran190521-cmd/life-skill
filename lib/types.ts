@@ -9,6 +9,12 @@ export type ScheduleStatus =
   | "cancelled"
   | "reassigned";
 
+export type TeachingEnvironment =
+  | "in_class"
+  | "outdoor"
+  | "gym"
+  | "schoolyard_report";
+
 export type User = {
   id: string;
   name: string;
@@ -68,6 +74,7 @@ export type Schedule = {
   classId: string;
   lessonId: string;
   timeSlotId: string;
+  teachingEnvironment?: TeachingEnvironment;
   status: ScheduleStatus;
   sentAt?: string;
   confirmedAt?: string;

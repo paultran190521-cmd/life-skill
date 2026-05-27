@@ -12,6 +12,7 @@ import type {
   ScheduleStatus,
   School,
   Teacher,
+  TeachingEnvironment,
   User,
 } from "@/lib/types";
 
@@ -394,6 +395,7 @@ function toSchedules(rows: SheetRow[]): Schedule[] {
     classId: row.classId,
     lessonId: row.lessonId,
     timeSlotId: row.timeSlotId,
+    teachingEnvironment: parseTeachingEnvironment(row.teachingEnvironment),
     status: (row.status || "sent") as ScheduleStatus,
     sentAt: row.sentAt || undefined,
     confirmedAt: row.confirmedAt || undefined,
@@ -445,6 +447,12 @@ function toAuditLogs(rows: SheetRow[]): AuditLog[] {
     metadata: row.metadata || undefined,
     createdAt: row.createdAt,
   }));
+}
+
+function parseTeachingEnvironment(value: string | undefined): TeachingEnvironment | undefined {
+  const normalized = String(value || "").trim() as TeachingEnvironment;
+  const allowed: TeachingEnvironment[] = ["in_class", "outdoor", "gym", "schoolyard_report"];
+  return allowed.includes(normalized) ? normalized : undefined;
 }
 
 function parseBoolean(value: string | undefined, fallback: boolean) {

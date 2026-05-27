@@ -88,6 +88,7 @@ type DraftScheduleItem = {
   classId: string;
   lessonId: string;
   timeSlotId: string;
+  teachingEnvironment: NonNullable<Schedule["teachingEnvironment"]>;
 };
 
 type DraftSchedule = {
@@ -269,6 +270,29 @@ const defaultCalendarFilters: CalendarFilters = {
   dateTo: "",
   sort: "date-asc",
 };
+const teachingEnvironmentOptions = [
+  {
+    value: "in_class" as const,
+    label: "Trong lớp",
+    chipClass: "bg-cyan-50 text-cyan-800",
+  },
+  {
+    value: "outdoor" as const,
+    label: "Ngoài sân",
+    chipClass: "bg-emerald-50 text-emerald-800",
+  },
+  {
+    value: "gym" as const,
+    label: "Nhà thi đấu",
+    chipClass: "bg-violet-50 text-violet-700",
+  },
+  {
+    value: "schoolyard_report" as const,
+    label: "Báo cáo sân trường",
+    chipClass: "bg-amber-50 text-amber-800",
+  },
+];
+const defaultTeachingEnvironment = teachingEnvironmentOptions[0].value;
 
 const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
@@ -322,6 +346,7 @@ export function LifeSkillApp() {
   const [lessonPlanStatusFilter, setLessonPlanStatusFilter] = useState<"all" | "uploaded" | "missing">("all");
   const [lessonPlanAdminFocus, setLessonPlanAdminFocus] = useState<LessonPlanAdminFocus>("uploaded");
   const [lessonPlanTeacherFocus, setLessonPlanTeacherFocus] = useState<LessonPlanTeacherFocus>("uploaded");
+  const [assignmentPreviewTeacherId, setAssignmentPreviewTeacherId] = useState("all");
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
     teacherIds: [seedTeachers[0].id],
     items: [
@@ -570,6 +595,7 @@ export function LifeSkillApp() {
               classId: defaultClassId,
               lessonId: pickLessonIdForGrade(defaultGrade, current.items[0]?.lessonId ?? "", activeLessons),
               timeSlotId: activeTimeSlots[0]?.id ?? "",
+              teachingEnvironment: current.items[0]?.teachingEnvironment ?? defaultTeachingEnvironment,
             }),
           ],
         };
@@ -584,7 +610,8 @@ export function LifeSkillApp() {
           item.schoolId !== currentItem.schoolId ||
           item.classId !== currentItem.classId ||
           item.lessonId !== currentItem.lessonId ||
-          item.timeSlotId !== currentItem.timeSlotId
+          item.timeSlotId !== currentItem.timeSlotId ||
+          item.teachingEnvironment !== currentItem.teachingEnvironment
         );
       });
       if (!changed) {
@@ -682,6 +709,15 @@ export function LifeSkillApp() {
   }, [selectedDayScheduleIds]);
 
   useEffect(() => {
+    if (assignmentPreviewTeacherId === "all") {
+      return;
+    }
+    if (!draftSchedule.teacherIds.includes(assignmentPreviewTeacherId)) {
+      setAssignmentPreviewTeacherId("all");
+    }
+  }, [assignmentPreviewTeacherId, draftSchedule.teacherIds]);
+
+  useEffect(() => {
     if (!selectedCalendarDate) {
       return;
     }
@@ -701,11 +737,30 @@ export function LifeSkillApp() {
           classId: item.classId,
           lessonId: item.lessonId,
           timeSlotId: item.timeSlotId,
+          teachingEnvironment: item.teachingEnvironment,
           status: "sent",
         })),
       ),
     [draftSchedule],
   );
+  const draftPreviewTeacherOptions = useMemo(
+    () =>
+      draftSchedule.teacherIds
+        .map((teacherId) => teachers.find((teacher) => teacher.id === teacherId))
+        .filter((teacher): teacher is Teacher => Boolean(teacher)),
+    [draftSchedule.teacherIds, teachers],
+  );
+  const draftPreviewScheduleCountByTeacher = useMemo(() => {
+    const countByTeacher = new Map<string, number>();
+    for (const schedule of draftSchedulePreview) {
+      countByTeacher.set(schedule.teacherId, (countByTeacher.get(schedule.teacherId) || 0) + 1);
+    }
+    return countByTeacher;
+  }, [draftSchedulePreview]);
+  const filteredDraftSchedulePreview =
+    assignmentPreviewTeacherId === "all"
+      ? draftSchedulePreview
+      : draftSchedulePreview.filter((schedule) => schedule.teacherId === assignmentPreviewTeacherId);
 
   const unreadNotifications = notifications.filter(
     (item) => !item.read && (item.role === role || item.role === "all"),
@@ -946,6 +1001,7 @@ export function LifeSkillApp() {
             classId: item.classId,
             lessonId: item.lessonId,
             timeSlotId: item.timeSlotId,
+            teachingEnvironment: item.teachingEnvironment,
           })),
           createdBy: currentUser.id,
         }),
@@ -3138,6 +3194,7 @@ export function LifeSkillApp() {
                             classId,
                             lessonId: pickLessonIdForGrade(grade, current.items[0]?.lessonId ?? "", activeLessons),
                             timeSlotId: current.items[0]?.timeSlotId ?? activeTimeSlots[0]?.id ?? "",
+                            teachingEnvironment: current.items[0]?.teachingEnvironment ?? defaultTeachingEnvironment,
                           }),
                         ],
                       };
@@ -3326,6 +3383,29 @@ export function LifeSkillApp() {
                             ))
                           )}
                         </select>
+                        <select
+                          value={item.teachingEnvironment}
+                          onChange={(event) =>
+                            setDraftSchedule((current) => ({
+                              ...current,
+                              items: current.items.map((currentItem) =>
+                                currentItem.id === item.id
+                                  ? {
+                                      ...currentItem,
+                                      teachingEnvironment: normalizeTeachingEnvironmentValue(event.target.value),
+                                    }
+                                  : currentItem,
+                              ),
+                            }))
+                          }
+                          className={`${inputClass} md:col-span-2`}
+                        >
+                          {teachingEnvironmentOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              Môi trường: {option.label}
+                            </option>
+                          ))}
+                        </select>
                         {rowSelectedGrade && rowLessons.length === 0 ? (
                           <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 md:col-span-2">
                             Chưa có bài học đang hoạt động cho {rowSelectedGrade}. Vui lòng vào mục Bài học để thêm hoặc bật bài phù
@@ -3375,8 +3455,30 @@ export function LifeSkillApp() {
           </div>
         </Panel>
 
-        <Panel title="Xem trước lịch sắp gửi" action={`Sẽ tạo ${draftSchedulePreview.length} lịch`}>
-          <ScheduleList items={draftSchedulePreview} compact />
+        <Panel
+          title="Xem trước lịch sắp gửi"
+          action={`Sẽ tạo ${filteredDraftSchedulePreview.length}/${draftSchedulePreview.length} lịch`}
+        >
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-3">
+              <label className="grid gap-2 text-xs font-black uppercase tracking-wide text-[var(--brand-dark)]">
+                Xem theo giáo viên
+                <select
+                  value={assignmentPreviewTeacherId}
+                  onChange={(event) => setAssignmentPreviewTeacherId(event.target.value)}
+                  className={compactInputClass}
+                >
+                  <option value="all">Tất cả giáo viên đã chọn</option>
+                  {draftPreviewTeacherOptions.map((teacher) => (
+                    <option key={teacher.id} value={teacher.id}>
+                      {teacher.name} ({draftPreviewScheduleCountByTeacher.get(teacher.id) || 0} lịch)
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <ScheduleList items={filteredDraftSchedulePreview} compact />
+          </div>
         </Panel>
       </div>
     );
@@ -5315,23 +5417,30 @@ export function LifeSkillApp() {
                       />
                     ) : null}
                     <div>
-                      <p className="text-sm font-black text-[var(--brand-dark)]">{formatScheduleDateTime(schedule)}</p>
+                      <p className="text-sm font-black text-[var(--brand-dark)]">{formatDate(schedule.date)}</p>
                       <p className="mt-1 inline-flex rounded-full bg-indigo-50 px-2 py-1 text-xs font-black text-indigo-700">
-                        {meta.slot?.label} {meta.slot?.start}
+                        {meta.slot?.label || "Khung giờ"} {formatSlotRange(meta.slot)}
                       </p>
                     </div>
                   </div>
                   <div className="min-w-0">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onOpenDetail?.(schedule);
-                      }}
-                      className="block max-w-full truncate text-left text-sm font-black text-[var(--brand-dark)] transition hover:text-[var(--brand)]"
-                    >
-                      {meta.lesson?.title}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onOpenDetail?.(schedule);
+                        }}
+                        className="block max-w-full truncate text-left text-sm font-black text-[var(--brand-dark)] transition hover:text-[var(--brand)]"
+                      >
+                        {meta.lesson?.title}
+                      </button>
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-1 text-xs font-black ${teachingEnvironmentChipClass(schedule.teachingEnvironment)}`}
+                      >
+                        {teachingEnvironmentLabel(schedule.teachingEnvironment)}
+                      </span>
+                    </div>
                     <p className="mt-2 flex flex-wrap gap-1 text-xs font-black">
                       <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">{meta.school?.name}</span>
                       <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700">Lớp {meta.classRoom?.name}</span>
@@ -6247,6 +6356,7 @@ function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftSchedu
     classId: seed?.classId || "",
     lessonId: seed?.lessonId || "",
     timeSlotId: seed?.timeSlotId || "",
+    teachingEnvironment: normalizeTeachingEnvironmentValue(seed?.teachingEnvironment),
   };
 }
 
@@ -6269,7 +6379,15 @@ function normalizeDraftScheduleItem(
     ? item.timeSlotId
     : context.activeTimeSlots[0]?.id ?? "";
   const date = /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : "2026-05-23";
-  return { ...item, date, schoolId, classId, lessonId, timeSlotId };
+  return {
+    ...item,
+    date,
+    schoolId,
+    classId,
+    lessonId,
+    timeSlotId,
+    teachingEnvironment: normalizeTeachingEnvironmentValue(item.teachingEnvironment),
+  };
 }
 
 function pickLessonIdForClass(
@@ -6679,6 +6797,21 @@ function formatSlotRange(slot: TimeSlot | undefined) {
   }
 
   return `${slot.start}-${slot.end}`;
+}
+
+function normalizeTeachingEnvironmentValue(value: unknown): NonNullable<Schedule["teachingEnvironment"]> {
+  const normalized = String(value || "").trim() as NonNullable<Schedule["teachingEnvironment"]>;
+  return teachingEnvironmentOptions.some((option) => option.value === normalized) ? normalized : defaultTeachingEnvironment;
+}
+
+function teachingEnvironmentLabel(value: Schedule["teachingEnvironment"]) {
+  const normalized = normalizeTeachingEnvironmentValue(value);
+  return teachingEnvironmentOptions.find((option) => option.value === normalized)?.label ?? "Trong lớp";
+}
+
+function teachingEnvironmentChipClass(value: Schedule["teachingEnvironment"]) {
+  const normalized = normalizeTeachingEnvironmentValue(value);
+  return teachingEnvironmentOptions.find((option) => option.value === normalized)?.chipClass ?? "bg-cyan-50 text-cyan-800";
 }
 
 function getAttendanceLateMinutes(schedule: Schedule, record: Attendance | undefined, slots: TimeSlot[]) {
