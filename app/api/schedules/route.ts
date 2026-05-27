@@ -53,8 +53,9 @@ export async function POST(request: Request) {
     const classes = dataRows.Classes;
     const lessons = dataRows.Lessons;
     const slots = dataRows.TimeSlots;
+    const normalizedItems = normalizeScheduleItems(items, { schools, classes, lessons, slots });
 
-    const validationError = validateScheduleInput(body, teacherIds, items, {
+    const validationError = validateScheduleInput(body, teacherIds, normalizedItems, {
       teachers,
       schools,
       classes,
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
     }
 
     const schedules: Schedule[] = teacherIds.flatMap((teacherId) =>
-      items.map((item) => ({
+      normalizedItems.map((item) => ({
         id: createId("sch"),
         date: item.date,
         teacherId,
@@ -185,6 +186,38 @@ function parseScheduleItems(body: Record<string, unknown>): ScheduleDraftItem[] 
     : [];
 }
 
+function normalizeScheduleItems(
+  items: ScheduleDraftItem[],
+  data: {
+    schools: Array<Record<string, string>>;
+    classes: Array<Record<string, string>>;
+    lessons: Array<Record<string, string>>;
+    slots: Array<Record<string, string>>;
+  },
+) {
+  return items.map((item) => {
+    const school = findSchool(data.schools, item.schoolId);
+    const schoolId = normalizeId(school?.id) || item.schoolId;
+
+    const classRoom = findClassRoom(data.classes, item.classId, school);
+    const classId = normalizeId(classRoom?.id) || item.classId;
+
+    const lesson = findLesson(data.lessons, item.lessonId);
+    const lessonId = normalizeId(lesson?.id) || item.lessonId;
+
+    const slot = findTimeSlot(data.slots, item.timeSlotId);
+    const timeSlotId = normalizeId(slot?.id) || item.timeSlotId;
+
+    return {
+      ...item,
+      schoolId,
+      classId,
+      lessonId,
+      timeSlotId,
+    };
+  });
+}
+
 function validateScheduleInput(
   body: Record<string, unknown>,
   teacherIds: string[],
@@ -207,23 +240,22 @@ function validateScheduleInput(
     if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
       return "Ngày dạy không hợp lệ.";
     }
-    if (!data.schools.some((row) => normalizeId(row.id) === item.schoolId)) {
+    const school = findSchool(data.schools, item.schoolId);
+    if (!school) {
       return "Trường đã chọn không tồn tại.";
     }
-    const classRoom = data.classes.find(
-      (row) => normalizeId(row.id) === item.classId && normalizeId(row.schoolId) === item.schoolId,
-    );
+    const classRoom = findClassRoom(data.classes, item.classId, school);
     if (!classRoom) {
       return "Lớp đã chọn không thuộc trường đã chọn.";
     }
-    const lesson = data.lessons.find((row) => normalizeId(row.id) === item.lessonId && isRowActive(row));
+    const lesson = findLesson(data.lessons, item.lessonId);
     if (!lesson) {
       return "Bài học đã chọn không tồn tại hoặc đang tắt.";
     }
     if (normalizeComparableText(classRoom.grade) !== normalizeComparableText(lesson.grade)) {
       return "Bài học đã chọn không đúng khối của lớp.";
     }
-    if (!data.slots.some((row) => normalizeId(row.id) === item.timeSlotId && isRowActive(row))) {
+    if (!findTimeSlot(data.slots, item.timeSlotId)) {
       return "Khung giờ đã chọn không tồn tại hoặc đang tắt.";
     }
   }
@@ -240,6 +272,66 @@ function validateScheduleInput(
 
 function normalizeId(value: unknown) {
   return String(value || "").trim();
+}
+
+function findSchool(rows: Array<Record<string, string>>, schoolIdOrName: string) {
+  const targetId = normalizeId(schoolIdOrName);
+  const targetName = normalizeComparableText(schoolIdOrName);
+  return rows.find((row) => {
+    const rowId = normalizeId(row.id);
+    const rowName = normalizeComparableText(row.name);
+    return (rowId && rowId === targetId) || (rowName && rowName === targetName);
+  });
+}
+
+function findClassRoom(
+  rows: Array<Record<string, string>>,
+  classIdOrName: string,
+  school: Record<string, string> | undefined,
+) {
+  const targetClassId = normalizeId(classIdOrName);
+  const targetClassName = normalizeComparableText(classIdOrName);
+  const schoolId = normalizeId(school?.id);
+  const schoolName = normalizeComparableText(school?.name);
+
+  return rows.find((row) => {
+    const rowClassId = normalizeId(row.id);
+    const rowClassName = normalizeComparableText(row.name);
+    const rowSchoolId = normalizeId(row.schoolId);
+    const rowSchoolName = normalizeComparableText(row.schoolId);
+    const classMatched = (rowClassId && rowClassId === targetClassId) || (rowClassName && rowClassName === targetClassName);
+    const schoolMatched =
+      !school || !schoolId
+        ? true
+        : rowSchoolId === schoolId || (schoolName && rowSchoolName === schoolName);
+    return classMatched && schoolMatched;
+  });
+}
+
+function findLesson(rows: Array<Record<string, string>>, lessonIdOrTitle: string) {
+  const targetId = normalizeId(lessonIdOrTitle);
+  const targetTitle = normalizeComparableText(lessonIdOrTitle);
+  return rows.find((row) => {
+    if (!isRowActive(row)) {
+      return false;
+    }
+    const rowId = normalizeId(row.id);
+    const rowTitle = normalizeComparableText(row.title);
+    return (rowId && rowId === targetId) || (rowTitle && rowTitle === targetTitle);
+  });
+}
+
+function findTimeSlot(rows: Array<Record<string, string>>, slotIdOrLabel: string) {
+  const targetId = normalizeId(slotIdOrLabel);
+  const targetLabel = normalizeComparableText(slotIdOrLabel);
+  return rows.find((row) => {
+    if (!isRowActive(row)) {
+      return false;
+    }
+    const rowId = normalizeId(row.id);
+    const rowLabel = normalizeComparableText(row.label);
+    return (rowId && rowId === targetId) || (rowLabel && rowLabel === targetLabel);
+  });
 }
 
 function isRowActive(row: Record<string, string>) {
