@@ -266,7 +266,7 @@ const supportedLessonPlanMimeTypes = new Set([
   "text/csv",
 ]);
 const supportedLessonPlanExtensions = [".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".txt", ".csv"];
-const calendarFilterStorageKey = "life-skill-calendar-filters-v1";
+const calendarFilterStorageKey = "hoc-vien-mettasoul-calendar-filters-v1";
 const defaultCalendarFilters: CalendarFilters = {
   status: "all",
   teacherId: "all",
@@ -325,7 +325,7 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
   { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
 ];
 
-export function LifeSkillApp() {
+export function MettasoulApp() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [appUsers, setAppUsers] = useState<User[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
@@ -347,7 +347,7 @@ export function LifeSkillApp() {
   const [searchTerm, setSearchTerm] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => currentMonthKey());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
-  const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("month");
+  const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("week");
   const [calendarFilters, setCalendarFilters] = useState<CalendarFilters>(() => loadCalendarFilters());
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
   const [selectedScheduleDetail, setSelectedScheduleDetail] = useState<Schedule | null>(null);
@@ -583,6 +583,12 @@ export function LifeSkillApp() {
       setActiveTab("dashboard");
     }
   }, [activeTab, role]);
+
+  useEffect(() => {
+    if (activeTab === "calendar") {
+      setCalendarViewMode("week");
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     setDraftSchedule((current) => {
@@ -1628,7 +1634,7 @@ export function LifeSkillApp() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "mau-giao-vien-life-skill.xlsx";
+    link.download = "mau-giao-vien-hoc-vien-mettasoul.xlsx";
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1999,7 +2005,7 @@ export function LifeSkillApp() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "mau-bai-hoc-life-skill.xlsx";
+    link.download = "mau-bai-hoc-hoc-vien-mettasoul.xlsx";
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -2359,7 +2365,7 @@ export function LifeSkillApp() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "mau-khung-gio-life-skill.xlsx";
+    link.download = "mau-khung-gio-hoc-vien-mettasoul.xlsx";
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -2655,7 +2661,7 @@ export function LifeSkillApp() {
               <GraduationCap size={24} />
             </div>
             <div>
-              <p className="text-lg font-extrabold tracking-tight text-[var(--brand-dark)]">Life Skill</p>
+              <p className="text-lg font-extrabold tracking-tight text-[var(--brand-dark)]">HỌC VIỆN METTASOUL</p>
               <p className="text-xs font-semibold uppercase text-[var(--muted)]">Lịch dạy</p>
             </div>
           </div>

@@ -47,7 +47,7 @@ function doPost(e) {
     }
 
     if (payload.action === "ping") {
-      return json({ ok: true, requestId, message: "Life Skill GAS webhook is ready." });
+      return json({ ok: true, requestId, message: "HỌC VIỆN METTASOUL GAS webhook is ready." });
     }
 
     if (payload.to && payload.subject && payload.html) {
@@ -89,7 +89,7 @@ function sendScheduleEmail(payload) {
     to: payload.to,
     subject: payload.subject,
     htmlBody: payload.html,
-    name: "Life Skill",
+    name: "HỌC VIỆN METTASOUL",
   });
 }
 

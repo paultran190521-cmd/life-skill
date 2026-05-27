@@ -126,7 +126,7 @@ let spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim();
 let spreadsheetUrl = "";
 
 if (!spreadsheetId) {
-  const title = process.env.GOOGLE_SHEETS_TITLE || "Life Skill Database";
+  const title = process.env.GOOGLE_SHEETS_TITLE || "HỌC VIỆN METTASOUL Database";
   const response = await sheetsApi.spreadsheets.create({
     requestBody: {
       properties: { title },

@@ -1,198 +1,198 @@
-# WORK SUMMARY - Life Skill Scheduler
+﻿# WORK SUMMARY - HỌC VIỆN METTASOUL Scheduler
 
-Ngày cập nhật: 26/05/2026
-Nhánh hiện tại: `main`
+NgÃ y cáº­p nháº­t: 26/05/2026
+NhÃ¡nh hiá»‡n táº¡i: `main`
 
-## 1. Tổng Quan Trạng Thái
+## 1. Tá»•ng Quan Tráº¡ng ThÃ¡i
 
-Life Skill Scheduler là web app Next.js dùng cho giáo vụ/admin quản lý lịch dạy kỹ năng sống, giao lịch cho giáo viên, theo dõi giáo án, điểm danh, thông báo vận hành và chat nội bộ.
+HỌC VIỆN METTASOUL Scheduler lÃ  web app Next.js dÃ¹ng cho giÃ¡o vá»¥/admin quáº£n lÃ½ lá»‹ch dáº¡y ká»¹ nÄƒng sá»‘ng, giao lá»‹ch cho giÃ¡o viÃªn, theo dÃµi giÃ¡o Ã¡n, Ä‘iá»ƒm danh, thÃ´ng bÃ¡o váº­n hÃ nh vÃ  chat ná»™i bá»™.
 
-Trạng thái đã hoàn tất đến hiện tại:
+Tráº¡ng thÃ¡i Ä‘Ã£ hoÃ n táº¥t Ä‘áº¿n hiá»‡n táº¡i:
 
-- Dữ liệu chính đọc/ghi qua Google Sheets.
-- Google Apps Script được dùng cho email lịch dạy và upload/xóa file giáo án trên Google Drive.
-- UI chính đã chuyển sang font `Quicksand` và tăng độ dày chữ mặc định lên một cấp để dễ đọc hơn.
-- Đã mở rộng giao diện khỏi giới hạn 2 màu thương hiệu: thêm bảng màu semantic dịu cho trạng thái, khối, toast và các điểm nhấn.
-- Đã nâng cấp hiệu ứng giao diện: nền nhiều lớp, panel có chiều sâu, sidebar/header dạng glass, CTA gradient, hover mềm và toast có animation.
-- Viền card, ô lọc và ô tìm kiếm đã được tăng màu nhấn để nổi bật hơn trên nền giao diện.
-- Đã thay `window.confirm`/`window.prompt` bằng dialog nội bộ và toast trong app.
-- Phân hệ Khung giờ đã chuyển vào `Cấu hình`, có quản trị bảng, sửa/bật/tắt/xóa mềm và import Excel chuẩn 45/90 phút.
-- Đã có quy trình bắt buộc: sau khi chốt tính năng phân hệ, cập nhật `USAGE_GUIDE_DRAFT.md`, build/test, commit và push lên `main`.
+- Dá»¯ liá»‡u chÃ­nh Ä‘á»c/ghi qua Google Sheets.
+- Google Apps Script Ä‘Æ°á»£c dÃ¹ng cho email lá»‹ch dáº¡y vÃ  upload/xÃ³a file giÃ¡o Ã¡n trÃªn Google Drive.
+- UI chÃ­nh Ä‘Ã£ chuyá»ƒn sang font `Quicksand` vÃ  tÄƒng Ä‘á»™ dÃ y chá»¯ máº·c Ä‘á»‹nh lÃªn má»™t cáº¥p Ä‘á»ƒ dá»… Ä‘á»c hÆ¡n.
+- ÄÃ£ má»Ÿ rá»™ng giao diá»‡n khá»i giá»›i háº¡n 2 mÃ u thÆ°Æ¡ng hiá»‡u: thÃªm báº£ng mÃ u semantic dá»‹u cho tráº¡ng thÃ¡i, khá»‘i, toast vÃ  cÃ¡c Ä‘iá»ƒm nháº¥n.
+- ÄÃ£ nÃ¢ng cáº¥p hiá»‡u á»©ng giao diá»‡n: ná»n nhiá»u lá»›p, panel cÃ³ chiá»u sÃ¢u, sidebar/header dáº¡ng glass, CTA gradient, hover má»m vÃ  toast cÃ³ animation.
+- Viá»n card, Ã´ lá»c vÃ  Ã´ tÃ¬m kiáº¿m Ä‘Ã£ Ä‘Æ°á»£c tÄƒng mÃ u nháº¥n Ä‘á»ƒ ná»•i báº­t hÆ¡n trÃªn ná»n giao diá»‡n.
+- ÄÃ£ thay `window.confirm`/`window.prompt` báº±ng dialog ná»™i bá»™ vÃ  toast trong app.
+- PhÃ¢n há»‡ Khung giá» Ä‘Ã£ chuyá»ƒn vÃ o `Cáº¥u hÃ¬nh`, cÃ³ quáº£n trá»‹ báº£ng, sá»­a/báº­t/táº¯t/xÃ³a má»m vÃ  import Excel chuáº©n 45/90 phÃºt.
+- ÄÃ£ cÃ³ quy trÃ¬nh báº¯t buá»™c: sau khi chá»‘t tÃ­nh nÄƒng phÃ¢n há»‡, cáº­p nháº­t `USAGE_GUIDE_DRAFT.md`, build/test, commit vÃ  push lÃªn `main`.
 
-## 2. Phân Hệ Giao Lịch
+## 2. PhÃ¢n Há»‡ Giao Lá»‹ch
 
-Đã hoàn tất:
+ÄÃ£ hoÃ n táº¥t:
 
-- Tạo lịch dạy theo lô: một lần gửi có thể tạo nhiều dòng lịch.
-- Một lần gửi có thể giao cho nhiều giáo viên.
-- Mỗi dòng lịch gồm: ngày dạy, trường, khối/lớp, khung giờ, bài học.
-- Luồng chọn mới theo thứ tự `Trường -> Khối -> Lớp -> Khung giờ -> Bài học`.
-- Khi đổi khối, danh sách lớp và bài học tự lọc theo khối tương ứng.
-- Có preview lịch sắp gửi trước khi tạo lịch chính thức.
-- Backend validate trường, lớp, khung giờ, giáo viên, bài học và quan hệ bài học đúng khối.
-- Sau khi tạo lịch, hệ thống ghi `Schedules`, tạo `ChatThreads`, tạo `Notifications` và ghi `AuditLogs`.
-- Email lịch dạy được gom theo từng giáo viên, mỗi giáo viên nhận một email tổng hợp thay vì nhiều email rời.
-- Email có tiêu đề theo tuần ISO và nội dung dạng bảng để xem nhanh nhiều lịch.
-- Mỗi dòng lịch trong email tổng hợp có nút xác nhận riêng.
-- Teacher chỉ thấy lịch của mình; admin thấy toàn bộ.
-- Backend có kiểm tra quyền cho tạo, hủy, chuyển và xác nhận lịch.
-- Chính sách hiện tại: cho phép trùng giờ, không chặn conflict.
+- Táº¡o lá»‹ch dáº¡y theo lÃ´: má»™t láº§n gá»­i cÃ³ thá»ƒ táº¡o nhiá»u dÃ²ng lá»‹ch.
+- Má»™t láº§n gá»­i cÃ³ thá»ƒ giao cho nhiá»u giÃ¡o viÃªn.
+- Má»—i dÃ²ng lá»‹ch gá»“m: ngÃ y dáº¡y, trÆ°á»ng, khá»‘i/lá»›p, khung giá», bÃ i há»c.
+- Luá»“ng chá»n má»›i theo thá»© tá»± `TrÆ°á»ng -> Khá»‘i -> Lá»›p -> Khung giá» -> BÃ i há»c`.
+- Khi Ä‘á»•i khá»‘i, danh sÃ¡ch lá»›p vÃ  bÃ i há»c tá»± lá»c theo khá»‘i tÆ°Æ¡ng á»©ng.
+- CÃ³ preview lá»‹ch sáº¯p gá»­i trÆ°á»›c khi táº¡o lá»‹ch chÃ­nh thá»©c.
+- Backend validate trÆ°á»ng, lá»›p, khung giá», giÃ¡o viÃªn, bÃ i há»c vÃ  quan há»‡ bÃ i há»c Ä‘Ãºng khá»‘i.
+- Sau khi táº¡o lá»‹ch, há»‡ thá»‘ng ghi `Schedules`, táº¡o `ChatThreads`, táº¡o `Notifications` vÃ  ghi `AuditLogs`.
+- Email lá»‹ch dáº¡y Ä‘Æ°á»£c gom theo tá»«ng giÃ¡o viÃªn, má»—i giÃ¡o viÃªn nháº­n má»™t email tá»•ng há»£p thay vÃ¬ nhiá»u email rá»i.
+- Email cÃ³ tiÃªu Ä‘á» theo tuáº§n ISO vÃ  ná»™i dung dáº¡ng báº£ng Ä‘á»ƒ xem nhanh nhiá»u lá»‹ch.
+- Má»—i dÃ²ng lá»‹ch trong email tá»•ng há»£p cÃ³ nÃºt xÃ¡c nháº­n riÃªng.
+- Teacher chá»‰ tháº¥y lá»‹ch cá»§a mÃ¬nh; admin tháº¥y toÃ n bá»™.
+- Backend cÃ³ kiá»ƒm tra quyá»n cho táº¡o, há»§y, chuyá»ƒn vÃ  xÃ¡c nháº­n lá»‹ch.
+- ChÃ­nh sÃ¡ch hiá»‡n táº¡i: cho phÃ©p trÃ¹ng giá», khÃ´ng cháº·n conflict.
 
-Các lỗi đã xử lý trong phân hệ này:
+CÃ¡c lá»—i Ä‘Ã£ xá»­ lÃ½ trong phÃ¢n há»‡ nÃ y:
 
-- Lỗi `Unauthorized` khi gửi lịch bằng tài khoản nội bộ.
-- Lỗi trường/lớp/khung giờ/giáo viên không tồn tại do dữ liệu Sheet và ID chưa đồng bộ.
-- Lỗi preview hiện lịch cũ thay vì lịch sắp gửi.
-- Lỗi danh sách giáo viên chọn bị lệch khi giáo viên đã tắt hoặc không hợp lệ.
+- Lá»—i `Unauthorized` khi gá»­i lá»‹ch báº±ng tÃ i khoáº£n ná»™i bá»™.
+- Lá»—i trÆ°á»ng/lá»›p/khung giá»/giÃ¡o viÃªn khÃ´ng tá»“n táº¡i do dá»¯ liá»‡u Sheet vÃ  ID chÆ°a Ä‘á»“ng bá»™.
+- Lá»—i preview hiá»‡n lá»‹ch cÅ© thay vÃ¬ lá»‹ch sáº¯p gá»­i.
+- Lá»—i danh sÃ¡ch giÃ¡o viÃªn chá»n bá»‹ lá»‡ch khi giÃ¡o viÃªn Ä‘Ã£ táº¯t hoáº·c khÃ´ng há»£p lá»‡.
 
-## 3. Phân Hệ Giáo Viên
+## 3. PhÃ¢n Há»‡ GiÃ¡o ViÃªn
 
-Đã hoàn tất:
+ÄÃ£ hoÃ n táº¥t:
 
-- Thêm giáo viên đơn lẻ với họ tên, email, số điện thoại, chuyên môn và quyền.
-- Tự động tạo tài khoản `Users` liên kết với bản ghi `Teachers`.
-- Đổi phân quyền giáo viên/admin trực tiếp trên danh sách.
-- Sửa thông tin giáo viên ngay trên từng dòng.
-- Bật/tắt trạng thái hoạt động của giáo viên.
-- Xóa giáo viên, có kiểm tra ràng buộc lịch dạy liên quan.
-- Tìm giáo viên nhanh trên thanh tìm kiếm; gõ từ khóa sẽ lọc tức thời theo tên, email, số điện thoại hoặc chuyên môn.
-- Danh sách giáo viên hiển thị dạng bảng ngang như Excel với các cột chính.
-- Nút `Thêm giáo viên` mở modal riêng.
-- Hỗ trợ tải mẫu Excel và import hàng loạt giáo viên từ `.xlsx`, `.csv`, `.tsv`.
-- Import có validate bắt buộc họ tên/email, chuẩn hóa quyền, chặn email trùng trong file và bỏ qua email đã tồn tại.
+- ThÃªm giÃ¡o viÃªn Ä‘Æ¡n láº» vá»›i há» tÃªn, email, sá»‘ Ä‘iá»‡n thoáº¡i, chuyÃªn mÃ´n vÃ  quyá»n.
+- Tá»± Ä‘á»™ng táº¡o tÃ i khoáº£n `Users` liÃªn káº¿t vá»›i báº£n ghi `Teachers`.
+- Äá»•i phÃ¢n quyá»n giÃ¡o viÃªn/admin trá»±c tiáº¿p trÃªn danh sÃ¡ch.
+- Sá»­a thÃ´ng tin giÃ¡o viÃªn ngay trÃªn tá»«ng dÃ²ng.
+- Báº­t/táº¯t tráº¡ng thÃ¡i hoáº¡t Ä‘á»™ng cá»§a giÃ¡o viÃªn.
+- XÃ³a giÃ¡o viÃªn, cÃ³ kiá»ƒm tra rÃ ng buá»™c lá»‹ch dáº¡y liÃªn quan.
+- TÃ¬m giÃ¡o viÃªn nhanh trÃªn thanh tÃ¬m kiáº¿m; gÃµ tá»« khÃ³a sáº½ lá»c tá»©c thá»i theo tÃªn, email, sá»‘ Ä‘iá»‡n thoáº¡i hoáº·c chuyÃªn mÃ´n.
+- Danh sÃ¡ch giÃ¡o viÃªn hiá»ƒn thá»‹ dáº¡ng báº£ng ngang nhÆ° Excel vá»›i cÃ¡c cá»™t chÃ­nh.
+- NÃºt `ThÃªm giÃ¡o viÃªn` má»Ÿ modal riÃªng.
+- Há»— trá»£ táº£i máº«u Excel vÃ  import hÃ ng loáº¡t giÃ¡o viÃªn tá»« `.xlsx`, `.csv`, `.tsv`.
+- Import cÃ³ validate báº¯t buá»™c há» tÃªn/email, chuáº©n hÃ³a quyá»n, cháº·n email trÃ¹ng trong file vÃ  bá» qua email Ä‘Ã£ tá»“n táº¡i.
 
-Ý nghĩa bật/tắt giáo viên:
+Ã nghÄ©a báº­t/táº¯t giÃ¡o viÃªn:
 
-- `Bật`: giáo viên đang hoạt động và có thể được chọn để giao lịch mới.
-- `Tắt`: giáo viên tạm ngưng, không mất dữ liệu lịch sử, không được chọn khi giao lịch mới.
-- Khi tắt giáo viên, tài khoản `Users` liên kết cũng chuyển sang trạng thái không hoạt động.
+- `Báº­t`: giÃ¡o viÃªn Ä‘ang hoáº¡t Ä‘á»™ng vÃ  cÃ³ thá»ƒ Ä‘Æ°á»£c chá»n Ä‘á»ƒ giao lá»‹ch má»›i.
+- `Táº¯t`: giÃ¡o viÃªn táº¡m ngÆ°ng, khÃ´ng máº¥t dá»¯ liá»‡u lá»‹ch sá»­, khÃ´ng Ä‘Æ°á»£c chá»n khi giao lá»‹ch má»›i.
+- Khi táº¯t giÃ¡o viÃªn, tÃ i khoáº£n `Users` liÃªn káº¿t cÅ©ng chuyá»ƒn sang tráº¡ng thÃ¡i khÃ´ng hoáº¡t Ä‘á»™ng.
 
-## 4. Phân Hệ Lịch Tổng
+## 4. PhÃ¢n Há»‡ Lá»‹ch Tá»•ng
 
-Đã hoàn tất:
+ÄÃ£ hoÃ n táº¥t:
 
-- Hiển thị lịch tổng dạng lưới tháng, chia thành các ô theo ngày.
-- Ngày hiện tại luôn được làm nổi bật.
-- Có chế độ xem `Tháng`, `Tuần`, `Ngày`.
-- Ô ngày trong chế độ tháng chỉ hiện nhãn số lượng lịch và tên giáo viên, không hiện tên chuyên đề để giữ giao diện gọn.
-- Ngày không có lịch không hiện chữ `Trống`.
-- Khi bấm vào ô ngày, màn hình tự cuộn xuống vùng chi tiết bên dưới.
-- Vùng chi tiết hiện danh sách lịch trong ngày theo dạng dòng lịch hiện tại.
-- Bấm vào bất kỳ điểm nào trên dòng lịch chi tiết sẽ mở modal chi tiết giữa màn hình.
-- Modal chi tiết lịch hiện đầy đủ: ngày dạy, giáo viên, số điện thoại, trường, lớp, trạng thái, khung giờ, giáo án và mục tiêu bài học.
-- Mục tiêu bài học trong modal được tách dòng thành từng mục để dễ đọc.
-- Giao diện lịch dùng màu nhấn theo ngữ nghĩa: trạng thái, điểm danh, khung giờ, trường, lớp.
-- Có bộ lọc nâng cao theo trạng thái, giáo viên, trường, lớp, khung giờ và khoảng ngày.
-- Có sắp xếp theo ngày tăng dần, ngày giảm dần hoặc trạng thái.
-- Bộ lọc lịch được ghi nhớ trên trình duyệt.
-- Có thống kê nhanh tổng lịch, lịch chờ xác nhận, đã nhận, đã điểm danh và đã hủy.
-- Có cảnh báo vận hành: lịch sắp dạy chưa xác nhận, lịch quá ngày chưa điểm danh, giáo viên có nhiều lịch hủy.
-- Bấm vào thẻ cảnh báo vận hành sẽ mở modal liệt kê từng lịch liên quan với: ngày dạy, giáo viên, lớp, trường, tên chuyên đề.
-- Trong modal cảnh báo, bấm vào một dòng lịch sẽ mở tiếp modal chi tiết đầy đủ của lịch đó.
-- Có thao tác hàng loạt trong chi tiết ngày: chọn nhiều lịch để hủy, chuyển giáo viên hoặc gửi nhắc xác nhận.
-- Có lịch sử thao tác trên từng lịch, đọc từ `AuditLogs`.
-- Admin có thể hủy lịch hoặc chuyển lịch ngay trong danh sách chi tiết.
-- Giáo viên chỉ thấy lịch của mình và có thể xác nhận lịch trong danh sách chi tiết.
+- Hiá»ƒn thá»‹ lá»‹ch tá»•ng dáº¡ng lÆ°á»›i thÃ¡ng, chia thÃ nh cÃ¡c Ã´ theo ngÃ y.
+- NgÃ y hiá»‡n táº¡i luÃ´n Ä‘Æ°á»£c lÃ m ná»•i báº­t.
+- CÃ³ cháº¿ Ä‘á»™ xem `ThÃ¡ng`, `Tuáº§n`, `NgÃ y`.
+- Ã” ngÃ y trong cháº¿ Ä‘á»™ thÃ¡ng chá»‰ hiá»‡n nhÃ£n sá»‘ lÆ°á»£ng lá»‹ch vÃ  tÃªn giÃ¡o viÃªn, khÃ´ng hiá»‡n tÃªn chuyÃªn Ä‘á» Ä‘á»ƒ giá»¯ giao diá»‡n gá»n.
+- NgÃ y khÃ´ng cÃ³ lá»‹ch khÃ´ng hiá»‡n chá»¯ `Trá»‘ng`.
+- Khi báº¥m vÃ o Ã´ ngÃ y, mÃ n hÃ¬nh tá»± cuá»™n xuá»‘ng vÃ¹ng chi tiáº¿t bÃªn dÆ°á»›i.
+- VÃ¹ng chi tiáº¿t hiá»‡n danh sÃ¡ch lá»‹ch trong ngÃ y theo dáº¡ng dÃ²ng lá»‹ch hiá»‡n táº¡i.
+- Báº¥m vÃ o báº¥t ká»³ Ä‘iá»ƒm nÃ o trÃªn dÃ²ng lá»‹ch chi tiáº¿t sáº½ má»Ÿ modal chi tiáº¿t giá»¯a mÃ n hÃ¬nh.
+- Modal chi tiáº¿t lá»‹ch hiá»‡n Ä‘áº§y Ä‘á»§: ngÃ y dáº¡y, giÃ¡o viÃªn, sá»‘ Ä‘iá»‡n thoáº¡i, trÆ°á»ng, lá»›p, tráº¡ng thÃ¡i, khung giá», giÃ¡o Ã¡n vÃ  má»¥c tiÃªu bÃ i há»c.
+- Má»¥c tiÃªu bÃ i há»c trong modal Ä‘Æ°á»£c tÃ¡ch dÃ²ng thÃ nh tá»«ng má»¥c Ä‘á»ƒ dá»… Ä‘á»c.
+- Giao diá»‡n lá»‹ch dÃ¹ng mÃ u nháº¥n theo ngá»¯ nghÄ©a: tráº¡ng thÃ¡i, Ä‘iá»ƒm danh, khung giá», trÆ°á»ng, lá»›p.
+- CÃ³ bá»™ lá»c nÃ¢ng cao theo tráº¡ng thÃ¡i, giÃ¡o viÃªn, trÆ°á»ng, lá»›p, khung giá» vÃ  khoáº£ng ngÃ y.
+- CÃ³ sáº¯p xáº¿p theo ngÃ y tÄƒng dáº§n, ngÃ y giáº£m dáº§n hoáº·c tráº¡ng thÃ¡i.
+- Bá»™ lá»c lá»‹ch Ä‘Æ°á»£c ghi nhá»› trÃªn trÃ¬nh duyá»‡t.
+- CÃ³ thá»‘ng kÃª nhanh tá»•ng lá»‹ch, lá»‹ch chá» xÃ¡c nháº­n, Ä‘Ã£ nháº­n, Ä‘Ã£ Ä‘iá»ƒm danh vÃ  Ä‘Ã£ há»§y.
+- CÃ³ cáº£nh bÃ¡o váº­n hÃ nh: lá»‹ch sáº¯p dáº¡y chÆ°a xÃ¡c nháº­n, lá»‹ch quÃ¡ ngÃ y chÆ°a Ä‘iá»ƒm danh, giÃ¡o viÃªn cÃ³ nhiá»u lá»‹ch há»§y.
+- Báº¥m vÃ o tháº» cáº£nh bÃ¡o váº­n hÃ nh sáº½ má»Ÿ modal liá»‡t kÃª tá»«ng lá»‹ch liÃªn quan vá»›i: ngÃ y dáº¡y, giÃ¡o viÃªn, lá»›p, trÆ°á»ng, tÃªn chuyÃªn Ä‘á».
+- Trong modal cáº£nh bÃ¡o, báº¥m vÃ o má»™t dÃ²ng lá»‹ch sáº½ má»Ÿ tiáº¿p modal chi tiáº¿t Ä‘áº§y Ä‘á»§ cá»§a lá»‹ch Ä‘Ã³.
+- CÃ³ thao tÃ¡c hÃ ng loáº¡t trong chi tiáº¿t ngÃ y: chá»n nhiá»u lá»‹ch Ä‘á»ƒ há»§y, chuyá»ƒn giÃ¡o viÃªn hoáº·c gá»­i nháº¯c xÃ¡c nháº­n.
+- CÃ³ lá»‹ch sá»­ thao tÃ¡c trÃªn tá»«ng lá»‹ch, Ä‘á»c tá»« `AuditLogs`.
+- Admin cÃ³ thá»ƒ há»§y lá»‹ch hoáº·c chuyá»ƒn lá»‹ch ngay trong danh sÃ¡ch chi tiáº¿t.
+- GiÃ¡o viÃªn chá»‰ tháº¥y lá»‹ch cá»§a mÃ¬nh vÃ  cÃ³ thá»ƒ xÃ¡c nháº­n lá»‹ch trong danh sÃ¡ch chi tiáº¿t.
 
-## 5. Phân Hệ Giáo Án
+## 5. PhÃ¢n Há»‡ GiÃ¡o Ãn
 
-Đã hoàn tất:
+ÄÃ£ hoÃ n táº¥t:
 
-- Upload giáo án qua GAS Web App.
-- Hỗ trợ nhiều định dạng: `pdf`, `doc`, `docx`, `ppt`, `pptx`, `xls`, `xlsx`, `txt`, `csv`.
-- Hỗ trợ upload nhiều file trong một lần.
-- Giới hạn mỗi file 10MB.
-- Mỗi lịch có thể lưu nhiều giáo án.
-- Tách giao diện giáo án theo vai trò admin/teacher.
-- Admin có màn tổng quan giáo án với thống kê đã nộp, chưa nộp, lịch sắp dạy còn thiếu và bảng giáo án mới nhất.
-- Các card thống kê giáo án có thể bấm để lọc nhanh danh sách tương ứng.
-- Admin có nút chat nhanh với giáo viên ngay trên dòng giáo án/lịch giáo án.
-- Admin không còn nút tải lên theo từng giáo án trong giao diện giám sát.
-- Teacher có màn giáo án của tôi, ưu tiên lịch cần nộp và danh sách giáo án mới nhất theo thời gian upload.
-- Teacher có thể bấm các card thống kê để mở nhanh danh sách giáo án/lịch phù hợp.
-- Hiện danh sách giáo án theo từng lịch và theo dòng file mới nhất.
-- Sửa tên giáo án.
-- Xóa bản ghi giáo án trên Google Sheet.
-- Xóa file giáo án trên Google Drive qua GAS.
-- Backend kiểm tra quyền: teacher chỉ xử lý giáo án của mình, admin có toàn quyền.
+- Upload giÃ¡o Ã¡n qua GAS Web App.
+- Há»— trá»£ nhiá»u Ä‘á»‹nh dáº¡ng: `pdf`, `doc`, `docx`, `ppt`, `pptx`, `xls`, `xlsx`, `txt`, `csv`.
+- Há»— trá»£ upload nhiá»u file trong má»™t láº§n.
+- Giá»›i háº¡n má»—i file 10MB.
+- Má»—i lá»‹ch cÃ³ thá»ƒ lÆ°u nhiá»u giÃ¡o Ã¡n.
+- TÃ¡ch giao diá»‡n giÃ¡o Ã¡n theo vai trÃ² admin/teacher.
+- Admin cÃ³ mÃ n tá»•ng quan giÃ¡o Ã¡n vá»›i thá»‘ng kÃª Ä‘Ã£ ná»™p, chÆ°a ná»™p, lá»‹ch sáº¯p dáº¡y cÃ²n thiáº¿u vÃ  báº£ng giÃ¡o Ã¡n má»›i nháº¥t.
+- CÃ¡c card thá»‘ng kÃª giÃ¡o Ã¡n cÃ³ thá»ƒ báº¥m Ä‘á»ƒ lá»c nhanh danh sÃ¡ch tÆ°Æ¡ng á»©ng.
+- Admin cÃ³ nÃºt chat nhanh vá»›i giÃ¡o viÃªn ngay trÃªn dÃ²ng giÃ¡o Ã¡n/lá»‹ch giÃ¡o Ã¡n.
+- Admin khÃ´ng cÃ²n nÃºt táº£i lÃªn theo tá»«ng giÃ¡o Ã¡n trong giao diá»‡n giÃ¡m sÃ¡t.
+- Teacher cÃ³ mÃ n giÃ¡o Ã¡n cá»§a tÃ´i, Æ°u tiÃªn lá»‹ch cáº§n ná»™p vÃ  danh sÃ¡ch giÃ¡o Ã¡n má»›i nháº¥t theo thá»i gian upload.
+- Teacher cÃ³ thá»ƒ báº¥m cÃ¡c card thá»‘ng kÃª Ä‘á»ƒ má»Ÿ nhanh danh sÃ¡ch giÃ¡o Ã¡n/lá»‹ch phÃ¹ há»£p.
+- Hiá»‡n danh sÃ¡ch giÃ¡o Ã¡n theo tá»«ng lá»‹ch vÃ  theo dÃ²ng file má»›i nháº¥t.
+- Sá»­a tÃªn giÃ¡o Ã¡n.
+- XÃ³a báº£n ghi giÃ¡o Ã¡n trÃªn Google Sheet.
+- XÃ³a file giÃ¡o Ã¡n trÃªn Google Drive qua GAS.
+- Backend kiá»ƒm tra quyá»n: teacher chá»‰ xá»­ lÃ½ giÃ¡o Ã¡n cá»§a mÃ¬nh, admin cÃ³ toÃ n quyá»n.
 
-## 6. Phân Hệ Điểm Danh
+## 6. PhÃ¢n Há»‡ Äiá»ƒm Danh
 
-Đã hoàn tất:
+ÄÃ£ hoÃ n táº¥t:
 
-- Backend điểm danh chuyển sang một endpoint kiểm soát tập trung: ghi `Attendance`, cập nhật `Schedules` sang `attended` và ghi `AuditLogs`.
-- API điểm danh đã kiểm tra đăng nhập/quyền: teacher chỉ điểm danh lịch của mình, admin có quyền toàn hệ thống.
-- API chặn điểm danh trùng cho cùng một lịch.
-- API chặn điểm danh lịch đã hủy.
-- Rule thời gian hiện tại: chặn điểm danh sớm quá 30 phút trước giờ bắt đầu; các lần điểm danh sau giờ bắt đầu vẫn được lưu và được tính là trễ để admin theo dõi.
-- Admin có màn tổng quan điểm danh theo ngày hiện tại với các card: tiết hôm nay, đã điểm danh hôm nay, chưa điểm danh hôm nay và điểm danh trễ hôm nay.
-- Bấm vào từng card sẽ mở modal danh sách lịch tương ứng, hiển thị giáo viên, trường/lớp, chuyên đề, khung giờ, trạng thái và số phút trễ nếu có.
-- Admin có cảnh báo giáo viên cần theo dõi khi giáo viên có từ 2 lần chưa điểm danh hoặc từ 2 lần điểm danh trễ trong dữ liệu lịch quá ngày; bấm vào từng thẻ cảnh báo sẽ mở danh sách các lịch cụ thể.
-- Admin có danh sách lịch sử điểm danh gần nhất.
-- Giao diện teacher vẫn giữ dạng điểm danh từng tiết, bổ sung hiển thị giờ bắt đầu và giờ kết thúc của tiết.
+- Backend Ä‘iá»ƒm danh chuyá»ƒn sang má»™t endpoint kiá»ƒm soÃ¡t táº­p trung: ghi `Attendance`, cáº­p nháº­t `Schedules` sang `attended` vÃ  ghi `AuditLogs`.
+- API Ä‘iá»ƒm danh Ä‘Ã£ kiá»ƒm tra Ä‘Äƒng nháº­p/quyá»n: teacher chá»‰ Ä‘iá»ƒm danh lá»‹ch cá»§a mÃ¬nh, admin cÃ³ quyá»n toÃ n há»‡ thá»‘ng.
+- API cháº·n Ä‘iá»ƒm danh trÃ¹ng cho cÃ¹ng má»™t lá»‹ch.
+- API cháº·n Ä‘iá»ƒm danh lá»‹ch Ä‘Ã£ há»§y.
+- Rule thá»i gian hiá»‡n táº¡i: cháº·n Ä‘iá»ƒm danh sá»›m quÃ¡ 30 phÃºt trÆ°á»›c giá» báº¯t Ä‘áº§u; cÃ¡c láº§n Ä‘iá»ƒm danh sau giá» báº¯t Ä‘áº§u váº«n Ä‘Æ°á»£c lÆ°u vÃ  Ä‘Æ°á»£c tÃ­nh lÃ  trá»… Ä‘á»ƒ admin theo dÃµi.
+- Admin cÃ³ mÃ n tá»•ng quan Ä‘iá»ƒm danh theo ngÃ y hiá»‡n táº¡i vá»›i cÃ¡c card: tiáº¿t hÃ´m nay, Ä‘Ã£ Ä‘iá»ƒm danh hÃ´m nay, chÆ°a Ä‘iá»ƒm danh hÃ´m nay vÃ  Ä‘iá»ƒm danh trá»… hÃ´m nay.
+- Báº¥m vÃ o tá»«ng card sáº½ má»Ÿ modal danh sÃ¡ch lá»‹ch tÆ°Æ¡ng á»©ng, hiá»ƒn thá»‹ giÃ¡o viÃªn, trÆ°á»ng/lá»›p, chuyÃªn Ä‘á», khung giá», tráº¡ng thÃ¡i vÃ  sá»‘ phÃºt trá»… náº¿u cÃ³.
+- Admin cÃ³ cáº£nh bÃ¡o giÃ¡o viÃªn cáº§n theo dÃµi khi giÃ¡o viÃªn cÃ³ tá»« 2 láº§n chÆ°a Ä‘iá»ƒm danh hoáº·c tá»« 2 láº§n Ä‘iá»ƒm danh trá»… trong dá»¯ liá»‡u lá»‹ch quÃ¡ ngÃ y; báº¥m vÃ o tá»«ng tháº» cáº£nh bÃ¡o sáº½ má»Ÿ danh sÃ¡ch cÃ¡c lá»‹ch cá»¥ thá»ƒ.
+- Admin cÃ³ danh sÃ¡ch lá»‹ch sá»­ Ä‘iá»ƒm danh gáº§n nháº¥t.
+- Giao diá»‡n teacher váº«n giá»¯ dáº¡ng Ä‘iá»ƒm danh tá»«ng tiáº¿t, bá»• sung hiá»ƒn thá»‹ giá» báº¯t Ä‘áº§u vÃ  giá» káº¿t thÃºc cá»§a tiáº¿t.
 
-## 7. Phân Hệ Cấu Hình Trường/Lớp
+## 7. PhÃ¢n Há»‡ Cáº¥u HÃ¬nh TrÆ°á»ng/Lá»›p
 
-Đã hoàn tất:
+ÄÃ£ hoÃ n táº¥t:
 
-- Thêm, sửa, xóa trường.
-- Thêm, sửa, xóa lớp.
-- Màn `Cấu hình` mặc định thu gọn các khối để xem tổng quan; bấm mũi tên để mở chi tiết.
-- Tách `Thêm lớp` thành một khối thu gọn/mở rộng riêng.
-- Đã bỏ khối `Cấu hình Google Workspace` khỏi giao diện vì không còn cần thao tác thường xuyên.
-- Khi thêm lớp có thể nhập nhiều tên lớp cùng lúc, cách nhau bằng dấu phẩy.
-- Hệ thống tự xác định khối từ tên lớp, ví dụ `10A1` thành `Khối 10`.
-- Dữ liệu trường/lớp ghi vào Google Sheet và được dùng lại trong phân hệ Giao lịch.
+- ThÃªm, sá»­a, xÃ³a trÆ°á»ng.
+- ThÃªm, sá»­a, xÃ³a lá»›p.
+- MÃ n `Cáº¥u hÃ¬nh` máº·c Ä‘á»‹nh thu gá»n cÃ¡c khá»‘i Ä‘á»ƒ xem tá»•ng quan; báº¥m mÅ©i tÃªn Ä‘á»ƒ má»Ÿ chi tiáº¿t.
+- TÃ¡ch `ThÃªm lá»›p` thÃ nh má»™t khá»‘i thu gá»n/má»Ÿ rá»™ng riÃªng.
+- ÄÃ£ bá» khá»‘i `Cáº¥u hÃ¬nh Google Workspace` khá»i giao diá»‡n vÃ¬ khÃ´ng cÃ²n cáº§n thao tÃ¡c thÆ°á»ng xuyÃªn.
+- Khi thÃªm lá»›p cÃ³ thá»ƒ nháº­p nhiá»u tÃªn lá»›p cÃ¹ng lÃºc, cÃ¡ch nhau báº±ng dáº¥u pháº©y.
+- Há»‡ thá»‘ng tá»± xÃ¡c Ä‘á»‹nh khá»‘i tá»« tÃªn lá»›p, vÃ­ dá»¥ `10A1` thÃ nh `Khá»‘i 10`.
+- Dá»¯ liá»‡u trÆ°á»ng/lá»›p ghi vÃ o Google Sheet vÃ  Ä‘Æ°á»£c dÃ¹ng láº¡i trong phÃ¢n há»‡ Giao lá»‹ch.
 
-## 8. Phân Hệ Khung Giờ
+## 8. PhÃ¢n Há»‡ Khung Giá»
 
-Đã hoàn tất:
+ÄÃ£ hoÃ n táº¥t:
 
-- Chuyển quản lý khung giờ vào tab `Cấu hình` để gom cùng dữ liệu nền.
-- Bỏ tab `Khung giờ` riêng khỏi sidebar admin.
-- Thêm khung giờ thủ công với validate giờ bắt đầu/kết thúc.
-- Chỉ chấp nhận khung giờ có thời lượng 45 phút hoặc 90 phút.
-- Hiển thị danh sách khung giờ dạng bảng với tên, giờ bắt đầu, giờ kết thúc, số phút, trạng thái và thao tác.
-- Sửa nhanh từng khung giờ ngay trên bảng.
-- Bật/tắt khung giờ; khung giờ tắt không được chọn khi giao lịch mới.
-- Chọn nhiều khung giờ và bật/tắt hàng loạt ngay trên bảng.
-- Xóa mềm khung giờ bằng cách chuyển trạng thái sang tắt, giữ an toàn cho lịch sử.
-- Tải mẫu Excel khung giờ.
-- Import hàng loạt khung giờ từ `.xlsx`, `.csv`, `.tsv`.
-- Import có validate cột bắt buộc, định dạng `HH:mm`, thời lượng 45/90 phút, số phút khớp giờ và chặn trùng tên/trùng giờ.
-- API `/api/time-slots` hỗ trợ tạo nhiều khung giờ một lần.
-- API `/api/time-slots/[id]` hỗ trợ cập nhật/sửa/bật/tắt từng khung giờ.
+- Chuyá»ƒn quáº£n lÃ½ khung giá» vÃ o tab `Cáº¥u hÃ¬nh` Ä‘á»ƒ gom cÃ¹ng dá»¯ liá»‡u ná»n.
+- Bá» tab `Khung giá»` riÃªng khá»i sidebar admin.
+- ThÃªm khung giá» thá»§ cÃ´ng vá»›i validate giá» báº¯t Ä‘áº§u/káº¿t thÃºc.
+- Chá»‰ cháº¥p nháº­n khung giá» cÃ³ thá»i lÆ°á»£ng 45 phÃºt hoáº·c 90 phÃºt.
+- Hiá»ƒn thá»‹ danh sÃ¡ch khung giá» dáº¡ng báº£ng vá»›i tÃªn, giá» báº¯t Ä‘áº§u, giá» káº¿t thÃºc, sá»‘ phÃºt, tráº¡ng thÃ¡i vÃ  thao tÃ¡c.
+- Sá»­a nhanh tá»«ng khung giá» ngay trÃªn báº£ng.
+- Báº­t/táº¯t khung giá»; khung giá» táº¯t khÃ´ng Ä‘Æ°á»£c chá»n khi giao lá»‹ch má»›i.
+- Chá»n nhiá»u khung giá» vÃ  báº­t/táº¯t hÃ ng loáº¡t ngay trÃªn báº£ng.
+- XÃ³a má»m khung giá» báº±ng cÃ¡ch chuyá»ƒn tráº¡ng thÃ¡i sang táº¯t, giá»¯ an toÃ n cho lá»‹ch sá»­.
+- Táº£i máº«u Excel khung giá».
+- Import hÃ ng loáº¡t khung giá» tá»« `.xlsx`, `.csv`, `.tsv`.
+- Import cÃ³ validate cá»™t báº¯t buá»™c, Ä‘á»‹nh dáº¡ng `HH:mm`, thá»i lÆ°á»£ng 45/90 phÃºt, sá»‘ phÃºt khá»›p giá» vÃ  cháº·n trÃ¹ng tÃªn/trÃ¹ng giá».
+- API `/api/time-slots` há»— trá»£ táº¡o nhiá»u khung giá» má»™t láº§n.
+- API `/api/time-slots/[id]` há»— trá»£ cáº­p nháº­t/sá»­a/báº­t/táº¯t tá»«ng khung giá».
 
-## 9. Phân Hệ Chat
+## 9. PhÃ¢n Há»‡ Chat
 
-Đã hoàn tất:
+ÄÃ£ hoÃ n táº¥t:
 
-- Tin nhắn chat đã ghi thật vào Google Sheet tab `ChatMessages`, không còn chỉ lưu tạm trên trình duyệt.
-- Thêm API `/api/chat-messages` để gửi tin nhắn có kiểm tra đăng nhập và quyền theo kênh chat.
-- Thêm API `/api/chat-threads` để tạo nhanh kênh trao đổi theo giáo viên và lưu vào `ChatThreads`.
-- Thêm API `/api/chat-threads/[id]/read` để hỗ trợ đánh dấu đã đọc khi cần.
-- Script setup Google Sheets đã bổ sung các header mở rộng cho `ChatMessages`: `attachmentName`, `attachmentUrl`, `readByAdminAt`, `readByTeacherAt`; API đọc/đánh dấu đã đọc cũng có thể bổ sung header khi cần.
-- Admin xem toàn bộ kênh chat; teacher chỉ xem/gửi trong kênh thuộc giáo viên của mình.
-- Danh sách kênh chat có tìm kiếm theo giáo viên, lớp, trường, chuyên đề và nội dung tin nhắn.
-- Có bộ lọc kênh: tất cả, chưa đọc, theo giáo viên, theo tiết.
-- Mỗi kênh hiển thị tin nhắn mới nhất, số tin chưa đọc, giáo viên liên quan và ngữ cảnh ngày/lớp nếu là kênh theo tiết.
-- Khung chat theo tiết hiển thị ngữ cảnh lịch: ngày dạy, trường, lớp, bài học và khung giờ.
-- Tin nhắn hỗ trợ đính kèm bằng link với tên đính kèm.
-- Đã bỏ tự tải lại định kỳ để tránh vượt quota đọc Google Sheets; trạng thái đã đọc được cập nhật tức thời trên phiên đang mở.
+- Tin nháº¯n chat Ä‘Ã£ ghi tháº­t vÃ o Google Sheet tab `ChatMessages`, khÃ´ng cÃ²n chá»‰ lÆ°u táº¡m trÃªn trÃ¬nh duyá»‡t.
+- ThÃªm API `/api/chat-messages` Ä‘á»ƒ gá»­i tin nháº¯n cÃ³ kiá»ƒm tra Ä‘Äƒng nháº­p vÃ  quyá»n theo kÃªnh chat.
+- ThÃªm API `/api/chat-threads` Ä‘á»ƒ táº¡o nhanh kÃªnh trao Ä‘á»•i theo giÃ¡o viÃªn vÃ  lÆ°u vÃ o `ChatThreads`.
+- ThÃªm API `/api/chat-threads/[id]/read` Ä‘á»ƒ há»— trá»£ Ä‘Ã¡nh dáº¥u Ä‘Ã£ Ä‘á»c khi cáº§n.
+- Script setup Google Sheets Ä‘Ã£ bá»• sung cÃ¡c header má»Ÿ rá»™ng cho `ChatMessages`: `attachmentName`, `attachmentUrl`, `readByAdminAt`, `readByTeacherAt`; API Ä‘á»c/Ä‘Ã¡nh dáº¥u Ä‘Ã£ Ä‘á»c cÅ©ng cÃ³ thá»ƒ bá»• sung header khi cáº§n.
+- Admin xem toÃ n bá»™ kÃªnh chat; teacher chá»‰ xem/gá»­i trong kÃªnh thuá»™c giÃ¡o viÃªn cá»§a mÃ¬nh.
+- Danh sÃ¡ch kÃªnh chat cÃ³ tÃ¬m kiáº¿m theo giÃ¡o viÃªn, lá»›p, trÆ°á»ng, chuyÃªn Ä‘á» vÃ  ná»™i dung tin nháº¯n.
+- CÃ³ bá»™ lá»c kÃªnh: táº¥t cáº£, chÆ°a Ä‘á»c, theo giÃ¡o viÃªn, theo tiáº¿t.
+- Má»—i kÃªnh hiá»ƒn thá»‹ tin nháº¯n má»›i nháº¥t, sá»‘ tin chÆ°a Ä‘á»c, giÃ¡o viÃªn liÃªn quan vÃ  ngá»¯ cáº£nh ngÃ y/lá»›p náº¿u lÃ  kÃªnh theo tiáº¿t.
+- Khung chat theo tiáº¿t hiá»ƒn thá»‹ ngá»¯ cáº£nh lá»‹ch: ngÃ y dáº¡y, trÆ°á»ng, lá»›p, bÃ i há»c vÃ  khung giá».
+- Tin nháº¯n há»— trá»£ Ä‘Ã­nh kÃ¨m báº±ng link vá»›i tÃªn Ä‘Ã­nh kÃ¨m.
+- ÄÃ£ bá» tá»± táº£i láº¡i Ä‘á»‹nh ká»³ Ä‘á»ƒ trÃ¡nh vÆ°á»£t quota Ä‘á»c Google Sheets; tráº¡ng thÃ¡i Ä‘Ã£ Ä‘á»c Ä‘Æ°á»£c cáº­p nháº­t tá»©c thá»i trÃªn phiÃªn Ä‘ang má»Ÿ.
 
-## 10. Email Lịch Dạy
+## 10. Email Lá»‹ch Dáº¡y
 
-Đã hoàn tất:
+ÄÃ£ hoÃ n táº¥t:
 
-- Đổi nhận diện email sang `HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG METTASOUL`.
-- Sửa nội dung tiếng Việt có dấu trong mẫu email.
-- Căn giữa tiêu đề và nút xác nhận lịch dạy.
-- Mục tiêu bài học trong email được tách thành từng dòng.
-- Email tổng hợp có bảng lịch và nút xác nhận riêng cho từng dòng.
+- Äá»•i nháº­n diá»‡n email sang `Há»† THá»NG THÃ”NG BÃO Lá»ŠCH Dáº Y Ká»¸ NÄ‚NG Sá»NG METTASOUL`.
+- Sá»­a ná»™i dung tiáº¿ng Viá»‡t cÃ³ dáº¥u trong máº«u email.
+- CÄƒn giá»¯a tiÃªu Ä‘á» vÃ  nÃºt xÃ¡c nháº­n lá»‹ch dáº¡y.
+- Má»¥c tiÃªu bÃ i há»c trong email Ä‘Æ°á»£c tÃ¡ch thÃ nh tá»«ng dÃ²ng.
+- Email tá»•ng há»£p cÃ³ báº£ng lá»‹ch vÃ  nÃºt xÃ¡c nháº­n riÃªng cho tá»«ng dÃ²ng.
 
-## 11. Dữ Liệu Và Tích Hợp
+## 11. Dá»¯ Liá»‡u VÃ  TÃ­ch Há»£p
 
-Nguồn dữ liệu chính hiện tại là Google Sheets với các tab:
+Nguá»“n dá»¯ liá»‡u chÃ­nh hiá»‡n táº¡i lÃ  Google Sheets vá»›i cÃ¡c tab:
 
 - `Users`
 - `Teachers`
@@ -208,27 +208,28 @@ Nguồn dữ liệu chính hiện tại là Google Sheets với các tab:
 - `Notifications`
 - `AuditLogs`
 
-Các API/tích hợp đã dùng:
+CÃ¡c API/tÃ­ch há»£p Ä‘Ã£ dÃ¹ng:
 
-- Next.js API routes cho dữ liệu ứng dụng, lịch, giáo viên, trường/lớp, bài học, khung giờ, giáo án, điểm danh, chat, thông báo, auth.
-- Google Sheets cho đọc/ghi dữ liệu nghiệp vụ.
-- Google Drive qua GAS cho file giáo án.
-- GAS cho gửi email lịch dạy và xử lý file.
+- Next.js API routes cho dá»¯ liá»‡u á»©ng dá»¥ng, lá»‹ch, giÃ¡o viÃªn, trÆ°á»ng/lá»›p, bÃ i há»c, khung giá», giÃ¡o Ã¡n, Ä‘iá»ƒm danh, chat, thÃ´ng bÃ¡o, auth.
+- Google Sheets cho Ä‘á»c/ghi dá»¯ liá»‡u nghiá»‡p vá»¥.
+- Google Drive qua GAS cho file giÃ¡o Ã¡n.
+- GAS cho gá»­i email lá»‹ch dáº¡y vÃ  xá»­ lÃ½ file.
 
-## 12. Tài Liệu Và Quy Trình Làm Việc
+## 12. TÃ i Liá»‡u VÃ  Quy TrÃ¬nh LÃ m Viá»‡c
 
-Đã thiết lập quy trình:
+ÄÃ£ thiáº¿t láº­p quy trÃ¬nh:
 
-- Mỗi khi chốt xong một tính năng/phiên nâng cấp phân hệ, cập nhật `USAGE_GUIDE_DRAFT.md`.
-- Sau khi cập nhật code và tài liệu, chạy build/kiểm tra phù hợp.
-- Commit và push lên `main` để Vercel có thể deploy giao diện mới.
-- Mặc định push lên GitHub sau khi hoàn tất, không hỏi lại từng lần.
+- Má»—i khi chá»‘t xong má»™t tÃ­nh nÄƒng/phiÃªn nÃ¢ng cáº¥p phÃ¢n há»‡, cáº­p nháº­t `USAGE_GUIDE_DRAFT.md`.
+- Sau khi cáº­p nháº­t code vÃ  tÃ i liá»‡u, cháº¡y build/kiá»ƒm tra phÃ¹ há»£p.
+- Commit vÃ  push lÃªn `main` Ä‘á»ƒ Vercel cÃ³ thá»ƒ deploy giao diá»‡n má»›i.
+- Máº·c Ä‘á»‹nh push lÃªn GitHub sau khi hoÃ n táº¥t, khÃ´ng há»i láº¡i tá»«ng láº§n.
 
-## 13. Kiểm Tra Gần Nhất
+## 13. Kiá»ƒm Tra Gáº§n Nháº¥t
 
-Lần kiểm tra gần nhất:
+Láº§n kiá»ƒm tra gáº§n nháº¥t:
 
-- Lệnh: `npm.cmd run -s build`
-- Kết quả: build thành công.
-- Cập nhật gần nhất: tối ưu phân hệ chat để giảm read quota Google Sheets khi gửi tin, bỏ polling tự động, giữ lưu tin nhắn vào Google Sheet và UI unread trong phiên đang mở.
-- Commit phân hệ giáo án theo vai trò đã push: `3695378 Split lesson plan views by role`
+- Lá»‡nh: `npm.cmd run -s build`
+- Káº¿t quáº£: build thÃ nh cÃ´ng.
+- Cáº­p nháº­t gáº§n nháº¥t: tá»‘i Æ°u phÃ¢n há»‡ chat Ä‘á»ƒ giáº£m read quota Google Sheets khi gá»­i tin, bá» polling tá»± Ä‘á»™ng, giá»¯ lÆ°u tin nháº¯n vÃ o Google Sheet vÃ  UI unread trong phiÃªn Ä‘ang má»Ÿ.
+- Commit phÃ¢n há»‡ giÃ¡o Ã¡n theo vai trÃ² Ä‘Ã£ push: `3695378 Split lesson plan views by role`
+

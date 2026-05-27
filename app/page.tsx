@@ -1,5 +1,5 @@
-import { LifeSkillApp } from "@/components/life-skill-app";
+import { MettasoulApp } from "@/components/mettasoul-app";
 
 export default function Home() {
-  return <LifeSkillApp />;
+  return <MettasoulApp />;
 }
