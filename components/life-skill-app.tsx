@@ -5419,7 +5419,7 @@ export function LifeSkillApp() {
                     <div>
                       <p className="text-sm font-black text-[var(--brand-dark)]">{formatDate(schedule.date)}</p>
                       <p className="mt-1 inline-flex rounded-full bg-indigo-50 px-2 py-1 text-xs font-black text-indigo-700">
-                        {meta.slot?.label || "Khung giờ"} {formatSlotRange(meta.slot)}
+                        {formatSlotRange(meta.slot) || "Chưa có khung giờ"}
                       </p>
                     </div>
                   </div>
