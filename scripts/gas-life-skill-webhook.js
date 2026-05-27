@@ -4,6 +4,7 @@ const SPREADSHEET_ID = "1wTbm61GHwmvza94UmNeptTAmhSlLEPHQaoCLC7uMni0";
 
 const APP_NAME = "HỌC VIỆN METTASOUL";
 const GAS_WEBHOOK_VERSION = "mettasoul-gas-2026-05-27";
+const SCHEDULE_EMAIL_SYSTEM_TITLE = "HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 function doPost(e) {
@@ -131,7 +132,7 @@ function normalizeScheduleEmailSubject(subject) {
 }
 
 function normalizeScheduleEmailHtml(html) {
-  return html
+  var normalized = html
     .replace(/HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ TRỐNG\s*\|\s*HỌC VIỆN METTASOUL/gi, "HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL")
     .replace(/HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ TRỐNG\s*\|\s*METTASOUL/gi, "HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL")
     .replace(/KỸ TRỐNG/gi, "KỸ NĂNG SỐNG")
@@ -144,6 +145,32 @@ function normalizeScheduleEmailHtml(html) {
     .replace(/>tiêu đề</gi, ">MỤC TIÊU<")
     .replace(/>Xác định</g, ">XÁC NHẬN<")
     .replace(/Xác định không thể/gi, "XÁC NHẬN TẤT CẢ (TẤT CẢ LỊCH ĐƯỢC XÁC NHẬN)");
+
+  normalized = forceScheduleSystemTitle(normalized);
+  normalized = forceScheduleGreeting(normalized);
+  normalized = forceKnownLessonTitles(normalized);
+
+  return normalized;
+}
+
+function forceScheduleSystemTitle(html) {
+  return html.replace(
+    /(<p\b[^>]*text-align\s*:\s*center[^>]*>)[\s\S]*?(<\/p>\s*<h1\b)/i,
+    "$1" + SCHEDULE_EMAIL_SYSTEM_TITLE + "$2"
+  );
+}
+
+function forceScheduleGreeting(html) {
+  return html
+    .replace(/giáo vụ vừa\s+lịch giảng dạy\s+vào\s+tuần/gi, "giáo vụ vừa giao lịch dạy cho tuần")
+    .replace(/giáo vụ vừa\s+lịch giảng dạy\s+cho\s+tuần/gi, "giáo vụ vừa giao lịch dạy cho tuần")
+    .replace(/giáo vụ vừa\s+giao lịch dạy\s+vào\s+tuần/gi, "giáo vụ vừa giao lịch dạy cho tuần");
+}
+
+function forceKnownLessonTitles(html) {
+  return html
+    .replace(/Th[^<]{0,24}trắc ẩn/gi, "Thấu cảm và trắc ẩn")
+    .replace(/Th[^<]{0,24}tr&#7855;c &#7849;n/gi, "Thấu cảm và trắc ẩn");
 }
 
 function uploadLessonPlan(payload, requestId) {
