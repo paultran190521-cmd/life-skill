@@ -207,7 +207,8 @@ export async function updateSheetRowById(sheetName: SheetName, id: string, patch
   });
 
   const values = response.data.values || [];
-  const headers = (values[0] || []).map(String);
+  const rawHeaders = (values[0] || []).map(String);
+  const headers = rawHeaders.map((header) => normalizeSheetHeader(header));
   const rowIndex = values.findIndex((row, index) => index > 0 && String(row[0] || "") === id);
 
   if (rowIndex === -1) {
@@ -222,7 +223,7 @@ export async function updateSheetRowById(sheetName: SheetName, id: string, patch
   const sheetRowNumber = rowIndex + 1;
   await client.spreadsheets.values.update({
     spreadsheetId: spreadsheetId(),
-    range: `${quoteSheetName(sheetName)}!A${sheetRowNumber}:${columnName(headers.length)}${sheetRowNumber}`,
+    range: `${quoteSheetName(sheetName)}!A${sheetRowNumber}:${columnName(rawHeaders.length)}${sheetRowNumber}`,
     valueInputOption: "RAW",
     requestBody: { values: [nextRow] },
   });
@@ -330,9 +331,76 @@ async function getHeaders(sheetName: SheetName) {
 }
 
 function normalizeSheetHeader(value: unknown) {
-  return String(value ?? "")
+  const raw = String(value ?? "")
     .replace(/^\uFEFF/, "")
     .trim();
+  if (!raw) {
+    return "";
+  }
+
+  const normalizedKey = raw
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "")
+    .replace(/[^\p{L}\p{N}]/gu, "");
+
+  const headerAliases: Record<string, string> = {
+    id: "id",
+    name: "name",
+    email: "email",
+    role: "role",
+    teacherid: "teacherId",
+    teachername: "teacherName",
+    teacheremail: "teacherEmail",
+    teacherphone: "teacherPhone",
+    avatarurl: "avatarUrl",
+    isactive: "isActive",
+    active: "active",
+    phone: "phone",
+    specialty: "specialty",
+    district: "district",
+    address: "address",
+    contactname: "contactName",
+    contactphone: "contactPhone",
+    schoolid: "schoolId",
+    classid: "classId",
+    lessonid: "lessonId",
+    timeslotid: "timeSlotId",
+    grade: "grade",
+    title: "title",
+    objective: "objective",
+    durationminutes: "durationMinutes",
+    sampleplanurl: "samplePlanUrl",
+    label: "label",
+    start: "start",
+    end: "end",
+    date: "date",
+    teachingenvironment: "teachingEnvironment",
+    status: "status",
+    sentat: "sentAt",
+    confirmedat: "confirmedAt",
+    reassignedfrom: "reassignedFrom",
+    scheduleid: "scheduleId",
+    filename: "fileName",
+    drivefileid: "driveFileId",
+    driveurl: "driveUrl",
+    uploadedat: "uploadedAt",
+    checkedinat: "checkedInAt",
+    note: "note",
+    body: "body",
+    createdat: "createdAt",
+    updatedat: "updatedAt",
+    createdby: "createdBy",
+    actorid: "actorId",
+    actoremail: "actorEmail",
+    action: "action",
+    entitytype: "entityType",
+    entityid: "entityId",
+    metadata: "metadata",
+    read: "read",
+    academicyear: "academicYear",
+  };
+
+  return headerAliases[normalizedKey] || raw;
 }
 
 function toRows(values: unknown[][]): SheetRow[] {
