@@ -87,26 +87,6 @@ const SHEETS = [
     headers: ["id", "scheduleId", "teacherId", "checkedInAt", "note", "createdAt", "updatedAt"],
   },
   {
-    title: "ChatThreads",
-    headers: ["id", "type", "teacherId", "scheduleId", "title", "createdAt", "updatedAt"],
-  },
-  {
-    title: "ChatMessages",
-    headers: [
-      "id",
-      "threadId",
-      "senderId",
-      "senderName",
-      "senderRole",
-      "body",
-      "createdAt",
-      "attachmentName",
-      "attachmentUrl",
-      "readByAdminAt",
-      "readByTeacherAt",
-    ],
-  },
-  {
     title: "Notifications",
     headers: ["id", "title", "body", "role", "targetUserId", "read", "createdAt", "updatedAt"],
   },

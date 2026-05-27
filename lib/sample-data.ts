@@ -1,7 +1,5 @@
 import type {
   Attendance,
-  ChatMessage,
-  ChatThread,
   ClassRoom,
   Lesson,
   LessonPlan,
@@ -16,14 +14,14 @@ import type {
 export const users: User[] = [
   {
     id: "u-admin",
-    name: "Giáo vụ Life Skill",
+    name: "Giao vu Life Skill",
     email: "admin@lifeskill.edu.vn",
     role: "admin",
     avatarUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=160&q=80",
   },
   {
     id: "u-t1",
-    name: "Cô Minh Anh",
+    name: "Co Minh Anh",
     email: "minhanh@lifeskill.edu.vn",
     role: "teacher",
     teacherId: "t1",
@@ -34,82 +32,82 @@ export const users: User[] = [
 export const teachers: Teacher[] = [
   {
     id: "t1",
-    name: "Cô Minh Anh",
+    name: "Co Minh Anh",
     email: "minhanh@lifeskill.edu.vn",
     phone: "090 118 2233",
     avatarUrl: "https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=160&q=80",
-    specialty: "Kỹ năng giao tiếp",
+    specialty: "Ky nang giao tiep",
     active: true,
   },
   {
     id: "t2",
-    name: "Thầy Quốc Bảo",
+    name: "Thay Quoc Bao",
     email: "quocbao@lifeskill.edu.vn",
     phone: "091 778 8899",
     avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=160&q=80",
-    specialty: "Làm việc nhóm",
+    specialty: "Lam viec nhom",
     active: true,
   },
   {
     id: "t3",
-    name: "Cô Thanh Tâm",
+    name: "Co Thanh Tam",
     email: "thanhtam@lifeskill.edu.vn",
     phone: "093 245 6677",
     avatarUrl: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=160&q=80",
-    specialty: "Quản lý cảm xúc",
+    specialty: "Quan ly cam xuc",
     active: true,
   },
 ];
 
 export const schools: School[] = [
-  { id: "s1", name: "Tiểu học Nguyễn Trãi", district: "Quận 1" },
-  { id: "s2", name: "Tiểu học Lê Văn Tám", district: "Quận 3" },
+  { id: "s1", name: "Tieu hoc Nguyen Trai", district: "Quan 1" },
+  { id: "s2", name: "Tieu hoc Le Van Tam", district: "Quan 3" },
 ];
 
 export const classes: ClassRoom[] = [
-  { id: "c1", schoolId: "s1", name: "1A", grade: "Khối 1" },
-  { id: "c2", schoolId: "s1", name: "3B", grade: "Khối 3" },
-  { id: "c3", schoolId: "s2", name: "2C", grade: "Khối 2" },
-  { id: "c4", schoolId: "s2", name: "4A", grade: "Khối 4" },
+  { id: "c1", schoolId: "s1", name: "1A", grade: "Khoi 1" },
+  { id: "c2", schoolId: "s1", name: "3B", grade: "Khoi 3" },
+  { id: "c3", schoolId: "s2", name: "2C", grade: "Khoi 2" },
+  { id: "c4", schoolId: "s2", name: "4A", grade: "Khoi 4" },
 ];
 
 export const lessons: Lesson[] = [
   {
     id: "l1",
-    grade: "Khối 1",
-    title: "Làm quen và tự giới thiệu",
-    objective: "Học sinh biết nói lời chào, giới thiệu tên và sở thích.",
+    grade: "Khoi 1",
+    title: "Lam quen va tu gioi thieu",
+    objective: "Hoc sinh biet noi loi chao, gioi thieu ten va so thich.",
     durationMinutes: 35,
   },
   {
     id: "l2",
-    grade: "Khối 2",
-    title: "Lắng nghe tích cực",
-    objective: "Học sinh biết nhìn người nói, không ngắt lời và hỏi lại đúng lúc.",
+    grade: "Khoi 2",
+    title: "Lang nghe tich cuc",
+    objective: "Hoc sinh biet nhin nguoi noi, khong ngat loi va hoi lai dung luc.",
     durationMinutes: 35,
   },
   {
     id: "l3",
-    grade: "Khối 3",
-    title: "Giải quyết mâu thuẫn nhỏ",
-    objective: "Học sinh biết nói cảm xúc, đề xuất cách hòa giải và tôn trọng bạn.",
+    grade: "Khoi 3",
+    title: "Giai quyet mau thuan nho",
+    objective: "Hoc sinh biet noi cam xuc, de xuat cach hoa giai va ton trong ban.",
     durationMinutes: 40,
   },
   {
     id: "l4",
-    grade: "Khối 4",
-    title: "Thuyết trình ngắn",
-    objective: "Học sinh trình bày ý kiến trong 2 phút với mở đầu, nội dung, kết luận.",
+    grade: "Khoi 4",
+    title: "Thuyet trinh ngan",
+    objective: "Hoc sinh trinh bay y kien trong 2 phut voi mo dau, noi dung, ket luan.",
     durationMinutes: 40,
   },
 ];
 
 export const timeSlots: TimeSlot[] = [
-  { id: "ts1", label: "Tiết 1", start: "07:30", end: "08:15" },
-  { id: "ts2", label: "Tiết 2", start: "08:25", end: "09:10" },
-  { id: "ts3", label: "Tiết 3", start: "09:25", end: "10:10" },
-  { id: "ts4", label: "Tiết 4", start: "10:20", end: "11:05" },
-  { id: "ts5", label: "Ca chuyên đề chiều", start: "13:30", end: "15:00" },
+  { id: "ts1", label: "Tiet 1", start: "07:30", end: "08:15" },
+  { id: "ts2", label: "Tiet 2", start: "08:25", end: "09:10" },
+  { id: "ts3", label: "Tiet 3", start: "09:25", end: "10:10" },
+  { id: "ts4", label: "Tiet 4", start: "10:20", end: "11:05" },
+  { id: "ts5", label: "Ca chuyen de chieu", start: "13:30", end: "15:00" },
 ];
 
 export const schedules: Schedule[] = [
@@ -163,45 +161,19 @@ export const lessonPlans: LessonPlan[] = [
 
 export const attendance: Attendance[] = [];
 
-export const chatThreads: ChatThread[] = [
-  { id: "thread-t1", type: "teacher", teacherId: "t1", title: "Trao đổi với Cô Minh Anh" },
-  { id: "thread-sch1", type: "schedule", teacherId: "t1", scheduleId: "sch1", title: "Tiết 1 - Lớp 1A" },
-];
-
-export const chatMessages: ChatMessage[] = [
-  {
-    id: "m1",
-    threadId: "thread-sch1",
-    senderId: "u-admin",
-    senderName: "Giáo vụ Life Skill",
-    senderRole: "admin",
-    body: "Cô gửi giáo án trước 17:00 hôm nay giúp em nhé.",
-    createdAt: "2026-05-19T08:45:00.000Z",
-  },
-  {
-    id: "m2",
-    threadId: "thread-sch1",
-    senderId: "u-t1",
-    senderName: "Cô Minh Anh",
-    senderRole: "teacher",
-    body: "Đã nhận lịch, em sẽ tải lên trong chiều nay.",
-    createdAt: "2026-05-19T09:04:00.000Z",
-  },
-];
-
 export const notifications: Notification[] = [
   {
     id: "n1",
-    title: "Lịch tuần đã gửi",
-    body: "3 tiết dạy đã được gửi email cho giáo viên.",
+    title: "Lich tuan da gui",
+    body: "3 tiet day da duoc gui email cho giao vien.",
     role: "admin",
     createdAt: "2026-05-19T08:50:00.000Z",
     read: false,
   },
   {
     id: "n2",
-    title: "Giáo án mới",
-    body: "Cô Thanh Tâm đã tải giáo án cho lớp 4A.",
+    title: "Giao an moi",
+    body: "Co Thanh Tam da tai giao an cho lop 4A.",
     role: "admin",
     createdAt: "2026-05-19T11:11:00.000Z",
     read: false,

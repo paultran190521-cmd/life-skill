@@ -3,8 +3,6 @@ import { getAvatarUrl } from "@/lib/avatar";
 import type {
   Attendance,
   AuditLog,
-  ChatMessage,
-  ChatThread,
   ClassRoom,
   Lesson,
   LessonPlan,
@@ -27,8 +25,6 @@ type SheetName =
   | "Schedules"
   | "LessonPlans"
   | "Attendance"
-  | "ChatThreads"
-  | "ChatMessages"
   | "Notifications"
   | "AuditLogs";
 
@@ -275,8 +271,6 @@ export async function getAppDataFromSheets() {
     schedules,
     lessonPlans,
     attendance,
-    chatThreads,
-    chatMessages,
     notifications,
     auditLogs,
   ] = await Promise.all([
@@ -289,8 +283,6 @@ export async function getAppDataFromSheets() {
     readSheetRows("Schedules").then(toSchedules),
     readSheetRows("LessonPlans").then(toLessonPlans),
     readSheetRows("Attendance").then(toAttendance),
-    readSheetRows("ChatThreads").then(toChatThreads),
-    readSheetRows("ChatMessages").then(toChatMessages),
     readSheetRows("Notifications").then(toNotifications),
     readSheetRows("AuditLogs").then(toAuditLogs),
   ]);
@@ -305,8 +297,6 @@ export async function getAppDataFromSheets() {
     schedules,
     lessonPlans,
     attendance,
-    chatThreads,
-    chatMessages,
     notifications,
     auditLogs,
   };
@@ -430,32 +420,6 @@ function toAttendance(rows: SheetRow[]): Attendance[] {
     teacherId: row.teacherId,
     checkedInAt: row.checkedInAt,
     note: row.note || undefined,
-  }));
-}
-
-function toChatThreads(rows: SheetRow[]): ChatThread[] {
-  return rows.map((row) => ({
-    id: row.id,
-    type: row.type === "schedule" ? "schedule" : "teacher",
-    teacherId: row.teacherId,
-    scheduleId: row.scheduleId || undefined,
-    title: row.title,
-  }));
-}
-
-function toChatMessages(rows: SheetRow[]): ChatMessage[] {
-  return rows.map((row) => ({
-    id: row.id,
-    threadId: row.threadId,
-    senderId: row.senderId,
-    senderName: row.senderName,
-    senderRole: (row.senderRole || "admin") as Role,
-    body: row.body,
-    createdAt: row.createdAt,
-    attachmentName: row.attachmentName || undefined,
-    attachmentUrl: row.attachmentUrl || undefined,
-    readByAdminAt: row.readByAdminAt || undefined,
-    readByTeacherAt: row.readByTeacherAt || undefined,
   }));
 }
 

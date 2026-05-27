@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import {
   attendance as fallbackAttendance,
-  chatMessages as fallbackChatMessages,
-  chatThreads as fallbackChatThreads,
   classes as fallbackClasses,
   lessonPlans as fallbackLessonPlans,
   lessons as fallbackLessons,
@@ -30,8 +28,6 @@ export async function GET() {
       schedules: withFallback(data.schedules, fallbackSchedules),
       lessonPlans: withFallback(data.lessonPlans, fallbackLessonPlans),
       attendance: withFallback(data.attendance, fallbackAttendance),
-      chatThreads: withFallback(data.chatThreads, fallbackChatThreads),
-      chatMessages: withFallback(data.chatMessages, fallbackChatMessages),
       notifications: withFallback(data.notifications, fallbackNotifications),
       auditLogs: data.auditLogs,
     });

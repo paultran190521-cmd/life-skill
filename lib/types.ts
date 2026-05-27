@@ -92,30 +92,6 @@ export type Attendance = {
   note?: string;
 };
 
-export type ChatThreadType = "teacher" | "schedule";
-
-export type ChatThread = {
-  id: string;
-  type: ChatThreadType;
-  teacherId: string;
-  scheduleId?: string;
-  title: string;
-};
-
-export type ChatMessage = {
-  id: string;
-  threadId: string;
-  senderId: string;
-  senderName: string;
-  senderRole: Role;
-  body: string;
-  createdAt: string;
-  attachmentName?: string;
-  attachmentUrl?: string;
-  readByAdminAt?: string;
-  readByTeacherAt?: string;
-};
-
 export type Notification = {
   id: string;
   title: string;

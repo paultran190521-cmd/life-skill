@@ -5,7 +5,7 @@ import { findAuthorizedUserFromHint, findAuthorizedUserFromSession } from "@/lib
 import { sessionCookieName, verifySessionToken } from "@/lib/auth-session";
 import { sendScheduleDigestEmail } from "@/lib/email";
 import { appendSheetRows, readSheetRows } from "@/lib/google-sheets";
-import type { ChatThread, Notification, Schedule } from "@/lib/types";
+import type { Notification, Schedule } from "@/lib/types";
 
 type ScheduleDraftItem = {
   date: string;
@@ -80,18 +80,6 @@ export async function POST(request: Request) {
       })),
     );
 
-    const chatThreads = schedules.map<ChatThread>((schedule) => {
-      const classRoom = classes.find((item) => normalizeId(item.id) === normalizeId(schedule.classId));
-      const slot = slots.find((item) => normalizeId(item.id) === normalizeId(schedule.timeSlotId));
-      return {
-        id: `thread-${schedule.id}`,
-        type: "schedule",
-        teacherId: schedule.teacherId,
-        scheduleId: schedule.id,
-        title: `${slot?.label || "Tiết"} - Lớp ${classRoom?.name || ""}`,
-      };
-    });
-
     await appendSheetRows(
       "Schedules",
       schedules.map((schedule) => ({
@@ -100,10 +88,6 @@ export async function POST(request: Request) {
         createdAt: now,
         updatedAt: now,
       })),
-    );
-    await appendSheetRows(
-      "ChatThreads",
-      chatThreads.map((thread) => ({ ...thread, createdAt: now, updatedAt: now })),
     );
     await appendSheetRows(
       "AuditLogs",
@@ -128,7 +112,7 @@ export async function POST(request: Request) {
     const notifications = createScheduleNotifications(schedules, emailResults, now);
     await appendSheetRows("Notifications", notifications.map((notification) => ({ ...notification, updatedAt: now })));
 
-    return NextResponse.json({ schedules, chatThreads, notifications, emailResults });
+    return NextResponse.json({ schedules, notifications, emailResults });
   } catch (error) {
     if (error instanceof RouteError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
