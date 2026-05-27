@@ -3,12 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hướng dẫn sử dụng - Life Skill</title>
+    <title>Hướng dẫn sử dụng chi tiết - Life Skill</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
       :root {
-        --ink: #0f3554;
-        --muted: #4b6478;
-        --bg: #eef5fb;
+        --ink: #123c5c;
+        --muted: #4f6a7c;
+        --line: #cfe3f3;
       }
 
       * {
@@ -17,69 +23,66 @@
 
       body {
         margin: 0;
-        font-family: "Segoe UI", "Arial", sans-serif;
-        background: linear-gradient(160deg, #f1f8ff 0%, #ffffff 48%, #f7f5ff 100%);
+        font-family: "Quicksand", "Segoe UI", sans-serif;
         color: var(--ink);
+        background: radial-gradient(circle at top left, #e4f3ff 0%, #ffffff 42%, #f3ecff 100%);
       }
 
       .wrap {
-        max-width: 1120px;
+        max-width: 1240px;
         margin: 0 auto;
-        padding: 28px 16px 56px;
+        padding: 24px 16px 52px;
       }
 
       .hero {
-        border: 1px solid #cde8ff;
+        border: 1px solid #b9dcf7;
         border-radius: 20px;
-        padding: 22px;
-        background: linear-gradient(135deg, #dff3ff 0%, #ffffff 50%, #efe7ff 100%);
-        box-shadow: 0 18px 36px rgba(14, 49, 84, 0.1);
+        padding: 24px;
+        background: linear-gradient(135deg, #dff2ff 0%, #ffffff 45%, #efe7ff 100%);
+        box-shadow: 0 20px 38px rgba(18, 60, 92, 0.1);
       }
 
       h1 {
         margin: 0;
-        font-size: 34px;
+        font-size: 36px;
+        line-height: 1.2;
       }
 
-      .sub {
-        margin-top: 8px;
+      .desc {
+        margin-top: 10px;
+        max-width: 860px;
         color: var(--muted);
-        font-size: 15px;
-        line-height: 1.45;
+        font-size: 16px;
+        line-height: 1.55;
       }
 
       .chip-row {
-        margin-top: 16px;
         display: flex;
-        gap: 10px;
         flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
       }
 
       .chip {
         border-radius: 999px;
+        padding: 7px 12px;
         font-size: 12px;
         font-weight: 700;
-        padding: 7px 12px;
       }
 
-      .chip-blue {
-        background: #d9efff;
-        color: #0c5688;
-      }
-
-      .chip-green {
-        background: #d7f8ea;
-        color: #0b7c54;
-      }
-
-      .chip-violet {
-        background: #ece2ff;
-        color: #5937a8;
-      }
+      .chip.c1 { background: #d8eefe; color: #0a5f95; }
+      .chip.c2 { background: #daf8eb; color: #0b7f57; }
+      .chip.c3 { background: #ebe2ff; color: #5d39ad; }
+      .chip.c4 { background: #ffeecf; color: #966000; }
 
       h2 {
-        margin: 28px 0 12px;
-        font-size: 24px;
+        margin: 32px 0 12px;
+        font-size: 27px;
+      }
+
+      h3 {
+        margin: 0 0 8px;
+        font-size: 19px;
       }
 
       .grid {
@@ -89,154 +92,374 @@
       }
 
       .card {
+        border: 1px solid var(--line);
         border-radius: 16px;
-        border: 1px solid #d7e9f8;
-        padding: 16px;
         background: #fff;
-        box-shadow: 0 8px 18px rgba(15, 53, 84, 0.06);
+        padding: 16px;
+        box-shadow: 0 8px 18px rgba(18, 60, 92, 0.06);
       }
 
-      .card h3 {
-        margin: 0 0 8px;
-        font-size: 18px;
-      }
-
-      .card p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 14px;
-        line-height: 1.45;
-      }
-
-      .c1 { background: linear-gradient(140deg, #e4f4ff 0%, #ffffff 70%); border-color: #bde3ff; }
-      .c2 { background: linear-gradient(140deg, #e7fff3 0%, #ffffff 70%); border-color: #bfead4; }
-      .c3 { background: linear-gradient(140deg, #fff6e5 0%, #ffffff 70%); border-color: #f6d9a2; }
-      .c4 { background: linear-gradient(140deg, #fde9ef 0%, #ffffff 70%); border-color: #f4c2d0; }
-      .c5 { background: linear-gradient(140deg, #efeaff 0%, #ffffff 70%); border-color: #d7c9ff; }
-      .c6 { background: linear-gradient(140deg, #e6f8f7 0%, #ffffff 70%); border-color: #bfe8e4; }
-
+      .span-12 { grid-column: span 12; }
+      .span-8 { grid-column: span 8; }
       .span-6 { grid-column: span 6; }
       .span-4 { grid-column: span 4; }
-      .span-12 { grid-column: span 12; }
 
-      .flow {
-        margin-top: 12px;
+      .module-card p {
+        margin: 6px 0 0;
+        color: var(--muted);
         font-size: 14px;
-        font-weight: 700;
-        color: #1c4d75;
+        line-height: 1.5;
       }
+
+      .m1 { background: linear-gradient(145deg, #eaf7ff 0%, #ffffff 75%); border-color: #bfe4ff; }
+      .m2 { background: linear-gradient(145deg, #ecfff5 0%, #ffffff 75%); border-color: #c8efd8; }
+      .m3 { background: linear-gradient(145deg, #fff8e9 0%, #ffffff 75%); border-color: #f5dfb2; }
+      .m4 { background: linear-gradient(145deg, #f7ecff 0%, #ffffff 75%); border-color: #dcc7ff; }
+      .m5 { background: linear-gradient(145deg, #ffeef2 0%, #ffffff 75%); border-color: #f5cad6; }
+      .m6 { background: linear-gradient(145deg, #e9f8f6 0%, #ffffff 75%); border-color: #bce8e2; }
 
       ul {
         margin: 8px 0 0;
         padding-left: 18px;
-        color: #244d68;
+        color: #244f6c;
       }
 
-      li { margin: 4px 0; }
+      li {
+        margin: 4px 0;
+        line-height: 1.45;
+      }
 
-      .feedback {
-        margin-top: 18px;
-        border: 1px dashed #c2c9ff;
+      .flow {
+        margin-top: 10px;
         border-radius: 14px;
-        padding: 14px;
-        background: #f7f6ff;
+        border: 1px dashed #bbd3e5;
+        background: #f8fcff;
+        padding: 12px;
       }
 
-      .footer {
-        margin-top: 22px;
-        color: #516d83;
+      .flow-title {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #4e6d84;
+      }
+
+      .steps {
+        margin-top: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .step {
+        border-radius: 12px;
+        padding: 8px 10px;
+        background: #fff;
+        border: 1px solid #d7e9f7;
+        font-size: 13px;
+        font-weight: 700;
+        color: #1b4f75;
+      }
+
+      .arrow {
+        font-size: 16px;
+        color: #5b7a91;
+        font-weight: 700;
+      }
+
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        overflow: hidden;
+        border-radius: 10px;
+      }
+
+      .table th,
+      .table td {
+        border: 1px solid #d7e7f5;
+        padding: 8px;
+        font-size: 13px;
+        text-align: left;
+      }
+
+      .table th {
+        background: #eaf5ff;
+      }
+
+      .note {
+        margin-top: 10px;
+        border-radius: 12px;
+        padding: 10px 12px;
         font-size: 13px;
       }
 
-      @media (max-width: 900px) {
+      .note.warn { background: #fff5e6; color: #7a5600; border: 1px solid #f4dbad; }
+      .note.ok { background: #e9fbf2; color: #0e7952; border: 1px solid #bfead5; }
+      .note.info { background: #edf4ff; color: #1d5d90; border: 1px solid #c9def7; }
+
+      .footer {
+        margin-top: 26px;
+        color: #4b697f;
+        font-size: 13px;
+      }
+
+      @media (max-width: 960px) {
+        .span-8,
         .span-6,
         .span-4 {
           grid-column: span 12;
         }
-
-        h1 {
-          font-size: 28px;
-        }
+        h1 { font-size: 30px; }
       }
     </style>
   </head>
   <body>
     <div class="wrap">
       <section class="hero">
-        <h1>Hướng dẫn sử dụng hệ thống Life Skill</h1>
-        <p class="sub">
-          Tài liệu này dành cho giáo vụ/admin để theo dõi nhanh chức năng từng phân hệ, luồng thao tác chuẩn,
-          và các điểm cần kiểm tra trước khi gửi lịch hoặc chốt điểm danh.
+        <h1>Hướng dẫn sử dụng chi tiết hệ thống Life Skill</h1>
+        <p class="desc">
+          Tài liệu dành cho Admin và Giáo viên, bám theo các phân hệ đang vận hành thực tế trên hệ thống:
+          Tổng quan, Giao lịch, Lịch, Giáo án, Điểm danh, Cấu hình, Thông báo và Feedback.
         </p>
         <div class="chip-row">
-          <span class="chip chip-blue">Phiên bản hướng dẫn: 2026.05</span>
-          <span class="chip chip-green">Áp dụng: Admin + Giáo viên</span>
-          <span class="chip chip-violet">Mục tiêu: thao tác nhanh, đúng quy trình</span>
+          <span class="chip c1">Phạm vi: toàn hệ thống hiện tại</span>
+          <span class="chip c2">Vai trò: Admin / Teacher</span>
+          <span class="chip c3">Font chuẩn: Quicksand</span>
+          <span class="chip c4">Tài liệu tham chiếu: USAGE_GUIDE_DRAFT.md</span>
         </div>
       </section>
 
-      <h2>Các phân hệ chính</h2>
+      <h2>1) Tổng quan phân hệ</h2>
       <section class="grid">
-        <article class="card c1 span-4">
-          <h3>1) Tổng quan</h3>
-          <p>Hiển thị số liệu quan trọng theo vai trò: lịch dạy, giáo án, điểm danh, cảnh báo.</p>
+        <article class="card module-card m1 span-4">
+          <h3>Tổng quan</h3>
+          <p>Hiển thị số liệu nhanh theo vai trò và các danh sách cần xử lý ngay.</p>
         </article>
-        <article class="card c2 span-4">
-          <h3>2) Giao lịch</h3>
-          <p>Tạo nhiều lịch cùng lúc, chọn môi trường dạy học, xem trước theo giáo viên trước khi gửi.</p>
+        <article class="card module-card m2 span-4">
+          <h3>Giao lịch</h3>
+          <p>Tạo lịch theo lô, chọn môi trường dạy học, xem trước theo giáo viên trước khi gửi.</p>
         </article>
-        <article class="card c3 span-4">
-          <h3>3) Lịch của tôi</h3>
-          <p>Giáo viên theo dõi lịch theo ngày/tuần/tháng, nhận lịch, kiểm tra khung giờ và trạng thái.</p>
+        <article class="card module-card m3 span-4">
+          <h3>Lịch của tôi / Lịch tổng</h3>
+          <p>Xem theo tháng-tuần-ngày, lọc theo trạng thái, trường, lớp, giáo viên, khung giờ.</p>
         </article>
-        <article class="card c4 span-4">
-          <h3>4) Giáo án</h3>
-          <p>Upload giáo án theo lịch, lọc đã gửi/chưa gửi, theo dõi tiến độ nộp cho từng tiết.</p>
+        <article class="card module-card m4 span-4">
+          <h3>Giáo án</h3>
+          <p>Theo dõi đã gửi/chưa gửi, upload theo tiết, quản lý file theo lịch dạy thực tế.</p>
         </article>
-        <article class="card c5 span-4">
-          <h3>5) Điểm danh</h3>
-          <p>Điểm danh theo từng tiết; admin xem được danh sách trễ, thiếu điểm danh và lịch sử chi tiết.</p>
+        <article class="card module-card m5 span-4">
+          <h3>Điểm danh</h3>
+          <p>Điểm danh theo tiết, giám sát trễ/chưa điểm danh theo ngày và theo giáo viên.</p>
         </article>
-        <article class="card c6 span-4">
-          <h3>6) Cấu hình</h3>
-          <p>Quản lý trường, lớp, khung giờ, cùng tài liệu hướng dẫn và khu vực nhận feedback nâng cấp.</p>
+        <article class="card module-card m6 span-4">
+          <h3>Cấu hình & Feedback</h3>
+          <p>Quản lý trường/lớp/khung giờ, mở hướng dẫn và gửi đề xuất nâng cấp tính năng.</p>
         </article>
       </section>
 
-      <h2>Luồng thao tác mẫu (Admin)</h2>
+      <h2>2) Quy trình chuẩn: Giao lịch (Admin)</h2>
+      <section class="grid">
+        <article class="card span-8">
+          <h3>Luồng thao tác từng bước</h3>
+          <div class="flow">
+            <div class="flow-title">Sơ đồ thao tác</div>
+            <div class="steps">
+              <span class="step">Mở menu Giao lịch</span>
+              <span class="arrow">→</span>
+              <span class="step">Chọn giáo viên</span>
+              <span class="arrow">→</span>
+              <span class="step">Thêm từng dòng lịch</span>
+              <span class="arrow">→</span>
+              <span class="step">Chọn môi trường dạy</span>
+              <span class="arrow">→</span>
+              <span class="step">Xem trước theo giáo viên</span>
+              <span class="arrow">→</span>
+              <span class="step">Bấm Gửi lịch</span>
+            </div>
+          </div>
+          <ul>
+            <li>Bước 1: Chọn đúng giáo viên nhận lịch (có thể nhiều người).</li>
+            <li>Bước 2: Mỗi dòng bắt buộc đủ: ngày dạy, trường, lớp, khung giờ, bài học.</li>
+            <li>Bước 3: Chọn môi trường dạy học: Trong lớp / Ngoài sân / Nhà thi đấu / Báo cáo sân trường.</li>
+            <li>Bước 4: Dùng dropdown xem trước theo từng giáo viên để soát lỗi trước khi gửi.</li>
+            <li>Bước 5: Gửi lịch, hệ thống lưu lịch + tạo thông báo + gửi email tổng hợp theo giáo viên.</li>
+          </ul>
+          <div class="note warn">
+            Lưu ý kiểm tra trùng giờ cùng giáo viên trong cùng ngày trước khi gửi để tránh chồng lịch.
+          </div>
+        </article>
+        <article class="card span-4">
+          <h3>Checklist trước khi gửi</h3>
+          <ul>
+            <li>Đã chọn đúng giáo viên nhận lịch.</li>
+            <li>Không có dòng thiếu trường/lớp/bài học/khung giờ.</li>
+            <li>Đã gắn đúng môi trường dạy học.</li>
+            <li>Xem trước đủ tất cả giáo viên nhận lịch.</li>
+            <li>Không còn lịch nháp sai ngày.</li>
+          </ul>
+          <div class="note ok">Hoàn tất checklist rồi mới bấm Gửi lịch.</div>
+        </article>
+      </section>
+
+      <h2>3) Phân hệ Lịch tổng / Lịch của tôi</h2>
       <section class="grid">
         <article class="card span-6">
-          <h3>Luồng A: Giao lịch hàng loạt</h3>
-          <p class="flow">Bấm <strong>Giao lịch</strong> → chọn giáo viên → thêm các dòng tiết → xem trước theo giáo viên → Gửi lịch.</p>
+          <h3>Chức năng chính</h3>
           <ul>
-            <li>Luôn kiểm tra ngày dạy và khung giờ trước khi gửi.</li>
-            <li>Nhớ chọn môi trường dạy học đúng KPI: Trong lớp / Ngoài sân / Nhà thi đấu / Báo cáo sân trường.</li>
-            <li>Nếu có thay đổi, dùng chuyển lịch hoặc gán giáo viên thay thế.</li>
+            <li>Chế độ xem: Tháng / Tuần / Ngày.</li>
+            <li>Lọc theo: trạng thái, giáo viên, trường, lớp, khung giờ, khoảng ngày.</li>
+            <li>Sắp xếp: ngày tăng, ngày giảm, theo trạng thái.</li>
+            <li>Admin có thao tác hàng loạt: hủy lịch, chuyển giáo viên, nhắc xác nhận.</li>
           </ul>
+          <div class="flow">
+            <div class="flow-title">Sơ đồ theo dõi lịch</div>
+            <div class="steps">
+              <span class="step">Mở Lịch</span><span class="arrow">→</span><span class="step">Chọn chế độ xem</span>
+              <span class="arrow">→</span><span class="step">Lọc dữ liệu</span><span class="arrow">→</span><span class="step">Mở chi tiết ngày</span>
+            </div>
+          </div>
         </article>
         <article class="card span-6">
-          <h3>Luồng B: Theo dõi điểm danh</h3>
-          <p class="flow">Bấm <strong>Điểm danh</strong> → xem card đã/chưa/trễ → bấm card để mở danh sách chi tiết.</p>
+          <h3>Theo vai trò</h3>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Vai trò</th>
+                <th>Phạm vi dữ liệu</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Admin</td>
+                <td>Toàn bộ lịch</td>
+                <td>Đầy đủ điều phối</td>
+              </tr>
+              <tr>
+                <td>Teacher</td>
+                <td>Chỉ lịch của chính mình</td>
+                <td>Xem, nhận lịch, chuẩn bị dạy</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="note info">Nếu bạn là admin, có thể đổi tài khoản xem nhanh ở ô “Tài khoản”.</div>
+        </article>
+      </section>
+
+      <h2>4) Phân hệ Giáo án</h2>
+      <section class="grid">
+        <article class="card span-8">
+          <h3>Luồng nộp giáo án (Teacher)</h3>
+          <div class="flow">
+            <div class="flow-title">Sơ đồ thao tác</div>
+            <div class="steps">
+              <span class="step">Mở Giáo án</span><span class="arrow">→</span><span class="step">Chọn tiết dạy</span>
+              <span class="arrow">→</span><span class="step">Upload file</span><span class="arrow">→</span><span class="step">Kiểm tra trạng thái Đã gửi</span>
+            </div>
+          </div>
           <ul>
-            <li>Ưu tiên xử lý nhóm “chưa điểm danh”.</li>
-            <li>Dùng cảnh báo để phát hiện giáo viên thường trễ hoặc bỏ sót điểm danh.</li>
-            <li>Đối chiếu với lịch sử thao tác khi cần truy vết.</li>
+            <li>Hỗ trợ nhiều định dạng: pdf/doc/docx/ppt/pptx/xls/xlsx/txt/csv.</li>
+            <li>Giới hạn dung lượng 10MB mỗi file.</li>
+            <li>Có thể đổi tên hoặc xóa giáo án sau khi nộp.</li>
+          </ul>
+        </article>
+        <article class="card span-4">
+          <h3>Góc nhìn Admin</h3>
+          <ul>
+            <li>Theo dõi card: đã nộp, chưa nộp, sắp dạy còn thiếu.</li>
+            <li>Bấm card để mở danh sách chi tiết tương ứng.</li>
+            <li>Giám sát theo giáo viên/ngày dạy/bài học/lớp.</li>
           </ul>
         </article>
       </section>
 
-      <h2>Mẫu feedback nâng cấp</h2>
-      <section class="feedback">
-        <p><strong>Mẫu đề xuất:</strong></p>
-        <ul>
-          <li>Cập nhật/nâng cấp tính năng nào?</li>
-          <li>Trong menu/phân hệ nào?</li>
-          <li>Quy trình mong muốn: ví dụ “Bấm A ra B, bấm B ra C, rồi xác nhận”.</li>
-        </ul>
-        <p class="footer">
-          Bạn có thể nhập feedback trực tiếp trong mục <strong>Cấu hình → Hướng dẫn sử dụng & Feedback</strong>.
-        </p>
+      <h2>5) Phân hệ Điểm danh</h2>
+      <section class="grid">
+        <article class="card span-6">
+          <h3>Điểm danh theo tiết (Teacher)</h3>
+          <ul>
+            <li>Mỗi dòng hiển thị: bài học, trường/lớp, ngày dạy, giờ bắt đầu-kết thúc.</li>
+            <li>Bấm “Điểm danh” để ghi nhận.</li>
+            <li>Sau khi thành công, trạng thái lịch đổi thành “Đã điểm danh”.</li>
+          </ul>
+          <div class="note warn">
+            Rule hiện tại: cho phép điểm danh sớm tối đa 30 phút trước giờ bắt đầu.
+          </div>
+        </article>
+        <article class="card span-6">
+          <h3>Giám sát điểm danh (Admin)</h3>
+          <div class="flow">
+            <div class="flow-title">Sơ đồ kiểm tra nhanh</div>
+            <div class="steps">
+              <span class="step">Mở Điểm danh</span><span class="arrow">→</span><span class="step">Xem 4 card hôm nay</span>
+              <span class="arrow">→</span><span class="step">Bấm card</span><span class="arrow">→</span><span class="step">Mở danh sách chi tiết</span>
+            </div>
+          </div>
+          <ul>
+            <li>Có cảnh báo giáo viên thường trễ/chưa điểm danh.</li>
+            <li>Bấm badge cảnh báo để xem từng lịch vi phạm cụ thể.</li>
+          </ul>
+        </article>
       </section>
+
+      <h2>6) Phân hệ Cấu hình</h2>
+      <section class="grid">
+        <article class="card span-4">
+          <h3>Trường</h3>
+          <ul>
+            <li>Thêm / sửa / xóa trường.</li>
+          </ul>
+        </article>
+        <article class="card span-4">
+          <h3>Lớp</h3>
+          <ul>
+            <li>Thêm nhiều lớp theo dấu phẩy.</li>
+            <li>Tự suy ra khối từ tên lớp.</li>
+            <li>Sửa / xóa lớp.</li>
+          </ul>
+        </article>
+        <article class="card span-4">
+          <h3>Khung giờ</h3>
+          <ul>
+            <li>Thêm / sửa / bật tắt / xóa mềm.</li>
+            <li>Import từ spreadsheet và cảnh báo chuẩn 45/90 phút.</li>
+          </ul>
+        </article>
+        <article class="card span-12">
+          <h3>Hướng dẫn & Feedback</h3>
+          <ul>
+            <li>Admin mở hướng dẫn sử dụng tại đây.</li>
+            <li>Admin gửi feedback nâng cấp theo mẫu 3 câu hỏi.</li>
+            <li>Giáo viên cũng có nút “Góp ý” ngay trên giao diện để mở modal gửi phản hồi nhanh.</li>
+          </ul>
+        </article>
+      </section>
+
+      <h2>7) Thông báo, nhật ký, dữ liệu</h2>
+      <section class="grid">
+        <article class="card span-6">
+          <h3>Thông báo</h3>
+          <ul>
+            <li>Chuông thông báo hiển thị danh sách theo vai trò (admin/teacher/all).</li>
+            <li>Có thể đánh dấu đã đọc từng mục hoặc toàn bộ.</li>
+            <li>Feedback đang được lưu vào sheet Notifications với tiêu đề bắt đầu “Feedback | ...”.</li>
+          </ul>
+        </article>
+        <article class="card span-6">
+          <h3>Dữ liệu chính trong Google Sheets</h3>
+          <ul>
+            <li>Users, Teachers, Schools, Classes, Lessons, TimeSlots.</li>
+            <li>Schedules, LessonPlans, Attendance.</li>
+            <li>Notifications, AuditLogs.</li>
+          </ul>
+        </article>
+      </section>
+
+      <p class="footer">
+        Checklist mỗi phiên: cập nhật tài liệu theo tính năng mới, đối chiếu UI/API thực tế, hoàn tất rồi commit + push.
+      </p>
     </div>
   </body>
 </html>

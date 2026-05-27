@@ -441,6 +441,7 @@ export function LifeSkillApp() {
     menuName: "",
     desiredFlow: "",
   });
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
   const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
   const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
@@ -784,6 +785,18 @@ export function LifeSkillApp() {
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [notifications],
   );
+  const feedbackMenuSuggestions = useMemo(
+    () =>
+      role === "admin"
+        ? ["Tổng quan", "Giao lịch", "Lịch tổng", "Giáo viên", "Bài học", "Giáo án", "Điểm danh", "Cấu hình"]
+        : ["Tổng quan", "Lịch của tôi", "Giáo án", "Điểm danh"],
+    [role],
+  );
+  const feedbackFlowExamples = [
+    "Bấm Lịch của tôi -> chọn ngày -> bấm Nhận lịch -> hiển thị trạng thái Đã nhận.",
+    "Bấm Giáo án -> chọn tiết dạy -> tải file -> hiển thị Đã gửi giáo án.",
+    "Bấm Điểm danh -> chọn tiết -> bấm Điểm danh -> chuyển trạng thái Đã điểm danh.",
+  ];
   const unreadNotifications = roleNotifications.filter((item) => !item.read).length;
   const searchPlaceholder =
     activeTab === "teachers" ? "Tìm nhanh giáo viên theo tên, SĐT, email..." : "Tìm lịch, giáo viên, lớp...";
@@ -1551,6 +1564,7 @@ export function LifeSkillApp() {
       });
       setNotifications((items) => [...response.notifications, ...items]);
       setFeedbackDraft({ upgradeTarget: "", menuName: "", desiredFlow: "" });
+      setFeedbackModalOpen(false);
       setDataStatus("connected");
       setSaveError("");
       pushToast("Đã nhận feedback", "Feedback đã được lưu vào hệ thống để theo dõi nâng cấp.", "success");
@@ -2731,6 +2745,17 @@ export function LifeSkillApp() {
                     className="min-w-0 bg-transparent text-sm text-[var(--brand-dark)] outline-none placeholder:text-slate-400"
                   />
                 </label>
+                {role === "teacher" ? (
+                  <button
+                    type="button"
+                    title="Góp ý nâng cấp"
+                    onClick={() => setFeedbackModalOpen(true)}
+                    className="inline-flex h-11 items-center gap-2 rounded-2xl border border-violet-200 bg-violet-50 px-3 text-xs font-black text-violet-800 transition hover:bg-violet-100"
+                  >
+                    <MessageSquare size={16} />
+                    Góp ý
+                  </button>
+                ) : null}
                 <div className="ui-surface-lift flex items-center gap-2 rounded-2xl border px-3 py-2">
                   <img
                     alt={currentUser.name}
@@ -2829,6 +2854,92 @@ export function LifeSkillApp() {
             <div className="fixed right-5 top-5 z-50 flex items-center gap-3 rounded-2xl border border-cyan-100 bg-white/95 px-4 py-3 text-sm font-black text-[var(--brand-dark)] shadow-2xl shadow-cyan-900/10 backdrop-blur">
               <LoaderCircle className="animate-spin text-[var(--brand)]" size={20} />
               {pendingAction}
+            </div>
+          ) : null}
+          {feedbackModalOpen ? (
+            <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/35 p-4 backdrop-blur-sm">
+              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-violet-200 bg-white p-5 shadow-2xl">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="grid h-12 w-12 place-items-center rounded-2xl bg-violet-100 text-violet-700">
+                      <MessageSquare size={22} />
+                    </div>
+                    <h2 className="mt-4 text-xl font-black text-[var(--brand-dark)]">Góp ý nâng cấp tính năng</h2>
+                    <p className="mt-1 text-sm font-semibold text-[var(--muted)]">
+                      Mô tả rõ nhu cầu và luồng thao tác mong muốn để đội vận hành cập nhật nhanh hơn.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    title="Đóng"
+                    onClick={() => setFeedbackModalOpen(false)}
+                    className="grid h-10 w-10 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--brand-dark)] transition hover:bg-violet-50"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="mt-5 grid gap-3">
+                  <input
+                    value={feedbackDraft.upgradeTarget}
+                    onChange={(event) => setFeedbackDraft((current) => ({ ...current, upgradeTarget: event.target.value }))}
+                    placeholder="Cập nhật/nâng cấp tính năng nào?"
+                    className={inputClass}
+                  />
+                  <div className="grid gap-2">
+                    <select
+                      value={feedbackDraft.menuName}
+                      onChange={(event) => setFeedbackDraft((current) => ({ ...current, menuName: event.target.value }))}
+                      className={inputClass}
+                    >
+                      <option value="">Chọn menu/phân hệ</option>
+                      {feedbackMenuSuggestions.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs font-bold text-[var(--muted)]">Bạn cũng có thể chọn menu gần nhất với nghiệp vụ cần nâng cấp.</p>
+                  </div>
+                  <textarea
+                    value={feedbackDraft.desiredFlow}
+                    onChange={(event) => setFeedbackDraft((current) => ({ ...current, desiredFlow: event.target.value }))}
+                    placeholder="Quy trình mong muốn (ví dụ: bấm A ra B, bấm B ra C)."
+                    rows={5}
+                    className={`${inputClass} resize-y`}
+                  />
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50/65 p-3">
+                  <p className="text-xs font-black uppercase text-violet-800">Gợi ý điền nhanh</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {feedbackFlowExamples.map((example) => (
+                      <button
+                        key={example}
+                        type="button"
+                        onClick={() => setFeedbackDraft((current) => ({ ...current, desiredFlow: example }))}
+                        className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-left text-xs font-bold text-violet-800 transition hover:bg-violet-100"
+                      >
+                        {example}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFeedbackModalOpen(false)}
+                    className="inline-flex items-center rounded-xl border border-[var(--line)] bg-white px-4 py-2 text-sm font-black text-[var(--brand-dark)] transition hover:bg-violet-50"
+                  >
+                    Hủy
+                  </button>
+                  <button type="button" onClick={submitFeedback} disabled={isBusy} className={primaryButtonClass}>
+                    <Send size={16} />
+                    Gửi feedback
+                  </button>
+                </div>
+              </div>
             </div>
           ) : null}
           {teacherModalOpen ? (
