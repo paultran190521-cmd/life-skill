@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
-import { appendAuditLog } from "@/lib/audit";
+import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
 import { sendScheduleDigestEmail } from "@/lib/email";
-import { appendSheetRows, readSheetRows, readSheetRowsBatch } from "@/lib/google-sheets";
+import { appendSheetRows, readSheetRows, readSheetRowsBatch, readSheetRowsCached } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
+import { addSchedulesToConflictIndex, getScheduleConflictIndex } from "@/lib/schedule-conflict-index";
 import type { Notification, Schedule, TeachingEnvironment } from "@/lib/types";
 
 type ScheduleDraftItem = {
@@ -49,12 +50,7 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     const teacherIds = parseTeacherIds(body);
     const items = parseScheduleItems(body);
-    const dataRows = await readSheetRowsBatch(["Teachers", "Schools", "Classes", "Lessons", "TimeSlots"] as const);
-    const teachers = dataRows.Teachers;
-    const schools = dataRows.Schools;
-    const classes = dataRows.Classes;
-    const lessons = dataRows.Lessons;
-    const slots = dataRows.TimeSlots;
+    const { teachers, schools, classes, lessons, slots } = await loadReferenceData();
     const normalizedItems = normalizeScheduleItems(items, { schools, classes, lessons, slots });
 
     const validationMessage = validateScheduleInput(body, teacherIds, normalizedItems, {
@@ -83,8 +79,7 @@ export async function POST(request: Request) {
       })),
     );
 
-    const existingSchedules = await readSheetRows("Schedules");
-    const conflicts = detectScheduleConflicts(schedules, existingSchedules);
+    const conflicts = await detectScheduleConflictsSafe(schedules);
     if (conflicts.length > 0) {
       return apiFailure(409, buildConflictMessage(conflicts), "CONFLICT", requestId);
     }
@@ -98,40 +93,66 @@ export async function POST(request: Request) {
         updatedAt: now,
       })),
     );
+    addSchedulesToConflictIndex(schedules);
 
     const emailResults = await sendScheduleEmailsByTeacher(schedules, { teachers, schools, classes, lessons, slots });
     const notifications = createScheduleNotifications(schedules, emailResults, now);
     await appendSheetRows("Notifications", notifications.map((notification) => ({ ...notification, updatedAt: now })));
 
-    await Promise.all(
-      schedules.map((schedule) =>
-        appendAuditLog({
-          requestId,
-          actor: auth.user,
-          action: "schedule.create",
-          entityType: "Schedule",
-          entityId: schedule.id,
-          route: "/api/schedules",
-          method: "POST",
-          authMode: permission.authMode,
-          decision: permission.decision,
-          reason: permission.reason,
-          source: auth.source,
-          after: {
-            teacherId: schedule.teacherId,
-            classId: schedule.classId,
-            lessonId: schedule.lessonId,
-            schoolId: schedule.schoolId,
-            status: schedule.status,
-          },
-        }),
-      ),
-    );
+    const auditInputs = schedules.map((schedule) => ({
+      requestId,
+      actor: auth.user,
+      action: "schedule.create",
+      entityType: "Schedule",
+      entityId: schedule.id,
+      route: "/api/schedules",
+      method: "POST",
+      authMode: permission.authMode,
+      decision: permission.decision,
+      reason: permission.reason,
+      source: auth.source,
+      after: {
+        teacherId: schedule.teacherId,
+        classId: schedule.classId,
+        lessonId: schedule.lessonId,
+        schoolId: schedule.schoolId,
+        status: schedule.status,
+      },
+    }));
+
+    if (isFeatureEnabled("SCHEDULE_AUDIT_BATCH_ENABLED", true)) {
+      await appendAuditLogs(auditInputs);
+    } else {
+      await Promise.all(auditInputs.map((input) => appendAuditLog(input)));
+    }
 
     return NextResponse.json({ schedules, notifications, emailResults });
   } catch (error) {
     return apiError(error, requestId);
   }
+}
+
+async function loadReferenceData() {
+  if (isFeatureEnabled("SCHEDULE_REFERENCE_CACHE_ENABLED", false)) {
+    const ttlMs = readPositiveIntEnv("SCHEDULE_REFERENCE_CACHE_TTL_MS", 60_000);
+    const [teachers, schools, classes, lessons, slots] = await Promise.all([
+      readSheetRowsCached("Teachers", { ttlMs }),
+      readSheetRowsCached("Schools", { ttlMs }),
+      readSheetRowsCached("Classes", { ttlMs }),
+      readSheetRowsCached("Lessons", { ttlMs }),
+      readSheetRowsCached("TimeSlots", { ttlMs }),
+    ]);
+    return { teachers, schools, classes, lessons, slots };
+  }
+
+  const dataRows = await readSheetRowsBatch(["Teachers", "Schools", "Classes", "Lessons", "TimeSlots"] as const);
+  return {
+    teachers: dataRows.Teachers,
+    schools: dataRows.Schools,
+    classes: dataRows.Classes,
+    lessons: dataRows.Lessons,
+    slots: dataRows.TimeSlots,
+  };
 }
 
 type ScheduleConflict = {
@@ -223,6 +244,81 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
           classId: schedule.classId,
         },
       );
+    } else {
+      draftClassSeen.add(classKey);
+    }
+  }
+
+  return conflicts;
+}
+
+async function detectScheduleConflictsSafe(schedules: Schedule[]) {
+  const conflictIndex = await getScheduleConflictIndex();
+  if (conflictIndex) {
+    return detectScheduleConflictsWithSets(schedules, conflictIndex.teacherKeySet, conflictIndex.classKeySet);
+  }
+
+  const existingSchedules = await readSheetRows("Schedules");
+  return detectScheduleConflicts(schedules, existingSchedules);
+}
+
+function detectScheduleConflictsWithSets(
+  schedules: Schedule[],
+  existingTeacherKeySet: Set<string>,
+  existingClassKeySet: Set<string>,
+) {
+  const conflicts: ScheduleConflict[] = [];
+  const dedupe = new Set<string>();
+  const draftTeacherSeen = new Set<string>();
+  const draftClassSeen = new Set<string>();
+
+  for (const schedule of schedules) {
+    const teacherKey = buildTeacherSlotKey(schedule.date, schedule.timeSlotId, schedule.teacherId);
+    const classKey = buildClassSlotKey(schedule.date, schedule.timeSlotId, schedule.classId);
+
+    if (existingTeacherKeySet.has(teacherKey)) {
+      addConflict(conflicts, dedupe, {
+        conflictType: "teacher",
+        source: "existing",
+        date: schedule.date,
+        timeSlotId: schedule.timeSlotId,
+        teacherId: schedule.teacherId,
+        classId: schedule.classId,
+      });
+    }
+    if (existingClassKeySet.has(classKey)) {
+      addConflict(conflicts, dedupe, {
+        conflictType: "class",
+        source: "existing",
+        date: schedule.date,
+        timeSlotId: schedule.timeSlotId,
+        teacherId: schedule.teacherId,
+        classId: schedule.classId,
+      });
+    }
+
+    if (draftTeacherSeen.has(teacherKey)) {
+      addConflict(conflicts, dedupe, {
+        conflictType: "teacher",
+        source: "draft",
+        date: schedule.date,
+        timeSlotId: schedule.timeSlotId,
+        teacherId: schedule.teacherId,
+        classId: schedule.classId,
+      });
+    } else {
+      draftTeacherSeen.add(teacherKey);
+    }
+
+    if (draftClassSeen.has(classKey)) {
+      addConflict(conflicts, dedupe, {
+        conflictType: "class",
+        source: "draft",
+        date: schedule.date,
+        timeSlotId: schedule.timeSlotId,
+        teacherId: schedule.teacherId,
+        classId: schedule.classId,
+      });
     } else {
       draftClassSeen.add(classKey);
     }
@@ -463,6 +559,22 @@ function normalizeComparableText(value: unknown) {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+function isFeatureEnabled(key: string, fallback: boolean) {
+  const raw = String(process.env[key] ?? "").trim().toLowerCase();
+  if (!raw) {
+    return fallback;
+  }
+  return ["1", "true", "yes", "on", "enabled"].includes(raw);
+}
+
+function readPositiveIntEnv(key: string, fallback: number) {
+  const value = Number(process.env[key] || fallback);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return Math.floor(value);
 }
 
 function normalizeTeachingEnvironment(value: unknown): TeachingEnvironment {

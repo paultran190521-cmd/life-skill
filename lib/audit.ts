@@ -21,29 +21,37 @@ type AuditInput = {
 };
 
 export async function appendAuditLog(input: AuditInput) {
+  await appendAuditLogs([input]);
+}
+
+export async function appendAuditLogs(inputs: AuditInput[]) {
+  if (inputs.length === 0) {
+    return;
+  }
+
   const now = new Date().toISOString();
-  const metadata: JsonObject = {
-    requestId: input.requestId,
-    route: input.route,
-    method: input.method,
-    authMode: input.authMode,
-    decision: input.decision,
-    reason: input.reason || "",
-    source: input.source || "session",
-  };
+  const rows = inputs.map((input) => {
+    const metadata: JsonObject = {
+      requestId: input.requestId,
+      route: input.route,
+      method: input.method,
+      authMode: input.authMode,
+      decision: input.decision,
+      reason: input.reason || "",
+      source: input.source || "session",
+    };
 
-  if (input.before) {
-    metadata.before = input.before;
-  }
-  if (input.after) {
-    metadata.after = input.after;
-  }
-  if (input.before && input.after) {
-    metadata.changedFields = computeChangedFields(input.before, input.after);
-  }
+    if (input.before) {
+      metadata.before = input.before;
+    }
+    if (input.after) {
+      metadata.after = input.after;
+    }
+    if (input.before && input.after) {
+      metadata.changedFields = computeChangedFields(input.before, input.after);
+    }
 
-  await appendSheetRows("AuditLogs", [
-    {
+    return {
       id: createAuditId(),
       actorId: input.actor.id,
       actorEmail: input.actor.email,
@@ -52,8 +60,10 @@ export async function appendAuditLog(input: AuditInput) {
       entityId: input.entityId,
       metadata: JSON.stringify(metadata),
       createdAt: now,
-    },
-  ]);
+    };
+  });
+
+  await appendSheetRows("AuditLogs", rows);
 }
 
 type ApiErrorEventInput = {

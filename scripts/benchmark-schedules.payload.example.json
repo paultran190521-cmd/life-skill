@@ -1,0 +1,15 @@
+{
+  "teacherIds": [
+    "t-001"
+  ],
+  "items": [
+    {
+      "date": "2026-06-15",
+      "schoolId": "s-001",
+      "classId": "c-001",
+      "lessonId": "l-001",
+      "timeSlotId": "ts-1",
+      "teachingEnvironment": "in_class"
+    }
+  ]
+}

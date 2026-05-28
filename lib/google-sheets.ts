@@ -38,6 +38,8 @@ export type { SheetName };
 type SheetRow = Record<string, string>;
 
 let sheetsClient: ReturnType<typeof google.sheets> | null = null;
+const headerCache = new Map<SheetName, { headers: string[]; expiresAt: number }>();
+const rowCache = new Map<SheetName, { rows: SheetRow[]; expiresAt: number }>();
 
 function getSheetsClient() {
   if (sheetsClient) {
@@ -101,6 +103,34 @@ export async function readSheetRows(sheetName: SheetName) {
   return toRows(response.data.values || []);
 }
 
+export async function readSheetRowsCached(
+  sheetName: SheetName,
+  options?: {
+    ttlMs?: number;
+    forceRefresh?: boolean;
+  },
+) {
+  if (!isFeatureEnabled("SHEETS_ROW_CACHE_ENABLED", true)) {
+    return readSheetRows(sheetName);
+  }
+
+  const ttlMs = options?.ttlMs ?? readPositiveIntEnv("SHEETS_ROW_CACHE_TTL_MS", 60_000);
+  if (ttlMs <= 0 || options?.forceRefresh) {
+    const freshRows = await readSheetRows(sheetName);
+    rowCache.set(sheetName, { rows: freshRows, expiresAt: Date.now() + Math.max(ttlMs, 1) });
+    return freshRows;
+  }
+
+  const cached = rowCache.get(sheetName);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.rows.map((row) => ({ ...row }));
+  }
+
+  const freshRows = await readSheetRows(sheetName);
+  rowCache.set(sheetName, { rows: freshRows, expiresAt: Date.now() + ttlMs });
+  return freshRows;
+}
+
 export async function readSheetRowsBatch<T extends SheetName>(sheetNames: readonly T[]) {
   const uniqueNames = Array.from(new Set(sheetNames)) as T[];
   if (uniqueNames.length === 0) {
@@ -151,6 +181,7 @@ export async function appendSheetRow(sheetName: SheetName, row: Record<string, u
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [values] },
   });
+  invalidateSheetRowsCache(sheetName);
 }
 
 export async function appendSheetRowWithHeaders(
@@ -167,6 +198,7 @@ export async function appendSheetRowWithHeaders(
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [values] },
   });
+  invalidateSheetRowsCache(sheetName);
 }
 
 export async function ensureSheetHeaders(sheetName: SheetName, requiredHeaders: string[]) {
@@ -181,6 +213,7 @@ export async function ensureSheetHeaders(sheetName: SheetName, requiredHeaders: 
   const headers = (response.data.values?.[0] || []).map((header) => normalizeSheetHeader(header));
   const missingHeaders = requiredHeaders.filter((header) => !headers.includes(header));
   if (missingHeaders.length === 0) {
+    setHeaderCache(sheetName, headers);
     return headers;
   }
 
@@ -191,6 +224,7 @@ export async function ensureSheetHeaders(sheetName: SheetName, requiredHeaders: 
     valueInputOption: "RAW",
     requestBody: { values: [nextHeaders] },
   });
+  setHeaderCache(sheetName, nextHeaders);
 
   return nextHeaders;
 }
@@ -242,6 +276,7 @@ export async function appendSheetRows(sheetName: SheetName, rows: Array<Record<s
     insertDataOption: "INSERT_ROWS",
     requestBody: { values },
   });
+  invalidateSheetRowsCache(sheetName);
 }
 
 export async function updateSheetRowById(sheetName: SheetName, id: string, patch: Record<string, unknown>) {
@@ -272,6 +307,7 @@ export async function updateSheetRowById(sheetName: SheetName, id: string, patch
     valueInputOption: "RAW",
     requestBody: { values: [nextRow] },
   });
+  invalidateSheetRowsCache(sheetName);
 }
 
 export async function deleteSheetRowById(sheetName: SheetName, id: string) {
@@ -317,6 +353,7 @@ export async function deleteSheetRowById(sheetName: SheetName, id: string) {
       ],
     },
   });
+  invalidateSheetRowsCache(sheetName);
 }
 
 export async function getAppDataFromSheets() {
@@ -378,6 +415,13 @@ export const appAnnouncementHeaders = [
 ];
 
 async function getHeaders(sheetName: SheetName) {
+  if (isFeatureEnabled("SHEETS_HEADER_CACHE_ENABLED", true)) {
+    const cached = headerCache.get(sheetName);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.headers;
+    }
+  }
+
   const response = await getSheetsClient().spreadsheets.values.get({
     spreadsheetId: spreadsheetId(),
     range: `${quoteSheetName(sheetName)}!1:1`,
@@ -388,7 +432,41 @@ async function getHeaders(sheetName: SheetName) {
     throw new Error(`${sheetName} is missing a header row.`);
   }
 
+  setHeaderCache(sheetName, headers);
   return headers;
+}
+
+function invalidateSheetRowsCache(sheetName: SheetName) {
+  rowCache.delete(sheetName);
+}
+
+function setHeaderCache(sheetName: SheetName, headers: string[]) {
+  if (!isFeatureEnabled("SHEETS_HEADER_CACHE_ENABLED", true)) {
+    headerCache.delete(sheetName);
+    return;
+  }
+
+  const ttlMs = readPositiveIntEnv("SHEETS_HEADER_CACHE_TTL_MS", 300_000);
+  headerCache.set(sheetName, {
+    headers: [...headers],
+    expiresAt: Date.now() + ttlMs,
+  });
+}
+
+function isFeatureEnabled(key: string, fallback: boolean) {
+  const raw = String(process.env[key] ?? "").trim().toLowerCase();
+  if (!raw) {
+    return fallback;
+  }
+  return ["1", "true", "yes", "on", "enabled"].includes(raw);
+}
+
+function readPositiveIntEnv(key: string, fallback: number) {
+  const value = Number(process.env[key] || fallback);
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return Math.floor(value);
 }
 
 function normalizeSheetHeader(value: unknown) {
