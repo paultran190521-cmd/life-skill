@@ -1,10 +1,9 @@
-﻿import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { apiError, createId } from "@/lib/api";
-import { findAuthorizedUserFromHint, findAuthorizedUserFromSession } from "@/lib/auth-users";
-import { sessionCookieName, verifySessionToken } from "@/lib/auth-session";
+import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
+import { appendAuditLog } from "@/lib/audit";
 import { sendScheduleDigestEmail } from "@/lib/email";
 import { appendSheetRows, readSheetRows, readSheetRowsBatch } from "@/lib/google-sheets";
+import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 import type { Notification, Schedule, TeachingEnvironment } from "@/lib/types";
 
 type ScheduleDraftItem = {
@@ -26,24 +25,27 @@ type EmailResult = {
 };
 
 export async function GET() {
+  const requestId = createRequestId("schedules-list");
   try {
     return NextResponse.json(await readSheetRows("Schedules"));
   } catch (error) {
-    if (error instanceof RouteError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    return apiError(error);
+    return apiError(error, requestId);
   }
 }
 
 export async function POST(request: Request) {
+  const requestId = createRequestId("schedule");
   try {
-    const body = (await request.json()) as Record<string, unknown>;
-    const currentUser = await requireUser(request, String(body.createdBy || "").trim());
-    if (currentUser.role !== "admin") {
-      return NextResponse.json({ error: "Chỉ quản trị viên được tạo lịch." }, { status: 403 });
+    const auth = await requireSessionUser(request);
+    const permission = evaluateRolePermission(auth.user, "admin", "admin_only_schedules_create");
+    if (permission.decision === "would_block") {
+      console.warn(`[auth-shadow][${requestId}] schedules.create ${permission.reason}`);
+    }
+    if (!permission.allowed) {
+      return apiFailure(403, "Chỉ quản trị viên được tạo lịch.", undefined, requestId);
     }
 
+    const body = (await request.json()) as Record<string, unknown>;
     const now = new Date().toISOString();
     const teacherIds = parseTeacherIds(body);
     const items = parseScheduleItems(body);
@@ -55,15 +57,15 @@ export async function POST(request: Request) {
     const slots = dataRows.TimeSlots;
     const normalizedItems = normalizeScheduleItems(items, { schools, classes, lessons, slots });
 
-    const validationError = validateScheduleInput(body, teacherIds, normalizedItems, {
+    const validationMessage = validateScheduleInput(body, teacherIds, normalizedItems, {
       teachers,
       schools,
       classes,
       lessons,
       slots,
     });
-    if (validationError) {
-      return NextResponse.json({ error: validationError }, { status: 400 });
+    if (validationMessage) {
+      return apiFailure(400, validationMessage, undefined, requestId);
     }
 
     const schedules: Schedule[] = teacherIds.flatMap((teacherId) =>
@@ -85,27 +87,9 @@ export async function POST(request: Request) {
       "Schedules",
       schedules.map((schedule) => ({
         ...schedule,
-        createdBy: currentUser.id,
+        createdBy: auth.user.id,
         createdAt: now,
         updatedAt: now,
-      })),
-    );
-    await appendSheetRows(
-      "AuditLogs",
-      schedules.map((schedule) => ({
-        id: createId("audit"),
-        actorId: currentUser.id,
-        actorEmail: currentUser.email,
-        action: "schedule.create",
-        entityType: "Schedule",
-        entityId: schedule.id,
-        metadata: JSON.stringify({
-          teacherId: schedule.teacherId,
-          classId: schedule.classId,
-          lessonId: schedule.lessonId,
-          schoolId: schedule.schoolId,
-        }),
-        createdAt: now,
       })),
     );
 
@@ -113,41 +97,35 @@ export async function POST(request: Request) {
     const notifications = createScheduleNotifications(schedules, emailResults, now);
     await appendSheetRows("Notifications", notifications.map((notification) => ({ ...notification, updatedAt: now })));
 
+    await Promise.all(
+      schedules.map((schedule) =>
+        appendAuditLog({
+          requestId,
+          actor: auth.user,
+          action: "schedule.create",
+          entityType: "Schedule",
+          entityId: schedule.id,
+          route: "/api/schedules",
+          method: "POST",
+          authMode: permission.authMode,
+          decision: permission.decision,
+          reason: permission.reason,
+          source: auth.source,
+          after: {
+            teacherId: schedule.teacherId,
+            classId: schedule.classId,
+            lessonId: schedule.lessonId,
+            schoolId: schedule.schoolId,
+            status: schedule.status,
+          },
+        }),
+      ),
+    );
+
     return NextResponse.json({ schedules, notifications, emailResults });
   } catch (error) {
-    if (error instanceof RouteError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    return apiError(error);
+    return apiError(error, requestId);
   }
-}
-
-async function requireUser(request: Request, fallbackUserId?: string) {
-  const cookieStore = await cookies();
-  const session = verifySessionToken(cookieStore.get(sessionCookieName)?.value);
-  if (session) {
-    const userFromSession = await findAuthorizedUserFromSession(session.userId, session.email);
-    if (userFromSession) {
-      return userFromSession;
-    }
-  }
-
-  const userFromHeader = await findAuthorizedUserFromHint(
-    request.headers.get("x-app-user-id"),
-    request.headers.get("x-app-user-email"),
-  );
-  if (userFromHeader) {
-    return userFromHeader;
-  }
-
-  if (fallbackUserId) {
-    const userFromPayload = await findAuthorizedUserFromHint(fallbackUserId, "");
-    if (userFromPayload) {
-      return userFromPayload;
-    }
-  }
-
-  throw new RouteError(401, "Unauthorized");
 }
 
 function parseTeacherIds(body: Record<string, unknown>) {
@@ -449,13 +427,4 @@ async function sendScheduleEmailsByTeacher(
       };
     }),
   );
-}
-
-class RouteError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
 }

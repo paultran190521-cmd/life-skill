@@ -1,25 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import { apiError, createId } from "@/lib/api";
-import { appendSheetRows, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
+import { apiError, apiFailure, createRequestId } from "@/lib/api";
+import { appendAuditLog } from "@/lib/audit";
+import { readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
 import { verifyScheduleConfirmationBatchToken } from "@/lib/schedule-confirmation";
 
 export async function GET(request: NextRequest) {
+  const requestId = createRequestId("schedule-confirm-all");
   try {
     const payload = verifyScheduleConfirmationBatchToken(request.nextUrl.searchParams.get("token"));
     if (!payload) {
-      throw new Error("Link xác nhận tất cả không hợp lệ hoặc đã hết hạn.");
+      return apiFailure(401, "Link xác nhận tất cả không hợp lệ hoặc đã hết hạn.", "UNAUTHORIZED", requestId);
     }
 
     const scheduleIdSet = new Set(payload.scheduleIds);
     const rows = await readSheetRows("Schedules");
     const targetRows = rows.filter((row) => scheduleIdSet.has(String(row.id || "").trim()));
     if (targetRows.length === 0) {
-      throw new Error("Không tìm thấy lịch cần xác nhận.");
+      return apiFailure(404, "Không tìm thấy lịch cần xác nhận.", "NOT_FOUND", requestId);
     }
 
     const teacherRows = targetRows.filter((row) => String(row.teacherId || "").trim() === payload.teacherId);
     if (teacherRows.length === 0) {
-      throw new Error("Link xác nhận không còn đúng giáo viên được phân công.");
+      return apiFailure(403, "Link xác nhận không còn đúng giáo viên được phân công.", "FORBIDDEN", requestId);
     }
 
     const confirmableRows = teacherRows.filter((row) => ["sent", "reassigned"].includes(String(row.status || "").trim()));
@@ -36,30 +38,24 @@ export async function GET(request: NextRequest) {
         ),
       );
 
-      await appendSheetRows("Notifications", [
-        {
-          id: createId("n"),
-          title: "Giáo viên đã nhận lịch",
-          body: `${confirmableRows.length} lịch dạy vừa được xác nhận từ email (xác nhận tất cả).`,
-          role: "admin",
-          read: false,
-          createdAt: now,
-          updatedAt: now,
-        },
-      ]);
-
-      await appendSheetRows(
-        "AuditLogs",
-        confirmableRows.map((row) => ({
-          id: createId("audit"),
-          actorId: payload.teacherId,
-          actorEmail: "",
-          action: "schedule.confirm.all",
-          entityType: "Schedule",
-          entityId: row.id,
-          metadata: JSON.stringify({ source: "email-confirm-all" }),
-          createdAt: now,
-        })),
+      await Promise.all(
+        confirmableRows.map((row) =>
+          appendAuditLog({
+            requestId,
+            actor: { id: payload.teacherId, email: "" },
+            action: "schedule.confirm.all",
+            entityType: "Schedule",
+            entityId: row.id,
+            route: "/api/schedules/confirm-all",
+            method: "GET",
+            authMode: "enforce",
+            decision: "allow",
+            reason: "",
+            source: "email-token",
+            before: { status: row.status, teacherId: row.teacherId },
+            after: { status: "confirmed", teacherId: row.teacherId, confirmedAt: now },
+          }),
+        ),
       );
     }
 
@@ -67,6 +63,6 @@ export async function GET(request: NextRequest) {
     redirectUrl.searchParams.set("confirmedAll", String(confirmableRows.length));
     return NextResponse.redirect(redirectUrl);
   } catch (error) {
-    return apiError(error);
+    return apiError(error, requestId);
   }
 }

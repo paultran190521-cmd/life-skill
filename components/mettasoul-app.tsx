@@ -546,9 +546,11 @@ export function MettasoulApp() {
           setSessionUserId(sessionUser.id);
           setCurrentUserId(sessionUser.id);
           setAuthStatus("signed-in");
+          return sessionUser;
         } else {
           setSessionUserId("");
           setAuthStatus("signed-out");
+          return null;
         }
       } catch (error) {
         console.error(error);
@@ -556,6 +558,7 @@ export function MettasoulApp() {
           setSessionUserId("");
           setAuthStatus("signed-out");
         }
+        return null;
       }
     }
 
@@ -587,8 +590,22 @@ export function MettasoulApp() {
       }
     }
 
-    loadSession();
-    loadAppData();
+    async function bootstrap() {
+      setDataStatus("loading");
+      const sessionUser = await loadSession();
+      if (cancelled) {
+        return;
+      }
+
+      if (!sessionUser) {
+        setDataStatus("connected");
+        return;
+      }
+
+      await loadAppData();
+    }
+
+    bootstrap();
     return () => {
       cancelled = true;
     };
@@ -2898,14 +2915,18 @@ export function MettasoulApp() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <span
                   className={`inline-flex h-11 items-center justify-center rounded-2xl px-3 text-xs font-black ${
-                    dataStatus === "connected"
+                    authStatus === "signed-out"
+                      ? "bg-slate-100 text-slate-700"
+                      : dataStatus === "connected"
                       ? "bg-emerald-50 text-emerald-700"
                       : dataStatus === "loading"
                         ? "bg-cyan-50 text-[var(--brand-dark)]"
                         : "bg-orange-50 text-orange-700"
                   }`}
                 >
-                  {dataStatus === "connected"
+                  {authStatus === "signed-out"
+                    ? "Chưa đăng nhập"
+                    : dataStatus === "connected"
                     ? "Đã nối Google Sheet"
                     : dataStatus === "loading"
                       ? "Đang tải dữ liệu"

@@ -1,193 +1,137 @@
 ﻿# WORK SUMMARY - HỌC VIỆN METTASOUL Scheduler
 
-Ngày cập nhật: 28/05/2026
-Nhánh hiện tại: `main`
+Ngày cập nhật: 28/05/2026  
+Nhánh hiện tại: `main`  
+HEAD commit hiện tại: `22fa804`
 
-## 1. Tổng Quan Trạng Thái
+## 1. Mục Tiêu Và Trạng Thái Tổng Quan
 
-HỌC VIỆN METTASOUL Scheduler là web app Next.js dùng cho giáo vụ/admin quản lý lịch dạy kỹ năng sống, giao lịch cho giáo viên, theo dõi giáo án, điểm danh, thông báo vận hành, hướng dẫn sử dụng và phản hồi người dùng.
+HỌC VIỆN METTASOUL Scheduler là web app Next.js (App Router) phục vụ quản lý vận hành lịch dạy kỹ năng sống cho admin/giáo vụ và giáo viên.
 
-Trạng thái hiện tại:
+Nguồn dữ liệu chính:
 
-- Dữ liệu chính đọc/ghi qua Google Sheets.
-- Google Apps Script dùng cho gửi email lịch dạy và upload/xóa file giáo án trên Google Drive.
-- Giao diện đã rebrand sang `HỌC VIỆN METTASOUL`.
-- Menu `Lịch tổng` và `Lịch của tôi` mặc định ở chế độ xem tuần.
-- Font giao diện chính dùng Quicksand.
-- Quy trình làm việc đã chốt: hoàn tất thay đổi thì build/kiểm tra phù hợp, commit và push lên GitHub.
-- Quy tắc bắt buộc: sau khi hoàn tất code/fix theo yêu cầu thì phải commit và push GitHub ngay trong cùng phiên làm việc.
+- Google Sheets: lưu dữ liệu nghiệp vụ.
+- Google Apps Script (GAS): xử lý gửi email lịch dạy, upload/xóa giáo án trên Google Drive.
 
-## 2. Tính Năng Mới Phát Triển 28/05/2026
+Trạng thái tổng quan hiện tại (đã đối chiếu code):
 
-Đã bổ sung/cải tiến:
+- Chức năng cốt lõi đã có đầy đủ cho vận hành thực tế.
+- UI đã rebrand sang `HỌC VIỆN METTASOUL`, font Quicksand, mặc định lịch ở chế độ tuần.
+- Phân hệ chat không còn trong codebase.
+- Có một số tồn đọng kỹ thuật cần xử lý (đặc biệt phân quyền API và kiểm thử email thực chiến).
 
-- Thêm lớp feedback hệ thống dạng ghim để admin có thể theo dõi phản hồi/yêu cầu nổi bật rõ hơn trong giao diện.
-- Thêm banner thông báo do admin quản lý, có API tạo/cập nhật/xóa và dữ liệu lưu trong Google Sheets.
-- Banner thông báo được đưa vào dữ liệu app tổng, có kiểu hiển thị riêng trong giao diện để truyền đạt thông báo vận hành.
-- Nâng cấp giáo án phía giáo viên: hiển thị giáo án đã nộp inline ngay trong card lịch/bài liên quan.
-- Hỗ trợ link Google Drive cho giáo án, giúp giáo viên/admin mở nhanh file đã nộp.
-- Cải thiện hướng dẫn/link trên card giáo án của giáo viên để thao tác rõ hơn.
-- Mở rộng dữ liệu `LessonPlans` để lưu thêm thông tin phục vụ Drive link và hiển thị inline.
-- Bổ sung tracing gửi email lịch dạy qua tab `MailDebug`, giúp kiểm tra request, response, metadata và nội dung liên quan khi email bị lỗi.
-- Bổ sung kiểm tra metadata GAS khi gửi email: nếu GAS trả metadata cũ/stale hoặc recipient email không hợp lệ thì hệ thống coi là lỗi thay vì báo thành công giả.
-- Hiển thị lý do email gửi thất bại trong thông báo admin sau khi tạo lịch, giúp giáo vụ biết lỗi nằm ở GAS, email người nhận hay nội dung gửi.
-- Sửa kiểm tra digest email trong GAS để giữ nguyên whitespace HTML, tránh làm hỏng cấu trúc/nội dung email khi kiểm tra chuỗi legacy.
-- Tiếp tục gia cố xử lý lỗi nội dung email cũ ở `lib/email.ts` và `scripts/gas-life-skill-webhook.js`.
+## 2. Tính Năng Đã Xác Minh Có Thật Trên Code
 
-Ghi chú trạng thái:
+### 2.1. Xác thực và tài khoản
 
-- Nhóm email lịch dạy đã có thêm tracing và báo lỗi rõ hơn, nhưng vẫn cần một lượt gửi test thực tế để xác nhận email nhận được không còn chuỗi cũ như `KỸ TRỐNG`.
-- `MailDebug` là công cụ ưu tiên để điều tra phiên sau nếu email vẫn sai nội dung.
+- Đăng nhập Google OAuth2, callback tạo session cookie (`life_skill_session`).
+- Xác thực user qua `Users` và fallback teacher trong `Teachers` khi phù hợp.
+- Có đăng xuất session.
 
-## 3. Phân Hệ Giao Lịch
+### 2.2. Điều phối giao lịch
 
-Đã hoàn tất:
+- Tạo lịch theo lô, 1 lần gửi nhiều giáo viên và nhiều dòng lịch.
+- Validate dữ liệu trường/lớp/bài học/khung giờ và khớp khối lớp - bài học.
+- Hỗ trợ normalize dữ liệu ID/tên để giảm lỗi lệch giữa Sheet/UI.
+- Ghi `AuditLogs`, tạo `Notifications`, và gửi email theo nhóm giáo viên.
 
-- Tạo lịch dạy theo lô, một lần gửi có thể tạo nhiều dòng lịch.
-- Một lần gửi có thể giao cho nhiều giáo viên.
-- Mỗi dòng lịch gồm ngày dạy, trường, khối/lớp, khung giờ, bài học và môi trường dạy học.
-- Luồng chọn theo thứ tự: trường, khối, lớp, khung giờ, bài học, môi trường.
-- Khi đổi khối, danh sách lớp và bài học tự lọc theo khối tương ứng.
-- Có preview lịch sắp gửi ở bên phải.
-- Preview có bộ lọc dropdown theo giáo viên để giáo vụ kiểm trước khi gửi hàng loạt.
-- Đã thêm môi trường dạy học: `Trong lớp`, `Ngoài sân`, `Nhà thi đấu`, `Báo cáo sân trường`.
-- Môi trường dạy học hiển thị dạng badge màu riêng trên từng lịch, phục vụ thống kê/KPI sau này.
-- Hiển thị khung giờ gọn, bỏ nhãn buổi như `tiết sáng`, chỉ giữ giờ bắt đầu và kết thúc.
-- Backend validate trường, lớp, giáo viên, khung giờ, bài học và quan hệ bài học đúng khối.
-- Backend đã gia cố để resolve dữ liệu theo cả ID và tên hiển thị, tránh lỗi khi Sheet/UI chưa đồng bộ tuyệt đối.
-- Đã sửa lỗi `Trường đã chọn không tồn tại` khi gửi lịch do Google Sheets `batchGet` trả range không khớp format cũ.
-- Đã giảm số lần đọc Google Sheets khi tạo lịch để hạn chế lỗi quota.
-- Đã chuẩn hóa header Google Sheet để nhận các biến thể như `ID`, `Id`, `id`, `schoolId`, `timeSlotId`, `Tiêu đề`, `Bài học`, `Tên bài học`, `Mục tiêu`.
+### 2.3. Email lịch dạy
 
-## 4. Email Lịch Dạy
+- Subject tuần chuẩn: `LỊCH DẠY TUẦN ... NĂM ...`.
+- Email có nút `XÁC NHẬN` từng lịch và `XÁC NHẬN TẤT CẢ`.
+- Có route xác nhận từ email:
+  - `/api/schedules/[id]/confirm`
+  - `/api/schedules/confirm-all`
+- Có lớp kiểm tra template/version/digest giữa Next.js và GAS.
+- Có `MailDebug` để trace trạng thái gửi email.
 
-Đã hoàn tất một phần:
+### 2.4. Lịch tổng / lịch của tôi
 
-- Email lịch dạy được gom theo từng giáo viên.
-- Subject email in hoa theo tuần: `LỊCH DẠY TUẦN ... NĂM ...`.
-- Email có bảng lịch viền cam `#ff9500`.
-- Mỗi dòng lịch có nút `XÁC NHẬN`.
-- Có nút `XÁC NHẬN TẤT CẢ (TẤT CẢ LỊCH ĐƯỢC XÁC NHẬN)`.
-- Đã thêm route xác nhận tất cả lịch trong email.
-- Đã cập nhật `scripts/gas-life-skill-webhook.js` để sender name là `HỌC VIỆN METTASOUL`, có `requestId`, `templateVersion` và lớp normalize nội dung trước khi gửi.
-- Đã bổ sung `MailDebug` để ghi vết quá trình gửi email lịch dạy.
-- Đã bổ sung báo lỗi rõ hơn cho admin khi email gửi thất bại.
-- Đã bổ sung kiểm tra GAS metadata để phát hiện GAS cũ/stale.
+- Chế độ xem tháng/tuần/ngày; mặc định tuần.
+- Admin xem toàn bộ, giáo viên xem lịch cá nhân.
+- Bộ lọc: trạng thái, giáo viên, trường, lớp, khung giờ, ngày.
+- Có thao tác admin: hủy lịch, chuyển giáo viên, nhắc xác nhận, thao tác hàng loạt.
+- Có thống kê nhanh và modal chi tiết lịch.
 
-Tồn tại cuối phiên:
+### 2.5. Giáo viên và người dùng
 
-- Email thực tế vẫn còn lỗi chính tả `KỸ TRỐNG` và câu cũ `giáo vụ vừa lịch giảng dạy`.
-- Gmail sender đã đổi đúng sang `HỌC VIỆN METTASOUL`, chứng tỏ GAS mới có chạy, nhưng HTML gửi vào GAS vẫn còn nội dung cũ.
-- Phiên sau cần kiểm tra nguồn HTML thực tế trước khi GAS gửi bằng cách log `payload.templateVersion` và đoạn đầu `payload.html`.
-- Cần xác nhận app deploy đang chạy đúng commit mới và không còn template email nào khác ngoài `lib/email.ts`.
-- Cần kiểm tra dữ liệu bài học trong tab `Lessons`, bảo đảm tên bài đúng là `Thấu cảm và trắc ẩn`.
+- CRUD giáo viên + bật/tắt active.
+- Tạo/sync tài khoản `Users` gắn `teacherId`.
+- Import giáo viên từ XLSX/CSV/TSV.
+- Chặn email trùng trong file import, bỏ qua email đã tồn tại hệ thống.
+- Khi cập nhật/tắt giáo viên có sync trạng thái sang user liên kết.
 
-## 5. Phân Hệ Lịch Tổng Và Lịch Của Tôi
+### 2.6. Tổng quan giáo viên
 
-Đã hoàn tất:
+- Có tab tổng quan theo thời gian.
+- KPI chính gồm:
+  - Lịch đã dạy
+  - Lịch sắp dạy
+  - Điểm danh trễ
+  - Không điểm danh
+  - Giáo án đã gửi
+  - Giáo án chưa gửi
+- Có thêm 4 KPI môi trường dạy: trong lớp/ngoài sân/nhà thi đấu/báo cáo sân trường.
+- Bấm card mở danh sách chi tiết tương ứng.
 
-- Có chế độ xem tháng, tuần, ngày.
-- Mặc định vào chế độ xem tuần để giao diện gọn hơn.
-- Admin xem toàn bộ lịch; giáo viên chỉ xem lịch của mình.
-- Có bộ lọc theo trạng thái, giáo viên, trường, lớp, khung giờ và khoảng ngày.
-- Có thống kê nhanh tổng lịch, lịch chờ xác nhận, đã nhận, đã điểm danh và đã hủy.
-- Có modal chi tiết lịch với thông tin ngày dạy, giáo viên, trường, lớp, khung giờ, bài học, mục tiêu và trạng thái.
-- Có thao tác hủy lịch, chuyển giáo viên, nhắc xác nhận và lịch sử thao tác qua `AuditLogs`.
+### 2.7. Giáo án
 
-## 6. Phân Hệ Giáo Viên
+- Upload giáo án qua proxy route đến GAS.
+- Hỗ trợ nhiều định dạng file, giới hạn 10MB/file.
+- Có link giáo án ngoài (`external_link`) và hiển thị inline trên card liên quan.
+- Cho sửa tên giáo án, xóa giáo án (ưu tiên GAS, fallback Google Drive API + xóa sheet).
+- Có phân quyền giáo viên/admin cho thao tác giáo án.
 
-Đã hoàn tất:
+### 2.8. Điểm danh
 
-- Thêm, sửa, bật/tắt và xóa giáo viên.
-- Tự tạo tài khoản `Users` liên kết với `Teachers`.
-- Đổi phân quyền admin/giáo viên.
-- Tìm kiếm giáo viên theo tên, email, số điện thoại và chuyên môn.
-- Import giáo viên hàng loạt từ Excel/CSV/TSV.
-- Chặn email trùng trong file import và bỏ qua email đã tồn tại.
-- Khi tắt giáo viên, tài khoản liên kết cũng chuyển sang không hoạt động.
+- POST điểm danh tạo record `Attendance`, update `Schedules` sang `attended`, ghi `AuditLogs`.
+- Chặn điểm danh lịch đã hủy và chặn điểm danh trùng.
+- Rule thời gian:
+  - Cho điểm danh sớm tối đa 30 phút trước giờ bắt đầu.
+  - Sau ngưỡng muộn vẫn ghi nhận để theo dõi trễ.
+- Dashboard admin có card tổng hợp và cảnh báo giáo viên trễ/chưa điểm danh.
 
-## 7. Tổng Quan Giáo Viên
+### 2.9. Cấu hình nền tảng
 
-Đã hoàn tất:
+- Quản lý Trường/Lớp/Khung giờ/Bài học.
+- Lớp tự suy ra khối từ tên lớp (ví dụ `10A1` -> `Khối 10`).
+- Khung giờ chỉ chấp nhận 45 hoặc 90 phút.
+- Import bài học và khung giờ từ XLSX/CSV/TSV.
 
-- Thêm menu Tổng quan cho giao diện giáo viên.
-- Có lọc theo thời gian.
-- Thống kê số lịch đã dạy và lịch sắp dạy.
-- Thống kê số lần điểm danh trễ và không điểm danh.
-- Thống kê giáo án đã gửi và chưa gửi.
-- Thống kê số tiết theo môi trường: trong lớp, ngoài sân, nhà thi đấu, báo cáo sân trường.
-- Bấm vào từng card sẽ mở danh sách chi tiết tương ứng.
-- Admin được chọn tài khoản để xem; giáo viên chỉ xem dữ liệu của chính họ.
-- Sáu card tổng quan đã được sắp xếp gọn trên một hàng, dùng màu phân biệt và font số lớn hơn.
+### 2.10. Thông báo, banner, feedback, hướng dẫn
 
-## 8. Phân Hệ Giáo Án
+- Chuông thông báo có panel danh sách + đánh dấu đã đọc.
+- Có banner thông báo chạy đầu ứng dụng (`AppAnnouncements`) với bật/tắt/xóa.
+- Có modal feedback và khu feedback trong Cấu hình.
+- Có trang hướng dẫn tại `public/huong-dan-su-dung/index.html`.
+- Có center feedback/toast nổi để phản hồi thao tác cho người dùng.
 
-Đã hoàn tất:
+## 3. Trạng Thái Bảo Mật/Phân Quyền API (Quan Trọng)
 
-- Upload giáo án qua GAS Web App.
-- Hỗ trợ nhiều định dạng: PDF, Word, PowerPoint, Excel, TXT, CSV.
-- Hỗ trợ upload nhiều file trong một lần.
-- Giới hạn mỗi file 10MB.
-- Một lịch có thể có nhiều giáo án.
-- Admin có màn tổng quan giáo án và thống kê đã nộp/chưa nộp.
-- Giáo viên có màn giáo án của tôi, ưu tiên lịch cần nộp.
-- Giáo viên xem được giáo án đã gửi ngay trong card lịch/giáo án liên quan.
-- Hỗ trợ mở nhanh link Google Drive của giáo án đã nộp.
-- Có sửa tên giáo án, xóa bản ghi Google Sheet và xóa file Google Drive qua GAS.
-- Backend kiểm tra quyền: giáo viên chỉ xử lý giáo án của mình, admin có toàn quyền.
+Đang có chênh lệch giữa phân quyền ở UI và phân quyền ở một số API backend:
 
-## 9. Phân Hệ Điểm Danh
+- Các route đã có kiểm tra session/phân quyền tương đối tốt: `schedules`, `attendance`, `lesson-plans`.
+- Một số route cấu hình/chung hiện chưa bắt buộc auth role chặt ở tầng API (dù UI giới hạn theo tab), ví dụ nhóm route `teachers`, `schools`, `classes`, `lessons`, `announcements`, `notifications`.
 
-Đã hoàn tất:
+Kết luận hiện trạng:
 
-- Backend điểm danh ghi `Attendance`, cập nhật `Schedules` sang `attended` và ghi `AuditLogs`.
-- Giáo viên chỉ điểm danh lịch của mình; admin có quyền toàn hệ thống.
-- Chặn điểm danh trùng và chặn điểm danh lịch đã hủy.
-- Rule thời gian: chặn điểm danh quá sớm trước giờ bắt đầu; các lần sau giờ bắt đầu được lưu và tính là trễ để admin theo dõi.
-- Admin có dashboard điểm danh với card: tiết hôm nay, đã điểm danh, chưa điểm danh, điểm danh trễ.
-- Bấm từng card mở danh sách chi tiết tương ứng.
-- Có cảnh báo giáo viên thường không điểm danh hoặc điểm danh trễ.
-- Bấm vào cảnh báo mở danh sách các lần cụ thể.
-- Giao diện giáo viên giữ dạng điểm danh từng tiết, bổ sung ngày dạy, giờ bắt đầu và giờ kết thúc.
-- Khi đã điểm danh, nhãn/nút chuyển sang trạng thái xám phù hợp.
+- Về UI: admin/teacher phân vùng rõ.
+- Về API: cần harden bắt buộc auth + role check ở tất cả route ghi dữ liệu.
 
-## 10. Phân Hệ Cấu Hình
+## 4. Tồn Đọng Kỹ Thuật Đã Xác Định
 
-Đã hoàn tất:
+- Cần kiểm thử gửi email lịch dạy end-to-end trên môi trường chạy thật để xác nhận dứt điểm nội dung legacy không còn xuất hiện.
+- Cần chuẩn hóa bảo mật API ghi dữ liệu (authn/authz) đồng đều toàn hệ thống.
+- Một số chuỗi tiếng Việt trong response lỗi backend đang hiển thị sai mã hóa, cần chuẩn hóa encoding để tránh thông báo lỗi méo chữ.
+- Cần bổ sung checklist regression test sau mỗi đợt thay đổi lớn (đặc biệt giao lịch + email + giáo án + điểm danh).
 
-- Quản lý trường: thêm, sửa, xóa.
-- Quản lý lớp: thêm, sửa, xóa, nhập nhiều lớp cùng lúc.
-- Tự xác định khối từ tên lớp, ví dụ `10A1` thành `Khối 10`.
-- Quản lý khung giờ trong tab Cấu hình.
-- Thêm/sửa/bật/tắt khung giờ.
-- Chỉ chấp nhận khung giờ 45 phút hoặc 90 phút.
-- Import khung giờ từ Excel/CSV/TSV.
-- Bỏ phần cấu hình Google Workspace khỏi giao diện thường dùng.
+## 5. Commit Gần Đây (Đã Cập Nhật Đúng HEAD)
 
-## 11. Thông Báo, Hướng Dẫn Và Feedback
+Commit mới nhất hiện tại:
 
-Đã hoàn tất:
+- `22fa804` - Update work summary with latest features.
 
-- Chuông thông báo đã mở được danh sách thông báo, không chỉ hiển thị badge.
-- Thêm banner thông báo do admin quản lý để hiển thị thông báo vận hành nổi bật.
-- Thêm phân hệ `Hướng dẫn sử dụng` trong Cấu hình.
-- Tạo trang hướng dẫn HTML tại `public/huong-dan-su-dung/index.html`.
-- Hướng dẫn sử dụng đã chia theo phân hệ và dùng font Quicksand.
-- Thêm chức năng feedback cho admin và giáo viên.
-- Feedback mở bằng modal, có các trường: muốn cập nhật/nâng cấp tính năng nào, trong menu nào, quy trình mong muốn ra sao.
-- Thêm lớp feedback hệ thống dạng ghim để phản hồi quan trọng dễ được theo dõi.
-
-## 12. Phân Hệ Chat
-
-Trạng thái hiện tại:
-
-- Trước đó đã từng triển khai chat lưu Google Sheets và có các API chat.
-- Theo quyết định hiện tại, phân hệ chat đã được bỏ khỏi hệ thống/kế hoạch sử dụng.
-- Phiên sau không tiếp tục phát triển chat trừ khi có yêu cầu khôi phục.
-
-## 13. Commit Chính Gần Đây
-
-Commit mới ngày 28/05/2026:
+Các commit chính trước đó (28/05/2026):
 
 - `bba7e4d` - Add pinned system feedback layer.
 - `e6d8462` - Polish teacher lesson-plan card link guidance.
@@ -199,26 +143,14 @@ Commit mới ngày 28/05/2026:
 - `ca29c08` - Fail schedule email when GAS metadata is stale or recipient email invalid.
 - `de2c2bf` - Fix schedule email legacy-content root causes and enforce push workflow rule.
 
-Commit chính ngày 27/05/2026:
+## 6. Ưu Tiên Phiên Kế Tiếp
 
-- `18e3357` - Rebrand app to HOC VIEN METTASOUL and default calendar to week.
-- `0d8c35c` - Refine schedule email format and add confirm-all link flow.
-- `ac4d983` - Reduce Google Sheets read load on schedule creation.
-- `19aafc3` - Harden Sheets header normalization for schedule send validation.
-- `4f2e28f` - Make schedule creation resilient to id/name mismatches.
-- `a4fb708` - Fix batch Google Sheets range mapping.
-- `2c69bb7` - Polish schedule email layout and lesson header mapping.
-- `09642a4` - Harden GAS schedule email delivery.
-- `8786db7` - Add GAS email legacy content sanitizer.
-- `856124a` - Force normalize schedule email content in GAS.
-- `af81c28` - Update work summary for May 27 session.
-- `da6f324` - Clean up work summary Vietnamese text.
+1. Harden toàn bộ API ghi dữ liệu bằng session + role check thống nhất.
+2. Chạy test gửi lịch thật để xác minh end-to-end nội dung email không còn legacy text.
+3. Chuẩn hóa encoding tiếng Việt ở các message backend.
+4. Cập nhật tiếp tài liệu hướng dẫn theo cùng snapshot code để đồng nhất vận hành.
 
-## 14. Ưu Tiên Phiên Sau
+## 7. Quy Tắc Vận Hành Đã Chốt
 
-- Xử lý triệt để lỗi chính tả email lịch dạy còn tồn.
-- Log và xác nhận HTML thực tế được gửi vào GAS trước khi `MailApp.sendEmail`.
-- Kiểm tra app deploy có chạy đúng commit mới hay không.
-- Kiểm tra trong GAS còn file/hàm cũ nào tạo HTML hoặc ghi đè hàm gửi mail hay không.
-- Kiểm tra dữ liệu bài học trong Google Sheet tab `Lessons`.
-- Gửi lại một lịch test và xác nhận email đúng toàn bộ: sender, subject, tiêu đề hệ thống, câu chào, tên bài, khung giờ, header bảng và CTA.
+- Khi hoàn tất thay đổi theo yêu cầu: kiểm tra lại hoạt động, commit, và push ngay trong cùng phiên.
+- Mọi tài liệu tiến độ phải bám theo trạng thái code thực tế, không chỉ dựa vào ghi chú phiên trước.

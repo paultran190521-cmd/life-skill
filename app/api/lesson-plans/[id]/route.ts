@@ -1,11 +1,9 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { apiError } from "@/lib/api";
-import { findAuthorizedUserFromSession } from "@/lib/auth-users";
-import { sessionCookieName, verifySessionToken } from "@/lib/auth-session";
+import { apiError, apiFailure, createRequestId } from "@/lib/api";
+import { appendAuditLog } from "@/lib/audit";
 import { trashDriveFileById } from "@/lib/google-drive";
 import { deleteSheetRowById, readSheetRowById, updateSheetRowById } from "@/lib/google-sheets";
-import type { User } from "@/lib/types";
+import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -14,28 +12,51 @@ type Params = {
 const GAS_TIMEOUT_MS = 25_000;
 
 export async function PATCH(request: Request, { params }: Params) {
+  const requestId = createRequestId("lesson-plan-patch");
   try {
-    const user = await requireUser();
+    const auth = await requireSessionUser(request);
     const { id } = await params;
     const lessonPlan = await readSheetRowById("LessonPlans", id);
     if (!lessonPlan) {
-      return NextResponse.json({ error: "Cannot find lesson plan." }, { status: 404 });
+      return apiFailure(404, "Không tìm thấy giáo án.", undefined, requestId);
     }
-    if (!canManageLessonPlan(user, lessonPlan.teacherId || "")) {
-      return NextResponse.json({ error: "Permission denied." }, { status: 403 });
+
+    const permission = evaluatePermission({
+      allowed: auth.user.role === "admin" || auth.user.teacherId === lessonPlan.teacherId,
+      reason: "teacher_must_own_lesson_plan",
+    });
+    if (permission.decision === "would_block") {
+      console.warn(`[auth-shadow][${requestId}] lesson-plans.patch ${permission.reason}`);
+    }
+    if (!permission.allowed) {
+      return apiFailure(403, "Bạn không có quyền thao tác giáo án này.", undefined, requestId);
     }
 
     const body = await request.json();
     const fileName = String(body.fileName || "").trim();
-
     if (!fileName) {
-      throw new Error("Missing fileName.");
+      return apiFailure(400, "Tên giáo án là bắt buộc.", undefined, requestId);
     }
 
     const updatedAt = new Date().toISOString();
     await updateSheetRowById("LessonPlans", id, {
       fileName,
       updatedAt,
+    });
+    await appendAuditLog({
+      requestId,
+      actor: auth.user,
+      action: "lesson_plan.update",
+      entityType: "LessonPlan",
+      entityId: id,
+      route: `/api/lesson-plans/${id}`,
+      method: "PATCH",
+      authMode: permission.authMode,
+      decision: permission.decision,
+      reason: permission.reason,
+      source: auth.source,
+      before: { fileName: lessonPlan.fileName },
+      after: { fileName, updatedAt },
     });
 
     return NextResponse.json({
@@ -44,31 +65,49 @@ export async function PATCH(request: Request, { params }: Params) {
       updatedAt,
     });
   } catch (error) {
-    if (error instanceof RouteError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    return apiError(error);
+    return apiError(error, requestId);
   }
 }
 
-export async function DELETE(_: Request, { params }: Params) {
+export async function DELETE(request: Request, { params }: Params) {
+  const requestId = createRequestId("lesson-plan-delete");
   try {
-    const user = await requireUser();
+    const auth = await requireSessionUser(request);
     const { id } = await params;
     const lessonPlan = await readSheetRowById("LessonPlans", id);
     if (!lessonPlan) {
-      return NextResponse.json({ error: "Cannot find lesson plan." }, { status: 404 });
+      return apiFailure(404, "Không tìm thấy giáo án.", undefined, requestId);
     }
-    if (!canManageLessonPlan(user, lessonPlan.teacherId || "")) {
-      return NextResponse.json({ error: "Permission denied." }, { status: 403 });
+    const permission = evaluatePermission({
+      allowed: auth.user.role === "admin" || auth.user.teacherId === lessonPlan.teacherId,
+      reason: "teacher_must_own_lesson_plan",
+    });
+    if (permission.decision === "would_block") {
+      console.warn(`[auth-shadow][${requestId}] lesson-plans.delete ${permission.reason}`);
+    }
+    if (!permission.allowed) {
+      return apiFailure(403, "Bạn không có quyền thao tác giáo án này.", undefined, requestId);
     }
 
     if (!lessonPlan.driveFileId || lessonPlan.source === "external_link") {
       await deleteSheetRowById("LessonPlans", id);
+      await appendAuditLog({
+        requestId,
+        actor: auth.user,
+        action: "lesson_plan.delete",
+        entityType: "LessonPlan",
+        entityId: id,
+        route: `/api/lesson-plans/${id}`,
+        method: "DELETE",
+        authMode: permission.authMode,
+        decision: permission.decision,
+        reason: permission.reason,
+        source: auth.source,
+        before: lessonPlan,
+      });
       return NextResponse.json({ id, deleted: true });
     }
 
-    const requestId = `lp-del-${crypto.randomUUID()}`;
     const gasResult = await tryDeleteViaGas(id, requestId);
 
     if (!gasResult.deleted) {
@@ -77,55 +116,33 @@ export async function DELETE(_: Request, { params }: Params) {
         await deleteSheetRowById("LessonPlans", id);
       } catch (fallbackError) {
         const reason = fallbackError instanceof Error ? fallbackError.message : "Unknown Google API error.";
-        return NextResponse.json(
-          {
-            error:
-              `${gasResult.message} Fallback delete also failed: ${reason}. ` +
-              `Redeploy GAS with deleteLessonPlan or make sure the service account can access the Drive file. ` +
-              `Request ID: ${requestId}`,
-          },
-          { status: 502 },
+        return apiFailure(
+          502,
+          `${gasResult.message} Fallback xóa cũng thất bại: ${reason}. Request ID: ${requestId}`,
+          undefined,
+          requestId,
         );
       }
     }
+    await appendAuditLog({
+      requestId,
+      actor: auth.user,
+      action: "lesson_plan.delete",
+      entityType: "LessonPlan",
+      entityId: id,
+      route: `/api/lesson-plans/${id}`,
+      method: "DELETE",
+      authMode: permission.authMode,
+      decision: permission.decision,
+      reason: permission.reason,
+      source: auth.source,
+      before: lessonPlan,
+    });
 
     return NextResponse.json({ id, deleted: true });
   } catch (error) {
-    if (error instanceof RouteError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    return apiError(error);
+    return apiError(error, requestId);
   }
-}
-
-class RouteError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-async function requireUser() {
-  const cookieStore = await cookies();
-  const session = verifySessionToken(cookieStore.get(sessionCookieName)?.value);
-  if (!session) {
-    throw new RouteError(401, "Unauthorized");
-  }
-
-  const user = await findAuthorizedUserFromSession(session.userId, session.email);
-  if (!user) {
-    throw new RouteError(401, "Unauthorized");
-  }
-  return user;
-}
-
-function canManageLessonPlan(user: User, teacherId: string) {
-  if (user.role === "admin") {
-    return true;
-  }
-  return user.teacherId === teacherId;
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, requestId: string) {
@@ -135,9 +152,9 @@ async function fetchWithTimeout(url: string, init: RequestInit, requestId: strin
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new RouteError(504, `GAS delete timeout after ${GAS_TIMEOUT_MS}ms. Request ID: ${requestId}`);
+      throw new Error(`GAS delete timeout sau ${GAS_TIMEOUT_MS}ms. Request ID: ${requestId}`);
     }
-    throw new RouteError(502, `Cannot reach GAS webhook. Request ID: ${requestId}`);
+    throw new Error(`Không kết nối được GAS webhook. Request ID: ${requestId}`);
   } finally {
     clearTimeout(timeoutId);
   }
@@ -147,7 +164,7 @@ async function tryDeleteViaGas(lessonPlanId: string, requestId: string) {
   const webhookUrl = process.env.GAS_UPLOAD_WEBHOOK_URL || process.env.GAS_MAIL_WEBHOOK_URL;
   const secret = process.env.GAS_UPLOAD_WEBHOOK_SECRET || process.env.GAS_MAIL_WEBHOOK_SECRET;
   if (!webhookUrl || !secret) {
-    return { deleted: false, message: "Missing GAS webhook configuration." };
+    return { deleted: false, message: "Thiếu cấu hình GAS webhook." };
   }
 
   try {
@@ -177,12 +194,12 @@ async function tryDeleteViaGas(lessonPlanId: string, requestId: string) {
       message:
         parsed?.error ||
         parsed?.message ||
-        `Cannot delete lesson plan from GAS. HTTP ${gasResponse.status}.`,
+        `Không thể xóa giáo án từ GAS. HTTP ${gasResponse.status}.`,
     };
   } catch (error) {
     return {
       deleted: false,
-      message: error instanceof Error ? error.message : "Cannot reach GAS webhook.",
+      message: error instanceof Error ? error.message : "Không kết nối được GAS webhook.",
     };
   }
 }

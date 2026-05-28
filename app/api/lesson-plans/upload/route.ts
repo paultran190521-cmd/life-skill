@@ -33,13 +33,13 @@ type GasUploadResponse = {
 
 class UploadProxyError extends Error {
   status: number;
-  errorCode: string;
+  code: string;
   requestId: string;
 
-  constructor(message: string, options: { status?: number; errorCode?: string; requestId: string }) {
+  constructor(message: string, options: { status?: number; code?: string; requestId: string }) {
     super(message);
     this.status = options.status ?? 500;
-    this.errorCode = options.errorCode ?? "UPLOAD_PROXY_ERROR";
+    this.code = options.code ?? "UPLOAD_PROXY_ERROR";
     this.requestId = options.requestId;
   }
 }
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     if (!webhookUrl || !secret) {
       throw new UploadProxyError("Missing GAS upload webhook configuration on server.", {
         status: 500,
-        errorCode: "UPLOAD_WEBHOOK_CONFIG_MISSING",
+        code: "UPLOAD_WEBHOOK_CONFIG_MISSING",
         requestId,
       });
     }
@@ -64,14 +64,14 @@ export async function POST(request: Request) {
     if (!schedule) {
       throw new UploadProxyError(`Cannot find schedule for upload. Request ID: ${requestId}`, {
         status: 404,
-        errorCode: "SCHEDULE_NOT_FOUND",
+        code: "SCHEDULE_NOT_FOUND",
         requestId,
       });
     }
     if (!canUploadForSchedule(currentUser, schedule.teacherId || "")) {
       throw new UploadProxyError(`Permission denied for lesson plan upload. Request ID: ${requestId}`, {
         status: 403,
-        errorCode: "UPLOAD_FORBIDDEN",
+        code: "UPLOAD_FORBIDDEN",
         requestId,
       });
     }
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
         `GAS replied without lessonPlan data. Request ID: ${requestId}`,
         {
           status: 502,
-          errorCode: "GAS_LESSON_PLAN_MISSING",
+          code: "GAS_LESSON_PLAN_MISSING",
           requestId,
         },
       );
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: error.message,
-          errorCode: error.errorCode,
+          code: error.code,
           requestId: error.requestId,
         },
         { status: error.status },
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: `${message} Request ID: ${requestId}`,
-        errorCode: "UPLOAD_PROXY_UNEXPECTED",
+        code: "UPLOAD_PROXY_UNEXPECTED",
         requestId,
       },
       { status: 500 },
@@ -125,7 +125,7 @@ async function requireUser(requestId: string) {
   if (!session) {
     throw new UploadProxyError("Unauthorized upload request.", {
       status: 401,
-      errorCode: "UPLOAD_UNAUTHORIZED",
+      code: "UPLOAD_UNAUTHORIZED",
       requestId,
     });
   }
@@ -134,7 +134,7 @@ async function requireUser(requestId: string) {
   if (!user) {
     throw new UploadProxyError("Unauthorized upload request.", {
       status: 401,
-      errorCode: "UPLOAD_UNAUTHORIZED",
+      code: "UPLOAD_UNAUTHORIZED",
       requestId,
     });
   }
@@ -156,7 +156,7 @@ function parseUploadBody(raw: unknown, requestId: string): UploadRequestBody {
   if (!raw || typeof raw !== "object") {
     throw new UploadProxyError(`Invalid upload payload. Request ID: ${requestId}`, {
       status: 400,
-      errorCode: "INVALID_UPLOAD_PAYLOAD",
+      code: "INVALID_UPLOAD_PAYLOAD",
       requestId,
     });
   }
@@ -172,21 +172,21 @@ function parseUploadBody(raw: unknown, requestId: string): UploadRequestBody {
   if (!scheduleId || !teacherId || !fileName || !fileData) {
     throw new UploadProxyError(`Missing required upload fields. Request ID: ${requestId}`, {
       status: 400,
-      errorCode: "UPLOAD_FIELDS_MISSING",
+      code: "UPLOAD_FIELDS_MISSING",
       requestId,
     });
   }
   if (!Number.isFinite(fileSize) || fileSize <= 0) {
     throw new UploadProxyError(`Invalid file size. Request ID: ${requestId}`, {
       status: 400,
-      errorCode: "UPLOAD_FILE_SIZE_INVALID",
+      code: "UPLOAD_FILE_SIZE_INVALID",
       requestId,
     });
   }
   if (fileSize > MAX_FILE_SIZE_BYTES) {
     throw new UploadProxyError(`Lesson plan file exceeds 10 MB limit. Request ID: ${requestId}`, {
       status: 413,
-      errorCode: "UPLOAD_FILE_TOO_LARGE",
+      code: "UPLOAD_FILE_TOO_LARGE",
       requestId,
     });
   }
@@ -230,7 +230,7 @@ async function callGasUploadWebhook(params: {
         params.requestId,
       );
 
-      if (attempt < MAX_ATTEMPTS && shouldRetry(response.status, mapped.errorCode)) {
+      if (attempt < MAX_ATTEMPTS && shouldRetry(response.status, mapped.code)) {
         lastError = mapped;
         continue;
       }
@@ -238,7 +238,7 @@ async function callGasUploadWebhook(params: {
       throw mapped;
     } catch (error) {
       if (error instanceof UploadProxyError) {
-        if (attempt < MAX_ATTEMPTS && shouldRetry(error.status, error.errorCode)) {
+        if (attempt < MAX_ATTEMPTS && shouldRetry(error.status, error.code)) {
           lastError = error;
           continue;
         }
@@ -263,7 +263,7 @@ async function callGasUploadWebhook(params: {
     lastError ||
     new UploadProxyError(`Upload failed after retry. Request ID: ${params.requestId}`, {
       status: 502,
-      errorCode: "GAS_RETRY_EXHAUSTED",
+      code: "GAS_RETRY_EXHAUSTED",
       requestId: params.requestId,
     })
   );
@@ -279,7 +279,7 @@ async function fetchWithTimeout(url: string, requestId: string, init: RequestIni
     if (error instanceof Error && error.name === "AbortError") {
       throw new UploadProxyError(`GAS upload timeout after ${GAS_TIMEOUT_MS}ms.`, {
         status: 504,
-        errorCode: "GAS_TIMEOUT",
+        code: "GAS_TIMEOUT",
         requestId,
       });
     }
@@ -331,7 +331,7 @@ function createMappedGasError(status: number, errorCode: string | undefined, raw
       ? "GAS upload service is temporarily unavailable."
       : fallbackMessage);
   const message = `${baseMessage} Request ID: ${requestId}`;
-  return new UploadProxyError(message, { status: mapStatus(status, mappedCode), errorCode: mappedCode, requestId });
+  return new UploadProxyError(message, { status: mapStatus(status, mappedCode), code: mappedCode, requestId });
 }
 
 function mapGasErrorMessage(errorCode: string) {

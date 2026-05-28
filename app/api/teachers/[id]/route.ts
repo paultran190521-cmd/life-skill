@@ -1,23 +1,36 @@
 import { NextResponse } from "next/server";
 import { getAvatarUrl } from "@/lib/avatar";
-import { apiError } from "@/lib/api";
-import { deleteSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
+import { apiError, apiFailure, createRequestId } from "@/lib/api";
+import { appendAuditLog } from "@/lib/audit";
+import { deleteSheetRowById, readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
+import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 
 type Params = {
   params: Promise<{ id: string }>;
 };
 
 export async function PATCH(request: Request, { params }: Params) {
+  const requestId = createRequestId("teacher-patch");
   try {
+    const auth = await requireSessionUser(request);
+    const permission = evaluateRolePermission(auth.user, "admin", "admin_only_teachers_write");
+    if (permission.decision === "would_block") {
+      console.warn(`[auth-shadow][${requestId}] teachers.patch ${permission.reason}`);
+    }
+    if (!permission.allowed) {
+      return apiFailure(403, "Bạn không có quyền thực hiện thao tác này.", undefined, requestId);
+    }
+
     const { id } = await params;
-    const body = (await request.json()) as Record<string, unknown>;
     const teachers = await readSheetRows("Teachers");
     const currentTeacher = teachers.find((item) => String(item.id || "").trim() === id);
 
     if (!currentTeacher) {
-      return NextResponse.json({ error: "Không tìm thấy giáo viên." }, { status: 404 });
+      return apiFailure(404, "Không tìm thấy giáo viên.", undefined, requestId);
     }
+    const before = await readSheetRowById("Teachers", id);
 
+    const body = (await request.json()) as Record<string, unknown>;
     const name = body.name !== undefined ? String(body.name || "").trim() : String(currentTeacher.name || "").trim();
     const email =
       body.email !== undefined
@@ -35,10 +48,10 @@ export async function PATCH(request: Request, { params }: Params) {
       String(currentTeacher.avatarUrl || "").trim() || getAvatarUrl(email || String(currentTeacher.email || ""), name);
 
     if (!name || !email) {
-      return NextResponse.json({ error: "Họ tên và Email là bắt buộc." }, { status: 400 });
+      return apiFailure(400, "Họ tên và Email là bắt buộc.", undefined, requestId);
     }
     if (!isValidEmail(email)) {
-      return NextResponse.json({ error: "Email không hợp lệ." }, { status: 400 });
+      return apiFailure(400, "Email không hợp lệ.", undefined, requestId);
     }
 
     const duplicateEmail = teachers.some(
@@ -49,7 +62,7 @@ export async function PATCH(request: Request, { params }: Params) {
           .toLowerCase() === email,
     );
     if (duplicateEmail) {
-      return NextResponse.json({ error: "Email giáo viên đã tồn tại trong hệ thống." }, { status: 400 });
+      return apiFailure(409, "Email giáo viên đã tồn tại trong hệ thống.", undefined, requestId);
     }
 
     const now = new Date().toISOString();
@@ -65,30 +78,55 @@ export async function PATCH(request: Request, { params }: Params) {
 
     await updateSheetRowById("Teachers", id, patch);
     await syncLinkedUser(id, patch, now);
+    await appendAuditLog({
+      requestId,
+      actor: auth.user,
+      action: "teacher.update",
+      entityType: "Teacher",
+      entityId: id,
+      route: `/api/teachers/${id}`,
+      method: "PATCH",
+      authMode: permission.authMode,
+      decision: permission.decision,
+      reason: permission.reason,
+      source: auth.source,
+      before: before || {},
+      after: { ...(before || {}), ...patch },
+    });
 
     return NextResponse.json({ id, ...patch });
   } catch (error) {
-    return apiError(error);
+    return apiError(error, requestId);
   }
 }
 
-export async function DELETE(_: Request, { params }: Params) {
+export async function DELETE(request: Request, { params }: Params) {
+  const requestId = createRequestId("teacher-delete");
   try {
+    const auth = await requireSessionUser(request);
+    const permission = evaluateRolePermission(auth.user, "admin", "admin_only_teachers_write");
+    if (permission.decision === "would_block") {
+      console.warn(`[auth-shadow][${requestId}] teachers.delete ${permission.reason}`);
+    }
+    if (!permission.allowed) {
+      return apiFailure(403, "Bạn không có quyền thực hiện thao tác này.", undefined, requestId);
+    }
+
     const { id } = await params;
     const teachers = await readSheetRows("Teachers");
     const teacher = teachers.find((item) => String(item.id || "").trim() === id);
     if (!teacher) {
-      return NextResponse.json({ error: "Không tìm thấy giáo viên." }, { status: 404 });
+      return apiFailure(404, "Không tìm thấy giáo viên.", undefined, requestId);
     }
 
     const schedules = await readSheetRows("Schedules");
     const hasLinkedSchedules = schedules.some((item) => String(item.teacherId || "").trim() === id);
     if (hasLinkedSchedules) {
-      return NextResponse.json(
-        {
-          error: "Không thể xóa giáo viên vì đang có dữ liệu lịch dạy liên quan. Hãy tắt giáo viên thay vì xóa.",
-        },
-        { status: 400 },
+      return apiFailure(
+        400,
+        "Không thể xóa giáo viên vì đang có dữ liệu lịch dạy liên quan. Hãy tắt giáo viên thay vì xóa.",
+        undefined,
+        requestId,
       );
     }
 
@@ -101,13 +139,27 @@ export async function DELETE(_: Request, { params }: Params) {
       }
     }
 
+    await appendAuditLog({
+      requestId,
+      actor: auth.user,
+      action: "teacher.delete",
+      entityType: "Teacher",
+      entityId: id,
+      route: `/api/teachers/${id}`,
+      method: "DELETE",
+      authMode: permission.authMode,
+      decision: permission.decision,
+      reason: permission.reason,
+      source: auth.source,
+      before: teacher,
+    });
     return NextResponse.json({
       id,
       deleted: true,
       deletedUsers: usersToDelete.map((user) => String(user.id || "")).filter(Boolean),
     });
   } catch (error) {
-    return apiError(error);
+    return apiError(error, requestId);
   }
 }
 

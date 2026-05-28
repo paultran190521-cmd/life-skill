@@ -1,17 +1,16 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { apiError, createId } from "@/lib/api";
-import { findAuthorizedUserFromHint, findAuthorizedUserFromSession } from "@/lib/auth-users";
-import { sessionCookieName, verifySessionToken } from "@/lib/auth-session";
-import { appendSheetRow, appendSheetRows, readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
-import type { User } from "@/lib/types";
+import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
+import { appendAuditLog } from "@/lib/audit";
+import { appendSheetRow, readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
+import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 
 const attendanceEarlyMinutes = 30;
 const attendanceLateAfterEndMinutes = 90;
 
 export async function POST(request: Request) {
+  const requestId = createRequestId("attendance");
   try {
-    const currentUser = await requireUser(request);
+    const auth = await requireSessionUser(request);
     const body = await request.json();
     const scheduleId = String(body.scheduleId || "").trim();
     const now = new Date().toISOString();
@@ -19,21 +18,27 @@ export async function POST(request: Request) {
     const schedule = await readSheetRowById("Schedules", scheduleId);
 
     if (!schedule) {
-      return NextResponse.json({ error: "Không tìm thấy lịch." }, { status: 404 });
+      return apiFailure(404, "Không tìm thấy lịch.", undefined, requestId);
     }
 
-    const authError = getAuthorizationError(currentUser, schedule.teacherId || "");
-    if (authError) {
-      return NextResponse.json({ error: authError }, { status: 403 });
+    const permission = evaluatePermission({
+      allowed: auth.user.role === "admin" || auth.user.teacherId === schedule.teacherId,
+      reason: "teacher_must_own_schedule_attendance",
+    });
+    if (permission.decision === "would_block") {
+      console.warn(`[auth-shadow][${requestId}] attendance.create ${permission.reason}`);
+    }
+    if (!permission.allowed) {
+      return apiFailure(403, "Bạn không có quyền điểm danh tiết này.", undefined, requestId);
     }
 
     if (schedule.status === "cancelled") {
-      return NextResponse.json({ error: "Không thể điểm danh lịch đã hủy." }, { status: 400 });
+      return apiFailure(400, "Không thể điểm danh lịch đã hủy.", undefined, requestId);
     }
 
     const existingAttendance = await readSheetRows("Attendance");
     if (existingAttendance.some((item) => item.scheduleId === scheduleId)) {
-      return NextResponse.json({ error: "Tiết này đã được điểm danh." }, { status: 409 });
+      return apiFailure(409, "Tiết này đã được điểm danh.", undefined, requestId);
     }
 
     const slots = await readSheetRows("TimeSlots");
@@ -41,7 +46,7 @@ export async function POST(request: Request) {
     const timeValidation = validateAttendanceTime(schedule.date, slot?.start, slot?.end, checkedInAt);
     const timeError = timeValidation.error;
     if (timeError) {
-      return NextResponse.json({ error: timeError }, { status: 400 });
+      return apiFailure(400, timeError, undefined, requestId);
     }
 
     const attendance = {
@@ -56,55 +61,26 @@ export async function POST(request: Request) {
 
     await appendSheetRow("Attendance", attendance);
     await updateSheetRowById("Schedules", scheduleId, { status: "attended", updatedAt: now });
-    await appendSheetRows("AuditLogs", [
-      {
-        id: createId("audit"),
-        actorId: currentUser.id,
-        actorEmail: currentUser.email,
-        action: "schedule.attend",
-        entityType: "Schedule",
-        entityId: scheduleId,
-        metadata: JSON.stringify({ status: "attended", teacherId: schedule.teacherId }),
-        createdAt: now,
-      },
-    ]);
+    await appendAuditLog({
+      requestId,
+      actor: auth.user,
+      action: "schedule.attend",
+      entityType: "Schedule",
+      entityId: scheduleId,
+      route: "/api/attendance",
+      method: "POST",
+      authMode: permission.authMode,
+      decision: permission.decision,
+      reason: permission.reason,
+      source: auth.source,
+      before: { status: schedule.status, teacherId: schedule.teacherId },
+      after: { status: "attended", teacherId: schedule.teacherId, checkedInAt },
+    });
 
     return NextResponse.json({ attendance, schedule: { id: scheduleId, status: "attended", updatedAt: now } });
   } catch (error) {
-    if (error instanceof RouteError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    return apiError(error);
+    return apiError(error, requestId);
   }
-}
-
-async function requireUser(request: Request) {
-  const cookieStore = await cookies();
-  const session = verifySessionToken(cookieStore.get(sessionCookieName)?.value);
-  if (session) {
-    const userFromSession = await findAuthorizedUserFromSession(session.userId, session.email);
-    if (userFromSession) {
-      return userFromSession;
-    }
-  }
-
-  const userFromHeader = await findAuthorizedUserFromHint(
-    request.headers.get("x-app-user-id"),
-    request.headers.get("x-app-user-email"),
-  );
-  if (userFromHeader) {
-    return userFromHeader;
-  }
-
-  throw new RouteError(401, "Unauthorized");
-}
-
-function getAuthorizationError(user: User, scheduleTeacherId: string) {
-  if (user.role === "admin" || user.teacherId === scheduleTeacherId) {
-    return "";
-  }
-
-  return "Không có quyền điểm danh tiết này.";
 }
 
 function validateAttendanceTime(date: string | undefined, start: string | undefined, end: string | undefined, value: string) {
@@ -135,13 +111,4 @@ function validateAttendanceTime(date: string | undefined, start: string | undefi
 
 function parseScheduleDateTime(date: string, time: string) {
   return new Date(`${date}T${time}:00+07:00`);
-}
-
-class RouteError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
 }
