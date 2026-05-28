@@ -15,6 +15,7 @@ Trạng thái hiện tại:
 - Menu `Lịch tổng` và `Lịch của tôi` mặc định ở chế độ xem tuần.
 - Font giao diện chính dùng Quicksand.
 - Quy trình làm việc đã chốt: hoàn tất thay đổi thì build/kiểm tra phù hợp, commit và push lên GitHub.
+- Quy tắc bắt buộc: sau khi hoàn tất code/fix theo yêu cầu thì phải commit và push GitHub ngay trong cùng phiên làm việc.
 
 ## 2. Phân Hệ Giao Lịch
 

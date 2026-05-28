@@ -3,7 +3,8 @@ const LESSON_PLAN_FOLDER_ID = "1Tn0cqAsXjbrLlV8G2MTewMd8TL6P44tD";
 const SPREADSHEET_ID = "1wTbm61GHwmvza94UmNeptTAmhSlLEPHQaoCLC7uMni0";
 
 const APP_NAME = "HỌC VIỆN METTASOUL";
-const GAS_WEBHOOK_VERSION = "mettasoul-gas-2026-05-27";
+const GAS_WEBHOOK_VERSION = "mettasoul-gas-2026-05-28";
+const ACTIVE_SCHEDULE_EMAIL_TEMPLATE_VERSION = "mettasoul-schedule-email-2026-05-28";
 const SCHEDULE_EMAIL_SYSTEM_TITLE = "HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -52,13 +53,14 @@ function doPost(e) {
       });
     }
 
-    if (payload.action === "sendScheduleEmail" || (payload.to && payload.subject && payload.html)) {
-      sendScheduleEmail(payload, requestId);
+    if (payload.action === "sendScheduleEmail") {
+      var emailResult = sendScheduleEmail(payload, requestId);
       return json({
         ok: true,
         requestId: requestId,
         version: GAS_WEBHOOK_VERSION,
         message: "Email sent.",
+        echo: emailResult,
       });
     }
 
@@ -103,12 +105,37 @@ function parsePayload(e) {
 }
 
 function sendScheduleEmail(payload, requestId) {
-  var html = normalizeScheduleEmailHtml(asText(payload.html));
+  var templateVersion = asText(payload.templateVersion);
+  validateScheduleEmailTemplateVersion(templateVersion);
+
+  var inputHtml = asText(payload.html);
+  var inputHtmlDigest = asText(payload.htmlDigest);
+  var html = normalizeScheduleEmailHtml(inputHtml);
   var subject = normalizeScheduleEmailSubject(asText(payload.subject));
 
   if (!asText(payload.to) || !subject || !html) {
     throw appError("EMAIL_FIELDS_MISSING", "Missing required email fields.");
   }
+
+  var computedInputDigest = digestTextSha256(inputHtml);
+  var normalizedDigest = digestTextSha256(html);
+  var hasLegacyInputText = containsLegacyScheduleEmailText(inputHtml);
+  var hasLegacyNormalizedText = containsLegacyScheduleEmailText(html);
+
+  if (inputHtmlDigest && inputHtmlDigest !== computedInputDigest) {
+    throw appError("EMAIL_DIGEST_MISMATCH", "Incoming htmlDigest does not match payload.html.");
+  }
+
+  logInfo("sendScheduleEmail.input", requestId, {
+    to: asText(payload.to),
+    templateVersion: templateVersion,
+    inputHtmlDigest: inputHtmlDigest,
+    computedInputDigest: computedInputDigest,
+    normalizedHtmlDigest: normalizedDigest,
+    hasLegacyInputText: hasLegacyInputText,
+    hasLegacyNormalizedText: hasLegacyNormalizedText,
+    htmlPreview: previewText(inputHtml),
+  });
 
   MailApp.sendEmail({
     to: asText(payload.to),
@@ -120,8 +147,17 @@ function sendScheduleEmail(payload, requestId) {
   logInfo("sendScheduleEmail.success", requestId, {
     to: asText(payload.to),
     subject: subject,
-    templateVersion: asText(payload.templateVersion),
+    templateVersion: templateVersion,
+    inputHtmlDigest: inputHtmlDigest,
+    computedInputDigest: computedInputDigest,
+    normalizedHtmlDigest: normalizedDigest,
+    hasLegacyNormalizedText: hasLegacyNormalizedText,
   });
+
+  return {
+    templateVersion: templateVersion,
+    htmlDigest: computedInputDigest,
+  };
 }
 
 function normalizeScheduleEmailSubject(subject) {
@@ -131,14 +167,27 @@ function normalizeScheduleEmailSubject(subject) {
     .toUpperCase();
 }
 
+function validateScheduleEmailTemplateVersion(templateVersion) {
+  if (!templateVersion) {
+    throw appError("EMAIL_TEMPLATE_VERSION_MISSING", "Missing templateVersion for schedule email.");
+  }
+
+  if (templateVersion !== ACTIVE_SCHEDULE_EMAIL_TEMPLATE_VERSION) {
+    throw appError(
+      "EMAIL_TEMPLATE_VERSION_MISMATCH",
+      "Unexpected templateVersion '" + templateVersion + "'. Expected '" + ACTIVE_SCHEDULE_EMAIL_TEMPLATE_VERSION + "'."
+    );
+  }
+}
+
 function normalizeScheduleEmailHtml(html) {
   var normalized = html
     .replace(/HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ TRỐNG\s*\|\s*HỌC VIỆN METTASOUL/gi, "HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL")
     .replace(/HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ TRỐNG\s*\|\s*METTASOUL/gi, "HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL")
-    .replace(/KỸ TRỐNG/gi, "KỸ NĂNG SỐNG")
+    .replace(/KỸ\s*TRỐNG/gi, "KỸ NĂNG SỐNG")
     .replace(/Life Skill/gi, APP_NAME)
     .replace(/Th phân cảm và trắc ẩn/gi, "Thấu cảm và trắc ẩn")
-    .replace(/giáo vụ vừa lịch giảng dạy/gi, "giáo vụ vừa giao lịch dạy")
+    .replace(/giáo vụ vừa\s+lịch giảng dạy/gi, "giáo vụ vừa giao lịch dạy")
     .replace(/mở webapp/gi, "mở ứng dụng web")
     .replace(/>Trường</g, ">TRƯỜNG<")
     .replace(/>học</g, ">LỚP<")
@@ -151,6 +200,38 @@ function normalizeScheduleEmailHtml(html) {
   normalized = forceKnownLessonTitles(normalized);
 
   return normalized;
+}
+
+function containsLegacyScheduleEmailText(html) {
+  return /KỸ\s*TRỐNG|giáo vụ vừa lịch giảng dạy/i.test(String(html || ""));
+}
+
+function digestTextSha256(text) {
+  var digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(text || ""),
+    Utilities.Charset.UTF_8
+  );
+  return bytesToHex(digest);
+}
+
+function bytesToHex(bytes) {
+  var output = [];
+  for (var i = 0; i < bytes.length; i += 1) {
+    var normalized = bytes[i];
+    if (normalized < 0) {
+      normalized += 256;
+    }
+    output.push(("0" + normalized.toString(16)).slice(-2));
+  }
+  return output.join("");
+}
+
+function previewText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
 }
 
 function forceScheduleSystemTitle(html) {

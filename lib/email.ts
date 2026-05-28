@@ -30,7 +30,18 @@ type ResendResponse = {
   error?: string;
 };
 
-const scheduleEmailTemplateVersion = "mettasoul-schedule-email-2026-05-27";
+type GasResponse = {
+  ok?: boolean;
+  error?: string;
+  requestId?: string;
+  version?: string;
+  echo?: {
+    templateVersion?: string;
+    htmlDigest?: string;
+  };
+};
+
+const scheduleEmailTemplateVersion = "mettasoul-schedule-email-2026-05-28";
 
 export async function sendScheduleEmail(input: ScheduleEmailInput) {
   return sendScheduleDigestEmail({
@@ -85,6 +96,7 @@ async function sendViaGas({
   }
 
   try {
+    const htmlDigest = await createSha256Hex(html);
     const response = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -93,6 +105,7 @@ async function sendViaGas({
         secret,
         requestId: createEmailRequestId(),
         templateVersion: scheduleEmailTemplateVersion,
+        htmlDigest,
         to,
         subject,
         html,
@@ -100,12 +113,26 @@ async function sendViaGas({
       }),
     });
 
-    const body = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    const body = (await response.json().catch(() => ({}))) as GasResponse;
     if (!response.ok || !body.ok) {
       return { sent: false, reason: body.error || `GAS mail webhook failed: ${response.status}` };
     }
 
-    return { sent: true, id: "gas" };
+    if (body.echo?.templateVersion && body.echo.templateVersion !== scheduleEmailTemplateVersion) {
+      return {
+        sent: false,
+        reason: `GAS templateVersion mismatch (expected ${scheduleEmailTemplateVersion}, got ${body.echo.templateVersion}).`,
+      };
+    }
+
+    if (body.echo?.htmlDigest && body.echo.htmlDigest !== htmlDigest) {
+      return {
+        sent: false,
+        reason: `GAS htmlDigest mismatch (requestId=${body.requestId || "n/a"}).`,
+      };
+    }
+
+    return { sent: true, id: `gas:${body.requestId || "n/a"}` };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Cannot reach GAS mail webhook.";
     return { sent: false, reason };
@@ -208,7 +235,7 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;white-space:nowrap">${escapeHtml(slotTime || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.school?.name || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.classRoom?.name || "Chưa cập nhật")}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.lesson?.title || "Chưa cập nhật")}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(normalizeKnownLessonTitle(row.lesson?.title))}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:top">${formatObjectives(row.lesson?.objective || "")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">
                       <a href="${confirmUrl}" style="display:inline-block;background:#ff9500;color:#ffffff;text-decoration:none;border-radius:10px;padding:8px 12px;font-weight:700">XÁC NHẬN</a>
@@ -313,6 +340,39 @@ function formatObjectives(rawObjective: string) {
   }
 
   return lines.join("");
+}
+
+function normalizeKnownLessonTitle(value: string | undefined) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "Chưa cập nhật";
+  }
+
+  const comparable = normalizeComparableText(normalized);
+  if (comparable.includes("thau cam") && comparable.includes("trac an")) {
+    return "Thấu cảm và trắc ẩn";
+  }
+
+  return normalized;
+}
+
+function normalizeComparableText(value: string) {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+async function createSha256Hex(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function escapeHtml(value: string) {
