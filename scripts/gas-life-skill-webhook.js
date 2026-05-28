@@ -147,12 +147,12 @@ function sendScheduleEmail(payload, requestId) {
   var templateVersion = asText(payload.templateVersion);
   validateScheduleEmailTemplateVersion(templateVersion);
 
-  var inputHtml = asText(payload.html);
+  var inputHtml = asRawText(payload.html);
   var inputHtmlDigest = asText(payload.htmlDigest);
   var html = normalizeScheduleEmailHtml(inputHtml);
   var subject = normalizeScheduleEmailSubject(asText(payload.subject));
 
-  if (!asText(payload.to) || !subject || !html) {
+  if (!asText(payload.to) || !subject || !html.trim()) {
     throw appError("EMAIL_FIELDS_MISSING", "Missing required email fields.");
   }
 
@@ -595,6 +595,10 @@ function createRequestId() {
 
 function asText(value) {
   return String(value || "").trim();
+}
+
+function asRawText(value) {
+  return String(value || "");
 }
 
 function appError(code, message, cause) {
