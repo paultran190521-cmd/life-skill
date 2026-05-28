@@ -246,6 +246,8 @@ type ToastMessage = {
   leaving: boolean;
 };
 
+type CenterFeedback = ToastMessage;
+
 type AppDialogVariant = "confirm" | "prompt";
 
 type AppDialog = {
@@ -462,6 +464,7 @@ export function MettasoulApp() {
   });
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
   const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
+  const [centerFeedback, setCenterFeedback] = useState<CenterFeedback | null>(null);
   const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const notificationPanelRef = useRef<HTMLDivElement | null>(null);
@@ -892,7 +895,15 @@ export function MettasoulApp() {
 
   function pushToast(title: string, body: string, tone: ToastTone = "info") {
     const id = createId("toast");
-    setToastMessages((items) => [{ id, title, body, tone, leaving: false }, ...items].slice(0, 4));
+    const toast = { id, title, body, tone, leaving: false };
+    setToastMessages((items) => [toast, ...items].slice(0, 4));
+    setCenterFeedback(toast);
+    setTimeout(() => {
+      setCenterFeedback((current) => (current?.id === id ? { ...current, leaving: true } : current));
+    }, 1600);
+    setTimeout(() => {
+      setCenterFeedback((current) => (current?.id === id ? null : current));
+    }, 2050);
     setTimeout(() => dismissToast(id), 4200);
   }
 
@@ -3015,12 +3026,12 @@ export function MettasoulApp() {
 
           <AnnouncementTicker announcements={activeAppAnnouncements} />
           <div className="p-4 md:p-7">{renderMain()}</div>
-          {pendingAction ? (
-            <div className="fixed right-5 top-5 z-50 flex items-center gap-3 rounded-2xl border border-cyan-100 bg-white/95 px-4 py-3 text-sm font-black text-[var(--brand-dark)] shadow-2xl shadow-cyan-900/10 backdrop-blur">
-              <LoaderCircle className="animate-spin text-[var(--brand)]" size={20} />
-              {pendingAction}
-            </div>
-          ) : null}
+          <SystemFeedbackLayer
+            pendingAction={pendingAction}
+            toastMessages={toastMessages}
+            centerFeedback={centerFeedback}
+            onDismissToast={dismissToast}
+          />
           {feedbackModalOpen ? (
             <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/35 p-4 backdrop-blur-sm">
               <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-violet-200 bg-white p-5 shadow-2xl">
@@ -3508,58 +3519,6 @@ export function MettasoulApp() {
                   </button>
                 </div>
               </div>
-            </div>
-          ) : null}
-          {toastMessages.length > 0 ? (
-            <div className="pointer-events-none fixed right-5 top-20 z-[65] flex w-[min(420px,calc(100vw-2rem))] flex-col gap-3">
-              {toastMessages.map((toast) => (
-                <div
-                  key={toast.id}
-                  className={`ui-toast pointer-events-auto rounded-2xl border px-4 py-3 shadow-2xl transition duration-200 ${
-                    toast.leaving ? "translate-x-4 opacity-0" : "translate-x-0 opacity-100"
-                  } ${
-                    toast.tone === "error"
-                      ? "border-rose-200 bg-rose-50/95 text-rose-900 shadow-rose-900/10"
-                      : toast.tone === "warning"
-                        ? "border-amber-200 bg-amber-50/95 text-amber-950 shadow-amber-900/10"
-                        : toast.tone === "success"
-                          ? "border-emerald-200 bg-emerald-50/95 text-emerald-950 shadow-emerald-900/10"
-                          : "border-sky-200 bg-white/95 text-[var(--brand-dark)] shadow-sky-900/10"
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`mt-0.5 grid h-6 w-6 place-items-center rounded-full ${
-                        toast.tone === "error"
-                          ? "bg-rose-100 text-rose-700"
-                          : toast.tone === "warning"
-                            ? "bg-orange-100 text-orange-700"
-                            : toast.tone === "success"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-cyan-100 text-[var(--brand-dark)]"
-                      }`}
-                    >
-                      {toast.tone === "error" ? (
-                        <X size={14} />
-                      ) : toast.tone === "success" ? (
-                        <CheckCircle2 size={14} />
-                      ) : (
-                        <Bell size={14} />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-black">{toast.title}</p>
-                      <p className="mt-1 text-sm leading-6">{toast.body}</p>
-                    </div>
-                    <button
-                      onClick={() => dismissToast(toast.id)}
-                      className="grid h-7 w-7 place-items-center rounded-lg bg-white/80 text-slate-500 transition hover:bg-white hover:text-slate-800"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
             </div>
           ) : null}
         </section>
@@ -6501,6 +6460,146 @@ export function MettasoulApp() {
       </div>
     );
   }
+}
+
+function SystemFeedbackLayer({
+  pendingAction,
+  toastMessages,
+  centerFeedback,
+  onDismissToast,
+}: {
+  pendingAction: string;
+  toastMessages: ToastMessage[];
+  centerFeedback: CenterFeedback | null;
+  onDismissToast: (id: string) => void;
+}) {
+  const hasTopRightFeedback = Boolean(pendingAction) || toastMessages.length > 0;
+
+  return (
+    <>
+      {hasTopRightFeedback ? (
+        <div className="pointer-events-none fixed right-3 top-3 z-[80] flex w-[min(430px,calc(100vw-1.5rem))] flex-col gap-3 sm:right-5 sm:top-5 sm:w-[min(430px,calc(100vw-2.5rem))]">
+          {pendingAction ? (
+            <div className="pointer-events-auto inline-flex items-center gap-3 self-end rounded-2xl border border-cyan-200 bg-white/95 px-4 py-3 text-sm font-black text-[var(--brand-dark)] shadow-2xl shadow-cyan-950/12 backdrop-blur-xl">
+              <LoaderCircle className="animate-spin text-cyan-600" size={18} />
+              <span className="min-w-0 truncate">{pendingAction}</span>
+            </div>
+          ) : null}
+          {toastMessages.map((toast) => (
+            <div
+              key={toast.id}
+              className={`ui-toast pointer-events-auto rounded-2xl border px-4 py-3 shadow-2xl transition duration-200 ${
+                toast.leaving ? "translate-x-4 opacity-0" : "translate-x-0 opacity-100"
+              } ${toastToneClass(toast.tone)}`}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full ${toastIconToneClass(toast.tone)}`}>
+                  {toast.tone === "error" ? (
+                    <X size={14} />
+                  ) : toast.tone === "success" ? (
+                    <CheckCircle2 size={14} />
+                  ) : toast.tone === "warning" ? (
+                    <AlertTriangle size={14} />
+                  ) : (
+                    <Bell size={14} />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-black">{toast.title}</p>
+                  <p className="mt-1 text-sm leading-6">{toast.body}</p>
+                </div>
+                <button
+                  type="button"
+                  title="Đóng thông báo"
+                  aria-label="Đóng thông báo"
+                  onClick={() => onDismissToast(toast.id)}
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/80 text-slate-500 transition hover:bg-white hover:text-slate-800"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {centerFeedback ? (
+        <div className="pointer-events-none fixed inset-0 z-[85] grid place-items-center p-4">
+          <div
+            className={`ui-center-feedback max-w-[min(440px,calc(100vw-2rem))] rounded-3xl border px-5 py-4 text-center shadow-2xl transition duration-300 ${
+              centerFeedback.leaving ? "translate-y-2 scale-95 opacity-0 blur-sm" : "translate-y-0 scale-100 opacity-100 blur-0"
+            } ${centerFeedbackToneClass(centerFeedback.tone)}`}
+          >
+            <div className={`mx-auto grid h-12 w-12 place-items-center rounded-2xl ${centerFeedbackIconClass(centerFeedback.tone)}`}>
+              {centerFeedback.tone === "error" ? (
+                <X size={22} />
+              ) : centerFeedback.tone === "success" ? (
+                <CheckCircle2 size={22} />
+              ) : centerFeedback.tone === "warning" ? (
+                <AlertTriangle size={22} />
+              ) : (
+                <Bell size={22} />
+              )}
+            </div>
+            <p className="mt-3 text-base font-black">{centerFeedback.title}</p>
+            <p className="mt-1 text-sm font-semibold leading-6 opacity-85">{centerFeedback.body}</p>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function toastToneClass(tone: ToastTone) {
+  if (tone === "error") {
+    return "border-rose-200 bg-rose-50/95 text-rose-900 shadow-rose-900/10";
+  }
+  if (tone === "warning") {
+    return "border-amber-200 bg-amber-50/95 text-amber-950 shadow-amber-900/10";
+  }
+  if (tone === "success") {
+    return "border-emerald-200 bg-emerald-50/95 text-emerald-950 shadow-emerald-900/10";
+  }
+  return "border-sky-200 bg-white/95 text-[var(--brand-dark)] shadow-sky-900/10";
+}
+
+function toastIconToneClass(tone: ToastTone) {
+  if (tone === "error") {
+    return "bg-rose-100 text-rose-700";
+  }
+  if (tone === "warning") {
+    return "bg-orange-100 text-orange-700";
+  }
+  if (tone === "success") {
+    return "bg-emerald-100 text-emerald-700";
+  }
+  return "bg-cyan-100 text-[var(--brand-dark)]";
+}
+
+function centerFeedbackToneClass(tone: ToastTone) {
+  if (tone === "error") {
+    return "border-rose-200 bg-rose-50/88 text-rose-950 shadow-rose-950/15";
+  }
+  if (tone === "warning") {
+    return "border-amber-200 bg-amber-50/88 text-amber-950 shadow-amber-950/15";
+  }
+  if (tone === "success") {
+    return "border-emerald-200 bg-emerald-50/88 text-emerald-950 shadow-emerald-950/15";
+  }
+  return "border-cyan-200 bg-white/88 text-[var(--brand-dark)] shadow-cyan-950/15";
+}
+
+function centerFeedbackIconClass(tone: ToastTone) {
+  if (tone === "error") {
+    return "bg-rose-100 text-rose-700";
+  }
+  if (tone === "warning") {
+    return "bg-amber-100 text-amber-700";
+  }
+  if (tone === "success") {
+    return "bg-emerald-100 text-emerald-700";
+  }
+  return "bg-cyan-100 text-cyan-700";
 }
 
 function AnnouncementTicker({ announcements }: { announcements: AppAnnouncement[] }) {

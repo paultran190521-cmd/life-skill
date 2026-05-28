@@ -110,6 +110,19 @@ button:disabled {
   }
 }
 
+@keyframes center-feedback-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.94);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
 @keyframes pulse-glow {
   0%,
   100% {
@@ -242,6 +255,11 @@ button:disabled {
 .ui-toast {
   animation: toast-in 0.24s var(--ease-smooth) both;
   backdrop-filter: blur(18px);
+}
+
+.ui-center-feedback {
+  animation: center-feedback-in 0.34s var(--ease-smooth) both;
+  backdrop-filter: blur(22px);
 }
 
 .ui-notification-dot {
