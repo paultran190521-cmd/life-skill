@@ -363,6 +363,7 @@ function uploadLessonPlan(payload, requestId) {
     fileName: asText(payload.fileName),
     driveFileId: file.getId(),
     driveUrl: file.getUrl(),
+    source: "upload",
     uploadedAt: now,
     createdAt: now,
     updatedAt: now,

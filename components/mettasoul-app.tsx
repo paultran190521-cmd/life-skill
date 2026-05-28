@@ -373,6 +373,7 @@ export function MettasoulApp() {
   const [lessonPlanStatusFilter, setLessonPlanStatusFilter] = useState<"all" | "uploaded" | "missing">("all");
   const [lessonPlanAdminFocus, setLessonPlanAdminFocus] = useState<LessonPlanAdminFocus>("uploaded");
   const [lessonPlanTeacherFocus, setLessonPlanTeacherFocus] = useState<LessonPlanTeacherFocus>("uploaded");
+  const [lessonPlanLinkDrafts, setLessonPlanLinkDrafts] = useState<Record<string, string>>({});
   const [teacherOverviewDateFrom, setTeacherOverviewDateFrom] = useState("");
   const [teacherOverviewDateTo, setTeacherOverviewDateTo] = useState("");
   const [teacherOverviewFocus, setTeacherOverviewFocus] = useState<TeacherOverviewFocus | null>(null);
@@ -1166,7 +1167,11 @@ export function MettasoulApp() {
 
     const tooLargeFile = files.find((file) => file.size > maxLessonPlanFileBytes);
     if (tooLargeFile) {
-      handleSaveError(new Error(`File ${tooLargeFile.name} vượt quá 10 MB.`));
+      handleSaveError(
+        new Error(
+          `File ${tooLargeFile.name} vượt quá 10 MB. Với file PPT/PPTX nặng, hãy upload lên Google Drive của bạn, mở quyền xem cho admin rồi dán link vào ô Link PPT/Drive trong card lịch.`,
+        ),
+      );
       return;
     }
 
@@ -1193,6 +1198,57 @@ export function MettasoulApp() {
     if (failures.length > 0) {
       const firstError = failures[0]?.error?.message || "Không thể tải một số file giáo án.";
       handleSaveError(new Error(`${firstError} (${failures.length}/${files.length} file thất bại)`));
+    }
+  }
+
+  async function attachLessonPlanLink(schedule: Schedule) {
+    const rawLink = String(lessonPlanLinkDrafts[schedule.id] || "").trim();
+    if (!rawLink) {
+      pushToast("Thiếu link giáo án", "Dán link Google Drive/PPT trước khi lưu.", "warning");
+      return;
+    }
+
+    let url: URL;
+    try {
+      url = new URL(rawLink);
+    } catch {
+      pushToast("Link không hợp lệ", "Link giáo án phải là đường dẫn http hoặc https.", "warning");
+      return;
+    }
+
+    if (!["http:", "https:"].includes(url.protocol)) {
+      pushToast("Link không hợp lệ", "Link giáo án phải bắt đầu bằng http hoặc https.", "warning");
+      return;
+    }
+
+    try {
+      const response = await saveRequest<LessonPlan>("Đang lưu link giáo án...", "/api/lesson-plans", {
+        method: "POST",
+        body: JSON.stringify({
+          scheduleId: schedule.id,
+          teacherId: schedule.teacherId,
+          fileName: inferLessonPlanLinkName(url.toString()),
+          driveUrl: url.toString(),
+          source: "external_link",
+        }),
+      });
+      setLessonPlans((items) => [response, ...items]);
+      setSchedules((items) =>
+        items.map((item) =>
+          item.id === schedule.id && item.status !== "attended"
+            ? { ...item, status: "lesson_plan_uploaded" }
+            : item,
+        ),
+      );
+      setLessonPlanLinkDrafts((items) => ({ ...items, [schedule.id]: "" }));
+      setDataStatus("connected");
+      setSaveError("");
+      addNotification("Giáo án mới", `${teacherName(schedule.teacherId)} đã gửi link giáo án.`, "admin", {
+        tone: "success",
+      });
+      pushToast("Đã lưu link giáo án", "Link đã hiện ngay trong card chuyên đề.", "success");
+    } catch (error) {
+      handleSaveError(error);
     }
   }
 
@@ -4960,6 +5016,9 @@ export function MettasoulApp() {
     const submittedSchedules = scopedSchedules
       .filter((schedule) => submittedScheduleIds.has(schedule.id))
       .sort((left, right) => left.date.localeCompare(right.date));
+    const lessonPlanScheduleCards = scopedSchedules
+      .slice()
+      .sort((left, right) => left.date.localeCompare(right.date));
     const myPlanRows = lessonPlans
       .filter((plan) => plan.teacherId === currentTeacherId)
       .map((plan) => {
@@ -5013,28 +5072,20 @@ export function MettasoulApp() {
             <div className="flex items-center gap-3">
               <FileUp className="text-amber-700" />
               <div>
-                <p className="text-sm font-black text-amber-900">Cần nộp giáo án</p>
-                <p className="text-xs font-bold text-amber-800/75">Các lịch chưa có file giáo án</p>
+                <p className="text-sm font-black text-amber-900">Lịch dạy và giáo án theo chuyên đề</p>
+                <p className="text-xs font-bold text-amber-800/75">
+                  File/link giáo án hiển thị ngay trong từng card sau khi tải lên.
+                </p>
               </div>
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              {pendingSchedules.slice(0, 6).map((schedule) => {
+              {lessonPlanScheduleCards.map((schedule) => {
                 const meta = lookupSchedule(schedule);
-                return (
-                  <div key={schedule.id} className="rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm">
-                    <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
-                    <p className="mt-1 text-xs font-bold text-[var(--muted)]">
-                      {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatScheduleDateTime(schedule)}
-                    </p>
-                    <div className="mt-3">
-                      <LessonPlanUploadButton schedule={schedule} />
-                    </div>
-                  </div>
-                );
+                return <TeacherLessonPlanCard key={schedule.id} schedule={schedule} meta={meta} />;
               })}
-              {pendingSchedules.length === 0 ? (
+              {lessonPlanScheduleCards.length === 0 ? (
                 <p className="rounded-2xl bg-white/80 px-4 py-5 text-sm font-semibold text-emerald-700">
-                  Tất cả lịch của bạn đã có giáo án.
+                  Chưa có lịch cần nộp giáo án.
                 </p>
               ) : null}
             </div>
@@ -5116,6 +5167,96 @@ export function MettasoulApp() {
             {formatDateTime(plan.uploadedAt)}
           </span>
           <LessonPlanActions plan={plan} />
+        </div>
+      </div>
+    );
+  }
+
+  function TeacherLessonPlanCard({
+    schedule,
+    meta,
+  }: {
+    schedule: Schedule;
+    meta: ReturnType<typeof lookupSchedule>;
+  }) {
+    const hasPlans = meta.plans.length > 0;
+    return (
+      <div
+        className={`rounded-2xl border p-4 shadow-sm ${
+          hasPlans ? "border-emerald-200 bg-emerald-50/55" : "border-white/80 bg-white/90"
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
+            <p className="mt-1 text-xs font-bold text-[var(--muted)]">
+              {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatScheduleDateTime(schedule)}
+            </p>
+          </div>
+          <span
+            className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-black ${
+              hasPlans ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+            }`}
+          >
+            {hasPlans ? `${meta.plans.length} giáo án` : "Chưa có"}
+          </span>
+        </div>
+
+        {hasPlans ? (
+          <div className="mt-3 space-y-2">
+            {meta.plans.map((plan) => (
+              <div key={plan.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-100 bg-white/90 px-3 py-2">
+                <a
+                  href={plan.driveUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm font-black text-sky-800"
+                >
+                  <UploadCloud size={15} />
+                  <span className="truncate">{plan.fileName}</span>
+                  {plan.source === "external_link" ? (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">
+                      Link
+                    </span>
+                  ) : null}
+                </a>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700">
+                    {formatDateTime(plan.uploadedAt)}
+                  </span>
+                  <LessonPlanActions plan={plan} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mt-3 grid gap-2">
+          <div className="flex flex-wrap gap-2">
+            <LessonPlanUploadButton schedule={schedule} />
+          </div>
+          <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+            <input
+              value={lessonPlanLinkDrafts[schedule.id] || ""}
+              onChange={(event) =>
+                setLessonPlanLinkDrafts((items) => ({ ...items, [schedule.id]: event.target.value }))
+              }
+              placeholder="Dán link PPT/Google Drive nếu file nặng hơn 10MB"
+              className={compactInputClass}
+            />
+            <button
+              type="button"
+              onClick={() => attachLessonPlanLink(schedule)}
+              disabled={isBusy}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-black text-amber-800 transition hover:bg-amber-50"
+            >
+              <ExternalLink size={15} />
+              Lưu link
+            </button>
+          </div>
+          <p className="text-[11px] font-bold text-amber-800">
+            PPT/PPTX nặng: upload lên Google Drive của bạn, mở quyền xem cho admin rồi dán link tại đây.
+          </p>
         </div>
       </div>
     );
@@ -5360,16 +5501,18 @@ export function MettasoulApp() {
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {meta.plans.map((plan) => (
-              <a
-                key={plan.id}
-                href={plan.driveUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex max-w-full items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-xs font-black text-sky-800"
-              >
-                <UploadCloud size={14} />
-                <span className="truncate">{plan.fileName}</span>
-              </a>
+              <div key={plan.id} className="inline-flex max-w-full items-center gap-2 rounded-xl bg-sky-50 px-3 py-2">
+                <a
+                  href={plan.driveUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-w-0 items-center gap-2 text-xs font-black text-sky-800"
+                >
+                  <UploadCloud size={14} />
+                  <span className="truncate">{plan.fileName}</span>
+                </a>
+                <LessonPlanActions plan={plan} />
+              </div>
             ))}
           </div>
         </div>
@@ -7403,6 +7546,22 @@ function normalizeComparableText(value: string) {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+function inferLessonPlanLinkName(url: string) {
+  try {
+    const parsed = new URL(url);
+    const pathName = decodeURIComponent(parsed.pathname.split("/").filter(Boolean).at(-1) || "");
+    if (pathName && pathName.includes(".")) {
+      return pathName;
+    }
+    if (parsed.hostname.includes("docs.google.com")) {
+      return "Link Google Drive/PPT";
+    }
+    return parsed.hostname ? `Link giáo án - ${parsed.hostname}` : "Link giáo án";
+  } catch {
+    return "Link giáo án";
+  }
 }
 
 function announcementPriorityLabel(priority: AppAnnouncementPriority) {

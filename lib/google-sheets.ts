@@ -459,6 +459,9 @@ function normalizeSheetHeader(value: unknown) {
     filename: "fileName",
     drivefileid: "driveFileId",
     driveurl: "driveUrl",
+    source: "source",
+    nguon: "source",
+    linkngoai: "source",
     uploadedat: "uploadedAt",
     checkedinat: "checkedInAt",
     note: "note",
@@ -585,6 +588,7 @@ function toLessonPlans(rows: SheetRow[]): LessonPlan[] {
     driveFileId: row.driveFileId || undefined,
     driveUrl: row.driveUrl,
     uploadedAt: row.uploadedAt,
+    source: row.source === "external_link" ? "external_link" : "upload",
   }));
 }
 

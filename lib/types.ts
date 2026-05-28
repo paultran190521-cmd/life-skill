@@ -89,6 +89,7 @@ export type LessonPlan = {
   driveFileId?: string;
   driveUrl: string;
   uploadedAt: string;
+  source?: "upload" | "external_link";
 };
 
 export type Attendance = {

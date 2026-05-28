@@ -78,6 +78,7 @@ const SHEETS = [
       "fileName",
       "driveFileId",
       "driveUrl",
+      "source",
       "uploadedAt",
       "createdAt",
       "updatedAt",

@@ -63,6 +63,11 @@ export async function DELETE(_: Request, { params }: Params) {
       return NextResponse.json({ error: "Permission denied." }, { status: 403 });
     }
 
+    if (!lessonPlan.driveFileId || lessonPlan.source === "external_link") {
+      await deleteSheetRowById("LessonPlans", id);
+      return NextResponse.json({ id, deleted: true });
+    }
+
     const requestId = `lp-del-${crypto.randomUUID()}`;
     const gasResult = await tryDeleteViaGas(id, requestId);
 
