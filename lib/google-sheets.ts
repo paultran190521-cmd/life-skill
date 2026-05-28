@@ -2,6 +2,8 @@ import { google } from "googleapis";
 import { getAvatarUrl } from "@/lib/avatar";
 import type {
   Attendance,
+  AppAnnouncement,
+  AppAnnouncementPriority,
   AuditLog,
   ClassRoom,
   Lesson,
@@ -28,6 +30,7 @@ type SheetName =
   | "Attendance"
   | "Notifications"
   | "AuditLogs"
+  | "AppAnnouncements"
   | "MailDebug";
 
 export type { SheetName };
@@ -328,6 +331,7 @@ export async function getAppDataFromSheets() {
     lessonPlans,
     attendance,
     notifications,
+    appAnnouncements,
     auditLogs,
   ] = await Promise.all([
     readSheetRows("Teachers").then(toTeachers),
@@ -340,6 +344,9 @@ export async function getAppDataFromSheets() {
     readSheetRows("LessonPlans").then(toLessonPlans),
     readSheetRows("Attendance").then(toAttendance),
     readSheetRows("Notifications").then(toNotifications),
+    ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders).then(() =>
+      readSheetRows("AppAnnouncements").then(toAppAnnouncements),
+    ),
     readSheetRows("AuditLogs").then(toAuditLogs),
   ]);
 
@@ -354,9 +361,21 @@ export async function getAppDataFromSheets() {
     lessonPlans,
     attendance,
     notifications,
+    appAnnouncements,
     auditLogs,
   };
 }
+
+export const appAnnouncementHeaders = [
+  "id",
+  "title",
+  "body",
+  "priority",
+  "active",
+  "createdBy",
+  "createdAt",
+  "updatedAt",
+];
 
 async function getHeaders(sheetName: SheetName) {
   const response = await getSheetsClient().spreadsheets.values.get({
@@ -394,6 +413,9 @@ function normalizeSheetHeader(value: unknown) {
     name: "name",
     email: "email",
     role: "role",
+    priority: "priority",
+    mucdo: "priority",
+    douutien: "priority",
     teacherid: "teacherId",
     teachername: "teacherName",
     teacheremail: "teacherEmail",
@@ -587,6 +609,19 @@ function toNotifications(rows: SheetRow[]): Notification[] {
   }));
 }
 
+function toAppAnnouncements(rows: SheetRow[]): AppAnnouncement[] {
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    priority: parseAnnouncementPriority(row.priority),
+    active: parseBoolean(row.active, true),
+    createdBy: row.createdBy || undefined,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt || undefined,
+  }));
+}
+
 function toAuditLogs(rows: SheetRow[]): AuditLog[] {
   return rows.map((row) => ({
     id: row.id,
@@ -598,6 +633,10 @@ function toAuditLogs(rows: SheetRow[]): AuditLog[] {
     metadata: row.metadata || undefined,
     createdAt: row.createdAt,
   }));
+}
+
+function parseAnnouncementPriority(value: string | undefined): AppAnnouncementPriority {
+  return value === "important_not_urgent" ? "important_not_urgent" : "important_urgent";
 }
 
 function parseTeachingEnvironment(value: string | undefined): TeachingEnvironment | undefined {

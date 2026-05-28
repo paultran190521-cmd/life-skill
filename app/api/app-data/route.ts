@@ -17,6 +17,7 @@ export async function GET() {
       lessonPlans: data.lessonPlans,
       attendance: data.attendance,
       notifications: data.notifications,
+      appAnnouncements: data.appAnnouncements,
       auditLogs: data.auditLogs,
     });
   } catch (error) {

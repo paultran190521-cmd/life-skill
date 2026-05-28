@@ -92,6 +92,10 @@ const SHEETS = [
     headers: ["id", "title", "body", "role", "targetUserId", "read", "createdAt", "updatedAt"],
   },
   {
+    title: "AppAnnouncements",
+    headers: ["id", "title", "body", "priority", "active", "createdBy", "createdAt", "updatedAt"],
+  },
+  {
     title: "AuditLogs",
     headers: ["id", "actorId", "actorEmail", "action", "entityType", "entityId", "metadata", "createdAt"],
   },

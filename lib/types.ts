@@ -108,6 +108,19 @@ export type Notification = {
   read: boolean;
 };
 
+export type AppAnnouncementPriority = "important_urgent" | "important_not_urgent";
+
+export type AppAnnouncement = {
+  id: string;
+  title: string;
+  body: string;
+  priority: AppAnnouncementPriority;
+  active: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  createdBy?: string;
+};
+
 export type AuditLog = {
   id: string;
   actorId: string;

@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import {
+  AlertTriangle,
   Bell,
   BookOpen,
   CalendarDays,
@@ -18,6 +19,7 @@ import {
   LayoutDashboard,
   LoaderCircle,
   Mail,
+  Megaphone,
   MessageSquare,
   Pencil,
   Phone,
@@ -48,6 +50,8 @@ import {
 } from "@/lib/time-slots";
 import type {
   Attendance,
+  AppAnnouncement,
+  AppAnnouncementPriority,
   AuditLog,
   ClassRoom,
   Lesson,
@@ -97,6 +101,7 @@ type AppData = {
   lessonPlans: LessonPlan[];
   attendance: Attendance[];
   notifications: Notification[];
+  appAnnouncements: AppAnnouncement[];
   auditLogs: AuditLog[];
 };
 
@@ -108,6 +113,12 @@ type UserFeedbackDraft = {
   upgradeTarget: string;
   menuName: string;
   desiredFlow: string;
+};
+
+type AnnouncementDraft = {
+  title: string;
+  body: string;
+  priority: AppAnnouncementPriority;
 };
 
 type EmailResult = {
@@ -340,6 +351,7 @@ export function MettasoulApp() {
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [appAnnouncements, setAppAnnouncements] = useState<AppAnnouncement[]>([]);
   const [dataStatus, setDataStatus] = useState<"loading" | "connected" | "offline">("loading");
   const [authStatus, setAuthStatus] = useState<"checking" | "signed-in" | "signed-out">("checking");
   const [saveError, setSaveError] = useState("");
@@ -411,9 +423,15 @@ export function MettasoulApp() {
   });
   const [selectedSlotIds, setSelectedSlotIds] = useState<string[]>([]);
   const [collapsedSettingsSections, setCollapsedSettingsSections] = useState({
+    announcements: false,
     schools: true,
     classes: true,
     slots: true,
+  });
+  const [announcementDraft, setAnnouncementDraft] = useState<AnnouncementDraft>({
+    title: "",
+    body: "",
+    priority: "important_urgent",
   });
   const [schoolDraft, setSchoolDraft] = useState({
     name: "",
@@ -500,7 +518,7 @@ export function MettasoulApp() {
 
   useEffect(() => {
     if (activeTab === "settings") {
-      setCollapsedSettingsSections({ schools: true, classes: true, slots: true });
+      setCollapsedSettingsSections({ announcements: false, schools: true, classes: true, slots: true });
     }
   }, [activeTab]);
 
@@ -555,6 +573,7 @@ export function MettasoulApp() {
         setAttendance(data.attendance);
         setAuditLogs(data.auditLogs ?? []);
         setNotifications(data.notifications);
+        setAppAnnouncements(data.appAnnouncements ?? []);
         setDataStatus("connected");
       } catch (error) {
         console.error(error);
@@ -783,6 +802,13 @@ export function MettasoulApp() {
         .filter((item) => item.role === role || item.role === "all")
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [notifications, role],
+  );
+  const activeAppAnnouncements = useMemo(
+    () =>
+      appAnnouncements
+        .filter((item) => item.active)
+        .sort((a, b) => (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt)),
+    [appAnnouncements],
   );
   const feedbackNotifications = useMemo(
     () =>
@@ -1574,6 +1600,82 @@ export function MettasoulApp() {
       setDataStatus("connected");
       setSaveError("");
       pushToast("Đã nhận feedback", "Feedback đã được lưu vào hệ thống để theo dõi nâng cấp.", "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function createAppAnnouncement() {
+    const title = announcementDraft.title.trim();
+    const body = announcementDraft.body.trim();
+    if (!title || !body) {
+      pushToast("Thiếu nội dung thông báo", "Nhập tiêu đề và nội dung trước khi đẩy thông báo.", "warning");
+      return;
+    }
+
+    try {
+      const savedAnnouncement = await saveRequest<AppAnnouncement>("Đang đẩy thông báo...", "/api/announcements", {
+        method: "POST",
+        body: JSON.stringify({
+          title,
+          body,
+          priority: announcementDraft.priority,
+          active: true,
+          createdBy: currentUser.id,
+        }),
+      });
+      setAppAnnouncements((items) => [savedAnnouncement, ...items]);
+      setAnnouncementDraft({ title: "", body: "", priority: "important_urgent" });
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã đẩy thông báo", "Thông báo đang chạy ở đầu ứng dụng cho giáo viên.", "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function toggleAppAnnouncement(announcement: AppAnnouncement) {
+    const nextActive = !announcement.active;
+    try {
+      const savedAnnouncement = await saveRequest<Partial<AppAnnouncement> & { id: string }>(
+        nextActive ? "Đang bật thông báo..." : "Đang tắt thông báo...",
+        `/api/announcements/${announcement.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ active: nextActive }),
+        },
+      );
+      setAppAnnouncements((items) =>
+        items.map((item) => (item.id === announcement.id ? { ...item, ...savedAnnouncement, active: nextActive } : item)),
+      );
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast(nextActive ? "Đã bật thông báo" : "Đã tắt thông báo", announcement.title, nextActive ? "success" : "warning");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function deleteAppAnnouncement(announcement: AppAnnouncement) {
+    const confirmed = await openConfirmDialog({
+      title: "Xóa thông báo?",
+      message: `Thông báo "${announcement.title}" sẽ bị xóa khỏi hệ thống.`,
+      confirmText: "Xóa",
+      cancelText: "Hủy",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await saveRequest<{ id: string; deleted: boolean }>("Đang xóa thông báo...", `/api/announcements/${announcement.id}`, {
+        method: "DELETE",
+      });
+      setAppAnnouncements((items) => items.filter((item) => item.id !== announcement.id));
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã xóa thông báo", announcement.title, "success");
     } catch (error) {
       handleSaveError(error);
     }
@@ -2855,6 +2957,7 @@ export function MettasoulApp() {
             </div>
           </header>
 
+          <AnnouncementTicker announcements={activeAppAnnouncements} />
           <div className="p-4 md:p-7">{renderMain()}</div>
           {pendingAction ? (
             <div className="fixed right-5 top-5 z-50 flex items-center gap-3 rounded-2xl border border-cyan-100 bg-white/95 px-4 py-3 text-sm font-black text-[var(--brand-dark)] shadow-2xl shadow-cyan-900/10 backdrop-blur">
@@ -5644,6 +5747,140 @@ export function MettasoulApp() {
     const usageGuideUrl = "/huong-dan-su-dung/";
     return (
       <div className="space-y-5">
+        <Panel
+          title="Thông báo chạy đầu ứng dụng"
+          action={`${appAnnouncements.filter((item) => item.active).length} đang chạy`}
+          collapsed={collapsedSettingsSections.announcements}
+          onToggleCollapse={() => toggleSettingsSection("announcements")}
+        >
+          <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-rose-50 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-amber-100 text-amber-800">
+                  <Megaphone size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-[var(--brand-dark)]">Đẩy thông báo cho giáo viên</h3>
+                  <p className="mt-1 text-sm font-semibold text-[var(--muted)]">
+                    Thông báo đang bật sẽ chạy ở đầu ứng dụng cho đến khi admin tắt hoặc xóa.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3">
+                <input
+                  value={announcementDraft.title}
+                  onChange={(event) => setAnnouncementDraft((current) => ({ ...current, title: event.target.value }))}
+                  placeholder="Tiêu đề ngắn, ví dụ: Họp giáo viên tuần này"
+                  className={inputClass}
+                />
+                <textarea
+                  value={announcementDraft.body}
+                  onChange={(event) => setAnnouncementDraft((current) => ({ ...current, body: event.target.value }))}
+                  placeholder="Nội dung thông báo chạy trên đầu ứng dụng"
+                  rows={4}
+                  className={`${inputClass} resize-y`}
+                />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(["important_urgent", "important_not_urgent"] as AppAnnouncementPriority[]).map((priority) => (
+                    <button
+                      key={priority}
+                      type="button"
+                      onClick={() => setAnnouncementDraft((current) => ({ ...current, priority }))}
+                      className={`rounded-2xl border px-4 py-3 text-left text-sm font-black transition ${
+                        announcementDraft.priority === priority
+                          ? priority === "important_urgent"
+                            ? "border-rose-300 bg-rose-100 text-rose-900 shadow-md"
+                            : "border-amber-300 bg-amber-100 text-amber-900 shadow-md"
+                          : "border-slate-200 bg-white text-[var(--brand-dark)] hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        {priority === "important_urgent" ? <AlertTriangle size={16} /> : <Megaphone size={16} />}
+                        {announcementPriorityLabel(priority)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onClick={createAppAnnouncement} disabled={isBusy} className={primaryButtonClass}>
+                  <Send size={16} />
+                  Đẩy thông báo
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-black text-[var(--brand-dark)]">Danh sách thông báo</h3>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
+                  {appAnnouncements.length} mục
+                </span>
+              </div>
+              <div className="app-scrollbar max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                {appAnnouncements.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-sm font-semibold text-slate-600">
+                    Chưa có thông báo chạy nào.
+                  </div>
+                ) : (
+                  appAnnouncements
+                    .slice()
+                    .sort((a, b) => (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt))
+                    .map((announcement) => {
+                      const urgent = announcement.priority === "important_urgent";
+                      return (
+                        <div
+                          key={announcement.id}
+                          className={`rounded-2xl border p-3 ${
+                            announcement.active
+                              ? urgent
+                                ? "border-rose-200 bg-rose-50/70"
+                                : "border-amber-200 bg-amber-50/70"
+                              : "border-slate-200 bg-slate-50"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-black uppercase ${
+                                  urgent ? "bg-rose-600 text-white" : "bg-amber-500 text-white"
+                                }`}
+                              >
+                                {urgent ? <AlertTriangle size={13} /> : <Megaphone size={13} />}
+                                {announcementPriorityLabel(announcement.priority)}
+                              </span>
+                              <p className="mt-2 text-sm font-black text-[var(--brand-dark)]">{announcement.title}</p>
+                              <p className="mt-1 whitespace-pre-line text-xs font-semibold text-[var(--muted)]">{announcement.body}</p>
+                              <p className="mt-2 text-[11px] font-bold text-slate-500">
+                                {announcement.active ? "Đang chạy" : "Đã tắt"} · {formatDateTime(announcement.updatedAt || announcement.createdAt)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleAppAnnouncement(announcement)}
+                              disabled={isBusy}
+                              className="rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"
+                            >
+                              {announcement.active ? "Tắt" : "Bật"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteAppAnnouncement(announcement)}
+                              disabled={isBusy}
+                              className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-50"
+                            >
+                              Xóa
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+            </div>
+          </div>
+        </Panel>
+
         <Panel title="Hướng dẫn sử dụng & Feedback" action="Dành cho admin">
           <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
             <div className="rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-sky-50 p-4 shadow-sm">
@@ -6124,6 +6361,45 @@ export function MettasoulApp() {
       </div>
     );
   }
+}
+
+function AnnouncementTicker({ announcements }: { announcements: AppAnnouncement[] }) {
+  if (announcements.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="border-b border-white/70 bg-white/75 px-4 py-3 backdrop-blur md:px-7">
+      <div className="overflow-hidden rounded-2xl border border-white/70 bg-white shadow-[0_14px_32px_rgba(18,46,68,0.08)]">
+        <div className="app-announcement-track flex w-max min-w-full items-center gap-4 py-2">
+          {[...announcements, ...announcements].map((announcement, index) => {
+            const urgent = announcement.priority === "important_urgent";
+            return (
+              <div
+                key={`${announcement.id}-${index}`}
+                className={`mx-2 inline-flex max-w-[min(82vw,760px)] items-center gap-3 rounded-xl border px-4 py-2 text-sm font-black ${
+                  urgent
+                    ? "border-rose-200 bg-rose-50 text-rose-900"
+                    : "border-amber-200 bg-amber-50 text-amber-900"
+                }`}
+              >
+                <span
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[11px] uppercase ${
+                    urgent ? "bg-rose-600 text-white" : "bg-amber-500 text-white"
+                  }`}
+                >
+                  {urgent ? <AlertTriangle size={13} /> : <Megaphone size={13} />}
+                  {announcementPriorityLabel(announcement.priority)}
+                </span>
+                <span className="truncate">{announcement.title}</span>
+                <span className="font-semibold opacity-85">{announcement.body}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Panel({
@@ -7127,6 +7403,10 @@ function normalizeComparableText(value: string) {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+function announcementPriorityLabel(priority: AppAnnouncementPriority) {
+  return priority === "important_not_urgent" ? "Quan trọng - không khẩn" : "Quan trọng - khẩn";
 }
 
 const inputClass =
