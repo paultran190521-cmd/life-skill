@@ -19,6 +19,7 @@ import {
   LayoutDashboard,
   LoaderCircle,
   Mail,
+  Menu,
   Megaphone,
   MessageSquare,
   Pencil,
@@ -501,6 +502,7 @@ export function MettasoulApp() {
   const [centerFeedback, setCenterFeedback] = useState<CenterFeedback | null>(null);
   const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [observability, setObservability] = useState<ObservabilitySnapshot | null>(null);
   const [observabilityLoading, setObservabilityLoading] = useState(false);
   const [observabilityError, setObservabilityError] = useState("");
@@ -516,6 +518,8 @@ export function MettasoulApp() {
   const role = currentUser.role;
   const hasAdminAccess = sessionUser?.role === "admin";
   const currentTeacherId = currentUser.teacherId ?? "";
+  const navigationTabs = role === "admin" ? adminTabs : teacherTabs;
+  const activeTabMeta = navigationTabs.find((item) => item.id === activeTab) ?? navigationTabs[0];
   const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.active !== false), [teachers]);
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
   const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);
@@ -2974,18 +2978,43 @@ export function MettasoulApp() {
     return SettingsPanel();
   }
 
+  function changeTab(tabId: TabId) {
+    setActiveTab(tabId);
+    setMobileSidebarOpen(false);
+  }
+
   return (
-    <main className="ui-polish min-h-screen bg-[var(--canvas)]">
+    <main className="ui-polish min-h-screen overflow-x-hidden bg-[var(--canvas)]">
       <div className="ui-enter grid min-h-screen lg:grid-cols-[280px_1fr]">
-        <aside className="ui-shell-sidebar border-r border-white/70 px-4 py-5 shadow-[16px_0_44px_rgba(18,46,68,0.08)]">
+        {mobileSidebarOpen ? (
+          <button
+            type="button"
+            aria-label="Đóng menu"
+            onClick={() => setMobileSidebarOpen(false)}
+            className="fixed inset-0 z-40 bg-slate-950/35 backdrop-blur-sm lg:hidden"
+          />
+        ) : null}
+        <aside
+          className={`ui-shell-sidebar fixed inset-y-0 left-0 z-50 w-[min(86vw,320px)] overflow-y-auto border-r border-white/70 px-4 py-5 shadow-[16px_0_44px_rgba(18,46,68,0.16)] transition-transform duration-300 lg:static lg:z-auto lg:w-auto lg:translate-x-0 lg:overflow-visible ${
+            mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
           <div className="flex items-center gap-3 px-2">
             <div className="ui-logo-mark grid h-11 w-11 place-items-center rounded-2xl text-white">
               <GraduationCap size={24} />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-lg font-extrabold tracking-tight text-[var(--brand-dark)]">HỌC VIỆN METTASOUL</p>
               <p className="text-xs font-semibold uppercase text-[var(--muted)]">Lịch dạy</p>
             </div>
+            <button
+              type="button"
+              onClick={() => setMobileSidebarOpen(false)}
+              aria-label="Đóng menu"
+              className="ml-auto grid h-10 w-10 place-items-center rounded-xl bg-cyan-50 text-[var(--brand-dark)] lg:hidden"
+            >
+              <X size={18} />
+            </button>
           </div>
 
           <div className="ui-surface-lift mt-6 rounded-2xl border p-3">
@@ -3015,7 +3044,7 @@ export function MettasoulApp() {
           </div>
 
           <nav className="mt-5 space-y-1">
-            {(role === "admin" ? adminTabs : teacherTabs).map((item) => {
+            {navigationTabs.map((item) => {
               const Icon = item.icon;
               return (
                 <button
@@ -3025,7 +3054,7 @@ export function MettasoulApp() {
                       ? "bg-gradient-to-r from-[var(--brand)] via-[var(--mint)] to-[var(--sky)] text-white shadow-lg shadow-cyan-800/20"
                       : "text-[var(--brand-dark)] hover:bg-white hover:text-[var(--brand-dark)] hover:shadow-md hover:shadow-cyan-900/5"
                   }`}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => changeTab(item.id)}
                 >
                   <Icon size={18} />
                   <span>{item.label}</span>
@@ -3039,18 +3068,29 @@ export function MettasoulApp() {
         <section className="min-w-0">
           <header className="ui-glass-header sticky top-0 z-20 border-b border-white/70 px-4 py-4 backdrop-blur-xl md:px-7">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div>
-                <p className="text-sm font-bold text-[var(--brand-dark)]">
-                  {role === "admin" ? "Bàn điều phối giáo vụ" : "Công việc của giáo viên"}
-                </p>
-                <h1 className="mt-1 text-2xl font-black tracking-tight md:text-3xl">
-                  Quản lý lịch dạy, giáo án và điểm danh
-                </h1>
+              <div className="flex min-w-0 items-start gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMobileSidebarOpen(true)}
+                  aria-label="Mở menu"
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-cyan-100 bg-white text-[var(--brand-dark)] shadow-sm lg:hidden"
+                >
+                  <Menu size={20} />
+                </button>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-[var(--brand-dark)]">
+                    {role === "admin" ? "Bàn điều phối giáo vụ" : "Công việc của giáo viên"}
+                  </p>
+                  <h1 className="mt-1 truncate text-xl font-black tracking-tight md:text-3xl">
+                    <span className="sm:hidden">{activeTabMeta?.label ?? "Mettasoul"}</span>
+                    <span className="hidden sm:inline">Quản lý lịch dạy, giáo án và điểm danh</span>
+                  </h1>
+                </div>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="grid gap-3 sm:flex sm:flex-row sm:items-center">
                 <span
-                  className={`inline-flex h-11 items-center justify-center rounded-2xl px-3 text-xs font-black ${
+                  className={`inline-flex h-10 items-center justify-center rounded-2xl px-3 text-xs font-black sm:h-11 ${
                     authStatus === "signed-out"
                       ? "bg-slate-100 text-slate-700"
                       : dataStatus === "connected"
@@ -3088,7 +3128,7 @@ export function MettasoulApp() {
                     Góp ý
                   </button>
                 ) : null}
-                <div className="ui-surface-lift flex items-center gap-2 rounded-2xl border px-3 py-2">
+                <div className="ui-surface-lift hidden items-center gap-2 rounded-2xl border px-3 py-2 sm:flex">
                   <img
                     alt={currentUser.name}
                     src={currentUser.avatarUrl}
@@ -3097,6 +3137,15 @@ export function MettasoulApp() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-extrabold text-[var(--brand-dark)]">{currentUser.name}</p>
                     <p className="truncate text-xs text-[var(--muted)]">{currentUser.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 sm:hidden">
+                  <div className="ui-surface-lift flex min-w-0 flex-1 items-center gap-2 rounded-2xl border px-3 py-2">
+                    <img alt={currentUser.name} src={currentUser.avatarUrl} className="h-9 w-9 rounded-full object-cover" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-extrabold text-[var(--brand-dark)]">{currentUser.name}</p>
+                      <p className="truncate text-xs text-[var(--muted)]">{currentUser.email}</p>
+                    </div>
                   </div>
                 </div>
                 {authStatus === "signed-in" ? (
@@ -3182,7 +3231,30 @@ export function MettasoulApp() {
           </header>
 
           <AnnouncementTicker announcements={activeAppAnnouncements} />
-          <div className="p-4 md:p-7">{renderMain()}</div>
+          <div className="px-3 pb-28 pt-4 sm:px-4 md:p-7">{renderMain()}</div>
+          <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-cyan-100 bg-white/95 px-2 py-2 shadow-[0_-18px_42px_rgba(18,46,68,0.12)] backdrop-blur-xl lg:hidden">
+            <div className="app-scrollbar flex gap-2 overflow-x-auto pb-[env(safe-area-inset-bottom)]">
+              {navigationTabs.map((item) => {
+                const Icon = item.icon;
+                const selected = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => changeTab(item.id)}
+                    className={`flex min-w-[78px] flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-black transition ${
+                      selected
+                        ? "bg-[var(--brand)] text-white shadow-lg shadow-cyan-900/20"
+                        : "bg-cyan-50 text-[var(--brand-dark)]"
+                    }`}
+                  >
+                    <Icon size={17} />
+                    <span className="whitespace-nowrap">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
           <SystemFeedbackLayer
             pendingAction={pendingAction}
             toastMessages={toastMessages}
@@ -3999,7 +4071,7 @@ export function MettasoulApp() {
             <button
               onClick={createSchedules}
               disabled={isBusy || draftScheduleConflicts.length > 0}
-              className={`inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition ${
+              className={`sticky bottom-24 z-10 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition lg:static ${
                 isBusy || draftScheduleConflicts.length > 0
                   ? "cursor-not-allowed bg-slate-400 shadow-none"
                   : "bg-[var(--brand)] hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]"
@@ -6572,7 +6644,7 @@ export function MettasoulApp() {
 
     return (
       <div className="app-scrollbar overflow-x-auto">
-        <div className="min-w-[860px] space-y-3">
+        <div className="space-y-3 sm:min-w-[860px]">
           {items.map((schedule) => {
             const meta = lookupSchedule(schedule);
             const checkedIn = Boolean(meta.checkIn);
@@ -6592,9 +6664,9 @@ export function MettasoulApp() {
                     onOpenDetail(schedule);
                   }
                 }}
-                className={`rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-lg ${scheduleAccentBorder(schedule.status)}`}
+                className={`rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-lg sm:p-4 ${scheduleAccentBorder(schedule.status)}`}
               >
-                <div className="grid grid-cols-[130px_1fr_160px_190px] items-center gap-4">
+                <div className="grid gap-3 sm:grid-cols-[130px_1fr_160px_190px] sm:items-center sm:gap-4">
                   <div className="flex items-start gap-2">
                     {onToggleSelect ? (
                       <input
@@ -6613,7 +6685,7 @@ export function MettasoulApp() {
                     </div>
                   </div>
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={(event) => {
@@ -6639,7 +6711,7 @@ export function MettasoulApp() {
                     </p>
                   </div>
                   <TeacherHover teacher={meta.teacher} />
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
                     <StatusChip status={schedule.status} />
                     {onToggleHistory ? (
                       <button
@@ -6911,12 +6983,12 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-3xl border border-white/75 bg-white/90 p-5 shadow-[0_20px_52px_rgba(18,46,68,0.09),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur">
-      <div className={`${collapsed ? "" : "mb-5"} flex items-center justify-between gap-3`}>
-        <h2 className="text-lg font-black tracking-tight text-[var(--brand-dark)]">{title}</h2>
+    <section className="rounded-2xl border border-white/75 bg-white/90 p-4 shadow-[0_20px_52px_rgba(18,46,68,0.09),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur sm:rounded-3xl sm:p-5">
+      <div className={`${collapsed ? "" : "mb-4 sm:mb-5"} flex items-start justify-between gap-3`}>
+        <h2 className="text-base font-black tracking-tight text-[var(--brand-dark)] sm:text-lg">{title}</h2>
         <div className="flex items-center gap-2">
           {action ? (
-            <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-[var(--brand-dark)]">
+            <span className="max-w-[42vw] truncate rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-[var(--brand-dark)] sm:max-w-none">
               {action}
             </span>
           ) : null}
@@ -7993,10 +8065,10 @@ function announcementPriorityLabel(priority: AppAnnouncementPriority) {
 }
 
 const inputClass =
-  "w-full rounded-2xl border border-sky-200 bg-white/90 px-4 py-3 text-sm font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100";
+  "w-full rounded-2xl border border-sky-200 bg-white/90 px-4 py-3 text-base font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100 sm:text-sm";
 
 const compactInputClass =
-  "w-full rounded-xl border border-sky-200 bg-white/90 px-3 py-2 text-sm font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100";
+  "w-full rounded-xl border border-sky-200 bg-white/90 px-3 py-2 text-base font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100 sm:text-sm";
 
 const primaryButtonClass =
   "ui-primary-gradient inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-black text-white transition hover:-translate-y-0.5";

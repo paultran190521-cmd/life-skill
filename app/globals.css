@@ -274,6 +274,41 @@ button:disabled {
   animation-play-state: paused;
 }
 
+@media (max-width: 767px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  body {
+    background:
+      radial-gradient(circle at 20% -10%, rgba(25, 146, 176, 0.12), transparent 24rem),
+      linear-gradient(180deg, #f8fbff 0%, #f4f8fc 100%);
+  }
+
+  .ui-polish {
+    background-attachment: scroll;
+  }
+
+  .ui-polish :is(section, div, article, li)[class*="rounded-3xl"][class*="bg-white"][class*="border"],
+  .ui-polish :is(section, div, article, li)[class*="rounded-2xl"][class*="bg-white"][class*="border"] {
+    box-shadow: 0 10px 24px rgba(18, 46, 68, 0.08);
+  }
+
+  .ui-polish :is(section, div, article, li)[class*="rounded-3xl"][class*="bg-white"][class*="border"]:hover,
+  .ui-polish :is(section, div, article, li)[class*="rounded-2xl"][class*="bg-white"][class*="border"]:hover,
+  .ui-polish button:not(:disabled):hover,
+  .ui-polish a:hover {
+    transform: none;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
