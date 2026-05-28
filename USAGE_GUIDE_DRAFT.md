@@ -1,232 +1,206 @@
-﻿# HƯỚNG DẪN SỬ DỤNG (BẢN NHÁP)
+# HƯỚNG DẪN SỬ DỤNG (BẢN NHÁP CẬP NHẬT)
 
-Tài liệu này mô tả đầy đủ các phân hệ đang hoạt động của hệ thống quản lý lịch dạy, giáo án và điểm danh.
+Ngày cập nhật: 28/05/2026
 
-## 1. Tổng Quan Hệ Thống
+Tài liệu này bám theo trạng thái code hiện tại, tập trung vào cách dùng thực tế cho Admin và Giáo viên.
 
-### Mục tiêu
-- Quản lý lịch dạy kỹ năng sống theo trường/lớp/khung giờ.
-- Theo dõi vòng đời vận hành: giao lịch -> xác nhận -> nộp giáo án -> điểm danh.
-- Đồng bộ dữ liệu chính lên Google Sheets.
+## 1. Tổng quan hệ thống
 
-### Vai trò người dùng
+Mục tiêu hệ thống:
+
+- Điều phối lịch dạy kỹ năng sống theo trường/lớp/khung giờ/bài học.
+- Quản lý quy trình vận hành chuẩn:
+  - giao lịch -> xác nhận -> nộp giáo án -> điểm danh -> báo cáo.
+- Lưu dữ liệu tập trung trên Google Sheets.
+
+Vai trò:
+
 - `Admin`:
-  - Quản trị toàn bộ dữ liệu và phân hệ.
-  - Giao lịch, điều phối, theo dõi cảnh báo vận hành.
+  - toàn quyền điều hành và cấu hình.
 - `Teacher`:
-  - Chỉ xem và thao tác trên dữ liệu của chính mình.
-  - Xác nhận lịch, nộp giáo án, điểm danh.
+  - thao tác trên dữ liệu thuộc lịch của chính mình.
 
-## 2. Phân Hệ Đăng Nhập & Phân Quyền
+## 2. Đăng nhập và quyền truy cập
 
-### Tính năng hiện có
-- Đăng nhập bằng Google (`Google Login`).
-- Lưu phiên đăng nhập qua session token.
-- Kiểm tra quyền ở API trước khi cho phép thao tác.
-- Tự động gắn tài khoản `teacher` với `teacherId` để giới hạn dữ liệu đúng giáo viên.
+- Đăng nhập bằng Google.
+- Hệ thống dùng session để xác thực backend.
+- Nếu chưa đăng nhập:
+  - không tải dữ liệu tổng (`/api/app-data`),
+  - UI hiển thị trạng thái “Chưa đăng nhập”.
 
-### Luật phân quyền chính
-- `Admin`: toàn quyền đọc/ghi hầu hết dữ liệu nghiệp vụ.
-- `Teacher`: chỉ thao tác lịch, giáo án, điểm danh thuộc `teacherId` của chính mình.
+Lưu ý:
 
-## 3. Phân Hệ Tổng Quan (Dashboard)
+- Hệ thống đang chạy chế độ phân quyền backend `enforce` mặc định.
+- Nếu cần rollback nhanh khi sự cố quyền:
+  - set `AUTH_ENFORCEMENT_MODE=shadow`.
 
-### Tính năng hiện có
-- 4 chỉ số nhanh:
-  - Lịch trong hệ thống.
-  - Đã nhận lịch.
-  - Giáo án đã nộp.
-  - Đã điểm danh.
-- Khối “Lịch dạy gần nhất” để theo dõi nhanh lịch mới.
-- Khối “Thông báo vận hành” với đếm số thông báo chưa đọc theo vai trò.
+## 3. Phân hệ Giao lịch (Admin)
 
-## 4. Phân Hệ Giao Lịch
+### 3.1. Quy trình chuẩn
 
-### Tính năng hiện có
-- Tạo lịch theo lô:
-  - Một lần tạo nhiều dòng lịch.
-  - Giao cho nhiều giáo viên cùng lúc.
-- Mỗi dòng lịch gồm:
-  - Ngày dạy, Trường, Khối, Lớp, Khung giờ, Bài học.
-- Ràng buộc dữ liệu:
-  - Lớp phụ thuộc trường/khối.
-  - Bài học phụ thuộc khối.
-  - Khung giờ chỉ dùng các khung đang bật.
-- Tự động gửi email tổng hợp lịch theo từng giáo viên.
-- Tự động ghi nhật ký thao tác (`AuditLogs`) và thông báo (`Notifications`).
+1. Chọn ngày, trường, lớp, khung giờ, bài học, môi trường dạy.
+2. Chọn danh sách giáo viên nhận lịch.
+3. Kiểm tra khối “Xem trước lịch sắp gửi”.
+4. Chỉ bấm gửi khi không còn cảnh báo xung đột.
 
-### Quy trình thao tác
-- Chọn giáo viên nhận lịch.
-- Thêm/sửa/xóa dòng lịch nháp.
-- Bấm gửi lịch.
-- Hệ thống lưu lịch + gửi email + sinh thông báo.
+### 3.2. Cập nhật mới về an toàn giao lịch
 
-## 5. Phân Hệ Lịch Tổng
+Hệ thống đã chặn xung đột ở 2 lớp:
 
-### Tính năng hiện có
-- 3 chế độ xem: `Tháng`, `Tuần`, `Ngày`.
-- Bộ lọc nâng cao:
-  - Trạng thái, giáo viên, trường, lớp, khung giờ, khoảng ngày.
-- Sắp xếp:
-  - Ngày tăng dần, ngày giảm dần, theo trạng thái.
-- Tự lưu bộ lọc trên trình duyệt để dùng lại.
-- Hiển thị thống kê trạng thái nhanh: tổng lịch, chờ xác nhận, đã nhận, điểm danh, hủy.
-- Mở chi tiết từng ngày và từng lịch.
-- Admin có thao tác hàng loạt trong chi tiết ngày:
-  - Hủy lịch.
-  - Chuyển giáo viên.
-  - Nhắc xác nhận.
-- Có cảnh báo vận hành (ví dụ lịch sắp dạy chưa xác nhận, lịch quá ngày chưa điểm danh, giáo viên có nhiều lịch hủy).
+- Lớp backend:
+  - chặn trùng `giáo viên + ngày + khung giờ`,
+  - chặn trùng `lớp + ngày + khung giờ`,
+  - chặn cả trùng với lịch đã có và trùng trong chính danh sách sắp gửi.
+- Lớp UI preview:
+  - có khối cảnh báo đỏ liệt kê xung đột,
+  - nút “Gửi lịch và email thông báo” bị khóa khi còn xung đột,
+  - hiển thị khối xanh khi lịch an toàn để gửi.
 
-### Theo vai trò
-- Admin: xem toàn bộ lịch.
-- Teacher: chỉ xem lịch của bản thân.
+### 3.3. Kết quả sau khi gửi
 
-## 6. Phân Hệ Giáo Viên
+- Tạo lịch vào `Schedules`.
+- Gửi email tổng hợp theo từng giáo viên.
+- Tạo thông báo vận hành.
+- Ghi audit log chi tiết.
 
-### Tính năng hiện có
-- Danh sách giáo viên dạng bảng quản trị.
-- Thêm giáo viên thủ công qua modal.
-- Import giáo viên từ file `.xlsx/.csv/.tsv`.
-- Tải file mẫu import.
-- Sửa thông tin giáo viên trực tiếp.
-- Đổi quyền `teacher/admin`.
-- Bật/tắt hoạt động giáo viên.
-- Xóa giáo viên (có kiểm tra ràng buộc dữ liệu).
-- Tìm nhanh theo tên, email, số điện thoại, chuyên môn.
+## 4. Lịch tổng / Lịch của tôi
 
-### Dữ liệu liên quan
-- Khi tạo giáo viên, hệ thống tạo/đồng bộ luôn tài khoản người dùng (`Users`) tương ứng.
+- Hỗ trợ 3 chế độ xem: `Tháng`, `Tuần`, `Ngày`.
+- Có bộ lọc theo trạng thái, giáo viên, trường, lớp, khung giờ, khoảng ngày.
+- Admin có thao tác:
+  - hủy lịch,
+  - chuyển giáo viên,
+  - nhắc xác nhận,
+  - thao tác hàng loạt theo ngày.
 
-## 7. Phân Hệ Bài Học
+Teacher:
 
-### Tính năng hiện có
-- Nhập bài học hàng loạt trực tiếp trên lưới nhập liệu.
-- Import từ file spreadsheet (`.xlsx/.csv/.tsv`).
-- Tải file mẫu nhập bài học.
-- Quản lý thư viện bài học:
-  - Tìm kiếm theo tên/mục tiêu.
-  - Lọc theo khối.
-  - Sửa nội dung bài học.
-  - Xóa mềm bài học (ẩn khỏi luồng tạo lịch mới).
-- Mỗi bài học quản lý các trường:
-  - Khối, tên chuyên đề, mục tiêu, link giáo án mẫu, số phút.
+- chỉ xem lịch của chính mình,
+- xác nhận/điểm danh theo quyền.
 
-### Ràng buộc chính
-- Thời lượng bài học đang dùng chuẩn 45 hoặc 90 phút trong UI quản trị hiện tại.
+## 5. Giáo án
 
-## 8. Phân Hệ Giáo Án
-
-### Tính năng hiện có
-- Tách theo vai trò:
-  - Admin: tổng quan toàn hệ thống.
-  - Teacher: giáo án của tôi.
-- Các card tổng quan:
-  - Đã nộp, đã có giáo án, chưa có giáo án, sắp dạy còn thiếu.
-- Bấm card để lọc danh sách tương ứng.
-- Upload nhiều file giáo án theo từng lịch.
-- Mở file trên Drive qua link.
-- Sửa tên file giáo án.
+- Upload giáo án theo từng lịch.
+- Hỗ trợ link ngoài Google Drive (`external_link`).
+- Sửa tên giáo án.
 - Xóa giáo án.
-- Hiển thị ngữ cảnh lịch đầy đủ khi xem giáo án:
-  - Ngày dạy, trường, lớp, bài học, khung giờ (bắt đầu/kết thúc).
 
-### Ràng buộc chính
-- Giới hạn dung lượng file: 10MB/file.
-- Định dạng hỗ trợ: `pdf`, `doc`, `docx`, `ppt`, `pptx`, `xls`, `xlsx`, `txt`, `csv`.
+Quyền:
 
-## 9. Phân Hệ Điểm Danh
+- Admin quản lý toàn bộ.
+- Teacher chỉ thao tác giáo án thuộc lịch của mình.
 
-### Tính năng hiện có
-- Teacher điểm danh theo từng tiết của mình.
-- Mỗi dòng tiết hiển thị:
-  - Bài học, trường/lớp, ngày dạy, giờ bắt đầu/kết thúc.
-- Sau khi điểm danh:
-  - Lưu bản ghi `Attendance`.
-  - Cập nhật trạng thái lịch thành `attended`.
-  - Ghi `AuditLogs`.
+## 6. Điểm danh
+
+- Điểm danh theo từng tiết.
 - Chặn điểm danh trùng.
 - Chặn điểm danh lịch đã hủy.
+- Cập nhật trạng thái lịch sang `attended`.
 
-### Admin tổng quan điểm danh
-- 4 card theo ngày hôm nay:
-  - Tiết hôm nay.
-  - Đã điểm danh hôm nay.
-  - Chưa điểm danh hôm nay.
-  - Điểm danh trễ hôm nay.
-- Bấm từng card để mở danh sách chi tiết.
-- Khối cảnh báo giáo viên theo dõi:
-  - Giáo viên có số lần chưa điểm danh cao.
-  - Giáo viên có số lần điểm danh trễ cao.
-- Bấm vào badge cảnh báo để mở danh sách lịch cụ thể theo từng loại vi phạm.
-- Có lịch sử điểm danh gần nhất.
+Rule thời gian:
 
-### Rule điểm danh
-- Cho phép điểm danh sớm tối đa `30 phút` trước giờ bắt đầu.
-- Sau giờ bắt đầu vẫn cho điểm danh để tránh mất dữ liệu vận hành.
-- Dữ liệu có thể được đánh dấu trễ để phục vụ theo dõi admin.
+- cho điểm danh sớm tối đa 30 phút trước giờ bắt đầu,
+- có theo dõi điểm danh trễ để admin giám sát.
 
-## 10. Phân Hệ Cấu Hình
+## 7. Cấu hình nền tảng (Admin)
 
-## 10.1 Cấu hình Trường
-- Thêm trường.
-- Sửa trường.
-- Xóa trường.
+Quản lý các danh mục:
 
-## 10.2 Cấu hình Lớp
-- Thêm lớp theo trường (hỗ trợ nhập nhiều lớp phân tách dấu phẩy).
-- Tự suy ra khối từ tên lớp.
-- Sửa lớp (trường, tên, khối).
-- Xóa lớp.
+- Trường
+- Lớp
+- Khung giờ
+- Bài học
+- Giáo viên
+- Người dùng
+- App announcements
 
-## 10.3 Cấu hình Khung Giờ
-- Thêm khung giờ thủ công.
-- Sửa khung giờ.
-- Bật/tắt khung giờ.
-- Xóa mềm khung giờ.
-- Bật/tắt hàng loạt theo danh sách chọn.
-- Import khung giờ từ file.
-- Tải file mẫu import.
-- Cảnh báo chuẩn thời lượng (ưu tiên chuẩn 45/90 phút).
+Import:
 
-## 11. Thông Báo, Nhật Ký & Tìm Kiếm Nhanh
+- hỗ trợ `.xlsx/.csv/.tsv` cho các phân hệ phù hợp.
 
-### Thông báo
-- Hiển thị thông báo theo vai trò (`admin`, `teacher`, `all`).
-- Hiển thị số thông báo mới trên giao diện.
+## 8. Thông báo & banner
 
-### Nhật ký
-- Ghi log thao tác nghiệp vụ chính vào `AuditLogs`:
-  - Tạo lịch, xác nhận, hủy, chuyển lịch, điểm danh...
+- Notification panel theo vai trò (`admin`, `teacher`, `all`).
+- Banner thông báo đầu trang (`AppAnnouncements`) có bật/tắt/xóa.
+- Feedback từ giáo viên được gửi về admin theo mẫu chuẩn.
 
-### Tìm kiếm nhanh
-- Thanh tìm kiếm global hỗ trợ tìm lịch/giáo viên/lớp theo ngữ cảnh tab.
+## 9. Observability vận hành (Admin mới)
 
-## 12. Dữ Liệu & Tích Hợp Google Sheets
+Trong tab Cấu hình có panel mới: **Observability vận hành**.
 
-### Nguồn dữ liệu
-- Dữ liệu chính đọc/ghi từ Google Sheets qua API backend.
-- Có trạng thái kết nối:
-  - `Đã nối Google Sheet`.
-  - `Dùng dữ liệu tạm` khi lỗi kết nối.
+### 9.1. Hiển thị chính
 
-### Sheet nghiệp vụ chính
-- `Users`, `Teachers`, `Schools`, `Classes`, `Lessons`, `TimeSlots`.
-- `Schedules`, `LessonPlans`, `Attendance`.
-- `Notifications`, `AuditLogs`.
+- Tổng sự kiện.
+- Deny (1h).
+- API Error (1h).
+- Health tổng.
+- Top route.
+- Cảnh báo vận hành.
 
-## 13. Trạng Thái Phân Hệ Chat
+### 9.2. Ý nghĩa nhanh
 
-- Phân hệ Chat đã được gỡ khỏi hệ thống ở phiên hiện tại.
-- Không còn tab Chat trên UI.
-- Không còn API chat trong backend.
-- Không còn luồng tạo/sử dụng dữ liệu `ChatThreads`, `ChatMessages`.
-- Đã đưa yêu cầu chat vào kế hoạch triển khai phiên sau.
+- `Deny (1h)` tăng mạnh:
+  - có thể user thao tác sai quyền hoặc policy cần rà soát.
+- `API Error (1h)` tăng:
+  - có thể có lỗi nghiệp vụ hoặc tích hợp ngoài.
+- `Health` không `ok`:
+  - kiểm tra Sheets/GAS/Email ngay.
 
-## 14. Checklist Cập Nhật Tài Liệu Mỗi Phiên
+### 9.3. Ngưỡng cảnh báo
 
-- Cập nhật tính năng mới theo từng phân hệ đã chỉnh.
-- Cập nhật rule nghiệp vụ nếu thay đổi.
-- Đối chiếu lại hành vi UI/API thực tế trước khi commit.
-- Chỉ commit/push sau khi tài liệu phản ánh đúng trạng thái hệ thống.
-- Quy định bắt buộc: mỗi hạng mục hoàn tất phải commit và push ngay lên GitHub, không để dồn phiên.
+- `OBS_ALERT_DENY_1H` (mặc định 20)
+- `OBS_ALERT_ERROR_1H` (mặc định 10)
+
+## 10. Health check nội bộ (Admin)
+
+API:
+
+- `GET /api/admin/health`
+
+Kiểm tra:
+
+- Google Sheets
+- GAS webhook
+- Email provider
+
+Trạng thái trả về:
+
+- `ok`
+- `degraded`
+- `down`
+
+## 11. Chuẩn lỗi mới để support nhanh
+
+Mọi lỗi API đã thống nhất format:
+
+- `{ error, code, requestId }`
+
+Cách dùng khi support:
+
+1. Lấy `requestId` từ lỗi user gặp.
+2. Tra trong audit/event log.
+3. Xác định route, code, reason để xử lý nhanh.
+
+## 12. Checklist test nhanh sau mỗi lần cập nhật
+
+1. Đăng nhập admin, mở tab Cấu hình.
+2. Kiểm tra panel Observability tải được dữ liệu.
+3. Giao lịch thử:
+  - tạo case trùng -> phải bị cảnh báo/khóa gửi,
+  - sửa hết trùng -> gửi được.
+4. Teacher test:
+  - xác nhận lịch,
+  - nộp giáo án,
+  - điểm danh.
+5. Chạy kỹ thuật:
+  - `npm run test:authz`
+  - `npm run build`
+
+## 13. Ghi chú vận hành
+
+- Không có phân hệ chat trong phiên bản hiện tại.
+- Khi phát sinh chặn nhầm quyền production:
+  - chuyển tạm `AUTH_ENFORCEMENT_MODE=shadow`,
+  - rà log/audit,
+  - fix policy rồi bật lại `enforce`.
+
