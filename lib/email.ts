@@ -42,6 +42,7 @@ type GasResponse = {
 };
 
 const scheduleEmailTemplateVersion = "mettasoul-schedule-email-2026-05-28";
+const expectedGasWebhookVersion = "mettasoul-gas-2026-05-28";
 
 export async function sendScheduleEmail(input: ScheduleEmailInput) {
   return sendScheduleDigestEmail({
@@ -61,10 +62,14 @@ export async function sendScheduleEmail(input: ScheduleEmailInput) {
 
 export async function sendScheduleDigestEmail(input: ScheduleDigestInput) {
   const from = process.env.EMAIL_FROM;
-  const to = input.teacher.email;
+  const to = normalizeEmailAddress(input.teacher.email);
 
   if (!to) {
     return { sent: false, reason: "Teacher email is missing." };
+  }
+
+  if (!isValidEmailAddress(to)) {
+    return { sent: false, reason: `Teacher email is invalid: ${to}` };
   }
 
   const subject = buildScheduleWeekSubject(input.schedules);
@@ -118,7 +123,21 @@ async function sendViaGas({
       return { sent: false, reason: body.error || `GAS mail webhook failed: ${response.status}` };
     }
 
-    if (body.echo?.templateVersion && body.echo.templateVersion !== scheduleEmailTemplateVersion) {
+    if (body.version && body.version !== expectedGasWebhookVersion) {
+      return {
+        sent: false,
+        reason: `GAS webhook version mismatch (expected ${expectedGasWebhookVersion}, got ${body.version}).`,
+      };
+    }
+
+    if (!body.echo) {
+      return {
+        sent: false,
+        reason: "GAS response missing echo metadata. Please deploy the latest GAS webhook version.",
+      };
+    }
+
+    if (body.echo.templateVersion && body.echo.templateVersion !== scheduleEmailTemplateVersion) {
       return {
         sent: false,
         reason: `GAS templateVersion mismatch (expected ${scheduleEmailTemplateVersion}, got ${body.echo.templateVersion}).`,
@@ -382,6 +401,17 @@ function escapeHtml(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function normalizeEmailAddress(value: string | undefined) {
+  return String(value || "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function isValidEmailAddress(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function formatDate(value: string) {
