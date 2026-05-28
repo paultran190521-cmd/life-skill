@@ -20,7 +20,7 @@ type EvaluatePermissionInput = {
 };
 
 export function getAuthEnforcementMode(): AuthMode {
-  return process.env.AUTH_ENFORCEMENT_MODE === "enforce" ? "enforce" : "shadow";
+  return process.env.AUTH_ENFORCEMENT_MODE === "shadow" ? "shadow" : "enforce";
 }
 
 type RequireSessionUserOptions = {

@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test:authz": "node scripts/test-authz.mjs",
     "setup:sheets": "node scripts/setup-google-sheets.mjs",
     "lint": "next lint"
   },
