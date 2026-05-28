@@ -1,6 +1,6 @@
 ﻿# WORK SUMMARY - HỌC VIỆN METTASOUL Scheduler
 
-Ngày cập nhật: 27/05/2026
+Ngày cập nhật: 28/05/2026
 Nhánh hiện tại: `main`
 
 ## 1. Tổng Quan Trạng Thái
@@ -17,7 +17,29 @@ Trạng thái hiện tại:
 - Quy trình làm việc đã chốt: hoàn tất thay đổi thì build/kiểm tra phù hợp, commit và push lên GitHub.
 - Quy tắc bắt buộc: sau khi hoàn tất code/fix theo yêu cầu thì phải commit và push GitHub ngay trong cùng phiên làm việc.
 
-## 2. Phân Hệ Giao Lịch
+## 2. Tính Năng Mới Phát Triển 28/05/2026
+
+Đã bổ sung/cải tiến:
+
+- Thêm lớp feedback hệ thống dạng ghim để admin có thể theo dõi phản hồi/yêu cầu nổi bật rõ hơn trong giao diện.
+- Thêm banner thông báo do admin quản lý, có API tạo/cập nhật/xóa và dữ liệu lưu trong Google Sheets.
+- Banner thông báo được đưa vào dữ liệu app tổng, có kiểu hiển thị riêng trong giao diện để truyền đạt thông báo vận hành.
+- Nâng cấp giáo án phía giáo viên: hiển thị giáo án đã nộp inline ngay trong card lịch/bài liên quan.
+- Hỗ trợ link Google Drive cho giáo án, giúp giáo viên/admin mở nhanh file đã nộp.
+- Cải thiện hướng dẫn/link trên card giáo án của giáo viên để thao tác rõ hơn.
+- Mở rộng dữ liệu `LessonPlans` để lưu thêm thông tin phục vụ Drive link và hiển thị inline.
+- Bổ sung tracing gửi email lịch dạy qua tab `MailDebug`, giúp kiểm tra request, response, metadata và nội dung liên quan khi email bị lỗi.
+- Bổ sung kiểm tra metadata GAS khi gửi email: nếu GAS trả metadata cũ/stale hoặc recipient email không hợp lệ thì hệ thống coi là lỗi thay vì báo thành công giả.
+- Hiển thị lý do email gửi thất bại trong thông báo admin sau khi tạo lịch, giúp giáo vụ biết lỗi nằm ở GAS, email người nhận hay nội dung gửi.
+- Sửa kiểm tra digest email trong GAS để giữ nguyên whitespace HTML, tránh làm hỏng cấu trúc/nội dung email khi kiểm tra chuỗi legacy.
+- Tiếp tục gia cố xử lý lỗi nội dung email cũ ở `lib/email.ts` và `scripts/gas-life-skill-webhook.js`.
+
+Ghi chú trạng thái:
+
+- Nhóm email lịch dạy đã có thêm tracing và báo lỗi rõ hơn, nhưng vẫn cần một lượt gửi test thực tế để xác nhận email nhận được không còn chuỗi cũ như `KỸ TRỐNG`.
+- `MailDebug` là công cụ ưu tiên để điều tra phiên sau nếu email vẫn sai nội dung.
+
+## 3. Phân Hệ Giao Lịch
 
 Đã hoàn tất:
 
@@ -37,7 +59,7 @@ Trạng thái hiện tại:
 - Đã giảm số lần đọc Google Sheets khi tạo lịch để hạn chế lỗi quota.
 - Đã chuẩn hóa header Google Sheet để nhận các biến thể như `ID`, `Id`, `id`, `schoolId`, `timeSlotId`, `Tiêu đề`, `Bài học`, `Tên bài học`, `Mục tiêu`.
 
-## 3. Email Lịch Dạy
+## 4. Email Lịch Dạy
 
 Đã hoàn tất một phần:
 
@@ -48,6 +70,9 @@ Trạng thái hiện tại:
 - Có nút `XÁC NHẬN TẤT CẢ (TẤT CẢ LỊCH ĐƯỢC XÁC NHẬN)`.
 - Đã thêm route xác nhận tất cả lịch trong email.
 - Đã cập nhật `scripts/gas-life-skill-webhook.js` để sender name là `HỌC VIỆN METTASOUL`, có `requestId`, `templateVersion` và lớp normalize nội dung trước khi gửi.
+- Đã bổ sung `MailDebug` để ghi vết quá trình gửi email lịch dạy.
+- Đã bổ sung báo lỗi rõ hơn cho admin khi email gửi thất bại.
+- Đã bổ sung kiểm tra GAS metadata để phát hiện GAS cũ/stale.
 
 Tồn tại cuối phiên:
 
@@ -57,7 +82,7 @@ Tồn tại cuối phiên:
 - Cần xác nhận app deploy đang chạy đúng commit mới và không còn template email nào khác ngoài `lib/email.ts`.
 - Cần kiểm tra dữ liệu bài học trong tab `Lessons`, bảo đảm tên bài đúng là `Thấu cảm và trắc ẩn`.
 
-## 4. Phân Hệ Lịch Tổng Và Lịch Của Tôi
+## 5. Phân Hệ Lịch Tổng Và Lịch Của Tôi
 
 Đã hoàn tất:
 
@@ -69,7 +94,7 @@ Tồn tại cuối phiên:
 - Có modal chi tiết lịch với thông tin ngày dạy, giáo viên, trường, lớp, khung giờ, bài học, mục tiêu và trạng thái.
 - Có thao tác hủy lịch, chuyển giáo viên, nhắc xác nhận và lịch sử thao tác qua `AuditLogs`.
 
-## 5. Phân Hệ Giáo Viên
+## 6. Phân Hệ Giáo Viên
 
 Đã hoàn tất:
 
@@ -81,7 +106,7 @@ Tồn tại cuối phiên:
 - Chặn email trùng trong file import và bỏ qua email đã tồn tại.
 - Khi tắt giáo viên, tài khoản liên kết cũng chuyển sang không hoạt động.
 
-## 6. Tổng Quan Giáo Viên
+## 7. Tổng Quan Giáo Viên
 
 Đã hoàn tất:
 
@@ -95,7 +120,7 @@ Tồn tại cuối phiên:
 - Admin được chọn tài khoản để xem; giáo viên chỉ xem dữ liệu của chính họ.
 - Sáu card tổng quan đã được sắp xếp gọn trên một hàng, dùng màu phân biệt và font số lớn hơn.
 
-## 7. Phân Hệ Giáo Án
+## 8. Phân Hệ Giáo Án
 
 Đã hoàn tất:
 
@@ -106,10 +131,12 @@ Tồn tại cuối phiên:
 - Một lịch có thể có nhiều giáo án.
 - Admin có màn tổng quan giáo án và thống kê đã nộp/chưa nộp.
 - Giáo viên có màn giáo án của tôi, ưu tiên lịch cần nộp.
+- Giáo viên xem được giáo án đã gửi ngay trong card lịch/giáo án liên quan.
+- Hỗ trợ mở nhanh link Google Drive của giáo án đã nộp.
 - Có sửa tên giáo án, xóa bản ghi Google Sheet và xóa file Google Drive qua GAS.
 - Backend kiểm tra quyền: giáo viên chỉ xử lý giáo án của mình, admin có toàn quyền.
 
-## 8. Phân Hệ Điểm Danh
+## 9. Phân Hệ Điểm Danh
 
 Đã hoàn tất:
 
@@ -124,7 +151,7 @@ Tồn tại cuối phiên:
 - Giao diện giáo viên giữ dạng điểm danh từng tiết, bổ sung ngày dạy, giờ bắt đầu và giờ kết thúc.
 - Khi đã điểm danh, nhãn/nút chuyển sang trạng thái xám phù hợp.
 
-## 9. Phân Hệ Cấu Hình
+## 10. Phân Hệ Cấu Hình
 
 Đã hoàn tất:
 
@@ -137,18 +164,20 @@ Tồn tại cuối phiên:
 - Import khung giờ từ Excel/CSV/TSV.
 - Bỏ phần cấu hình Google Workspace khỏi giao diện thường dùng.
 
-## 10. Thông Báo, Hướng Dẫn Và Feedback
+## 11. Thông Báo, Hướng Dẫn Và Feedback
 
 Đã hoàn tất:
 
 - Chuông thông báo đã mở được danh sách thông báo, không chỉ hiển thị badge.
+- Thêm banner thông báo do admin quản lý để hiển thị thông báo vận hành nổi bật.
 - Thêm phân hệ `Hướng dẫn sử dụng` trong Cấu hình.
 - Tạo trang hướng dẫn HTML tại `public/huong-dan-su-dung/index.html`.
 - Hướng dẫn sử dụng đã chia theo phân hệ và dùng font Quicksand.
 - Thêm chức năng feedback cho admin và giáo viên.
 - Feedback mở bằng modal, có các trường: muốn cập nhật/nâng cấp tính năng nào, trong menu nào, quy trình mong muốn ra sao.
+- Thêm lớp feedback hệ thống dạng ghim để phản hồi quan trọng dễ được theo dõi.
 
-## 11. Phân Hệ Chat
+## 12. Phân Hệ Chat
 
 Trạng thái hiện tại:
 
@@ -156,7 +185,21 @@ Trạng thái hiện tại:
 - Theo quyết định hiện tại, phân hệ chat đã được bỏ khỏi hệ thống/kế hoạch sử dụng.
 - Phiên sau không tiếp tục phát triển chat trừ khi có yêu cầu khôi phục.
 
-## 12. Commit Chính Trong Phiên 27/05/2026
+## 13. Commit Chính Gần Đây
+
+Commit mới ngày 28/05/2026:
+
+- `bba7e4d` - Add pinned system feedback layer.
+- `e6d8462` - Polish teacher lesson-plan card link guidance.
+- `25bb638` - Show teacher lesson plans inline and support Drive links.
+- `9395d1d` - Add admin-managed announcement banner.
+- `3209b52` - Fix GAS email digest check to preserve HTML whitespace.
+- `e79d54e` - Add MailDebug sheet tracing for schedule email delivery.
+- `8e4f976` - Surface schedule email failure reasons in admin notification.
+- `ca29c08` - Fail schedule email when GAS metadata is stale or recipient email invalid.
+- `de2c2bf` - Fix schedule email legacy-content root causes and enforce push workflow rule.
+
+Commit chính ngày 27/05/2026:
 
 - `18e3357` - Rebrand app to HOC VIEN METTASOUL and default calendar to week.
 - `0d8c35c` - Refine schedule email format and add confirm-all link flow.
@@ -169,8 +212,9 @@ Trạng thái hiện tại:
 - `8786db7` - Add GAS email legacy content sanitizer.
 - `856124a` - Force normalize schedule email content in GAS.
 - `af81c28` - Update work summary for May 27 session.
+- `da6f324` - Clean up work summary Vietnamese text.
 
-## 13. Ưu Tiên Phiên Sau
+## 14. Ưu Tiên Phiên Sau
 
 - Xử lý triệt để lỗi chính tả email lịch dạy còn tồn.
 - Log và xác nhận HTML thực tế được gửi vào GAS trước khi `MailApp.sendEmail`.
