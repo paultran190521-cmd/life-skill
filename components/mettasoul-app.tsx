@@ -5188,7 +5188,7 @@ export function MettasoulApp() {
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
+            <p className="text-sm font-black uppercase text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
             <p className="mt-1 text-xs font-bold text-[var(--muted)]">
               {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatScheduleDateTime(schedule)}
             </p>
@@ -5241,7 +5241,7 @@ export function MettasoulApp() {
               onChange={(event) =>
                 setLessonPlanLinkDrafts((items) => ({ ...items, [schedule.id]: event.target.value }))
               }
-              placeholder="Dán link PPT/Google Drive nếu file nặng hơn 10MB"
+              placeholder="Dán link PPT/PPTX từ Google Drive nếu file nặng hơn 10MB (mở quyền xem cho admin)"
               className={compactInputClass}
             />
             <button
@@ -5254,9 +5254,6 @@ export function MettasoulApp() {
               Lưu link
             </button>
           </div>
-          <p className="text-[11px] font-bold text-amber-800">
-            PPT/PPTX nặng: upload lên Google Drive của bạn, mở quyền xem cho admin rồi dán link tại đây.
-          </p>
         </div>
       </div>
     );
