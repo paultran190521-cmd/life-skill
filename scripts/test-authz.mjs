@@ -62,7 +62,7 @@ const rules = [
   },
   {
     file: "app/api/schedules/route.ts",
-    checks: ['requireSessionUser(request)', 'evaluateRolePermission(auth.user, "admin"'],
+    checks: ['requireSessionUser(request)', 'evaluateRolePermission(auth.user, "admin"', "detectScheduleConflicts("],
   },
   {
     file: "app/api/schedules/[id]/route.ts",

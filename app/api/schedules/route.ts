@@ -83,6 +83,12 @@ export async function POST(request: Request) {
       })),
     );
 
+    const existingSchedules = await readSheetRows("Schedules");
+    const conflicts = detectScheduleConflicts(schedules, existingSchedules);
+    if (conflicts.length > 0) {
+      return apiFailure(409, buildConflictMessage(conflicts), "CONFLICT", requestId);
+    }
+
     await appendSheetRows(
       "Schedules",
       schedules.map((schedule) => ({
@@ -126,6 +132,134 @@ export async function POST(request: Request) {
   } catch (error) {
     return apiError(error, requestId);
   }
+}
+
+type ScheduleConflict = {
+  conflictType: "teacher" | "class";
+  source: "existing" | "draft";
+  date: string;
+  timeSlotId: string;
+  teacherId: string;
+  classId: string;
+};
+
+function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Record<string, string>>) {
+  const conflicts: ScheduleConflict[] = [];
+  const dedupe = new Set<string>();
+
+  const activeExistingRows = existingRows.filter(
+    (row) => normalizeComparableText(row.status || "") !== "cancelled",
+  );
+  const existingTeacherKeySet = new Set(
+    activeExistingRows.map((row) => buildTeacherSlotKey(row.date, row.timeSlotId, row.teacherId)),
+  );
+  const existingClassKeySet = new Set(
+    activeExistingRows.map((row) => buildClassSlotKey(row.date, row.timeSlotId, row.classId)),
+  );
+
+  const draftTeacherSeen = new Set<string>();
+  const draftClassSeen = new Set<string>();
+
+  for (const schedule of schedules) {
+    const teacherKey = buildTeacherSlotKey(schedule.date, schedule.timeSlotId, schedule.teacherId);
+    const classKey = buildClassSlotKey(schedule.date, schedule.timeSlotId, schedule.classId);
+
+    if (existingTeacherKeySet.has(teacherKey)) {
+      addConflict(
+        conflicts,
+        dedupe,
+        {
+          conflictType: "teacher",
+          source: "existing",
+          date: schedule.date,
+          timeSlotId: schedule.timeSlotId,
+          teacherId: schedule.teacherId,
+          classId: schedule.classId,
+        },
+      );
+    }
+    if (existingClassKeySet.has(classKey)) {
+      addConflict(
+        conflicts,
+        dedupe,
+        {
+          conflictType: "class",
+          source: "existing",
+          date: schedule.date,
+          timeSlotId: schedule.timeSlotId,
+          teacherId: schedule.teacherId,
+          classId: schedule.classId,
+        },
+      );
+    }
+
+    if (draftTeacherSeen.has(teacherKey)) {
+      addConflict(
+        conflicts,
+        dedupe,
+        {
+          conflictType: "teacher",
+          source: "draft",
+          date: schedule.date,
+          timeSlotId: schedule.timeSlotId,
+          teacherId: schedule.teacherId,
+          classId: schedule.classId,
+        },
+      );
+    } else {
+      draftTeacherSeen.add(teacherKey);
+    }
+
+    if (draftClassSeen.has(classKey)) {
+      addConflict(
+        conflicts,
+        dedupe,
+        {
+          conflictType: "class",
+          source: "draft",
+          date: schedule.date,
+          timeSlotId: schedule.timeSlotId,
+          teacherId: schedule.teacherId,
+          classId: schedule.classId,
+        },
+      );
+    } else {
+      draftClassSeen.add(classKey);
+    }
+  }
+
+  return conflicts;
+}
+
+function addConflict(
+  conflicts: ScheduleConflict[],
+  dedupe: Set<string>,
+  conflict: ScheduleConflict,
+) {
+  const key = `${conflict.source}|${conflict.conflictType}|${conflict.date}|${conflict.timeSlotId}|${conflict.teacherId}|${conflict.classId}`;
+  if (dedupe.has(key)) {
+    return;
+  }
+  dedupe.add(key);
+  conflicts.push(conflict);
+}
+
+function buildConflictMessage(conflicts: ScheduleConflict[]) {
+  const sample = conflicts.slice(0, 5).map((item) => {
+    const target = item.conflictType === "teacher" ? `giáo viên ${item.teacherId}` : `lớp ${item.classId}`;
+    const source = item.source === "existing" ? "đã có lịch" : "bị trùng trong danh sách sắp gửi";
+    return `${item.date} - ${item.timeSlotId}: ${target} ${source}`;
+  });
+
+  return `Phát hiện ${conflicts.length} xung đột lịch. Vui lòng kiểm tra lại trước khi gửi. ${sample.join(" | ")}`;
+}
+
+function buildTeacherSlotKey(date: string | undefined, timeSlotId: string | undefined, teacherId: string | undefined) {
+  return `${normalizeId(date)}|${normalizeId(timeSlotId)}|${normalizeId(teacherId)}`;
+}
+
+function buildClassSlotKey(date: string | undefined, timeSlotId: string | undefined, classId: string | undefined) {
+  return `${normalizeId(date)}|${normalizeId(timeSlotId)}|${normalizeId(classId)}`;
 }
 
 function parseTeacherIds(body: Record<string, unknown>) {

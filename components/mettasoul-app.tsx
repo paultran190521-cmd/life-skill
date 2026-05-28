@@ -213,6 +213,16 @@ type OperationalAlert = {
   scheduleIds: string[];
 };
 
+type DraftScheduleConflict = {
+  key: string;
+  source: "existing" | "draft";
+  scope: "teacher" | "class";
+  date: string;
+  timeSlotId: string;
+  teacherId: string;
+  classId: string;
+};
+
 type GasLessonPlanUploadResponse = {
   ok?: boolean;
   requestId?: string;
@@ -850,6 +860,70 @@ export function MettasoulApp() {
     assignmentPreviewTeacherId === "all"
       ? draftSchedulePreview
       : draftSchedulePreview.filter((schedule) => schedule.teacherId === assignmentPreviewTeacherId);
+  const draftScheduleConflicts = useMemo<DraftScheduleConflict[]>(() => {
+    const conflicts: DraftScheduleConflict[] = [];
+    const dedupe = new Set<string>();
+    const activeSchedules = schedules.filter((schedule) => schedule.status !== "cancelled");
+
+    const existingTeacherKeys = new Set(activeSchedules.map((schedule) => buildTeacherSlotKey(schedule)));
+    const existingClassKeys = new Set(activeSchedules.map((schedule) => buildClassSlotKey(schedule)));
+    const draftTeacherSeen = new Set<string>();
+    const draftClassSeen = new Set<string>();
+
+    for (const schedule of draftSchedulePreview) {
+      const teacherKey = buildTeacherSlotKey(schedule);
+      const classKey = buildClassSlotKey(schedule);
+
+      if (existingTeacherKeys.has(teacherKey)) {
+        pushDraftConflict(conflicts, dedupe, {
+          source: "existing",
+          scope: "teacher",
+          date: schedule.date,
+          timeSlotId: schedule.timeSlotId,
+          teacherId: schedule.teacherId,
+          classId: schedule.classId,
+        });
+      }
+      if (existingClassKeys.has(classKey)) {
+        pushDraftConflict(conflicts, dedupe, {
+          source: "existing",
+          scope: "class",
+          date: schedule.date,
+          timeSlotId: schedule.timeSlotId,
+          teacherId: schedule.teacherId,
+          classId: schedule.classId,
+        });
+      }
+
+      if (draftTeacherSeen.has(teacherKey)) {
+        pushDraftConflict(conflicts, dedupe, {
+          source: "draft",
+          scope: "teacher",
+          date: schedule.date,
+          timeSlotId: schedule.timeSlotId,
+          teacherId: schedule.teacherId,
+          classId: schedule.classId,
+        });
+      } else {
+        draftTeacherSeen.add(teacherKey);
+      }
+
+      if (draftClassSeen.has(classKey)) {
+        pushDraftConflict(conflicts, dedupe, {
+          source: "draft",
+          scope: "class",
+          date: schedule.date,
+          timeSlotId: schedule.timeSlotId,
+          teacherId: schedule.teacherId,
+          classId: schedule.classId,
+        });
+      } else {
+        draftClassSeen.add(classKey);
+      }
+    }
+
+    return conflicts;
+  }, [draftSchedulePreview, schedules]);
 
   const roleNotifications = useMemo(
     () =>
@@ -1138,6 +1212,16 @@ export function MettasoulApp() {
       addNotification("Chưa chọn giáo viên", "Hãy chọn ít nhất một giáo viên để gửi lịch.", "admin", {
         tone: "warning",
       });
+      return;
+    }
+
+    if (draftScheduleConflicts.length > 0) {
+      const preview = formatDraftConflictLine(draftScheduleConflicts[0], teachers, classes, timeSlots);
+      pushToast(
+        "Phát hiện xung đột lịch",
+        `Có ${draftScheduleConflicts.length} xung đột. Ví dụ: ${preview}. Vui lòng xử lý ở phần Xem trước trước khi gửi.`,
+        "warning",
+      );
       return;
     }
 
@@ -3914,7 +3998,12 @@ export function MettasoulApp() {
             </div>
             <button
               onClick={createSchedules}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--brand)] px-5 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]"
+              disabled={isBusy || draftScheduleConflicts.length > 0}
+              className={`inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition ${
+                isBusy || draftScheduleConflicts.length > 0
+                  ? "cursor-not-allowed bg-slate-400 shadow-none"
+                  : "bg-[var(--brand)] hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]"
+              }`}
             >
               <Send size={18} />
               Gửi lịch và email thông báo
@@ -3944,6 +4033,24 @@ export function MettasoulApp() {
                 </select>
               </label>
             </div>
+            {draftScheduleConflicts.length > 0 ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
+                <p className="text-sm font-black text-rose-800">
+                  Phát hiện {draftScheduleConflicts.length} xung đột, cần xử lý trước khi gửi
+                </p>
+                <div className="mt-2 space-y-2">
+                  {draftScheduleConflicts.slice(0, 8).map((conflict) => (
+                    <div key={conflict.key} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-800">
+                      {formatDraftConflictLine(conflict, teachers, classes, timeSlots)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-800">
+                Không phát hiện xung đột lịch. Có thể gửi lịch hàng loạt an toàn.
+              </div>
+            )}
             <ScheduleList items={filteredDraftSchedulePreview} compact />
           </div>
         </Panel>
@@ -7697,6 +7804,44 @@ function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftSchedu
     timeSlotId: seed?.timeSlotId || "",
     teachingEnvironment: normalizeTeachingEnvironmentValue(seed?.teachingEnvironment),
   };
+}
+
+function buildTeacherSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "teacherId">) {
+  return `${schedule.date}|${schedule.timeSlotId}|${schedule.teacherId}`;
+}
+
+function buildClassSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "classId">) {
+  return `${schedule.date}|${schedule.timeSlotId}|${schedule.classId}`;
+}
+
+function pushDraftConflict(
+  list: DraftScheduleConflict[],
+  dedupe: Set<string>,
+  conflict: Omit<DraftScheduleConflict, "key">,
+) {
+  const key = `${conflict.source}|${conflict.scope}|${conflict.date}|${conflict.timeSlotId}|${conflict.teacherId}|${conflict.classId}`;
+  if (dedupe.has(key)) {
+    return;
+  }
+  dedupe.add(key);
+  list.push({ ...conflict, key });
+}
+
+function formatDraftConflictLine(
+  conflict: DraftScheduleConflict,
+  teachers: Teacher[],
+  classes: ClassRoom[],
+  slots: TimeSlot[],
+) {
+  const teacherName = teachers.find((item) => item.id === conflict.teacherId)?.name || conflict.teacherId;
+  const className = classes.find((item) => item.id === conflict.classId)?.name || conflict.classId;
+  const slotLabel = slots.find((item) => item.id === conflict.timeSlotId)?.label || conflict.timeSlotId;
+  const target = conflict.scope === "teacher" ? `GV ${teacherName}` : `lớp ${className}`;
+  const reason =
+    conflict.source === "existing"
+      ? "đã có lịch ở hệ thống"
+      : "bị trùng trong danh sách chuẩn bị gửi";
+  return `${conflict.date} · ${slotLabel} · ${target} ${reason}`;
 }
 
 function normalizeDraftScheduleItem(
