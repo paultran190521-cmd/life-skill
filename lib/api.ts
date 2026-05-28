@@ -2,9 +2,27 @@ import { NextResponse } from "next/server";
 import { ErrorCodes } from "@/lib/error-codes";
 import type { ErrorCode } from "@/lib/error-codes";
 import { isAppError } from "@/lib/app-error";
+import { queueApiErrorEvent } from "@/lib/audit";
 
-export function apiError(error: unknown, requestId = createRequestId("req")) {
+type ApiEventContext = {
+  route?: string;
+  method?: string;
+  actorId?: string;
+  actorEmail?: string;
+};
+
+export function apiError(error: unknown, requestId = createRequestId("req"), context?: ApiEventContext) {
   if (isAppError(error)) {
+    queueApiErrorEvent({
+      requestId,
+      code: error.code,
+      status: error.status,
+      message: error.message,
+      route: context?.route,
+      method: context?.method,
+      actorId: context?.actorId,
+      actorEmail: context?.actorEmail,
+    });
     return NextResponse.json(
       {
         error: error.message,
@@ -17,6 +35,16 @@ export function apiError(error: unknown, requestId = createRequestId("req")) {
 
   const message = error instanceof Error ? error.message : "Lỗi hệ thống không xác định.";
   console.error(`[api-error][${requestId}]`, message, error);
+  queueApiErrorEvent({
+    requestId,
+    code: ErrorCodes.internal,
+    status: 500,
+    message,
+    route: context?.route,
+    method: context?.method,
+    actorId: context?.actorId,
+    actorEmail: context?.actorEmail,
+  });
 
   return NextResponse.json(
     {
@@ -33,7 +61,18 @@ export function apiFailure(
   error: string,
   code: ErrorCode = ErrorCodes.validation,
   requestId = createRequestId("req"),
+  context?: ApiEventContext,
 ) {
+  queueApiErrorEvent({
+    requestId,
+    code,
+    status,
+    message: error,
+    route: context?.route,
+    method: context?.method,
+    actorId: context?.actorId,
+    actorEmail: context?.actorEmail,
+  });
   return NextResponse.json({ error, code, requestId }, { status });
 }
 

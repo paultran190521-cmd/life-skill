@@ -92,6 +92,10 @@ const rules = [
     file: "app/api/admin/health/route.ts",
     checks: ['requireSessionUser(request)', 'evaluateRolePermission(auth.user, "admin"'],
   },
+  {
+    file: "app/api/admin/observability/route.ts",
+    checks: ['requireSessionUser(request)', 'evaluateRolePermission(auth.user, "admin"'],
+  },
 ];
 
 const negativeRules = [

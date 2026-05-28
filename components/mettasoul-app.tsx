@@ -109,6 +109,30 @@ type AuthSession = {
   user: User | null;
 };
 
+type ObservabilitySnapshot = {
+  checkedAt: string;
+  windowHours: number;
+  summary: {
+    totalEvents: number;
+    decisions: {
+      allow: number;
+      deny: number;
+      would_block: number;
+    };
+    apiErrors: number;
+    deny1h: number;
+    apiError1h: number;
+  };
+  topRoutes: Array<{ route: string; total: number; denied: number }>;
+  topReasons: Array<{ reason: string; count: number }>;
+  topCodes: Array<{ code: string; count: number }>;
+  topActions: Array<{ action: string; count: number }>;
+  health: {
+    status: "ok" | "degraded" | "down";
+  };
+  alerts: Array<{ level: "warning" | "critical"; message: string }>;
+};
+
 type UserFeedbackDraft = {
   upgradeTarget: string;
   menuName: string;
@@ -467,6 +491,9 @@ export function MettasoulApp() {
   const [centerFeedback, setCenterFeedback] = useState<CenterFeedback | null>(null);
   const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
+  const [observability, setObservability] = useState<ObservabilitySnapshot | null>(null);
+  const [observabilityLoading, setObservabilityLoading] = useState(false);
+  const [observabilityError, setObservabilityError] = useState("");
   const notificationPanelRef = useRef<HTMLDivElement | null>(null);
 
   const activeUsers = useMemo(() => appUsers.filter((user) => user.isActive !== false), [appUsers]);
@@ -525,6 +552,13 @@ export function MettasoulApp() {
       setCollapsedSettingsSections({ announcements: false, schools: true, classes: true, slots: true });
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "settings" || authStatus !== "signed-in" || !hasAdminAccess) {
+      return;
+    }
+    void loadObservability();
+  }, [activeTab, authStatus, hasAdminAccess]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1651,6 +1685,24 @@ export function MettasoulApp() {
       pushToast("Đã gửi nhắc", `Đã gửi ${response.notifications.length} thông báo nhắc xác nhận.`, "success");
     } catch (error) {
       handleSaveError(error);
+    }
+  }
+
+  async function loadObservability(windowHours = 48) {
+    if (!hasAdminAccess) {
+      return;
+    }
+
+    try {
+      setObservabilityLoading(true);
+      setObservabilityError("");
+      const snapshot = await apiRequest<ObservabilitySnapshot>(`/api/admin/observability?windowHours=${windowHours}`);
+      setObservability(snapshot);
+    } catch (error) {
+      console.error(error);
+      setObservabilityError(error instanceof Error ? error.message : "Không tải được dashboard observability.");
+    } finally {
+      setObservabilityLoading(false);
     }
   }
 
@@ -6001,6 +6053,82 @@ export function MettasoulApp() {
           </div>
         </Panel>
 
+        <Panel title="Observability vận hành" action="Admin-only">
+          <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-black text-[var(--brand-dark)]">Dashboard lỗi, quyền và cảnh báo</p>
+                <p className="text-xs font-semibold text-[var(--muted)]">
+                  Cập nhật gần nhất: {observability ? formatDateTime(observability.checkedAt) : "Chưa có dữ liệu"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadObservability()}
+                className="inline-flex items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-800 transition hover:bg-cyan-100"
+              >
+                <RefreshCcw size={14} className={observabilityLoading ? "animate-spin" : ""} />
+                Làm mới
+              </button>
+            </div>
+
+            {observabilityError ? (
+              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                {observabilityError}
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <MetricCard label="Tổng sự kiện" value={String(observability?.summary.totalEvents || 0)} tone="cyan" />
+              <MetricCard label="Deny (1h)" value={String(observability?.summary.deny1h || 0)} tone="rose" />
+              <MetricCard label="API Error (1h)" value={String(observability?.summary.apiError1h || 0)} tone="amber" />
+              <MetricCard
+                label="Health"
+                value={healthStatusLabel(observability?.health.status || "degraded")}
+                tone={observability?.health.status === "ok" ? "emerald" : observability?.health.status === "down" ? "rose" : "amber"}
+              />
+            </div>
+
+            <div className="mt-4 grid gap-4 xl:grid-cols-2">
+              <div className="rounded-xl border border-[var(--line)] bg-slate-50 p-3">
+                <p className="text-xs font-black uppercase text-slate-700">Top route theo số lần gọi</p>
+                <div className="mt-2 space-y-2">
+                  {(observability?.topRoutes || []).slice(0, 6).map((item) => (
+                    <div key={item.route} className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-[var(--brand-dark)]">
+                      <p className="truncate font-black">{item.route}</p>
+                      <p className="mt-1 text-[11px] text-[var(--muted)]">Tổng: {item.total} · Deny: {item.denied}</p>
+                    </div>
+                  ))}
+                  {(!observability || observability.topRoutes.length === 0) ? (
+                    <p className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-[var(--muted)]">Chưa có dữ liệu route.</p>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-[var(--line)] bg-slate-50 p-3">
+                <p className="text-xs font-black uppercase text-slate-700">Cảnh báo vận hành</p>
+                <div className="mt-2 space-y-2">
+                  {(observability?.alerts || []).map((alert, index) => (
+                    <div
+                      key={`${alert.level}-${index}`}
+                      className={`rounded-lg px-3 py-2 text-xs font-bold ${
+                        alert.level === "critical"
+                          ? "border border-rose-200 bg-rose-50 text-rose-700"
+                          : "border border-amber-200 bg-amber-50 text-amber-700"
+                      }`}
+                    >
+                      {alert.message}
+                    </div>
+                  ))}
+                  {(!observability || observability.alerts.length === 0) ? (
+                    <p className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-emerald-700">Không có cảnh báo, hệ thống đang ổn định.</p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Panel>
+
         <Panel title="Hướng dẫn sử dụng & Feedback" action="Dành cho admin">
           <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
             <div className="rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-sky-50 p-4 shadow-sm">
@@ -6701,6 +6829,40 @@ function Panel({
       {collapsed ? null : children}
     </section>
   );
+}
+
+function MetricCard({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "cyan" | "rose" | "amber" | "emerald";
+}) {
+  const toneClass = {
+    cyan: "border-cyan-200 bg-cyan-50 text-cyan-900",
+    rose: "border-rose-200 bg-rose-50 text-rose-900",
+    amber: "border-amber-200 bg-amber-50 text-amber-900",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  }[tone];
+
+  return (
+    <div className={`rounded-2xl border px-3 py-3 ${toneClass}`}>
+      <p className="text-[11px] font-black uppercase opacity-75">{label}</p>
+      <p className="mt-1 text-lg font-black">{value}</p>
+    </div>
+  );
+}
+
+function healthStatusLabel(status: "ok" | "degraded" | "down") {
+  if (status === "ok") {
+    return "Ổn định";
+  }
+  if (status === "degraded") {
+    return "Suy giảm";
+  }
+  return "Gián đoạn";
 }
 
 function Stat({
