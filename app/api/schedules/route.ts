@@ -362,13 +362,21 @@ function normalizeTeachingEnvironment(value: unknown): TeachingEnvironment {
 function createScheduleNotifications(schedules: Schedule[], emailResults: EmailResult[], now: string): Notification[] {
   const sentEmails = emailResults.filter((item) => item.sent).length;
   const failedEmails = emailResults.length - sentEmails;
+  const failureSummary = summarizeEmailFailures(emailResults);
+  if (failureSummary) {
+    console.error("[schedule-email-failures]", failureSummary);
+  }
+
+  const adminBody =
+    `${schedules.length} lịch mới đã được tạo. Email tổng hợp: ${sentEmails} thành công${
+      failedEmails ? `, ${failedEmails} lỗi gửi` : ""
+    }.` + (failureSummary ? ` Lý do: ${failureSummary}` : "");
+
   return [
     {
       id: createId("n"),
       title: "Đã gửi lịch dạy",
-      body: `${schedules.length} lịch mới đã được tạo. Email tổng hợp: ${sentEmails} thành công${
-        failedEmails ? `, ${failedEmails} lỗi gửi` : ""
-      }.`,
+      body: adminBody,
       role: "admin",
       createdAt: now,
       read: false,
@@ -382,6 +390,23 @@ function createScheduleNotifications(schedules: Schedule[], emailResults: EmailR
       read: false,
     },
   ];
+}
+
+function summarizeEmailFailures(emailResults: EmailResult[]) {
+  const failures = emailResults.filter((item) => !item.sent);
+  if (failures.length === 0) {
+    return "";
+  }
+
+  return failures
+    .slice(0, 2)
+    .map((item) => {
+      const reason = String(item.reason || "Unknown error").replace(/\s+/g, " ").trim();
+      const teacher = item.teacherId || "unknown-teacher";
+      return `${teacher}: ${reason}`;
+    })
+    .join(" | ")
+    .slice(0, 500);
 }
 
 async function sendScheduleEmailsByTeacher(
