@@ -27,7 +27,8 @@ type SheetName =
   | "LessonPlans"
   | "Attendance"
   | "Notifications"
-  | "AuditLogs";
+  | "AuditLogs"
+  | "MailDebug";
 
 export type { SheetName };
 
@@ -166,6 +167,8 @@ export async function appendSheetRowWithHeaders(
 }
 
 export async function ensureSheetHeaders(sheetName: SheetName, requiredHeaders: string[]) {
+  await ensureSheetExists(sheetName, requiredHeaders.length);
+
   const client = getSheetsClient();
   const response = await client.spreadsheets.values.get({
     spreadsheetId: spreadsheetId(),
@@ -187,6 +190,38 @@ export async function ensureSheetHeaders(sheetName: SheetName, requiredHeaders: 
   });
 
   return nextHeaders;
+}
+
+async function ensureSheetExists(sheetName: SheetName, minColumnCount: number) {
+  const client = getSheetsClient();
+  const response = await client.spreadsheets.get({
+    spreadsheetId: spreadsheetId(),
+    fields: "sheets(properties(title))",
+  });
+  const exists = response.data.sheets?.some((sheet) => sheet.properties?.title === sheetName);
+  if (exists) {
+    return;
+  }
+
+  await client.spreadsheets.batchUpdate({
+    spreadsheetId: spreadsheetId(),
+    requestBody: {
+      requests: [
+        {
+          addSheet: {
+            properties: {
+              title: sheetName,
+              gridProperties: {
+                rowCount: 1000,
+                columnCount: Math.max(minColumnCount, 10),
+                frozenRowCount: 1,
+              },
+            },
+          },
+        },
+      ],
+    },
+  });
 }
 
 export async function appendSheetRows(sheetName: SheetName, rows: Array<Record<string, unknown>>) {

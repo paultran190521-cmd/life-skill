@@ -1,4 +1,5 @@
 ﻿import { createScheduleConfirmationBatchToken, createScheduleConfirmationToken } from "@/lib/schedule-confirmation";
+import { appendSheetRowWithHeaders, ensureSheetHeaders } from "@/lib/google-sheets";
 import type { Schedule } from "@/lib/types";
 
 type ScheduleEmailInput = {
@@ -43,6 +44,28 @@ type GasResponse = {
 
 const scheduleEmailTemplateVersion = "mettasoul-schedule-email-2026-05-28";
 const expectedGasWebhookVersion = "mettasoul-gas-2026-05-28";
+const mailDebugHeaders = [
+  "id",
+  "requestId",
+  "source",
+  "provider",
+  "event",
+  "to",
+  "subject",
+  "sent",
+  "reason",
+  "errorCode",
+  "templateVersion",
+  "gasVersion",
+  "httpStatus",
+  "scheduleIds",
+  "teacherId",
+  "htmlDigest",
+  "inputHtmlDigest",
+  "normalizedHtmlDigest",
+  "htmlPreview",
+  "createdAt",
+];
 
 export async function sendScheduleEmail(input: ScheduleEmailInput) {
   return sendScheduleDigestEmail({
@@ -61,25 +84,50 @@ export async function sendScheduleEmail(input: ScheduleEmailInput) {
 }
 
 export async function sendScheduleDigestEmail(input: ScheduleDigestInput) {
+  const requestId = createEmailRequestId();
   const from = process.env.EMAIL_FROM;
   const to = normalizeEmailAddress(input.teacher.email);
+  const scheduleIds = input.schedules.map((schedule) => schedule.id);
+  const teacherId = input.schedules[0]?.teacherId || "";
 
   if (!to) {
+    await logMailDebug({
+      requestId,
+      source: "next",
+      provider: process.env.EMAIL_PROVIDER || "resend",
+      event: "next.recipient_missing",
+      sent: false,
+      reason: "Teacher email is missing.",
+      scheduleIds,
+      teacherId,
+    });
     return { sent: false, reason: "Teacher email is missing." };
   }
 
   if (!isValidEmailAddress(to)) {
-    return { sent: false, reason: `Teacher email is invalid: ${to}` };
+    const reason = `Teacher email is invalid: ${to}`;
+    await logMailDebug({
+      requestId,
+      source: "next",
+      provider: process.env.EMAIL_PROVIDER || "resend",
+      event: "next.recipient_invalid",
+      to,
+      sent: false,
+      reason,
+      scheduleIds,
+      teacherId,
+    });
+    return { sent: false, reason };
   }
 
   const subject = buildScheduleWeekSubject(input.schedules);
   const html = renderScheduleDigestEmail(input);
 
   if (process.env.EMAIL_PROVIDER === "gas") {
-    return sendViaGas({ to, subject, html, from });
+    return sendViaGas({ to, subject, html, from, requestId, scheduleIds, teacherId });
   }
 
-  return sendViaResend({ to, subject, html, from });
+  return sendViaResend({ to, subject, html, from, requestId, scheduleIds, teacherId });
 }
 
 async function sendViaGas({
@@ -87,16 +135,35 @@ async function sendViaGas({
   subject,
   html,
   from,
+  requestId,
+  scheduleIds,
+  teacherId,
 }: {
   to: string;
   subject: string;
   html: string;
   from?: string;
+  requestId: string;
+  scheduleIds: string[];
+  teacherId: string;
 }) {
   const webhookUrl = process.env.GAS_MAIL_WEBHOOK_URL;
   const secret = process.env.GAS_MAIL_WEBHOOK_SECRET;
 
   if (!webhookUrl || !secret) {
+    await logMailDebug({
+      requestId,
+      source: "next",
+      provider: "gas",
+      event: "next.config_missing",
+      to,
+      subject,
+      sent: false,
+      reason: "Missing GAS_MAIL_WEBHOOK_URL or GAS_MAIL_WEBHOOK_SECRET.",
+      templateVersion: scheduleEmailTemplateVersion,
+      scheduleIds,
+      teacherId,
+    });
     return { sent: false, reason: "Missing GAS_MAIL_WEBHOOK_URL or GAS_MAIL_WEBHOOK_SECRET." };
   }
 
@@ -108,7 +175,7 @@ async function sendViaGas({
       body: JSON.stringify({
         action: "sendScheduleEmail",
         secret,
-        requestId: createEmailRequestId(),
+        requestId,
         templateVersion: scheduleEmailTemplateVersion,
         htmlDigest,
         to,
@@ -120,40 +187,143 @@ async function sendViaGas({
 
     const body = (await response.json().catch(() => ({}))) as GasResponse;
     if (!response.ok || !body.ok) {
-      return { sent: false, reason: body.error || `GAS mail webhook failed: ${response.status}` };
+      const reason = body.error || `GAS mail webhook failed: ${response.status}`;
+      await logMailDebug({
+        requestId,
+        source: "next",
+        provider: "gas",
+        event: "next.gas_response_failed",
+        to,
+        subject,
+        sent: false,
+        reason,
+        errorCode: String((body as GasResponse & { errorCode?: string }).errorCode || ""),
+        templateVersion: scheduleEmailTemplateVersion,
+        gasVersion: body.version,
+        httpStatus: response.status,
+        scheduleIds,
+        teacherId,
+        htmlDigest,
+      });
+      return { sent: false, reason };
     }
 
     if (body.version && body.version !== expectedGasWebhookVersion) {
-      return {
+      const reason = `GAS webhook version mismatch (expected ${expectedGasWebhookVersion}, got ${body.version}).`;
+      await logMailDebug({
+        requestId,
+        source: "next",
+        provider: "gas",
+        event: "next.gas_version_mismatch",
+        to,
+        subject,
         sent: false,
-        reason: `GAS webhook version mismatch (expected ${expectedGasWebhookVersion}, got ${body.version}).`,
-      };
+        reason,
+        templateVersion: scheduleEmailTemplateVersion,
+        gasVersion: body.version,
+        httpStatus: response.status,
+        scheduleIds,
+        teacherId,
+        htmlDigest,
+      });
+      return { sent: false, reason };
     }
 
     if (!body.echo) {
-      return {
+      const reason = "GAS response missing echo metadata. Please deploy the latest GAS webhook version.";
+      await logMailDebug({
+        requestId,
+        source: "next",
+        provider: "gas",
+        event: "next.gas_echo_missing",
+        to,
+        subject,
         sent: false,
-        reason: "GAS response missing echo metadata. Please deploy the latest GAS webhook version.",
-      };
+        reason,
+        templateVersion: scheduleEmailTemplateVersion,
+        gasVersion: body.version,
+        httpStatus: response.status,
+        scheduleIds,
+        teacherId,
+        htmlDigest,
+      });
+      return { sent: false, reason };
     }
 
     if (body.echo.templateVersion && body.echo.templateVersion !== scheduleEmailTemplateVersion) {
-      return {
+      const reason = `GAS templateVersion mismatch (expected ${scheduleEmailTemplateVersion}, got ${body.echo.templateVersion}).`;
+      await logMailDebug({
+        requestId,
+        source: "next",
+        provider: "gas",
+        event: "next.gas_template_mismatch",
+        to,
+        subject,
         sent: false,
-        reason: `GAS templateVersion mismatch (expected ${scheduleEmailTemplateVersion}, got ${body.echo.templateVersion}).`,
-      };
+        reason,
+        templateVersion: scheduleEmailTemplateVersion,
+        gasVersion: body.version,
+        httpStatus: response.status,
+        scheduleIds,
+        teacherId,
+        htmlDigest,
+      });
+      return { sent: false, reason };
     }
 
     if (body.echo?.htmlDigest && body.echo.htmlDigest !== htmlDigest) {
-      return {
+      const reason = `GAS htmlDigest mismatch (requestId=${body.requestId || "n/a"}).`;
+      await logMailDebug({
+        requestId,
+        source: "next",
+        provider: "gas",
+        event: "next.gas_digest_mismatch",
+        to,
+        subject,
         sent: false,
-        reason: `GAS htmlDigest mismatch (requestId=${body.requestId || "n/a"}).`,
-      };
+        reason,
+        templateVersion: scheduleEmailTemplateVersion,
+        gasVersion: body.version,
+        httpStatus: response.status,
+        scheduleIds,
+        teacherId,
+        htmlDigest,
+      });
+      return { sent: false, reason };
     }
 
+    await logMailDebug({
+      requestId,
+      source: "next",
+      provider: "gas",
+      event: "next.gas_success",
+      to,
+      subject,
+      sent: true,
+      reason: "GAS accepted schedule email.",
+      templateVersion: scheduleEmailTemplateVersion,
+      gasVersion: body.version,
+      httpStatus: response.status,
+      scheduleIds,
+      teacherId,
+      htmlDigest,
+    });
     return { sent: true, id: `gas:${body.requestId || "n/a"}` };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Cannot reach GAS mail webhook.";
+    await logMailDebug({
+      requestId,
+      source: "next",
+      provider: "gas",
+      event: "next.gas_fetch_error",
+      to,
+      subject,
+      sent: false,
+      reason,
+      templateVersion: scheduleEmailTemplateVersion,
+      scheduleIds,
+      teacherId,
+    });
     return { sent: false, reason };
   }
 }
@@ -163,15 +333,33 @@ async function sendViaResend({
   subject,
   html,
   from,
+  requestId,
+  scheduleIds,
+  teacherId,
 }: {
   to: string;
   subject: string;
   html: string;
   from?: string;
+  requestId: string;
+  scheduleIds: string[];
+  teacherId: string;
 }) {
   const apiKey = process.env.RESEND_API_KEY;
 
   if (!apiKey || !from) {
+    await logMailDebug({
+      requestId,
+      source: "next",
+      provider: "resend",
+      event: "next.resend_config_missing",
+      to,
+      subject,
+      sent: false,
+      reason: "Missing RESEND_API_KEY or EMAIL_FROM.",
+      scheduleIds,
+      teacherId,
+    });
     return { sent: false, reason: "Missing RESEND_API_KEY or EMAIL_FROM." };
   }
 
@@ -192,12 +380,51 @@ async function sendViaResend({
 
     const body = (await response.json().catch(() => ({}))) as ResendResponse;
     if (!response.ok) {
-      return { sent: false, reason: body.message || body.error || `Resend failed: ${response.status}` };
+      const reason = body.message || body.error || `Resend failed: ${response.status}`;
+      await logMailDebug({
+        requestId,
+        source: "next",
+        provider: "resend",
+        event: "next.resend_response_failed",
+        to,
+        subject,
+        sent: false,
+        reason,
+        httpStatus: response.status,
+        scheduleIds,
+        teacherId,
+      });
+      return { sent: false, reason };
     }
 
+    await logMailDebug({
+      requestId,
+      source: "next",
+      provider: "resend",
+      event: "next.resend_success",
+      to,
+      subject,
+      sent: true,
+      reason: body.id || "Resend accepted schedule email.",
+      httpStatus: response.status,
+      scheduleIds,
+      teacherId,
+    });
     return { sent: true, id: body.id };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Cannot reach Resend.";
+    await logMailDebug({
+      requestId,
+      source: "next",
+      provider: "resend",
+      event: "next.resend_fetch_error",
+      to,
+      subject,
+      sent: false,
+      reason,
+      scheduleIds,
+      teacherId,
+    });
     return { sent: false, reason };
   }
 }
@@ -412,6 +639,55 @@ function normalizeEmailAddress(value: string | undefined) {
 
 function isValidEmailAddress(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+async function logMailDebug(row: {
+  requestId: string;
+  source: string;
+  provider: string;
+  event: string;
+  to?: string;
+  subject?: string;
+  sent: boolean;
+  reason?: string;
+  errorCode?: string;
+  templateVersion?: string;
+  gasVersion?: string;
+  httpStatus?: number;
+  scheduleIds?: string[];
+  teacherId?: string;
+  htmlDigest?: string;
+  inputHtmlDigest?: string;
+  normalizedHtmlDigest?: string;
+  htmlPreview?: string;
+}) {
+  try {
+    await ensureSheetHeaders("MailDebug", mailDebugHeaders);
+    await appendSheetRowWithHeaders("MailDebug", mailDebugHeaders, {
+      id: `md-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      requestId: row.requestId,
+      source: row.source,
+      provider: row.provider,
+      event: row.event,
+      to: row.to || "",
+      subject: row.subject || "",
+      sent: row.sent,
+      reason: row.reason || "",
+      errorCode: row.errorCode || "",
+      templateVersion: row.templateVersion || "",
+      gasVersion: row.gasVersion || "",
+      httpStatus: row.httpStatus || "",
+      scheduleIds: (row.scheduleIds || []).join(","),
+      teacherId: row.teacherId || "",
+      htmlDigest: row.htmlDigest || "",
+      inputHtmlDigest: row.inputHtmlDigest || "",
+      normalizedHtmlDigest: row.normalizedHtmlDigest || "",
+      htmlPreview: row.htmlPreview || "",
+      createdAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("[mail-debug-log-failed]", error);
+  }
 }
 
 function formatDate(value: string) {

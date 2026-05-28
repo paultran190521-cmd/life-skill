@@ -95,6 +95,31 @@ const SHEETS = [
     title: "AuditLogs",
     headers: ["id", "actorId", "actorEmail", "action", "entityType", "entityId", "metadata", "createdAt"],
   },
+  {
+    title: "MailDebug",
+    headers: [
+      "id",
+      "requestId",
+      "source",
+      "provider",
+      "event",
+      "to",
+      "subject",
+      "sent",
+      "reason",
+      "errorCode",
+      "templateVersion",
+      "gasVersion",
+      "httpStatus",
+      "scheduleIds",
+      "teacherId",
+      "htmlDigest",
+      "inputHtmlDigest",
+      "normalizedHtmlDigest",
+      "htmlPreview",
+      "createdAt",
+    ],
+  },
 ];
 
 loadEnvFile(".env");

@@ -7,6 +7,28 @@ const GAS_WEBHOOK_VERSION = "mettasoul-gas-2026-05-28";
 const ACTIVE_SCHEDULE_EMAIL_TEMPLATE_VERSION = "mettasoul-schedule-email-2026-05-28";
 const SCHEDULE_EMAIL_SYSTEM_TITLE = "HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAIL_DEBUG_HEADERS = [
+  "id",
+  "requestId",
+  "source",
+  "provider",
+  "event",
+  "to",
+  "subject",
+  "sent",
+  "reason",
+  "errorCode",
+  "templateVersion",
+  "gasVersion",
+  "httpStatus",
+  "scheduleIds",
+  "teacherId",
+  "htmlDigest",
+  "inputHtmlDigest",
+  "normalizedHtmlDigest",
+  "htmlPreview",
+  "createdAt",
+];
 
 function doPost(e) {
   var startedAt = new Date();
@@ -76,6 +98,23 @@ function doPost(e) {
     throw appError("UNKNOWN_ACTION", "Unknown action: " + payload.action);
   } catch (error) {
     var normalized = normalizeError(error, requestId);
+    if (payload && payload.action === "sendScheduleEmail") {
+      appendMailDebugRecord({
+        requestId: requestId,
+        source: "gas",
+        provider: "gas",
+        event: "gas.error",
+        to: asText(payload.to),
+        subject: asText(payload.subject),
+        sent: false,
+        reason: normalized.message,
+        errorCode: normalized.errorCode,
+        templateVersion: asText(payload.templateVersion),
+        gasVersion: GAS_WEBHOOK_VERSION,
+        inputHtmlDigest: asText(payload.htmlDigest),
+        htmlPreview: previewText(asText(payload.html)),
+      });
+    }
     logError("webhook.error", requestId, {
       code: normalized.errorCode,
       message: normalized.message,
@@ -126,6 +165,23 @@ function sendScheduleEmail(payload, requestId) {
     throw appError("EMAIL_DIGEST_MISMATCH", "Incoming htmlDigest does not match payload.html.");
   }
 
+  appendMailDebugRecord({
+    requestId: requestId,
+    source: "gas",
+    provider: "gas",
+    event: "gas.received",
+    to: asText(payload.to),
+    subject: subject,
+    sent: false,
+    reason: "GAS received and validated schedule email payload.",
+    templateVersion: templateVersion,
+    gasVersion: GAS_WEBHOOK_VERSION,
+    htmlDigest: computedInputDigest,
+    inputHtmlDigest: inputHtmlDigest,
+    normalizedHtmlDigest: normalizedDigest,
+    htmlPreview: previewText(inputHtml),
+  });
+
   logInfo("sendScheduleEmail.input", requestId, {
     to: asText(payload.to),
     templateVersion: templateVersion,
@@ -142,6 +198,23 @@ function sendScheduleEmail(payload, requestId) {
     subject: subject,
     htmlBody: html,
     name: APP_NAME,
+  });
+
+  appendMailDebugRecord({
+    requestId: requestId,
+    source: "gas",
+    provider: "gas",
+    event: "gas.sent",
+    to: asText(payload.to),
+    subject: subject,
+    sent: true,
+    reason: "MailApp.sendEmail completed without throwing.",
+    templateVersion: templateVersion,
+    gasVersion: GAS_WEBHOOK_VERSION,
+    htmlDigest: computedInputDigest,
+    inputHtmlDigest: inputHtmlDigest,
+    normalizedHtmlDigest: normalizedDigest,
+    htmlPreview: previewText(inputHtml),
   });
 
   logInfo("sendScheduleEmail.success", requestId, {
@@ -348,6 +421,74 @@ function appendRecord(sheetName, record) {
     row.push(Object.prototype.hasOwnProperty.call(record, header) ? record[header] : "");
   }
   sheet.appendRow(row);
+}
+
+function appendMailDebugRecord(record) {
+  try {
+    var sheet = ensureMailDebugSheet();
+    var row = [];
+    var enriched = {
+      id: createId("md"),
+      requestId: asText(record.requestId),
+      source: asText(record.source),
+      provider: asText(record.provider),
+      event: asText(record.event),
+      to: asText(record.to),
+      subject: asText(record.subject),
+      sent: String(Boolean(record.sent)),
+      reason: asText(record.reason),
+      errorCode: asText(record.errorCode),
+      templateVersion: asText(record.templateVersion),
+      gasVersion: asText(record.gasVersion),
+      httpStatus: asText(record.httpStatus),
+      scheduleIds: asText(record.scheduleIds),
+      teacherId: asText(record.teacherId),
+      htmlDigest: asText(record.htmlDigest),
+      inputHtmlDigest: asText(record.inputHtmlDigest),
+      normalizedHtmlDigest: asText(record.normalizedHtmlDigest),
+      htmlPreview: asText(record.htmlPreview),
+      createdAt: new Date().toISOString(),
+    };
+
+    for (var i = 0; i < MAIL_DEBUG_HEADERS.length; i += 1) {
+      var header = MAIL_DEBUG_HEADERS[i];
+      row.push(Object.prototype.hasOwnProperty.call(enriched, header) ? enriched[header] : "");
+    }
+    sheet.appendRow(row);
+  } catch (error) {
+    logError("mailDebug.append.failed", asText(record.requestId) || "n/a", {
+      message: error && error.message ? String(error.message) : String(error),
+    });
+  }
+}
+
+function ensureMailDebugSheet() {
+  var spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = spreadsheet.getSheetByName("MailDebug");
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet("MailDebug");
+    sheet.setFrozenRows(1);
+  }
+
+  var existingHeaders = [];
+  if (sheet.getLastColumn() > 0) {
+    existingHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(asText);
+  }
+
+  var needsHeaderUpdate = existingHeaders.length === 0;
+  for (var i = 0; i < MAIL_DEBUG_HEADERS.length; i += 1) {
+    if (existingHeaders.indexOf(MAIL_DEBUG_HEADERS[i]) === -1) {
+      needsHeaderUpdate = true;
+      break;
+    }
+  }
+
+  if (needsHeaderUpdate) {
+    sheet.getRange(1, 1, 1, MAIL_DEBUG_HEADERS.length).setValues([MAIL_DEBUG_HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+
+  return sheet;
 }
 
 function updateScheduleStatus(scheduleId, now) {
