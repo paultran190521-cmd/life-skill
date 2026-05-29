@@ -503,10 +503,12 @@ export function MettasoulApp() {
   const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [observability, setObservability] = useState<ObservabilitySnapshot | null>(null);
   const [observabilityLoading, setObservabilityLoading] = useState(false);
   const [observabilityError, setObservabilityError] = useState("");
   const notificationPanelRef = useRef<HTMLDivElement | null>(null);
+  const mobileCalendarInitRef = useRef(false);
 
   const activeUsers = useMemo(() => appUsers.filter((user) => user.isActive !== false), [appUsers]);
   const sessionUser = appUsers.find((user) => user.id === sessionUserId) ?? null;
@@ -660,6 +662,18 @@ export function MettasoulApp() {
   }, []);
 
   useEffect(() => {
+    const updateViewport = () => {
+      setIsMobileViewport(window.innerWidth < 768);
+    };
+
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      window.removeEventListener("resize", updateViewport);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!activeUsers.some((user) => user.id === currentUserId)) {
       setCurrentUserId(activeUsers[0]?.id ?? "");
     }
@@ -668,9 +682,17 @@ export function MettasoulApp() {
   useEffect(() => {
     const allowedTabs = role === "admin" ? adminTabs : teacherTabs;
     if (!allowedTabs.some((tab) => tab.id === activeTab)) {
-      setActiveTab("dashboard");
+      setActiveTab(role === "teacher" ? "calendar" : "dashboard");
     }
   }, [activeTab, role]);
+
+  useEffect(() => {
+    if (!isMobileViewport || mobileCalendarInitRef.current) {
+      return;
+    }
+    setActiveTab("calendar");
+    mobileCalendarInitRef.current = true;
+  }, [isMobileViewport]);
 
   useEffect(() => {
     if (activeTab === "calendar") {
@@ -752,6 +774,15 @@ export function MettasoulApp() {
   useEffect(() => {
     saveCalendarFilters(calendarFilters);
   }, [calendarFilters]);
+
+  useEffect(() => {
+    if (role !== "teacher" || !currentTeacherId) {
+      return;
+    }
+    if (calendarFilters.teacherId !== currentTeacherId) {
+      setCalendarFilters((current) => ({ ...current, teacherId: currentTeacherId }));
+    }
+  }, [calendarFilters.teacherId, currentTeacherId, role]);
 
   const visibleSchedules = useMemo(() => {
     const scoped =
@@ -2983,6 +3014,13 @@ export function MettasoulApp() {
     setMobileSidebarOpen(false);
   }
 
+  function resetCalendarFilters() {
+    setCalendarFilters({
+      ...defaultCalendarFilters,
+      teacherId: role === "teacher" && currentTeacherId ? currentTeacherId : "all",
+    });
+  }
+
   return (
     <main className="ui-polish min-h-screen overflow-x-hidden bg-[var(--canvas)]">
       <div className="ui-enter grid min-h-screen lg:grid-cols-[280px_1fr]">
@@ -3766,7 +3804,7 @@ export function MettasoulApp() {
 
     return (
       <div className="space-y-6">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <Stat icon={CalendarDays} label="Lịch trong hệ thống" value={schedules.length} tone="cyan" />
           <Stat icon={CheckCircle2} label="Đã nhận lịch" value={confirmed} tone="emerald" />
           <Stat icon={UploadCloud} label="Giáo án đã nộp" value={uploaded} tone="blue" />
@@ -4133,6 +4171,7 @@ export function MettasoulApp() {
   function CalendarPanel() {
     const todayKey = currentDateKey();
     const calendarGridClass = calendarViewMode === "day" ? "grid-cols-1" : "grid-cols-7";
+    const showTeacherBadgesInCalendarCell = calendarViewMode === "day" || !isMobileViewport;
     const bulkTargets = selectedDaySchedules.filter((schedule) => selectedScheduleIds.includes(schedule.id));
 
     return (
@@ -4203,18 +4242,20 @@ export function MettasoulApp() {
                 </option>
               ))}
             </select>
-            <select
-              value={calendarFilters.teacherId}
-              onChange={(event) => setCalendarFilters((current) => ({ ...current, teacherId: event.target.value }))}
-              className={compactInputClass}
-            >
-              <option value="all">Tất cả giáo viên</option>
-              {teachers.map((teacher) => (
-                <option key={teacher.id} value={teacher.id}>
-                  {teacher.name}
-                </option>
-              ))}
-            </select>
+            {role === "admin" ? (
+              <select
+                value={calendarFilters.teacherId}
+                onChange={(event) => setCalendarFilters((current) => ({ ...current, teacherId: event.target.value }))}
+                className={compactInputClass}
+              >
+                <option value="all">Tất cả giáo viên</option>
+                {teachers.map((teacher) => (
+                  <option key={teacher.id} value={teacher.id}>
+                    {teacher.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <select
               value={calendarFilters.schoolId}
               onChange={(event) => setCalendarFilters((current) => ({ ...current, schoolId: event.target.value, classId: "all" }))}
@@ -4276,7 +4317,7 @@ export function MettasoulApp() {
             </select>
             <button
               type="button"
-              onClick={() => setCalendarFilters(defaultCalendarFilters)}
+              onClick={resetCalendarFilters}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50 xl:col-span-2"
             >
               <SlidersHorizontal size={15} />
@@ -4302,14 +4343,19 @@ export function MettasoulApp() {
           ) : null}
 
           {calendarViewMode !== "day" ? (
-            <div className="grid grid-cols-7 gap-2 text-center text-[11px] font-black uppercase text-[var(--muted)]">
+            <div className="app-scrollbar overflow-x-auto pb-1">
+              <div className="grid min-w-[700px] grid-cols-7 gap-2 text-center text-[11px] font-black uppercase text-[var(--muted)] sm:min-w-0">
               {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map((day) => (
-                <span key={day}>{day}</span>
+                  <span key={day} className="rounded-xl bg-cyan-50/70 py-1.5">
+                    {day}
+                  </span>
               ))}
+              </div>
             </div>
           ) : null}
-          <div className={`mt-2 grid ${calendarGridClass} gap-2`}>
-            {calendarDays.map((day) => {
+          <div className="app-scrollbar overflow-x-auto pb-1">
+            <div className={`mt-2 grid ${calendarGridClass} gap-2 ${calendarViewMode === "day" ? "" : "min-w-[700px] sm:min-w-0"}`}>
+              {calendarDays.map((day) => {
               const isSelected = selectedCalendarDate === day.dateKey;
               const statusTone = day.schedules.some((schedule) => schedule.status === "sent")
                 ? "bg-amber-50 text-amber-800"
@@ -4325,7 +4371,7 @@ export function MettasoulApp() {
                     setSelectedCalendarDate(day.dateKey);
                     setSelectedScheduleIds([]);
                   }}
-                  className={`min-h-[112px] rounded-2xl border p-3 text-left transition ${
+                  className={`min-h-[104px] rounded-2xl border p-2.5 text-left transition sm:min-h-[112px] sm:p-3 ${
                     isSelected
                       ? "border-[var(--brand)] bg-cyan-50 shadow-lg shadow-cyan-900/10"
                         : day.isToday
@@ -4343,22 +4389,25 @@ export function MettasoulApp() {
                     {day.dayNumber}
                   </span>
                   {day.schedules.length > 0 ? (
-                    <div className="mt-3 space-y-2">
+                    <div className="mt-2 space-y-1.5 sm:mt-3 sm:space-y-2">
                       <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-black ${statusTone}`}>
                         {day.schedules.length} lịch
                       </span>
-                      <div className="flex flex-wrap gap-1">
-                        {teacherNamesForSchedules(day.schedules, teachers).map((name) => (
-                          <span key={name} className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[var(--brand-dark)] ring-1 ring-cyan-100">
-                            {name}
-                          </span>
-                        ))}
-                      </div>
+                      {showTeacherBadgesInCalendarCell ? (
+                        <div className="flex flex-wrap gap-1">
+                          {teacherNamesForSchedules(day.schedules, teachers).map((name) => (
+                            <span key={name} className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[var(--brand-dark)] ring-1 ring-cyan-100">
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                 </button>
               );
-            })}
+              })}
+            </div>
           </div>
         </Panel>
 
@@ -5068,7 +5117,7 @@ export function MettasoulApp() {
     return (
       <Panel title="Tổng quan giáo án" action={`${lessonPlans.length} file • ${missingSchedules.length} lịch chưa có`}>
         <div className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Stat
               icon={FileSpreadsheet}
               label="Giáo án đã nộp"
@@ -5574,8 +5623,7 @@ export function MettasoulApp() {
               </button>
             </div>
 
-            <div className="overflow-x-auto pb-1">
-              <div className="grid min-w-[1320px] grid-cols-6 gap-4">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
                 <Stat
                   icon={CalendarDays}
                   label="Số lịch đã dạy"
@@ -5625,10 +5673,9 @@ export function MettasoulApp() {
                   onClick={() => setTeacherOverviewFocus("plan-missing")}
                 />
               </div>
-            </div>
 
             <Panel title="Tổng số tiết đã dạy theo môi trường" action={`${taughtSchedules.length} tiết`}>
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <Stat
                   icon={School2}
                   label="Trong lớp"
@@ -5856,7 +5903,7 @@ export function MettasoulApp() {
     if (role === "admin") {
       return (
         <div className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Stat
               icon={CalendarDays}
               label="Tiết hôm nay"
@@ -7111,16 +7158,16 @@ function Stat({
     },
   }[tone];
 
-  const className = `rounded-3xl border p-5 text-left shadow-[0_18px_46px_rgba(18,46,68,0.08),inset_0_1px_0_rgba(255,255,255,0.88)] backdrop-blur transition ${toneClasses.card} ${
+  const className = `rounded-2xl border p-4 text-left shadow-[0_18px_46px_rgba(18,46,68,0.08),inset_0_1px_0_rgba(255,255,255,0.88)] backdrop-blur transition sm:rounded-3xl sm:p-5 ${toneClasses.card} ${
     active ? `ring-4 ${toneClasses.active}` : "hover:-translate-y-0.5 hover:shadow-lg"
   }`;
   const content = (
     <>
-      <div className={`grid h-14 w-14 place-items-center rounded-2xl ${toneClasses.icon}`}>
-        <Icon size={22} />
+      <div className={`grid h-11 w-11 place-items-center rounded-xl sm:h-14 sm:w-14 sm:rounded-2xl ${toneClasses.icon}`}>
+        <Icon size={20} />
       </div>
-      <p className={`mt-5 text-4xl font-black tracking-tight ${toneClasses.value}`}>{value}</p>
-      <p className={`mt-1 text-base font-black ${toneClasses.label}`}>{label}</p>
+      <p className={`mt-3 text-3xl font-black tracking-tight sm:mt-5 sm:text-4xl ${toneClasses.value}`}>{value}</p>
+      <p className={`mt-1 text-sm font-black leading-snug sm:text-base ${toneClasses.label}`}>{label}</p>
     </>
   );
 

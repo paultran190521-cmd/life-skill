@@ -25,10 +25,16 @@ type EmailResult = {
   id?: string;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   const requestId = createRequestId("schedules-list");
   try {
-    return NextResponse.json(await readSheetRows("Schedules"));
+    const auth = await requireSessionUser(request);
+    const rows = await readSheetRows("Schedules");
+    if (auth.user.role !== "admin") {
+      const teacherId = String(auth.user.teacherId || "").trim();
+      return NextResponse.json(rows.filter((row) => String(row.teacherId || "").trim() === teacherId));
+    }
+    return NextResponse.json(rows);
   } catch (error) {
     return apiError(error, requestId);
   }
