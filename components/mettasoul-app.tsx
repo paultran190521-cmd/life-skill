@@ -719,28 +719,34 @@ export function MettasoulApp() {
 
     const htmlStyle = document.documentElement.style;
     const bodyStyle = document.body.style;
-    const scrollY = window.scrollY;
     const previous = {
       htmlOverflow: htmlStyle.overflow,
       bodyOverflow: bodyStyle.overflow,
-      bodyPosition: bodyStyle.position,
-      bodyTop: bodyStyle.top,
-      bodyWidth: bodyStyle.width,
+      htmlOverscrollBehavior: htmlStyle.overscrollBehavior,
+      bodyOverscrollBehavior: bodyStyle.overscrollBehavior,
+    };
+    const preventBackgroundScroll = (event: Event) => {
+      const target = event.target as Element | null;
+      if (target?.closest("[data-modal-scroll='true']")) {
+        return;
+      }
+      event.preventDefault();
     };
 
     htmlStyle.overflow = "hidden";
     bodyStyle.overflow = "hidden";
-    bodyStyle.position = "fixed";
-    bodyStyle.top = `-${scrollY}px`;
-    bodyStyle.width = "100%";
+    htmlStyle.overscrollBehavior = "none";
+    bodyStyle.overscrollBehavior = "none";
+    document.addEventListener("touchmove", preventBackgroundScroll, { passive: false });
+    document.addEventListener("wheel", preventBackgroundScroll, { passive: false });
 
     return () => {
       htmlStyle.overflow = previous.htmlOverflow;
       bodyStyle.overflow = previous.bodyOverflow;
-      bodyStyle.position = previous.bodyPosition;
-      bodyStyle.top = previous.bodyTop;
-      bodyStyle.width = previous.bodyWidth;
-      window.scrollTo(0, scrollY);
+      htmlStyle.overscrollBehavior = previous.htmlOverscrollBehavior;
+      bodyStyle.overscrollBehavior = previous.bodyOverscrollBehavior;
+      document.removeEventListener("touchmove", preventBackgroundScroll);
+      document.removeEventListener("wheel", preventBackgroundScroll);
     };
   }, [hasBlockingModal]);
 
@@ -3358,7 +3364,10 @@ export function MettasoulApp() {
           />
           {feedbackModalOpen ? (
             <div className="fixed inset-0 z-[70] grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
-              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-3xl border border-violet-200 bg-white p-5 shadow-2xl">
+              <div
+                data-modal-scroll="true"
+                className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-3xl border border-violet-200 bg-white p-5 shadow-2xl"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="grid h-12 w-12 place-items-center rounded-2xl bg-violet-100 text-violet-700">
@@ -3444,7 +3453,10 @@ export function MettasoulApp() {
           ) : null}
           {teacherModalOpen ? (
             <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
-              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl">
+              <div
+                data-modal-scroll="true"
+                className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl"
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-50 text-[var(--brand-dark)]">
@@ -3541,7 +3553,10 @@ export function MettasoulApp() {
           ) : null}
           {lessonDeleteTarget ? (
             <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
-              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border border-rose-100 bg-white p-5 shadow-2xl">
+              <div
+                data-modal-scroll="true"
+                className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border border-rose-100 bg-white p-5 shadow-2xl"
+              >
                 <div className="grid h-12 w-12 place-items-center rounded-2xl bg-rose-50 text-rose-700">
                   <Trash2 size={22} />
                 </div>
@@ -3571,7 +3586,10 @@ export function MettasoulApp() {
           ) : null}
           {reassignTarget ? (
             <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
-              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl">
+              <div
+                data-modal-scroll="true"
+                className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl"
+              >
                 <div className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-50 text-[var(--brand-dark)]">
                   <RefreshCcw size={22} />
                 </div>
@@ -3621,7 +3639,10 @@ export function MettasoulApp() {
           ) : null}
           {selectedOperationalAlert ? (
             <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
-              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-5xl overflow-y-auto overscroll-contain rounded-3xl border border-orange-100 bg-white p-5 shadow-2xl ring-1 ring-cyan-100">
+              <div
+                data-modal-scroll="true"
+                className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-5xl overflow-y-auto overscroll-contain rounded-3xl border border-orange-100 bg-white p-5 shadow-2xl ring-1 ring-cyan-100"
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-50 text-[var(--accent)]">
@@ -3685,7 +3706,10 @@ export function MettasoulApp() {
           ) : null}
           {selectedScheduleDetail ? (
             <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
-              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
+              <div
+                data-modal-scroll="true"
+                className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100"
+              >
                 {(() => {
                   const meta = lookupSchedule(selectedScheduleDetail);
                   const detailCards = [
@@ -3789,7 +3813,8 @@ export function MettasoulApp() {
               }`}
             >
               <div
-                className={`app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-3xl border bg-white p-5 shadow-2xl transition duration-200 ${
+                data-modal-scroll="true"
+                className={`app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-3xl border bg-white p-5 shadow-2xl transition duration-200 ${
                   appDialog.leaving ? "translate-y-2 scale-[0.98] opacity-0" : "translate-y-0 scale-100 opacity-100"
                 } ${appDialog.tone === "danger" ? "border-rose-100" : "border-cyan-100"}`}
               >
@@ -5800,7 +5825,10 @@ export function MettasoulApp() {
 
         {teacherOverviewFocus ? (
           <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
-            <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-5xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
+            <div
+              data-modal-scroll="true"
+              className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-5xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100"
+            >
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-black text-[var(--brand-dark)]">{selectedTitle}</h2>
@@ -6071,7 +6099,10 @@ export function MettasoulApp() {
 
           {attendanceAdminFocus ? (
             <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
-              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-4xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
+              <div
+                data-modal-scroll="true"
+                className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-4xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100"
+              >
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div>
                     <h2 className="text-xl font-black text-[var(--brand-dark)]">{selectedAttendanceTitle}</h2>
@@ -6103,7 +6134,10 @@ export function MettasoulApp() {
 
           {attendanceWarningFocus ? (
             <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
-              <div className="app-scrollbar max-h-[calc(100vh-2rem)] w-full max-w-4xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
+              <div
+                data-modal-scroll="true"
+                className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-4xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100"
+              >
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div>
                     <h2 className="text-xl font-black text-[var(--brand-dark)]">{selectedWarningTitle}</h2>
