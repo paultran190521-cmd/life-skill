@@ -1,206 +1,357 @@
-# HƯỚNG DẪN SỬ DỤNG (BẢN NHÁP CẬP NHẬT)
+# HƯỚNG DẪN SỬ DỤNG METTASOUL
 
-Ngày cập nhật: 28/05/2026
+Ngày cập nhật: 29/05/2026
+Ứng dụng: METTASOUL - Education with love
+Mục tiêu: quản lý lịch dạy, giáo án, điểm danh và vận hành giáo viên kỹ năng sống trên nền Next.js + Google Sheets + Google Apps Script.
 
-Tài liệu này bám theo trạng thái code hiện tại, tập trung vào cách dùng thực tế cho Admin và Giáo viên.
+## 1. Tổng Quan Hệ Thống
 
-## 1. Tổng quan hệ thống
+METTASOUL hỗ trợ đội vận hành quản lý toàn bộ vòng đời một lịch dạy:
 
-Mục tiêu hệ thống:
+1. Admin tạo lịch dạy.
+2. Giáo viên nhận và xác nhận lịch.
+3. Giáo viên nộp giáo án nếu lịch yêu cầu.
+4. Giáo viên điểm danh khi đến giờ dạy.
+5. Admin theo dõi trạng thái, cảnh báo, lỗi, báo cáo và dữ liệu vận hành.
 
-- Điều phối lịch dạy kỹ năng sống theo trường/lớp/khung giờ/bài học.
-- Quản lý quy trình vận hành chuẩn:
-  - giao lịch -> xác nhận -> nộp giáo án -> điểm danh -> báo cáo.
-- Lưu dữ liệu tập trung trên Google Sheets.
+Vai trò chính:
 
-Vai trò:
+- Admin/Giáo vụ: quản lý toàn hệ thống, giao lịch, cấu hình dữ liệu, xem toàn bộ lịch, theo dõi giáo án và điểm danh.
+- Giáo viên: chỉ xem và thao tác trên lịch của chính mình.
 
-- `Admin`:
-  - toàn quyền điều hành và cấu hình.
-- `Teacher`:
-  - thao tác trên dữ liệu thuộc lịch của chính mình.
+## 2. Đăng Nhập Và Phân Quyền
 
-## 2. Đăng nhập và quyền truy cập
+Hệ thống dùng Google Login.
 
-- Đăng nhập bằng Google.
-- Hệ thống dùng session để xác thực backend.
-- Nếu chưa đăng nhập:
-  - không tải dữ liệu tổng (`/api/app-data`),
-  - UI hiển thị trạng thái “Chưa đăng nhập”.
+Khi chưa đăng nhập:
 
-Lưu ý:
+- Không tải dữ liệu vận hành chính.
+- Hiển thị trạng thái chưa đăng nhập.
+- Người dùng cần bấm Google Login để vào hệ thống.
 
-- Hệ thống đang chạy chế độ phân quyền backend `enforce` mặc định.
-- Nếu cần rollback nhanh khi sự cố quyền:
-  - set `AUTH_ENFORCEMENT_MODE=shadow`.
+Khi đã đăng nhập:
 
-## 3. Phân hệ Giao lịch (Admin)
+- Admin được vào các phân hệ quản trị.
+- Giáo viên được đưa thẳng vào menu Lịch của tôi/Lịch dạy vì đây là nghiệp vụ quan trọng nhất.
+- Giáo viên chỉ nhìn thấy hồ sơ, lịch, giáo án và điểm danh liên quan đến chính mình.
 
-### 3.1. Quy trình chuẩn
+Cơ chế an toàn:
 
-1. Chọn ngày, trường, lớp, khung giờ, bài học, môi trường dạy.
-2. Chọn danh sách giáo viên nhận lịch.
-3. Kiểm tra khối “Xem trước lịch sắp gửi”.
-4. Chỉ bấm gửi khi không còn cảnh báo xung đột.
+- Backend đang chạy chế độ phân quyền `enforce` mặc định.
+- Các route ghi dữ liệu đều kiểm tra session và quyền trước khi xử lý.
+- Nếu có sự cố quyền production, có thể rollback tạm bằng `AUTH_ENFORCEMENT_MODE=shadow`, sau đó rà log và bật lại `enforce`.
 
-### 3.2. Cập nhật mới về an toàn giao lịch
+## 3. Giao Diện Chính
 
-Hệ thống đã chặn xung đột ở 2 lớp:
+Giao diện hiện tại đã được tối ưu theo hướng mobile-first.
 
-- Lớp backend:
-  - chặn trùng `giáo viên + ngày + khung giờ`,
-  - chặn trùng `lớp + ngày + khung giờ`,
-  - chặn cả trùng với lịch đã có và trùng trong chính danh sách sắp gửi.
-- Lớp UI preview:
-  - có khối cảnh báo đỏ liệt kê xung đột,
-  - nút “Gửi lịch và email thông báo” bị khóa khi còn xung đột,
-  - hiển thị khối xanh khi lịch an toàn để gửi.
+Trên điện thoại:
 
-### 3.3. Kết quả sau khi gửi
+- Mặc định vào Lịch của tôi/Lịch dạy.
+- Bỏ các thông tin kỹ thuật không cần thiết như trạng thái kết nối Google Sheet.
+- Bỏ tìm kiếm trên mobile để giảm nhiễu thao tác.
+- Đưa thông báo lên góc trên bên phải.
+- Đưa đăng nhập/đăng xuất vào thanh menu ba gạch.
+- Các khối card được thu gọn để dễ đọc trên màn hình nhỏ.
+- Các popup/modal được khóa giữa màn hình, chỉ cho cuộn nội dung bên trong modal.
 
-- Tạo lịch vào `Schedules`.
-- Gửi email tổng hợp theo từng giáo viên.
-- Tạo thông báo vận hành.
-- Ghi audit log chi tiết.
+Trên desktop:
 
-## 4. Lịch tổng / Lịch của tôi
+- Sidebar điều hướng theo vai trò.
+- Header có thông tin tài khoản, thông báo và trạng thái vận hành.
+- Modal chi tiết lịch, feedback, xác nhận thao tác hiển thị ổn định ở giữa màn hình.
 
-- Hỗ trợ 3 chế độ xem: `Tháng`, `Tuần`, `Ngày`.
-- Có bộ lọc theo trạng thái, giáo viên, trường, lớp, khung giờ, khoảng ngày.
-- Admin có thao tác:
-  - hủy lịch,
-  - chuyển giáo viên,
-  - nhắc xác nhận,
-  - thao tác hàng loạt theo ngày.
+## 4. Lịch Của Tôi / Lịch Dạy Giáo Viên
 
-Teacher:
+Đây là màn hình chính của giáo viên.
 
-- chỉ xem lịch của chính mình,
-- xác nhận/điểm danh theo quyền.
+Tính năng chính:
 
-## 5. Giáo án
+- Tự động mở vào lịch của giáo viên sau khi đăng nhập.
+- Tự động nhảy đến ngày hiện tại trong lịch tuần/ngày khi vào hệ thống.
+- Hiển thị khối CÁC NGÀY CÓ LỊCH DẠY để giáo viên bấm nhảy nhanh đến ngày có lịch.
+- Hỗ trợ xem theo Tháng, Tuần, Ngày.
+- Các số ngày trong ô lịch được căn giữa để dễ nhìn trên điện thoại.
+- Khi bấm vào một lịch cụ thể, mở modal chi tiết lịch dạy.
+- Giáo viên chỉ thấy lịch của mình, không có bộ lọc giáo viên trên mobile.
 
-- Upload giáo án theo từng lịch.
-- Hỗ trợ link ngoài Google Drive (`external_link`).
+Thông tin hiển thị trong lịch:
+
+- Ngày dạy.
+- Khung giờ.
+- Bài học/chủ đề.
+- Trường.
+- Lớp.
+- Môi trường dạy: trong lớp, ngoài sân hoặc tùy cấu hình.
+- Trạng thái lịch.
+- Trạng thái điểm danh.
+- Giáo viên phụ trách.
+- Mục tiêu bài học.
+- Giáo án đã nộp nếu có.
+
+Thao tác của giáo viên:
+
+- Xác nhận lịch.
+- Nộp giáo án.
+- Điểm danh khi đến giờ.
+- Xem lại chi tiết lịch.
+- Gửi góp ý/nâng cấp tính năng.
+
+## 5. Lịch Tổng Của Admin
+
+Admin dùng Lịch tổng để theo dõi toàn bộ lịch trong hệ thống.
+
+Tính năng chính:
+
+- Xem lịch theo Tháng, Tuần, Ngày.
+- Lọc theo trạng thái, giáo viên, trường, lớp, khung giờ và khoảng ngày trên desktop.
+- Xem chi tiết từng lịch qua modal.
+- Hủy lịch khi cần.
+- Chuyển giáo viên phụ trách.
+- Nhắc giáo viên xác nhận lịch.
+- Thao tác hàng loạt theo ngày.
+- Theo dõi lịch quá ngày chưa điểm danh.
+
+An toàn phân quyền:
+
+- Admin thấy toàn bộ lịch.
+- Giáo viên không thể xem lịch của người khác qua giao diện hoặc API.
+- Backend kiểm tra quyền sở hữu lịch ở các thao tác nhạy cảm.
+
+## 6. Giao Lịch
+
+Phân hệ Giao lịch dành cho Admin/Giáo vụ.
+
+Quy trình chuẩn:
+
+1. Chọn ngày dạy.
+2. Chọn trường.
+3. Chọn lớp.
+4. Chọn khung giờ.
+5. Chọn bài học.
+6. Chọn môi trường dạy.
+7. Chọn giáo viên nhận lịch.
+8. Kiểm tra khối xem trước lịch sắp gửi.
+9. Gửi lịch và email thông báo khi không còn cảnh báo.
+
+Cơ chế chống trùng lịch:
+
+- Chặn trùng giáo viên + ngày + khung giờ.
+- Chặn trùng lớp + ngày + khung giờ.
+- Kiểm tra trùng với lịch đã có trong hệ thống.
+- Kiểm tra trùng ngay trong batch lịch sắp gửi.
+- UI hiển thị cảnh báo đỏ nếu có xung đột.
+- Nút gửi bị khóa khi còn xung đột.
+- Backend trả lỗi `409 CONFLICT` nếu vẫn có xung đột ở tầng API.
+
+Sau khi gửi lịch:
+
+- Tạo dòng dữ liệu trong `Schedules`.
+- Tạo thông báo cho giáo viên liên quan.
+- Gửi email tổng hợp theo giáo viên nếu cấu hình email/GAS sẵn sàng.
+- Ghi audit log để truy vết.
+
+## 7. Giáo Án
+
+Phân hệ Giáo án hỗ trợ quản lý tài liệu dạy học theo từng lịch.
+
+Tính năng chính:
+
+- Xem số giáo án đã gửi.
+- Xem số lịch cần nộp giáo án.
+- Xem số lịch đã có giáo án.
+- Trên mobile, 3 card thống kê trong menu giáo án được gom gọn trên cùng một dòng.
+- Upload file giáo án theo từng lịch.
+- Hỗ trợ link ngoài như Google Drive.
 - Sửa tên giáo án.
 - Xóa giáo án.
+- Theo dõi giáo án còn thiếu.
 
-Quyền:
+Quyền thao tác:
 
-- Admin quản lý toàn bộ.
-- Teacher chỉ thao tác giáo án thuộc lịch của mình.
+- Admin quản lý toàn bộ giáo án.
+- Giáo viên chỉ thao tác với giáo án thuộc lịch của mình.
 
-## 6. Điểm danh
+Giới hạn upload:
 
-- Điểm danh theo từng tiết.
+- File tối đa 10MB.
+- Hỗ trợ các định dạng phổ biến: PDF, Word, PowerPoint, Excel, TXT, CSV.
+- Upload đi qua Google Apps Script khi cấu hình webhook sẵn sàng.
+
+## 8. Điểm Danh
+
+Điểm danh dùng để xác nhận giáo viên đã thực hiện tiết dạy.
+
+Tính năng chính:
+
+- Điểm danh theo từng lịch.
 - Chặn điểm danh trùng.
 - Chặn điểm danh lịch đã hủy.
-- Cập nhật trạng thái lịch sang `attended`.
+- Cập nhật trạng thái lịch sang đã điểm danh.
+- Admin xem được các lịch chưa điểm danh, điểm danh trễ hoặc quá ngày.
+- Trạng thái đang xử lý/đang điểm danh hiển thị trong vùng nhìn thấy của màn hình thay vì bị cố định ở đầu trang.
 
 Rule thời gian:
 
-- cho điểm danh sớm tối đa 30 phút trước giờ bắt đầu,
-- có theo dõi điểm danh trễ để admin giám sát.
+- Cho điểm danh sớm tối đa 30 phút trước giờ bắt đầu.
+- Theo dõi tình trạng điểm danh muộn để Admin giám sát.
 
-## 7. Cấu hình nền tảng (Admin)
+## 9. Thông Báo, Banner Và Feedback
 
-Quản lý các danh mục:
+Thông báo:
 
-- Trường
-- Lớp
-- Khung giờ
-- Bài học
-- Giáo viên
-- Người dùng
-- App announcements
+- Có panel thông báo theo vai trò: admin, teacher hoặc all.
+- Icon thông báo trên mobile đặt ở góc trên bên phải.
+- Có badge số lượng thông báo chưa đọc.
 
-Import:
+Banner đầu trang:
 
-- hỗ trợ `.xlsx/.csv/.tsv` cho các phân hệ phù hợp.
+- Admin có thể tạo thông báo chạy ở đầu app.
+- Dòng thông báo hiển thị một dòng dài và chạy ngang để người dùng đọc đầy đủ nội dung.
+- Có bật/tắt/xóa banner.
 
-## 8. Thông báo & banner
+Feedback:
 
-- Notification panel theo vai trò (`admin`, `teacher`, `all`).
-- Banner thông báo đầu trang (`AppAnnouncements`) có bật/tắt/xóa.
-- Feedback từ giáo viên được gửi về admin theo mẫu chuẩn.
+- Giáo viên có thể gửi góp ý nâng cấp tính năng.
+- Popup feedback mở ở giữa màn hình.
+- Nội dung dài cuộn bên trong popup, không làm popup nhảy khỏi màn hình.
+- Feedback được gửi về Admin để theo dõi.
 
-## 9. Observability vận hành (Admin mới)
+## 10. Cấu Hình Hệ Thống Dành Cho Admin
 
-Trong tab Cấu hình có panel mới: **Observability vận hành**.
+Admin quản lý các danh mục nền tảng:
 
-### 9.1. Hiển thị chính
+- Trường.
+- Lớp.
+- Khung giờ.
+- Bài học.
+- Giáo viên.
+- Người dùng.
+- App announcements.
 
-- Tổng sự kiện.
-- Deny (1h).
-- API Error (1h).
+Import dữ liệu:
+
+- Hỗ trợ import nhanh bằng file `.xlsx`, `.csv`, `.tsv` ở các phân hệ phù hợp.
+- Có script setup Google Sheets để tạo cấu trúc sheet ban đầu.
+
+## 11. Observability Và Health Check
+
+Admin có panel Observability vận hành trong tab Cấu hình.
+
+Thông tin chính:
+
+- Tổng số sự kiện.
+- Số lần bị chặn quyền trong 1 giờ.
+- Số lỗi API trong 1 giờ.
 - Health tổng.
-- Top route.
-- Cảnh báo vận hành.
+- Top route có sự kiện.
+- Cảnh báo vận hành theo ngưỡng.
 
-### 9.2. Ý nghĩa nhanh
+Health check nội bộ:
 
-- `Deny (1h)` tăng mạnh:
-  - có thể user thao tác sai quyền hoặc policy cần rà soát.
-- `API Error (1h)` tăng:
-  - có thể có lỗi nghiệp vụ hoặc tích hợp ngoài.
-- `Health` không `ok`:
-  - kiểm tra Sheets/GAS/Email ngay.
+- API: `GET /api/admin/health`.
+- Kiểm tra Google Sheets.
+- Kiểm tra GAS webhook.
+- Kiểm tra email provider.
 
-### 9.3. Ngưỡng cảnh báo
+Trạng thái health:
 
-- `OBS_ALERT_DENY_1H` (mặc định 20)
-- `OBS_ALERT_ERROR_1H` (mặc định 10)
+- `ok`: hệ thống ổn.
+- `degraded`: có thành phần chậm hoặc lỗi một phần.
+- `down`: thành phần quan trọng không hoạt động.
 
-## 10. Health check nội bộ (Admin)
+## 12. Chuẩn Lỗi Và Truy Vết
 
-API:
+Format lỗi API chuẩn:
 
-- `GET /api/admin/health`
+```json
+{ "error": "Mô tả lỗi", "code": "ERROR_CODE", "requestId": "request-id" }
+```
 
-Kiểm tra:
+Cách support khi có lỗi:
 
-- Google Sheets
-- GAS webhook
-- Email provider
+1. Lấy `requestId` từ lỗi người dùng gặp.
+2. Tra audit/event log.
+3. Xác định route, code, reason và actor.
+4. Khoanh vùng lỗi nghiệp vụ, quyền hoặc tích hợp ngoài.
 
-Trạng thái trả về:
+Audit log ghi nhận:
 
-- `ok`
-- `degraded`
-- `down`
+- Người thao tác.
+- Route/API.
+- Hành động.
+- Quyết định quyền.
+- Dữ liệu trước/sau nếu có.
+- Request ID.
 
-## 11. Chuẩn lỗi mới để support nhanh
+## 13. Nhận Diện Thương Hiệu Và Link Preview
 
-Mọi lỗi API đã thống nhất format:
+App hiện dùng nhận diện:
 
-- `{ error, code, requestId }`
+- Tên: METTASOUL - Education with love.
+- Màu chính lấy từ logo: vàng năng lượng, teal, xanh đậm.
+- Logo METTASOUL hiển thị trong app.
+- Ảnh bìa chia sẻ link: `public/mettasoul-cover.png`.
+- Metadata Open Graph/Twitter card đã cấu hình trong `app/layout.tsx`.
 
-Cách dùng khi support:
+Khi gửi link app:
 
-1. Lấy `requestId` từ lỗi user gặp.
-2. Tra trong audit/event log.
-3. Xác định route, code, reason để xử lý nhanh.
+- Nền tảng hỗ trợ Open Graph sẽ lấy title, mô tả và ảnh bìa.
+- Một số nền tảng như Zalo/Facebook có cache preview, cần đợi vài phút hoặc gửi lại link sau khi deploy.
 
-## 12. Checklist test nhanh sau mỗi lần cập nhật
+## 14. Cách Test Trên Giao Diện
 
-1. Đăng nhập admin, mở tab Cấu hình.
-2. Kiểm tra panel Observability tải được dữ liệu.
-3. Giao lịch thử:
-  - tạo case trùng -> phải bị cảnh báo/khóa gửi,
-  - sửa hết trùng -> gửi được.
-4. Teacher test:
-  - xác nhận lịch,
-  - nộp giáo án,
-  - điểm danh.
-5. Chạy kỹ thuật:
-  - `npm run test:authz`
-  - `npm run build`
+Test vai trò giáo viên:
 
-## 13. Ghi chú vận hành
+1. Đăng nhập bằng tài khoản giáo viên.
+2. Xác nhận app tự vào Lịch của tôi/Lịch dạy.
+3. Kiểm tra lịch tự nhảy đến ngày hiện tại.
+4. Bấm CÁC NGÀY CÓ LỊCH DẠY để nhảy nhanh.
+5. Bấm một lịch cụ thể và kiểm tra modal chi tiết hiện giữa màn hình.
+6. Thử nộp giáo án nếu lịch cần giáo án.
+7. Thử điểm danh trong khung giờ hợp lệ.
+8. Mở Góp ý và kiểm tra popup hiện giữa màn hình.
+9. Kiểm tra giáo viên không thấy bộ lọc giáo viên và không thấy lịch người khác.
 
-- Không có phân hệ chat trong phiên bản hiện tại.
-- Khi phát sinh chặn nhầm quyền production:
-  - chuyển tạm `AUTH_ENFORCEMENT_MODE=shadow`,
-  - rà log/audit,
-  - fix policy rồi bật lại `enforce`.
+Test vai trò Admin:
 
+1. Đăng nhập bằng tài khoản Admin.
+2. Mở Lịch tổng.
+3. Bấm một lịch cụ thể và kiểm tra modal chi tiết hiện giữa màn hình.
+4. Mở Giao lịch.
+5. Tạo case trùng giáo viên hoặc trùng lớp cùng ngày/khung giờ để kiểm tra cảnh báo.
+6. Sửa hết trùng và gửi lịch.
+7. Kiểm tra thông báo được tạo.
+8. Mở Giáo án để kiểm tra danh sách lịch cần nộp.
+9. Mở Điểm danh để kiểm tra trạng thái đã/chưa điểm danh.
+10. Mở Cấu hình để kiểm tra Observability và Health.
+
+Test chia sẻ link:
+
+1. Đợi Vercel deploy xong.
+2. Gửi link `https://life-skill.vercel.app` qua Zalo/Facebook/Chat.
+3. Kiểm tra preview có title, mô tả và ảnh bìa METTASOUL.
+4. Nếu preview cũ vẫn còn, đợi cache hoặc gửi lại sau vài phút.
+
+## 15. Kiểm Tra Kỹ Thuật Sau Mỗi Lần Cập Nhật
+
+Chạy các lệnh sau trước khi kết luận bản cập nhật ổn định:
+
+```bash
+npm run test:authz
+npm run build
+```
+
+Kỳ vọng:
+
+- `test:authz` pass.
+- `build` pass.
+- Không commit file sinh ra bởi build như `tsconfig.tsbuildinfo` nếu chỉ thay đổi do quá trình build.
+
+## 16. Ghi Chú Vận Hành
+
+- Hệ thống hiện chưa có phân hệ chat nội bộ.
+- Google Sheets vẫn là nơi lưu dữ liệu chính.
+- Google Apps Script dùng cho luồng email/upload khi đã cấu hình webhook.
+- An toàn dữ liệu và phân quyền đang được ưu tiên hơn tối ưu tốc độ cực đoan.
+- Nếu cần tối ưu hiệu năng tiếp, ưu tiên cache ngắn hạn, batch write và index row trước khi chuyển sang kiến trúc phức tạp hơn.
