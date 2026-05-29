@@ -14,7 +14,6 @@ import {
   FileUp,
   FileSpreadsheet,
   History,
-  GraduationCap,
   ListChecks,
   LayoutDashboard,
   LoaderCircle,
@@ -3153,8 +3152,8 @@ export function MettasoulApp() {
           }`}
         >
           <div className="flex items-center gap-3 px-2">
-            <div className="ui-logo-mark grid h-11 w-11 place-items-center rounded-2xl text-white">
-              <GraduationCap size={24} />
+            <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
+              <img src="/mettasoul-logo.png" alt="METTASOUL" className="h-full w-full object-cover" />
             </div>
             <div className="min-w-0">
               <p className="text-lg font-extrabold tracking-tight text-[var(--brand-dark)]">METTASOUL</p>

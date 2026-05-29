@@ -1,20 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --brand: #ff9500;
-  --brand-dark: #9a4f00;
-  --accent: #ff9500;
-  --mint: #ffb000;
-  --sky: #ff6b35;
-  --cool: #1992b0;
-  --cool-dark: #0b6f89;
+  --brand: #e0a020;
+  --brand-dark: #004050;
+  --accent: #ffc400;
+  --mint: #20b0b0;
+  --sky: #106070;
+  --cool: #20b0b0;
+  --cool-dark: #004050;
   --violet: #7c3aed;
   --rose: #e11d48;
   --amber: #f59e0b;
   --ink: #17364a;
   --muted: #687789;
   --line: #b9dff0;
-  --canvas: #fff8ef;
+  --canvas: #f4fbfb;
   --surface: #ffffff;
   --surface-soft: #fafdff;
   --shadow-soft: 0 16px 34px rgba(18, 46, 68, 0.08), 0 1px 0 rgba(255, 255, 255, 0.85) inset;
@@ -35,9 +35,9 @@ html {
 body {
   margin: 0;
   background:
-    radial-gradient(circle at 14% -8%, rgba(255, 149, 0, 0.2), transparent 34rem),
-    radial-gradient(circle at 98% 12%, rgba(25, 146, 176, 0.1), transparent 30rem),
-    linear-gradient(135deg, #fffaf2 0%, #fff8ef 44%, #fff4e6 100%);
+    radial-gradient(circle at 14% -8%, rgba(224, 160, 32, 0.18), transparent 34rem),
+    radial-gradient(circle at 98% 12%, rgba(32, 176, 176, 0.14), transparent 30rem),
+    linear-gradient(135deg, #fffaf1 0%, #f4fbfb 46%, #eff9fa 100%);
   color: var(--ink);
   font-weight: 500;
   font-family:
@@ -128,10 +128,10 @@ button:disabled {
 @keyframes pulse-glow {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(255, 149, 0, 0.2);
+    box-shadow: 0 0 0 0 rgba(224, 160, 32, 0.22);
   }
   50% {
-    box-shadow: 0 0 0 8px rgba(255, 149, 0, 0);
+    box-shadow: 0 0 0 8px rgba(224, 160, 32, 0);
   }
 }
 
@@ -146,9 +146,9 @@ button:disabled {
 
 .ui-polish {
   background-image:
-    radial-gradient(1100px 520px at -10% -5%, rgba(255, 149, 0, 0.16), transparent 55%),
-    radial-gradient(900px 430px at 105% 3%, rgba(25, 146, 176, 0.09), transparent 48%),
-    radial-gradient(760px 360px at 72% 104%, rgba(255, 176, 0, 0.1), transparent 46%),
+    radial-gradient(1100px 520px at -10% -5%, rgba(224, 160, 32, 0.16), transparent 55%),
+    radial-gradient(900px 430px at 105% 3%, rgba(32, 176, 176, 0.11), transparent 48%),
+    radial-gradient(760px 360px at 72% 104%, rgba(0, 64, 80, 0.07), transparent 46%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0));
   background-attachment: fixed;
 }
@@ -220,26 +220,26 @@ button:disabled {
 .ui-shell-sidebar {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 252, 255, 0.9)),
-    radial-gradient(420px 220px at 10% 0%, rgba(255, 149, 0, 0.14), transparent 70%);
+    radial-gradient(420px 220px at 10% 0%, rgba(224, 160, 32, 0.13), transparent 70%);
 }
 
 .ui-glass-header {
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.9), rgba(248, 252, 255, 0.82)),
-    linear-gradient(135deg, rgba(255, 149, 0, 0.08), rgba(25, 146, 176, 0.06));
+    linear-gradient(135deg, rgba(224, 160, 32, 0.08), rgba(32, 176, 176, 0.07));
 }
 
 .ui-logo-mark {
   background:
-    linear-gradient(145deg, #ff9500 0%, #ffb000 48%, #ff6b35 100%);
+    linear-gradient(145deg, #e0a020 0%, #ffc400 38%, #20b0b0 74%, #004050 100%);
   box-shadow:
-    0 16px 30px rgba(255, 149, 0, 0.28),
+    0 16px 30px rgba(0, 64, 80, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .ui-primary-gradient {
-  background: linear-gradient(135deg, #ff9500 0%, #ffb000 52%, #ff6b35 100%);
-  box-shadow: 0 14px 30px rgba(255, 149, 0, 0.26);
+  background: linear-gradient(135deg, #e0a020 0%, #ffc400 42%, #20b0b0 100%);
+  box-shadow: 0 14px 30px rgba(224, 160, 32, 0.24);
 }
 
 .ui-primary-gradient:hover {
@@ -308,8 +308,9 @@ button:disabled {
 
   body {
     background:
-      radial-gradient(circle at 20% -10%, rgba(255, 149, 0, 0.16), transparent 24rem),
-      linear-gradient(180deg, #fffaf2 0%, #fff6ec 100%);
+      radial-gradient(circle at 20% -10%, rgba(224, 160, 32, 0.15), transparent 24rem),
+      radial-gradient(circle at 90% 10%, rgba(32, 176, 176, 0.1), transparent 22rem),
+      linear-gradient(180deg, #fffaf1 0%, #f4fbfb 100%);
   }
 
   .ui-polish {
