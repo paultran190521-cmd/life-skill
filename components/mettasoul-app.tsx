@@ -3079,6 +3079,23 @@ export function MettasoulApp() {
             <div className="mt-3 rounded-xl bg-gradient-to-r from-emerald-50 to-cyan-50 px-3 py-2 text-xs font-black text-[var(--brand-dark)]">
               {role === "admin" ? "Quyền quản trị" : "Quyền giáo viên"}
             </div>
+            <div className="mt-3">
+              {authStatus === "signed-in" ? (
+                <button
+                  onClick={logout}
+                  className="inline-flex h-10 w-full items-center justify-center rounded-xl border border-white/80 bg-white/85 px-3 text-xs font-black text-[var(--brand-dark)] shadow-sm transition hover:border-cyan-200 hover:bg-cyan-50"
+                >
+                  Đăng xuất
+                </button>
+              ) : (
+                <a
+                  href="/api/auth/google"
+                  className="ui-primary-gradient inline-flex h-10 w-full items-center justify-center rounded-xl px-3 text-xs font-black text-white transition"
+                >
+                  Google Login
+                </a>
+              )}
+            </div>
           </div>
 
           <nav className="mt-5 space-y-1">
@@ -3105,7 +3122,7 @@ export function MettasoulApp() {
 
         <section className="min-w-0">
           <header className="ui-glass-header sticky top-0 z-20 border-b border-white/70 px-4 py-4 backdrop-blur-xl md:px-7">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="relative flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex min-w-0 items-start gap-3">
                 <button
                   type="button"
@@ -3127,26 +3144,7 @@ export function MettasoulApp() {
               </div>
 
               <div className="grid gap-3 sm:flex sm:flex-row sm:items-center">
-                <span
-                  className={`inline-flex h-10 items-center justify-center rounded-2xl px-3 text-xs font-black sm:h-11 ${
-                    authStatus === "signed-out"
-                      ? "bg-slate-100 text-slate-700"
-                      : dataStatus === "connected"
-                      ? "bg-emerald-50 text-emerald-700"
-                      : dataStatus === "loading"
-                        ? "bg-cyan-50 text-[var(--brand-dark)]"
-                        : "bg-orange-50 text-orange-700"
-                  }`}
-                >
-                  {authStatus === "signed-out"
-                    ? "Chưa đăng nhập"
-                    : dataStatus === "connected"
-                    ? "Đã nối Google Sheet"
-                    : dataStatus === "loading"
-                      ? "Đang tải dữ liệu"
-                      : "Dùng dữ liệu tạm"}
-                </span>
-                <label className="flex min-w-0 items-center gap-2 rounded-2xl border border-sky-200 bg-white/85 px-3 py-2 shadow-sm transition focus-within:border-violet-300 focus-within:shadow-lg focus-within:shadow-cyan-900/10">
+                <label className="hidden min-w-0 items-center gap-2 rounded-2xl border border-sky-200 bg-white/85 px-3 py-2 shadow-sm transition focus-within:border-violet-300 focus-within:shadow-lg focus-within:shadow-cyan-900/10 sm:flex">
                   <Search size={17} className="text-[var(--muted)]" />
                   <input
                     value={searchTerm}
@@ -3186,22 +3184,7 @@ export function MettasoulApp() {
                     </div>
                   </div>
                 </div>
-                {authStatus === "signed-in" ? (
-                  <button
-                    onClick={logout}
-                    className="h-11 rounded-2xl border border-white/80 bg-white/85 px-3 text-xs font-black text-[var(--brand-dark)] shadow-sm transition hover:border-cyan-200 hover:bg-cyan-50"
-                  >
-                    Đăng xuất
-                  </button>
-                ) : (
-                  <a
-                    href="/api/auth/google"
-                    className="ui-primary-gradient inline-flex h-11 items-center rounded-2xl px-3 text-xs font-black text-white transition"
-                  >
-                    Google Login
-                  </a>
-                )}
-                <div ref={notificationPanelRef} className="relative">
+                <div ref={notificationPanelRef} className="absolute right-0 top-0 z-30 sm:static">
                   <button
                     type="button"
                     title="Thông báo"
@@ -4229,20 +4212,20 @@ export function MettasoulApp() {
             </div>
           </div>
 
-          <div className="mb-4 grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/45 p-3 md:grid-cols-2 xl:grid-cols-7">
-            <select
-              value={calendarFilters.status}
-              onChange={(event) => setCalendarFilters((current) => ({ ...current, status: event.target.value }))}
-              className={compactInputClass}
-            >
-              <option value="all">Tất cả trạng thái</option>
-              {Object.entries(statusLabels).map(([status, label]) => (
-                <option key={status} value={status}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            {role === "admin" ? (
+          {role === "admin" ? (
+            <div className="mb-4 grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/45 p-3 md:grid-cols-2 xl:grid-cols-7">
+              <select
+                value={calendarFilters.status}
+                onChange={(event) => setCalendarFilters((current) => ({ ...current, status: event.target.value }))}
+                className={compactInputClass}
+              >
+                <option value="all">Tất cả trạng thái</option>
+                {Object.entries(statusLabels).map(([status, label]) => (
+                  <option key={status} value={status}>
+                    {label}
+                  </option>
+                ))}
+              </select>
               <select
                 value={calendarFilters.teacherId}
                 onChange={(event) => setCalendarFilters((current) => ({ ...current, teacherId: event.target.value }))}
@@ -4255,75 +4238,75 @@ export function MettasoulApp() {
                   </option>
                 ))}
               </select>
-            ) : null}
-            <select
-              value={calendarFilters.schoolId}
-              onChange={(event) => setCalendarFilters((current) => ({ ...current, schoolId: event.target.value, classId: "all" }))}
-              className={compactInputClass}
-            >
-              <option value="all">Tất cả trường</option>
-              {schools.map((school) => (
-                <option key={school.id} value={school.id}>
-                  {school.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={calendarFilters.classId}
-              onChange={(event) => setCalendarFilters((current) => ({ ...current, classId: event.target.value }))}
-              className={compactInputClass}
-            >
-              <option value="all">Tất cả lớp</option>
-              {classes
-                .filter((classRoom) => calendarFilters.schoolId === "all" || classRoom.schoolId === calendarFilters.schoolId)
-                .map((classRoom) => (
-                  <option key={classRoom.id} value={classRoom.id}>
-                    {classRoom.name}
+              <select
+                value={calendarFilters.schoolId}
+                onChange={(event) => setCalendarFilters((current) => ({ ...current, schoolId: event.target.value, classId: "all" }))}
+                className={compactInputClass}
+              >
+                <option value="all">Tất cả trường</option>
+                {schools.map((school) => (
+                  <option key={school.id} value={school.id}>
+                    {school.name}
                   </option>
                 ))}
-            </select>
-            <select
-              value={calendarFilters.timeSlotId}
-              onChange={(event) => setCalendarFilters((current) => ({ ...current, timeSlotId: event.target.value }))}
-              className={compactInputClass}
-            >
-              <option value="all">Tất cả khung giờ</option>
-              {timeSlots.map((slot) => (
-                <option key={slot.id} value={slot.id}>
-                  {slot.label} {slot.start}
-                </option>
-              ))}
-            </select>
-            <input
-              type="date"
-              value={calendarFilters.dateFrom}
-              onChange={(event) => setCalendarFilters((current) => ({ ...current, dateFrom: event.target.value }))}
-              className={compactInputClass}
-            />
-            <input
-              type="date"
-              value={calendarFilters.dateTo}
-              onChange={(event) => setCalendarFilters((current) => ({ ...current, dateTo: event.target.value }))}
-              className={compactInputClass}
-            />
-            <select
-              value={calendarFilters.sort}
-              onChange={(event) => setCalendarFilters((current) => ({ ...current, sort: event.target.value as CalendarSortMode }))}
-              className={compactInputClass}
-            >
-              <option value="date-asc">Sớm nhất trước</option>
-              <option value="date-desc">Mới nhất trước</option>
-              <option value="status">Theo trạng thái</option>
-            </select>
-            <button
-              type="button"
-              onClick={resetCalendarFilters}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50 xl:col-span-2"
-            >
-              <SlidersHorizontal size={15} />
-              Xóa lọc
-            </button>
-          </div>
+              </select>
+              <select
+                value={calendarFilters.classId}
+                onChange={(event) => setCalendarFilters((current) => ({ ...current, classId: event.target.value }))}
+                className={compactInputClass}
+              >
+                <option value="all">Tất cả lớp</option>
+                {classes
+                  .filter((classRoom) => calendarFilters.schoolId === "all" || classRoom.schoolId === calendarFilters.schoolId)
+                  .map((classRoom) => (
+                    <option key={classRoom.id} value={classRoom.id}>
+                      {classRoom.name}
+                    </option>
+                  ))}
+              </select>
+              <select
+                value={calendarFilters.timeSlotId}
+                onChange={(event) => setCalendarFilters((current) => ({ ...current, timeSlotId: event.target.value }))}
+                className={compactInputClass}
+              >
+                <option value="all">Tất cả khung giờ</option>
+                {timeSlots.map((slot) => (
+                  <option key={slot.id} value={slot.id}>
+                    {slot.label} {slot.start}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="date"
+                value={calendarFilters.dateFrom}
+                onChange={(event) => setCalendarFilters((current) => ({ ...current, dateFrom: event.target.value }))}
+                className={compactInputClass}
+              />
+              <input
+                type="date"
+                value={calendarFilters.dateTo}
+                onChange={(event) => setCalendarFilters((current) => ({ ...current, dateTo: event.target.value }))}
+                className={compactInputClass}
+              />
+              <select
+                value={calendarFilters.sort}
+                onChange={(event) => setCalendarFilters((current) => ({ ...current, sort: event.target.value as CalendarSortMode }))}
+                className={compactInputClass}
+              >
+                <option value="date-asc">Sớm nhất trước</option>
+                <option value="date-desc">Mới nhất trước</option>
+                <option value="status">Theo trạng thái</option>
+              </select>
+              <button
+                type="button"
+                onClick={resetCalendarFilters}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50 xl:col-span-2"
+              >
+                <SlidersHorizontal size={15} />
+                Xóa lọc
+              </button>
+            </div>
+          ) : null}
 
           {operationalAlerts.length > 0 ? (
             <div className="mb-4 grid gap-2 md:grid-cols-3">
@@ -5301,7 +5284,7 @@ export function MettasoulApp() {
     return (
       <Panel title="Giáo án của tôi" action={`${myPlanRows.length} file • ${pendingSchedules.length} cần nộp`}>
         <div className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2">
             <Stat
               icon={FileSpreadsheet}
               label="Giáo án đã gửi"
