@@ -262,6 +262,28 @@ button:disabled {
   backdrop-filter: blur(22px);
 }
 
+.app-modal-overlay {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--app-visual-viewport-top, 0px);
+  height: var(--app-visual-viewport-height, 100dvh);
+}
+
+.app-modal-panel {
+  display: flex;
+  max-height: calc(var(--app-visual-viewport-height, 100dvh) - 2rem);
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-modal-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .ui-notification-dot {
   animation: pulse-glow 1.8s var(--ease-smooth) infinite;
 }

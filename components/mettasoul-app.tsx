@@ -686,6 +686,28 @@ export function MettasoulApp() {
   }, []);
 
   useEffect(() => {
+    const rootStyle = document.documentElement.style;
+    const updateModalViewport = () => {
+      const viewport = window.visualViewport;
+      rootStyle.setProperty("--app-visual-viewport-top", `${viewport?.offsetTop ?? 0}px`);
+      rootStyle.setProperty("--app-visual-viewport-height", `${viewport?.height ?? window.innerHeight}px`);
+    };
+
+    updateModalViewport();
+    window.visualViewport?.addEventListener("resize", updateModalViewport);
+    window.visualViewport?.addEventListener("scroll", updateModalViewport);
+    window.addEventListener("resize", updateModalViewport);
+
+    return () => {
+      window.visualViewport?.removeEventListener("resize", updateModalViewport);
+      window.visualViewport?.removeEventListener("scroll", updateModalViewport);
+      window.removeEventListener("resize", updateModalViewport);
+      rootStyle.removeProperty("--app-visual-viewport-top");
+      rootStyle.removeProperty("--app-visual-viewport-height");
+    };
+  }, []);
+
+  useEffect(() => {
     if (!activeUsers.some((user) => user.id === currentUserId)) {
       setCurrentUserId(activeUsers[0]?.id ?? "");
     }
@@ -3363,12 +3385,9 @@ export function MettasoulApp() {
             onDismissToast={dismissToast}
           />
           {feedbackModalOpen ? (
-            <div className="fixed inset-0 z-[70] grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
-              <div
-                data-modal-scroll="true"
-                className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-3xl border border-violet-200 bg-white p-5 shadow-2xl"
-              >
-                <div className="flex items-start justify-between gap-3">
+            <div className="app-modal-overlay z-[70] grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
+              <div className="app-modal-panel w-full max-w-2xl rounded-3xl border border-violet-200 bg-white p-5 shadow-2xl">
+                <div className="flex shrink-0 items-start justify-between gap-3">
                   <div>
                     <div className="grid h-12 w-12 place-items-center rounded-2xl bg-violet-100 text-violet-700">
                       <MessageSquare size={22} />
@@ -3388,54 +3407,56 @@ export function MettasoulApp() {
                   </button>
                 </div>
 
-                <div className="mt-5 grid gap-3">
-                  <input
-                    value={feedbackDraft.upgradeTarget}
-                    onChange={(event) => setFeedbackDraft((current) => ({ ...current, upgradeTarget: event.target.value }))}
-                    placeholder="Cập nhật/nâng cấp tính năng nào?"
-                    className={inputClass}
-                  />
-                  <div className="grid gap-2">
-                    <select
-                      value={feedbackDraft.menuName}
-                      onChange={(event) => setFeedbackDraft((current) => ({ ...current, menuName: event.target.value }))}
+                <div data-modal-scroll="true" className="app-scrollbar app-modal-scroll mt-5 -mx-1 px-1">
+                  <div className="grid gap-3">
+                    <input
+                      value={feedbackDraft.upgradeTarget}
+                      onChange={(event) => setFeedbackDraft((current) => ({ ...current, upgradeTarget: event.target.value }))}
+                      placeholder="Cập nhật/nâng cấp tính năng nào?"
                       className={inputClass}
-                    >
-                      <option value="">Chọn menu/phân hệ</option>
-                      {feedbackMenuSuggestions.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs font-bold text-[var(--muted)]">Bạn cũng có thể chọn menu gần nhất với nghiệp vụ cần nâng cấp.</p>
-                  </div>
-                  <textarea
-                    value={feedbackDraft.desiredFlow}
-                    onChange={(event) => setFeedbackDraft((current) => ({ ...current, desiredFlow: event.target.value }))}
-                    placeholder="Quy trình mong muốn (ví dụ: bấm A ra B, bấm B ra C)."
-                    rows={5}
-                    className={`${inputClass} resize-y`}
-                  />
-                </div>
-
-                <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50/65 p-3">
-                  <p className="text-xs font-black uppercase text-violet-800">Gợi ý điền nhanh</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {feedbackFlowExamples.map((example) => (
-                      <button
-                        key={example}
-                        type="button"
-                        onClick={() => setFeedbackDraft((current) => ({ ...current, desiredFlow: example }))}
-                        className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-left text-xs font-bold text-violet-800 transition hover:bg-violet-100"
+                    />
+                    <div className="grid gap-2">
+                      <select
+                        value={feedbackDraft.menuName}
+                        onChange={(event) => setFeedbackDraft((current) => ({ ...current, menuName: event.target.value }))}
+                        className={inputClass}
                       >
-                        {example}
-                      </button>
-                    ))}
+                        <option value="">Chọn menu/phân hệ</option>
+                        {feedbackMenuSuggestions.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs font-bold text-[var(--muted)]">Bạn cũng có thể chọn menu gần nhất với nghiệp vụ cần nâng cấp.</p>
+                    </div>
+                    <textarea
+                      value={feedbackDraft.desiredFlow}
+                      onChange={(event) => setFeedbackDraft((current) => ({ ...current, desiredFlow: event.target.value }))}
+                      placeholder="Quy trình mong muốn (ví dụ: bấm A ra B, bấm B ra C)."
+                      rows={5}
+                      className={`${inputClass} resize-y`}
+                    />
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50/65 p-3">
+                    <p className="text-xs font-black uppercase text-violet-800">Gợi ý điền nhanh</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {feedbackFlowExamples.map((example) => (
+                        <button
+                          key={example}
+                          type="button"
+                          onClick={() => setFeedbackDraft((current) => ({ ...current, desiredFlow: example }))}
+                          className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-left text-xs font-bold text-violet-800 transition hover:bg-violet-100"
+                        >
+                          {example}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-5 flex justify-end gap-2">
+                <div className="mt-5 flex shrink-0 justify-end gap-2">
                   <button
                     type="button"
                     onClick={() => setFeedbackModalOpen(false)}
@@ -3705,11 +3726,8 @@ export function MettasoulApp() {
             </div>
           ) : null}
           {selectedScheduleDetail ? (
-            <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
-              <div
-                data-modal-scroll="true"
-                className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100"
-              >
+            <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
+              <div className="app-modal-panel w-full max-w-3xl rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
                 {(() => {
                   const meta = lookupSchedule(selectedScheduleDetail);
                   const detailCards = [
@@ -3746,7 +3764,7 @@ export function MettasoulApp() {
                   ] as const;
                   return (
                     <>
-                      <div className="flex items-start justify-between gap-4">
+                      <div className="flex shrink-0 items-start justify-between gap-4">
                         <div>
                           <div className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-50 text-[var(--accent)]">
                             <CalendarDays size={22} />
@@ -3765,41 +3783,43 @@ export function MettasoulApp() {
                         </button>
                       </div>
 
-                      <div className="mt-5 grid gap-3 md:grid-cols-2">
-                        {detailCards.map((card) => (
-                          <InfoBlock key={card.label} label={card.label} value={card.value} tone={card.tone} />
-                        ))}
-                      </div>
-
-                      <div className="mt-5 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-4">
-                        <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Mục tiêu bài học</p>
-                        <div className="mt-3 space-y-2">
-                          {splitObjectiveLines(meta.lesson?.objective || "").map((line, index) => (
-                            <div key={`${line}-${index}`} className="rounded-xl border border-orange-100 bg-white px-3 py-2 text-sm font-bold leading-6 text-[var(--brand-dark)] shadow-sm">
-                              {line}
-                            </div>
+                      <div data-modal-scroll="true" className="app-scrollbar app-modal-scroll mt-5 -mx-1 px-1">
+                        <div className="grid gap-3 md:grid-cols-2">
+                          {detailCards.map((card) => (
+                            <InfoBlock key={card.label} label={card.label} value={card.value} tone={card.tone} />
                           ))}
                         </div>
-                      </div>
 
-                      {meta.plans.length > 0 ? (
-                        <div className="mt-5 rounded-2xl border border-[var(--line)] bg-white p-4">
-                          <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Giáo án đã tải</p>
-                          <div className="mt-3 grid gap-2">
-                            {meta.plans.map((plan) => (
-                              <a
-                                key={plan.id}
-                                href={plan.driveUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="rounded-xl bg-cyan-50 px-3 py-2 text-sm font-black text-[var(--brand-dark)]"
-                              >
-                                {plan.fileName}
-                              </a>
+                        <div className="mt-5 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-4">
+                          <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Mục tiêu bài học</p>
+                          <div className="mt-3 space-y-2">
+                            {splitObjectiveLines(meta.lesson?.objective || "").map((line, index) => (
+                              <div key={`${line}-${index}`} className="rounded-xl border border-orange-100 bg-white px-3 py-2 text-sm font-bold leading-6 text-[var(--brand-dark)] shadow-sm">
+                                {line}
+                              </div>
                             ))}
                           </div>
                         </div>
-                      ) : null}
+
+                        {meta.plans.length > 0 ? (
+                          <div className="mt-5 rounded-2xl border border-[var(--line)] bg-white p-4">
+                            <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Giáo án đã tải</p>
+                            <div className="mt-3 grid gap-2">
+                              {meta.plans.map((plan) => (
+                                <a
+                                  key={plan.id}
+                                  href={plan.driveUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="rounded-xl bg-cyan-50 px-3 py-2 text-sm font-black text-[var(--brand-dark)]"
+                                >
+                                  {plan.fileName}
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
                     </>
                   );
                 })()}
