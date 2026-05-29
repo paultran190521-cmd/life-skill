@@ -3,39 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hướng dẫn sử dụng - HỌC VIỆN METTASOUL Scheduler</title>
-    <meta
-      name="description"
-      content="Tài liệu hướng dẫn vận hành chi tiết theo từng menu/phân hệ cho Admin và Giáo viên."
-    />
+    <title>Hướng dẫn sử dụng - METTASOUL</title>
+    <meta name="description" content="Hướng dẫn sử dụng chi tiết METTASOUL theo từng tính năng cho Admin và Giáo viên." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <style>
       :root {
-        --bg: #f3f8fb;
         --panel: #ffffff;
         --line: #d9e6ef;
         --text: #163852;
         --muted: #567287;
-        --brand: #0aa5b6;
-        --brand-2: #1c6fd1;
-        --accent: #f69d1e;
+        --brand: #20b0b0;
+        --brand-dark: #004050;
+        --accent: #e0a020;
         --ok: #0f9b71;
         --shadow: 0 18px 36px rgba(20, 59, 87, 0.09);
       }
 
-      * {
-        box-sizing: border-box;
-      }
-
-      html,
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
       body {
         margin: 0;
-        padding: 0;
         font-family: "Quicksand", "Segoe UI", sans-serif;
         color: var(--text);
         background:
@@ -44,597 +33,240 @@
           linear-gradient(180deg, #f7fbfe 0%, #eff7fb 100%);
       }
 
-      .scrollbar::-webkit-scrollbar {
-        width: 8px;
-      }
-
-      .scrollbar::-webkit-scrollbar-thumb {
-        background: #c7dce9;
-        border-radius: 999px;
-      }
-
-      .page {
-        max-width: 1420px;
-        margin: 0 auto;
-        padding: 18px 16px 48px;
-      }
-
+      .page { max-width: 1420px; margin: 0 auto; padding: 18px 16px 48px; }
       .topbar {
         display: grid;
-        grid-template-columns: 220px 1fr 340px;
+        grid-template-columns: 270px 1fr 240px;
         gap: 16px;
         align-items: center;
-        background: rgba(255, 255, 255, 0.9);
         border: 1px solid var(--line);
         border-radius: 18px;
-        padding: 14px 16px;
+        background: rgba(255, 255, 255, 0.92);
         box-shadow: var(--shadow);
-        backdrop-filter: blur(8px);
+        padding: 14px 16px;
       }
 
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-weight: 800;
+      .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; }
+      .brand img {
+        width: 58px;
+        height: 58px;
+        object-fit: cover;
+        border: 1px solid #bfe4ea;
+        border-radius: 16px;
+        background: #fff;
       }
-
-      .brand-mark {
-        width: 54px;
-        height: 40px;
-      }
-
-      .brand-text {
-        line-height: 1.1;
-        font-size: 15px;
-        letter-spacing: 0.02em;
-        color: #0f6e84;
-      }
-
-      .brand-text strong {
-        display: block;
-        font-size: 30px;
-        color: #0f9db1;
-      }
+      .brand-text { color: #0f6e84; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.08; }
+      .brand-text strong { display: block; color: var(--brand-dark); font-size: 28px; }
+      .brand-text span { display: block; margin-top: 2px; color: var(--accent); font-size: 12px; letter-spacing: 0; text-transform: none; }
 
       .search {
         display: flex;
         align-items: center;
         gap: 10px;
-        background: #f7fbff;
         border: 1px solid #d3e4f1;
         border-radius: 14px;
+        background: #f7fbff;
         padding: 11px 14px;
-        color: #6a8597;
       }
-
-      .search input {
-        flex: 1;
-        border: none;
-        background: transparent;
-        outline: none;
-        font: inherit;
-        color: var(--text);
-      }
-
-      .search kbd {
-        border: 1px solid #bfd6e6;
-        border-bottom-width: 2px;
-        border-radius: 8px;
-        padding: 3px 8px;
-        font-size: 12px;
-        color: #4f6f85;
-      }
-
-      .top-actions {
-        display: flex;
-        justify-content: flex-end;
-        align-items: center;
-        gap: 14px;
-      }
-
-      .lang {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        color: #3f6178;
-        font-weight: 700;
-      }
-
+      .search input { flex: 1; border: 0; background: transparent; outline: 0; color: var(--text); font: inherit; }
+      .search kbd { border: 1px solid #bfd6e6; border-bottom-width: 2px; border-radius: 8px; padding: 3px 8px; color: #4f6f85; font-size: 12px; }
       .btn-home {
+        justify-self: end;
         border: 1px solid #76cad4;
+        border-radius: 12px;
         background: #eefbfd;
         color: #0f7285;
-        border-radius: 12px;
         padding: 10px 14px;
         font-weight: 800;
         text-decoration: none;
       }
 
-      .layout {
-        margin-top: 14px;
-        display: grid;
-        grid-template-columns: 290px 1fr;
-        gap: 14px;
-      }
-
+      .layout { display: grid; grid-template-columns: 300px 1fr; gap: 14px; margin-top: 14px; }
       .sidebar {
+        position: sticky;
+        top: 14px;
+        align-self: start;
+        max-height: calc(100dvh - 28px);
+        overflow: auto;
         border: 1px solid var(--line);
         border-radius: 16px;
         background: var(--panel);
         box-shadow: var(--shadow);
         padding: 14px;
-        align-self: start;
-        position: sticky;
-        top: 14px;
       }
+      .side-title { margin: 4px 0 12px; color: #3a5f77; font-size: 22px; letter-spacing: 0.08em; }
+      .menu { display: grid; gap: 4px; }
+      .menu a { border-radius: 10px; color: #214f6d; font-weight: 700; padding: 9px 10px; text-decoration: none; }
+      .menu a:hover { background: #eff8ff; }
+      .menu a.active { background: linear-gradient(90deg, var(--accent), var(--brand)); color: #fff; }
+      .support { margin-top: 14px; border: 1px solid #d3e5f1; border-radius: 12px; background: #f8fcff; padding: 12px; }
+      .support h4 { margin: 0; }
+      .support p { color: var(--muted); font-size: 14px; line-height: 1.5; }
 
-      .side-title {
-        margin: 4px 0 12px;
-        font-size: 25px;
-        color: #3a5f77;
-        letter-spacing: 0.08em;
-      }
-
-      .menu {
-        display: grid;
-        gap: 4px;
-      }
-
-      .menu a {
-        text-decoration: none;
-        color: #214f6d;
-        font-weight: 700;
-        padding: 9px 10px;
-        border-radius: 10px;
-        transition: 0.2s ease;
-      }
-
-      .menu a:hover {
-        background: #eff8ff;
-      }
-
-      .menu a.active {
-        background: linear-gradient(90deg, #10a9b9, #0c86b2);
-        color: #ffffff;
-      }
-
-      .support {
-        margin-top: 14px;
-        border: 1px solid #d3e5f1;
-        border-radius: 12px;
-        padding: 12px;
-        background: #f8fcff;
-      }
-
-      .support h4 {
-        margin: 0;
-        font-size: 16px;
-      }
-
-      .support p {
-        margin: 6px 0 10px;
-        color: var(--muted);
-        font-size: 14px;
-      }
-
-      .support a {
-        display: inline-block;
-        text-decoration: none;
-        border-radius: 10px;
-        background: #e8f7ff;
-        border: 1px solid #b7dceb;
-        color: #19658b;
-        padding: 8px 12px;
-        font-weight: 800;
-      }
-
-      .content {
-        display: grid;
-        gap: 14px;
-      }
-
+      .content { display: grid; gap: 14px; }
       .hero {
-        border: 1px solid #bfe2f2;
-        border-radius: 18px;
-        background:
-          linear-gradient(120deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.9)),
-          linear-gradient(135deg, #ddf5ff 0%, #f2faff 56%, #e7f3ff 100%);
-        box-shadow: var(--shadow);
-        padding: 24px;
         display: grid;
-        grid-template-columns: 1fr 420px;
-        gap: 16px;
-        align-items: center;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 18px;
+        min-height: 330px;
+        overflow: hidden;
+        border: 1px solid #cfe2ef;
+        border-radius: 24px;
+        background:
+          radial-gradient(circle at 95% 10%, rgba(255, 196, 0, 0.26), transparent 28%),
+          linear-gradient(135deg, #ffffff 0%, #edfaff 52%, #fff6e4 100%);
+        box-shadow: var(--shadow);
+        padding: 34px;
       }
-
       .hero-badge {
         display: inline-flex;
         border-radius: 999px;
-        border: 1px solid #95d6e8;
-        background: #edfbff;
-        color: #137f9a;
+        background: #fff4dd;
+        color: #a45d00;
+        padding: 8px 12px;
+        font-size: 13px;
         font-weight: 800;
-        padding: 7px 14px;
-        font-size: 13px;
-        margin-bottom: 12px;
+        letter-spacing: 0.08em;
       }
+      .hero h1 { margin: 18px 0 12px; color: var(--brand-dark); font-size: clamp(42px, 6vw, 82px); line-height: 0.92; }
+      .hero h1 span { color: var(--accent); }
+      .hero p, .desc { color: var(--muted); font-size: 19px; line-height: 1.6; }
+      .hero-kpis, .grid-4, .grid-3, .grid-2, .flow { display: grid; gap: 10px; margin-top: 12px; }
+      .hero-kpis { grid-template-columns: repeat(3, 1fr); margin-top: 24px; }
+      .grid-4 { grid-template-columns: repeat(4, 1fr); }
+      .grid-3 { grid-template-columns: repeat(3, 1fr); }
+      .grid-2 { grid-template-columns: repeat(2, 1fr); }
+      .flow { grid-template-columns: repeat(4, 1fr); }
 
-      .hero h1 {
-        margin: 0;
-        line-height: 1.1;
-        font-size: clamp(32px, 4vw, 56px);
-      }
-
-      .hero h1 span {
-        color: #0f9eb1;
-      }
-
-      .hero p {
-        margin: 12px 0 0;
-        color: var(--muted);
-        line-height: 1.6;
-        font-size: 20px;
-      }
-
-      .hero-kpis {
-        margin-top: 16px;
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .kpi {
-        border: 1px solid #d0e5f2;
-        border-radius: 12px;
-        background: #ffffff;
-        padding: 10px;
-      }
-
-      .kpi strong {
-        display: block;
-        font-size: 14px;
-      }
-
-      .kpi span {
-        color: var(--muted);
-        font-size: 13px;
-      }
-
-      .hero-visual {
-        position: relative;
-        min-height: 280px;
-      }
-
-      .tablet {
-        position: absolute;
-        inset: 0 10px 0 30px;
-        border-radius: 22px;
-        background: linear-gradient(145deg, #ffffff, #e8f4ff);
-        border: 1px solid #b8d8ea;
-        box-shadow: 0 20px 36px rgba(25, 89, 132, 0.16);
-        padding: 14px;
-        display: grid;
-        grid-template-columns: 82px 1fr;
-        gap: 10px;
-        transform: perspective(1000px) rotateY(-11deg);
-      }
-
-      .tablet-side {
+      .kpi, .card, .flow-card, .step-card, .checklist {
+        border: 1px solid #d5e6f2;
         border-radius: 14px;
-        background: linear-gradient(180deg, #0b6092, #0f8ab8);
+        background: #fbfeff;
+        padding: 12px;
       }
-
-      .tablet-main {
-        border-radius: 14px;
-        background: #f4f9ff;
-        border: 1px solid #d2e5f2;
-        padding: 10px;
-        display: grid;
-        gap: 8px;
-      }
-
-      .row {
-        height: 12px;
-        border-radius: 999px;
-        background: #dbe9f4;
-      }
-
-      .row.c1 {
-        width: 92%;
-      }
-
-      .row.c2 {
-        width: 74%;
-        background: #85d9ef;
-      }
-
-      .row.c3 {
-        width: 63%;
-        background: #facd8a;
-      }
-
-      .row.c4 {
-        width: 80%;
-        background: #95e5c9;
-      }
-
-      .float-ico {
-        position: absolute;
-        border-radius: 999px;
-        background: #ffffff;
-        border: 1px solid #c4deef;
-        box-shadow: 0 8px 16px rgba(21, 72, 106, 0.16);
-        width: 44px;
-        height: 44px;
+      .kpi strong, .card h4, .flow-card h4, .step-card h4, .checklist strong { color: var(--brand-dark); }
+      .kpi strong { display: block; font-size: 18px; }
+      .kpi span, .card p, .flow-card p, .step-card p { color: var(--muted); line-height: 1.55; }
+      .card h3 { margin: 8px 0 0; font-size: 24px; }
+      .card h4 { margin: 0; font-size: 19px; }
+      .iconbox {
         display: grid;
         place-items: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        background: #ebf8ff;
         font-size: 20px;
       }
 
-      .f1 {
-        right: 2px;
-        top: 8px;
+      .hero-visual { position: relative; min-height: 280px; }
+      .tablet {
+        position: absolute;
+        inset: 14px 16px 18px 26px;
+        display: grid;
+        grid-template-columns: 80px 1fr;
+        gap: 18px;
+        border: 1px solid #c4deef;
+        border-radius: 34px;
+        background: #fff;
+        box-shadow: 0 24px 48px rgba(24, 74, 108, 0.15);
+        padding: 24px;
       }
-
-      .f2 {
-        right: -4px;
-        bottom: 12px;
+      .tablet-side { border-radius: 20px; background: linear-gradient(180deg, var(--accent), var(--brand)); }
+      .tablet-main { display: grid; align-content: center; gap: 12px; }
+      .row { height: 18px; border-radius: 999px; background: #d9edf6; }
+      .row.c1 { width: 84%; }
+      .row.c2 { width: 52%; background: #b9f1e8; }
+      .row.c3 { width: 63%; background: #facd8a; }
+      .row.c4 { width: 80%; background: #95e5c9; }
+      .float-ico {
+        position: absolute;
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        border: 1px solid #c4deef;
+        border-radius: 999px;
+        background: #fff;
+        box-shadow: 0 8px 16px rgba(21, 72, 106, 0.16);
+        font-size: 20px;
       }
+      .f1 { right: 2px; top: 8px; }
+      .f2 { right: -4px; bottom: 12px; }
 
       .section {
+        scroll-margin-top: 18px;
         border: 1px solid var(--line);
         border-radius: 16px;
         background: var(--panel);
         box-shadow: var(--shadow);
         padding: 16px;
       }
-
-      .section-head {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 6px;
-      }
-
+      .section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
       .num {
+        display: grid;
+        place-items: center;
         width: 34px;
         height: 34px;
         border-radius: 10px;
-        background: linear-gradient(135deg, #109fba, #0f83b2);
+        background: linear-gradient(135deg, var(--accent), var(--brand));
         color: #fff;
-        display: grid;
-        place-items: center;
         font-weight: 800;
       }
-
-      h2 {
-        margin: 0;
-        font-size: clamp(22px, 3vw, 34px);
-      }
-
-      .desc {
-        margin: 0;
-        color: var(--muted);
-        line-height: 1.6;
-        font-size: 20px;
-      }
-
-      .grid-4 {
-        margin-top: 12px;
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .grid-2 {
-        margin-top: 12px;
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .card {
-        border: 1px solid #d5e6f2;
-        border-radius: 14px;
-        background: #fbfeff;
-        padding: 12px;
-      }
-
-      .card h3 {
-        margin: 8px 0 0;
-        font-size: 24px;
-      }
-
-      .card h4 {
-        margin: 0;
-        font-size: 19px;
-      }
-
-      .card p {
-        margin: 6px 0 0;
-        color: var(--muted);
-        line-height: 1.55;
-        font-size: 17px;
-      }
-
-      .iconbox {
-        width: 42px;
-        height: 42px;
-        border-radius: 10px;
+      h2 { margin: 0; font-size: clamp(22px, 3vw, 34px); }
+      .flow-n, .step-no {
         display: grid;
         place-items: center;
-        background: #ebf8ff;
-        font-size: 20px;
-      }
-
-      .goal {
-        margin-top: 12px;
-        border: 1px solid #d6e6f1;
-        border-radius: 12px;
-        padding: 10px 12px;
-        background: #f8fdff;
-        color: #43647b;
-      }
-
-      .goal strong {
-        color: #e08800;
-      }
-
-      .flow {
-        margin-top: 12px;
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 8px;
-      }
-
-      .flow-card {
-        border: 1px solid #d5e6f2;
-        border-radius: 14px;
-        background: #fbfeff;
-        padding: 12px;
-        min-height: 136px;
-      }
-
-      .flow-n {
-        width: 32px;
-        height: 32px;
-        border-radius: 999px;
         background: #0fa2ba;
         color: #fff;
-        display: grid;
-        place-items: center;
         font-weight: 800;
-        margin-bottom: 8px;
       }
-
-      .flow-card h4 {
-        margin: 0;
-        font-size: 20px;
-      }
-
-      .flow-card p {
-        margin: 5px 0 0;
-        color: var(--muted);
-        line-height: 1.45;
-        font-size: 17px;
-      }
-
-      .hint {
-        margin-top: 10px;
+      .flow-n { width: 32px; height: 32px; border-radius: 999px; margin-bottom: 8px; }
+      .step-card { display: grid; grid-template-columns: 44px 1fr; gap: 12px; margin-top: 10px; }
+      .step-no { width: 38px; height: 38px; border-radius: 12px; background: #fff1d5; color: #a15b00; }
+      .hint, .warning, .goal {
+        margin-top: 12px;
         border-radius: 12px;
-        border: 1px solid #bfe0eb;
-        background: #edfaff;
         padding: 10px 12px;
-        color: #2f6784;
+        line-height: 1.55;
       }
-
-      ul {
-        margin: 7px 0 0;
-        padding-left: 18px;
-      }
-
-      li {
-        color: #3c6077;
-        line-height: 1.5;
-        margin: 4px 0;
-        font-size: 16px;
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 12px;
-      }
-
-      th,
-      td {
-        border: 1px solid #d4e4ef;
-        padding: 9px;
-        text-align: left;
-        font-size: 16px;
-        vertical-align: top;
-      }
-
-      th {
-        background: #eaf6ff;
-        color: #195f85;
-      }
-
-      .checklist {
-        margin-top: 12px;
-        border-radius: 14px;
-        border: 1px solid #c8e0ef;
-        background: linear-gradient(145deg, #f6fcff, #eef8fe);
-        padding: 14px;
-      }
-
-      .checks {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 8px;
-        margin-top: 10px;
-      }
-
-      .check {
-        text-align: center;
-        font-size: 14px;
-        color: #46657b;
-      }
-
-      .check span {
-        display: block;
-        font-size: 24px;
-        color: var(--ok);
-      }
-
-      .footer {
-        margin-top: 12px;
-        text-align: center;
-        color: #5a788c;
+      .hint { border: 1px solid #bfe0eb; background: #edfaff; color: #2f6784; }
+      .warning { border: 1px solid #ffd9a6; background: #fff7e9; color: #8b4b00; }
+      .goal { border: 1px solid #d6e6f1; background: #f8fdff; color: #43647b; }
+      .tag-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+      .tag {
+        border: 1px solid #cce9ef;
+        border-radius: 999px;
+        background: #edfaff;
+        color: #0f7285;
         font-size: 13px;
+        font-weight: 800;
+        padding: 5px 10px;
+      }
+      ul { margin: 7px 0 0; padding-left: 18px; }
+      li { color: #3c6077; line-height: 1.5; margin: 4px 0; font-size: 16px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+      th, td { border: 1px solid #d4e4ef; padding: 9px; text-align: left; vertical-align: top; font-size: 16px; }
+      th { background: #eaf6ff; color: #174b68; }
+      .checks { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; }
+      .check { display: flex; gap: 8px; color: #3c6077; }
+      .check span { color: var(--ok); font-weight: 800; }
+      .footer { text-align: center; color: #7890a2; font-weight: 700; }
+
+      @media (max-width: 1100px) {
+        .topbar, .layout, .hero { grid-template-columns: 1fr; }
+        .sidebar { position: static; max-height: none; }
+        .grid-4, .grid-3, .flow, .hero-kpis { grid-template-columns: repeat(2, 1fr); }
+        .btn-home { justify-self: start; }
       }
 
-      @media (max-width: 1200px) {
-        .topbar {
-          grid-template-columns: 1fr;
-        }
-
-        .layout {
-          grid-template-columns: 1fr;
-        }
-
-        .sidebar {
-          position: relative;
-          top: 0;
-        }
-
-        .hero {
-          grid-template-columns: 1fr;
-        }
-
-        .hero-visual {
-          min-height: 220px;
-        }
-      }
-
-      @media (max-width: 900px) {
-        .grid-4,
-        .flow,
-        .checks,
-        .grid-2 {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-      }
-
-      @media (max-width: 640px) {
-        .grid-4,
-        .flow,
-        .checks,
-        .hero-kpis,
-        .grid-2 {
-          grid-template-columns: 1fr;
-        }
+      @media (max-width: 720px) {
+        .page { padding: 10px 10px 32px; }
+        .topbar, .hero { padding: 12px; }
+        .hero-visual { display: none; }
+        .grid-4, .grid-3, .grid-2, .flow, .hero-kpis, .checks { grid-template-columns: 1fr; }
+        .step-card { grid-template-columns: 1fr; }
+        .search kbd { display: none; }
       }
     </style>
   </head>
@@ -642,404 +274,327 @@
     <div class="page">
       <header class="topbar">
         <div class="brand">
-          <svg class="brand-mark" viewBox="0 0 80 60" fill="none" aria-hidden="true">
-            <path d="M40 54C40 36 52 24 70 20C66 34 56 47 40 54Z" fill="#0FA5B6" />
-            <path d="M40 54C40 31 28 18 10 12C14 31 24 45 40 54Z" fill="#22B7A9" />
-            <path d="M40 54C40 24 40 12 40 6C48 16 52 28 51 41" stroke="#0B8CAB" stroke-width="3" stroke-linecap="round" />
-          </svg>
-          <div class="brand-text">HỌC VIỆN<strong>METTASOUL</strong></div>
+          <img src="../mettasoul-logo.png" alt="METTASOUL" />
+          <div class="brand-text">METTASOUL<strong>Guide</strong><span>Education with love</span></div>
         </div>
-
         <label class="search">
           <span>🔍</span>
           <input type="text" placeholder="Tìm kiếm trong tài liệu..." />
           <kbd>Ctrl + K</kbd>
         </label>
-
-        <div class="top-actions">
-          <div class="lang">🌐 Tiếng Việt ▾</div>
-          <a class="btn-home" href="#">🏠 Trang chủ</a>
-        </div>
+        <a class="btn-home" href="/">🏠 Về app</a>
       </header>
 
       <div class="layout">
-        <aside class="sidebar scrollbar">
+        <aside class="sidebar">
           <h3 class="side-title">MỤC LỤC</h3>
           <nav class="menu">
             <a class="active" href="#tong-quan">1. Tổng quan</a>
             <a href="#quy-trinh">2. Quy trình vận hành</a>
-            <a href="#phan-he">3. Hướng dẫn chi tiết</a>
-            <a href="#quyen">4. Vai trò & quyền hạn</a>
-            <a href="#best">5. Best Practices</a>
-            <a href="#faq">6. Câu hỏi thường gặp</a>
-            <a href="#glossary">7. Glossary</a>
+            <a href="#giao-vien">3. Giáo viên sử dụng</a>
+            <a href="#admin">4. Admin/Giáo vụ sử dụng</a>
+            <a href="#phan-he">5. Hướng dẫn theo menu</a>
+            <a href="#quyen">6. Vai trò & quyền hạn</a>
+            <a href="#test">7. Checklist kiểm tra</a>
+            <a href="#faq">8. Câu hỏi thường gặp</a>
+            <a href="#glossary">9. Glossary</a>
           </nav>
-
           <div class="support">
             <h4>Cần hỗ trợ?</h4>
-            <p>Đội ngũ Metta luôn sẵn sàng đồng hành cùng bạn trong quá trình vận hành.</p>
-            <a href="#">Liên hệ hỗ trợ →</a>
+            <p>Khi gặp lỗi, hãy chụp màn hình, ghi thời điểm thao tác và gửi kèm tài khoản đang đăng nhập.</p>
           </div>
         </aside>
 
         <main class="content">
           <section class="hero">
             <div>
-              <span class="hero-badge">HƯỚNG DẪN VẬN HÀNH</span>
-              <h1>HỌC VIỆN METTASOUL<br /><span>Scheduler</span></h1>
-              <p>Nền tảng lập lịch và điều phối công việc hiệu quả, minh bạch và tối ưu cho Học viện.</p>
+              <span class="hero-badge">HƯỚNG DẪN SỬ DỤNG CHI TIẾT</span>
+              <h1>METTASOUL<br /><span>Education with love</span></h1>
+              <p>Tài liệu hướng dẫn từng bước sử dụng các chức năng chính: lịch dạy, giao lịch, giáo án, điểm danh, thông báo, feedback, phân quyền và kiểm tra vận hành.</p>
               <div class="hero-kpis">
-                <div class="kpi"><strong>Hiệu quả</strong><span>Tối ưu thời gian</span></div>
-                <div class="kpi"><strong>Minh bạch</strong><span>Rõ ràng, dễ theo dõi</span></div>
-                <div class="kpi"><strong>Kết nối</strong><span>Đồng bộ & thông suốt</span></div>
+                <div class="kpi"><strong>Đúng người</strong><span>Phân quyền theo vai trò</span></div>
+                <div class="kpi"><strong>Đúng lịch</strong><span>Chống trùng khi giao lịch</span></div>
+                <div class="kpi"><strong>Dễ dùng</strong><span>Tối ưu cho điện thoại</span></div>
               </div>
             </div>
-
             <div class="hero-visual">
               <div class="tablet">
                 <div class="tablet-side"></div>
                 <div class="tablet-main">
-                  <div class="row c1"></div>
-                  <div class="row c2"></div>
-                  <div class="row c3"></div>
-                  <div class="row c4"></div>
-                  <div class="row c1"></div>
-                  <div class="row c3"></div>
+                  <div class="row c1"></div><div class="row c2"></div><div class="row c3"></div><div class="row c4"></div><div class="row c1"></div>
                 </div>
               </div>
               <div class="float-ico f1">🔔</div>
-              <div class="float-ico f2">🕒</div>
+              <div class="float-ico f2">📅</div>
             </div>
           </section>
 
           <section class="section" id="tong-quan">
-            <div class="section-head">
-              <span class="num">1</span>
-              <h2>TỔNG QUAN</h2>
-            </div>
-            <p class="desc">
-              Scheduler giúp Admin điều hành lịch dạy theo quy trình thống nhất: tạo lịch, phân công, xác nhận, theo dõi
-              giáo án, điểm danh và tổng hợp báo cáo vận hành.
-            </p>
-
+            <div class="section-head"><span class="num">1</span><h2>TỔNG QUAN</h2></div>
+            <p class="desc">METTASOUL giúp đội vận hành quản lý một lịch dạy từ lúc tạo lịch đến khi giáo viên xác nhận, nộp giáo án, điểm danh và Admin theo dõi kết quả cuối ngày.</p>
             <div class="grid-4">
-              <article class="card">
-                <div class="iconbox">📅</div>
-                <h3>Lập kế hoạch</h3>
-                <p>Tạo lịch theo ngày/tuần và chuẩn hóa dữ liệu trường - lớp - bài học - khung giờ.</p>
-              </article>
-              <article class="card">
-                <div class="iconbox">👥</div>
-                <h3>Phân công</h3>
-                <p>Giao lịch cho nhiều giáo viên, kiểm tra trước khi gửi hàng loạt.</p>
-              </article>
-              <article class="card">
-                <div class="iconbox">🔔</div>
-                <h3>Nhắc việc</h3>
-                <p>Theo dõi xác nhận lịch, điểm danh và các lịch còn tồn đọng theo ngày.</p>
-              </article>
-              <article class="card">
-                <div class="iconbox">📈</div>
-                <h3>Báo cáo</h3>
-                <p>Đọc nhanh trạng thái vận hành qua dashboard và cảnh báo bất thường.</p>
-              </article>
+              <article class="card"><div class="iconbox">📅</div><h3>Lịch dạy</h3><p>Giáo viên xem lịch của mình; Admin xem lịch tổng toàn hệ thống.</p></article>
+              <article class="card"><div class="iconbox">🧭</div><h3>Giao lịch</h3><p>Admin tạo lịch, kiểm tra xung đột và gửi cho giáo viên.</p></article>
+              <article class="card"><div class="iconbox">📄</div><h3>Giáo án</h3><p>Giáo viên nộp file hoặc link giáo án theo từng lịch.</p></article>
+              <article class="card"><div class="iconbox">✅</div><h3>Điểm danh</h3><p>Ghi nhận giáo viên đã thực hiện tiết dạy theo khung giờ.</p></article>
             </div>
-
-            <div class="goal">
-              <strong>⭐ Mục tiêu điều hành:</strong> Mỗi lịch dạy đều có người phụ trách rõ ràng, được xác nhận đúng hạn,
-              có giáo án đầy đủ và điểm danh đúng quy tắc.
-            </div>
+            <div class="goal"><strong>Mục tiêu vận hành:</strong> mỗi lịch dạy phải có người phụ trách rõ ràng, đúng thời gian, đúng lớp, có giáo án khi cần và được điểm danh sau khi dạy.</div>
           </section>
 
           <section class="section" id="quy-trinh">
-            <div class="section-head">
-              <span class="num">2</span>
-              <h2>QUY TRÌNH VẬN HÀNH (TỔNG QUAN)</h2>
-            </div>
-
+            <div class="section-head"><span class="num">2</span><h2>QUY TRÌNH VẬN HÀNH CHUẨN</h2></div>
             <div class="flow">
-              <article class="flow-card">
-                <div class="flow-n">1</div>
-                <h4>Tạo lịch</h4>
-                <p>Admin tạo lịch theo nhu cầu tuần và chuẩn hóa đầu vào trước khi gửi.</p>
+              <article class="flow-card"><div class="flow-n">1</div><h4>Admin tạo lịch</h4><p>Chọn ngày, trường, lớp, khung giờ, bài học, môi trường dạy và giáo viên.</p></article>
+              <article class="flow-card"><div class="flow-n" style="background:#e0a020;">2</div><h4>Kiểm tra & gửi</h4><p>Xem preview, xử lý cảnh báo trùng lịch rồi gửi lịch cho giáo viên.</p></article>
+              <article class="flow-card"><div class="flow-n">3</div><h4>Giáo viên thực hiện</h4><p>Xác nhận lịch, nộp giáo án nếu cần và điểm danh đúng thời gian.</p></article>
+              <article class="flow-card"><div class="flow-n" style="background:#e0a020;">4</div><h4>Admin theo dõi</h4><p>Kiểm tra lịch chưa xác nhận, thiếu giáo án, chưa điểm danh và cảnh báo vận hành.</p></article>
+            </div>
+            <div class="hint">Gợi ý nhịp vận hành: sáng kiểm lịch mới, trưa kiểm xác nhận, chiều kiểm giáo án/điểm danh, cuối ngày chốt các lịch còn tồn.</div>
+          </section>
+
+          <section class="section" id="giao-vien">
+            <div class="section-head"><span class="num">3</span><h2>GIÁO VIÊN SỬ DỤNG NHƯ THẾ NÀO?</h2></div>
+            <p class="desc">Trên điện thoại, giáo viên được đưa thẳng vào Lịch của tôi/Lịch dạy. Giáo viên chỉ thấy dữ liệu thuộc về mình.</p>
+            <div class="grid-2">
+              <article class="card">
+                <h4>3.1. Đăng nhập</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Mở app</h4><p>Truy cập link hệ thống trên điện thoại hoặc máy tính.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Bấm Google Login</h4><p>Chọn đúng email đã được Admin cấp quyền.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Kiểm tra màn hình chính</h4><p>Sau đăng nhập, hệ thống tự vào Lịch của tôi/Lịch dạy.</p></div></div>
+                <div class="warning">Nếu đăng nhập sai email, app có thể báo chưa có quyền hoặc không thấy lịch.</div>
               </article>
-              <article class="flow-card">
-                <div class="flow-n" style="background:#f39a1c;">2</div>
-                <h4>Phân công & gửi</h4>
-                <p>Gửi lịch cho giáo viên và theo dõi phản hồi xác nhận.</p>
+              <article class="card">
+                <h4>3.2. Xem lịch dạy hôm nay</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Vào Lịch của tôi</h4><p>Màn hình mặc định của giáo viên là lịch dạy cá nhân.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Kiểm tra ngày hiện tại</h4><p>Lịch tự nhảy đến ngày hôm nay để giáo viên không phải kéo tìm.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Dùng CÁC NGÀY CÓ LỊCH DẠY</h4><p>Bấm chip ngày có lịch để nhảy nhanh đến ngày đó.</p></div></div>
               </article>
-              <article class="flow-card">
-                <div class="flow-n">3</div>
-                <h4>Theo dõi thực thi</h4>
-                <p>Giám sát giáo án, điểm danh, tình trạng trễ/chưa xử lý.</p>
+              <article class="card">
+                <h4>3.3. Xem chi tiết một lịch dạy</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Chọn ngày có lịch</h4><p>Bấm vào ô ngày hoặc mục chi tiết ngày.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Bấm vào card lịch</h4><p>Modal chi tiết lịch mở ở giữa màn hình.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Đọc thông tin cần dạy</h4><p>Kiểm tra ngày, giờ, trường, lớp, bài học, giáo viên và mục tiêu bài học.</p></div></div>
+                <div class="hint">Nếu nội dung dài, chỉ cuộn phần nội dung trong modal.</div>
               </article>
-              <article class="flow-card">
-                <div class="flow-n" style="background:#f39a1c;">4</div>
-                <h4>Tổng hợp cuối ngày</h4>
-                <p>Chốt báo cáo nhanh và chuyển các vấn đề tồn sang kế hoạch ngày tiếp theo.</p>
+              <article class="card">
+                <h4>3.4. Xác nhận lịch</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Mở lịch cần xác nhận</h4><p>Chọn lịch có trạng thái chờ xác nhận hoặc đã gửi.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Bấm xác nhận</h4><p>Hệ thống cập nhật trạng thái để Admin biết giáo viên đã nhận lịch.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Kiểm tra trạng thái</h4><p>Card lịch chuyển sang đã nhận/đã xác nhận.</p></div></div>
+              </article>
+              <article class="card">
+                <h4>3.5. Nộp giáo án</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Vào menu Giáo án</h4><p>Xem các lịch cần nộp giáo án hoặc lịch sắp dạy.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Chọn lịch cần nộp</h4><p>Bấm upload file hoặc dán link ngoài như Google Drive.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Kiểm tra sau khi nộp</h4><p>Lịch hiển thị giáo án đã gửi và Admin có thể xem được.</p></div></div>
+                <div class="warning">File tối đa 10MB. Nếu dùng link ngoài, cần đảm bảo link mở được.</div>
+              </article>
+              <article class="card">
+                <h4>3.6. Điểm danh</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Vào lịch cần điểm danh</h4><p>Chọn đúng tiết dạy của mình.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Bấm điểm danh</h4><p>Hệ thống chỉ cho điểm danh trong khung thời gian hợp lệ.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Chờ trạng thái xử lý</h4><p>Thông báo đang điểm danh xuất hiện trong vùng nhìn thấy của màn hình.</p></div></div>
+                <div class="hint">Có thể điểm danh sớm tối đa 30 phút trước giờ bắt đầu. Không điểm danh được lịch đã hủy.</div>
+              </article>
+              <article class="card">
+                <h4>3.7. Gửi góp ý nâng cấp</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Bấm Góp ý</h4><p>Popup góp ý mở ở giữa màn hình.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Nhập nội dung</h4><p>Mô tả tính năng cần nâng cấp và quy trình mong muốn.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Gửi về Admin</h4><p>Admin xem feedback trong khu vực cấu hình/thông báo.</p></div></div>
+              </article>
+              <article class="card">
+                <h4>3.8. Kiểm tra thông báo</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Bấm icon chuông</h4><p>Trên điện thoại, icon thông báo nằm góc trên bên phải.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Đọc thông báo mới</h4><p>Kiểm tra lịch mới, nhắc xác nhận hoặc thông báo từ Admin.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Xử lý theo nội dung</h4><p>Nếu là lịch mới, quay lại Lịch của tôi để kiểm tra chi tiết.</p></div></div>
               </article>
             </div>
+          </section>
 
-            <div class="hint">
-              ℹ️ <strong>Lưu ý vận hành:</strong> Mốc kiểm tra quan trọng là trước giờ dạy 12 tiếng: xác nhận lịch, giáo án,
-              và trạng thái giáo viên để giảm rủi ro trễ tiết.
+          <section class="section" id="admin">
+            <div class="section-head"><span class="num">4</span><h2>ADMIN/GIÁO VỤ SỬ DỤNG NHƯ THẾ NÀO?</h2></div>
+            <p class="desc">Admin quản lý toàn bộ dữ liệu và chịu trách nhiệm điều phối chính xác, tránh trùng lịch, thiếu giáo án hoặc thiếu điểm danh.</p>
+            <div class="grid-2">
+              <article class="card">
+                <h4>4.1. Tạo và gửi lịch dạy</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Vào Giao lịch</h4><p>Chọn ngày, trường, lớp, khung giờ, bài học và môi trường dạy.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Chọn giáo viên</h4><p>Có thể giao một hoặc nhiều giáo viên tùy nhu cầu.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Xem preview</h4><p>Kiểm tra danh sách lịch sắp gửi và cảnh báo trùng lịch.</p></div></div>
+                <div class="step-card"><div class="step-no">4</div><div><h4>Gửi lịch</h4><p>Chỉ gửi khi không còn cảnh báo xung đột.</p></div></div>
+              </article>
+              <article class="card">
+                <h4>4.2. Xử lý cảnh báo trùng lịch</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Đọc khối cảnh báo đỏ</h4><p>Hệ thống chỉ rõ trùng giáo viên hoặc trùng lớp theo ngày/khung giờ.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Sửa dữ liệu</h4><p>Đổi giáo viên, đổi lớp, đổi khung giờ hoặc xóa dòng lịch bị trùng.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Gửi lại</h4><p>Khi hết xung đột, nút gửi được mở lại.</p></div></div>
+              </article>
+              <article class="card">
+                <h4>4.3. Theo dõi Lịch tổng</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Vào Lịch tổng</h4><p>Chọn chế độ Tháng, Tuần hoặc Ngày.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Lọc dữ liệu</h4><p>Dùng bộ lọc trạng thái, giáo viên, trường, lớp, khung giờ trên desktop.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Mở chi tiết lịch</h4><p>Bấm vào một lịch để xem modal chi tiết ở giữa màn hình.</p></div></div>
+                <div class="step-card"><div class="step-no">4</div><div><h4>Thao tác khi cần</h4><p>Hủy lịch, chuyển giáo viên hoặc nhắc xác nhận.</p></div></div>
+              </article>
+              <article class="card">
+                <h4>4.4. Quản lý giáo án</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Vào Giáo án</h4><p>Xem thống kê giáo án đã gửi, lịch cần nộp và lịch đã có giáo án.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Lọc lịch thiếu giáo án</h4><p>Ưu tiên các lịch sắp dạy nhưng chưa có giáo án.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Kiểm tra file/link</h4><p>Mở thử tài liệu để chắc chắn giáo án truy cập được.</p></div></div>
+              </article>
+              <article class="card">
+                <h4>4.5. Theo dõi điểm danh</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Vào Điểm danh</h4><p>Kiểm tra lịch hôm nay, đã điểm danh, chưa điểm danh và trễ.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Xử lý cảnh báo</h4><p>Liên hệ giáo viên hoặc giáo vụ phụ trách nếu lịch quá giờ chưa điểm danh.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Chốt cuối ngày</h4><p>Đảm bảo không còn lịch quá ngày chưa xử lý.</p></div></div>
+              </article>
+              <article class="card">
+                <h4>4.6. Cấu hình dữ liệu nền</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Vào Cấu hình</h4><p>Quản lý trường, lớp, khung giờ, bài học, giáo viên và người dùng.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Thêm hoặc import</h4><p>Có thể nhập thủ công hoặc import `.xlsx/.csv/.tsv` nếu phân hệ hỗ trợ.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Kiểm tra liên kết</h4><p>Teacher và User cần liên kết đúng teacherId để phân quyền chính xác.</p></div></div>
+              </article>
+              <article class="card">
+                <h4>4.7. Tạo banner/thông báo</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Vào khu vực thông báo</h4><p>Chọn tạo app announcement hoặc notification.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Nhập nội dung ngắn gọn</h4><p>Banner đầu trang nên viết một dòng rõ ý để chạy ngang dễ đọc.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Chọn đối tượng</h4><p>Gửi cho admin, teacher hoặc tất cả tùy mục đích.</p></div></div>
+              </article>
+              <article class="card">
+                <h4>4.8. Kiểm tra Health/Observability</h4>
+                <div class="step-card"><div class="step-no">1</div><div><h4>Vào Cấu hình</h4><p>Mở panel Observability vận hành.</p></div></div>
+                <div class="step-card"><div class="step-no">2</div><div><h4>Đọc health tổng</h4><p>Nếu `ok`, hệ thống ổn. Nếu `degraded/down`, cần kiểm tra Sheets/GAS/Email.</p></div></div>
+                <div class="step-card"><div class="step-no">3</div><div><h4>Đọc lỗi gần nhất</h4><p>Deny tăng mạnh có thể do sai quyền; API error tăng mạnh có thể do lỗi dữ liệu hoặc tích hợp.</p></div></div>
+              </article>
             </div>
           </section>
 
           <section class="section" id="phan-he">
-            <div class="section-head">
-              <span class="num">3</span>
-              <h2>HƯỚNG DẪN CHI TIẾT THEO MENU/PHÂN HỆ</h2>
-            </div>
-            <p class="desc">
-              Phần này dành cho Admin sử dụng hằng ngày. Mỗi menu đều có: tính năng chính, thao tác chuẩn, kiểm tra kết quả.
-            </p>
-
-            <div class="grid-2">
-              <article class="card">
-                <h4>Menu: Giao lịch</h4>
-                <ul>
-                  <li><strong>Tính năng:</strong> Tạo nhiều dòng lịch, giao cho nhiều giáo viên trong một lần gửi.</li>
-                  <li><strong>Thao tác chuẩn:</strong> Chọn giáo viên → nhập dòng lịch → xem preview theo giáo viên → gửi.</li>
-                  <li><strong>Điểm cần kiểm:</strong> Trường, lớp, bài học, khung giờ đúng khối và còn active.</li>
-                  <li><strong>Kết quả đúng:</strong> Có schedule mới, có notification và trạng thái gửi email rõ ràng.</li>
-                </ul>
-              </article>
-
-              <article class="card">
-                <h4>Menu: Lịch tổng</h4>
-                <ul>
-                  <li><strong>Tính năng:</strong> Xem tháng/tuần/ngày, lọc đa điều kiện, thao tác hàng loạt.</li>
-                  <li><strong>Thao tác chuẩn:</strong> Lọc theo ngày + giáo viên + trạng thái trước khi xử lý.</li>
-                  <li><strong>Điểm cần kiểm:</strong> Tránh hủy nhầm lịch đã điều phối; xác nhận đúng người khi chuyển lịch.</li>
-                  <li><strong>Kết quả đúng:</strong> Dashboard cập nhật ngay, AuditLogs ghi đúng hành động.</li>
-                </ul>
-              </article>
-
-              <article class="card">
-                <h4>Menu: Giáo viên</h4>
-                <ul>
-                  <li><strong>Tính năng:</strong> Thêm/sửa/bật tắt giáo viên, import hàng loạt, đồng bộ user liên kết.</li>
-                  <li><strong>Thao tác chuẩn:</strong> Dùng file mẫu import, kiểm tra email trùng trước khi lưu.</li>
-                  <li><strong>Điểm cần kiểm:</strong> Teacher và User phải tạo thành cặp theo teacherId.</li>
-                  <li><strong>Kết quả đúng:</strong> User đăng nhập được đúng quyền và nhìn đúng menu.</li>
-                </ul>
-              </article>
-
-              <article class="card">
-                <h4>Menu: Bài học</h4>
-                <ul>
-                  <li><strong>Tính năng:</strong> Quản lý tiêu đề, mục tiêu, khối, thời lượng 45/90 phút.</li>
-                  <li><strong>Thao tác chuẩn:</strong> Chuẩn hóa tên bài học và mục tiêu trước khi mở cho giao lịch.</li>
-                  <li><strong>Điểm cần kiểm:</strong> Bài học phải thuộc đúng khối lớp để tránh lỗi khi tạo lịch.</li>
-                  <li><strong>Kết quả đúng:</strong> Khi giao lịch không báo lỗi lệch khối - bài học.</li>
-                </ul>
-              </article>
-
-              <article class="card">
-                <h4>Menu: Giáo án</h4>
-                <ul>
-                  <li><strong>Tính năng:</strong> Upload file, dán link ngoài, hiển thị inline theo lịch, sửa tên/xóa.</li>
-                  <li><strong>Thao tác chuẩn:</strong> Ưu tiên lịch sắp dạy, kiểm tra link mở được ngay sau khi nộp.</li>
-                  <li><strong>Điểm cần kiểm:</strong> Dung lượng file tối đa 10MB, đúng lịch và đúng giáo viên.</li>
-                  <li><strong>Kết quả đúng:</strong> Card lịch hiển thị giáo án đã nộp, truy cập file được.</li>
-                </ul>
-              </article>
-
-              <article class="card">
-                <h4>Menu: Điểm danh</h4>
-                <ul>
-                  <li><strong>Tính năng:</strong> Ghi attendance theo tiết, thống kê trễ/chưa điểm danh theo ngày.</li>
-                  <li><strong>Thao tác chuẩn:</strong> Cuối ngày kiểm tra card “chưa điểm danh” và cảnh báo giáo viên.</li>
-                  <li><strong>Điểm cần kiểm:</strong> Rule điểm danh sớm tối đa 30 phút, không điểm danh lịch đã hủy.</li>
-                  <li><strong>Kết quả đúng:</strong> Trạng thái lịch đổi attended và có lịch sử kiểm tra rõ ràng.</li>
-                </ul>
-              </article>
-
-              <article class="card">
-                <h4>Menu: Cấu hình (Trường/Lớp/Khung giờ)</h4>
-                <ul>
-                  <li><strong>Tính năng:</strong> Quản trị dữ liệu nền cho toàn hệ thống.</li>
-                  <li><strong>Thao tác chuẩn:</strong> Khung giờ chỉ dùng 45/90 phút, lớp đặt tên đúng chuẩn để suy ra khối.</li>
-                  <li><strong>Điểm cần kiểm:</strong> Ưu tiên xóa mềm dữ liệu đang có liên quan lịch để giữ lịch sử.</li>
-                  <li><strong>Kết quả đúng:</strong> Các menu điều phối khác hoạt động ổn định, ít lỗi validate.</li>
-                </ul>
-              </article>
-
-              <article class="card">
-                <h4>Menu: Thông báo/Banner/Feedback</h4>
-                <ul>
-                  <li><strong>Tính năng:</strong> Đẩy banner vận hành, xem panel thông báo, thu feedback cải tiến.</li>
-                  <li><strong>Thao tác chuẩn:</strong> Tách thông báo khẩn (urgent) và không khẩn để tránh nhiễu.</li>
-                  <li><strong>Điểm cần kiểm:</strong> Review feedback theo ngày, gom nhóm theo menu để xử lý sprint.</li>
-                  <li><strong>Kết quả đúng:</strong> Giáo viên nhận đúng thông điệp, đội vận hành xử lý đúng ưu tiên.</li>
-                </ul>
-              </article>
-            </div>
-
-            <div class="hint">
-              Gợi ý nhịp điều hành cho Admin: <strong>Sáng kiểm lịch gửi</strong> → <strong>Trưa kiểm xác nhận</strong> →
-              <strong>Chiều kiểm giáo án/điểm danh</strong> → <strong>Cuối ngày chốt cảnh báo tồn</strong>.
+            <div class="section-head"><span class="num">5</span><h2>HƯỚNG DẪN NHANH THEO MENU</h2></div>
+            <div class="grid-3">
+              <article class="card"><h4>Lịch của tôi</h4><p>Dành cho giáo viên. Xem lịch cá nhân, ngày hiện tại, ngày có lịch, chi tiết lịch và thao tác xác nhận/điểm danh.</p><div class="tag-row"><span class="tag">Giáo viên</span><span class="tag">Mobile first</span></div></article>
+              <article class="card"><h4>Lịch tổng</h4><p>Dành cho Admin. Giám sát tất cả lịch, lọc nâng cao và xử lý lịch phát sinh.</p><div class="tag-row"><span class="tag">Admin</span><span class="tag">Theo dõi</span></div></article>
+              <article class="card"><h4>Giao lịch</h4><p>Tạo lịch hàng loạt, kiểm tra trùng và gửi lịch/email/thông báo cho giáo viên.</p><div class="tag-row"><span class="tag">Admin</span><span class="tag">Chống trùng</span></div></article>
+              <article class="card"><h4>Giáo án</h4><p>Theo dõi giáo án đã gửi, cần nộp, đã có giáo án và upload file/link cho từng lịch.</p><div class="tag-row"><span class="tag">Admin</span><span class="tag">Giáo viên</span></div></article>
+              <article class="card"><h4>Điểm danh</h4><p>Ghi nhận giáo viên đã dạy, theo dõi lịch chưa điểm danh, trễ hoặc quá ngày.</p><div class="tag-row"><span class="tag">Kiểm soát</span><span class="tag">Cuối ngày</span></div></article>
+              <article class="card"><h4>Cấu hình</h4><p>Quản lý dữ liệu nền, banner, feedback, health và observability.</p><div class="tag-row"><span class="tag">Admin</span><span class="tag">Hệ thống</span></div></article>
             </div>
           </section>
 
           <section class="section" id="quyen">
-            <div class="section-head">
-              <span class="num">4</span>
-              <h2>VAI TRÒ & QUYỀN HẠN</h2>
-            </div>
-            <p class="desc">Dùng bảng này để cấp quyền và kiểm soát phạm vi thao tác đúng vai trò.</p>
+            <div class="section-head"><span class="num">6</span><h2>VAI TRÒ & QUYỀN HẠN</h2></div>
+            <p class="desc">Dùng bảng này để kiểm tra phạm vi thao tác đúng vai trò.</p>
             <table>
-              <thead>
-                <tr>
-                  <th>Vai trò</th>
-                  <th>Menu được dùng</th>
-                  <th>Thao tác chính</th>
-                  <th>Giới hạn</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Vai trò</th><th>Được xem</th><th>Được thao tác</th><th>Giới hạn</th></tr></thead>
               <tbody>
-                <tr>
-                  <td>Quản lý (Admin)</td>
-                  <td>Tất cả menu</td>
-                  <td>Tạo/chuyển/hủy lịch, cấu hình dữ liệu, kiểm soát thông báo và báo cáo.</td>
-                  <td>Chịu trách nhiệm duyệt dữ liệu cuối cùng.</td>
-                </tr>
-                <tr>
-                  <td>Điều phối</td>
-                  <td>Giao lịch, Lịch tổng, Điểm danh, Giáo án</td>
-                  <td>Điều phối tác nghiệp hằng ngày, theo dõi lịch chưa xác nhận.</td>
-                  <td>Không sửa cấu hình hệ thống nếu không có quyền admin.</td>
-                </tr>
-                <tr>
-                  <td>Nhân sự (Teacher)</td>
-                  <td>Tổng quan, Lịch của tôi, Giáo án, Điểm danh</td>
-                  <td>Xác nhận lịch, nộp giáo án, điểm danh tiết của chính mình.</td>
-                  <td>Không thao tác lịch người khác, không quản trị cấu hình chung.</td>
-                </tr>
-                <tr>
-                  <td>Khách mới</td>
-                  <td>Không dùng vận hành</td>
-                  <td>Dùng demo/kiểm thử giao diện khi được cấp tạm.</td>
-                  <td>Không dùng cho nghiệp vụ chính thức.</td>
-                </tr>
+                <tr><td>Admin/Giáo vụ</td><td>Toàn bộ dữ liệu vận hành</td><td>Giao lịch, hủy/chuyển lịch, cấu hình, thông báo, observability</td><td>Cần kiểm tra kỹ trước khi thay đổi dữ liệu nền đang liên kết lịch.</td></tr>
+                <tr><td>Giáo viên</td><td>Lịch, giáo án, điểm danh của chính mình</td><td>Xác nhận lịch, nộp giáo án, điểm danh, gửi feedback</td><td>Không xem hoặc thao tác dữ liệu giáo viên khác.</td></tr>
+                <tr><td>Chưa đăng nhập</td><td>Không tải dữ liệu vận hành</td><td>Chỉ đăng nhập Google</td><td>Cần email đã được cấp quyền trong hệ thống.</td></tr>
               </tbody>
             </table>
           </section>
 
-          <section class="section" id="best">
-            <div class="section-head">
-              <span class="num">5</span>
-              <h2>BEST PRACTICES ĐIỀU HÀNH</h2>
-            </div>
-            <div class="checklist">
-              <strong>Checklist đầu ngày</strong>
-              <div class="checks">
-                <div class="check"><span>✔</span>Đã soát lịch gửi mới</div>
-                <div class="check"><span>✔</span>Đã kiểm xác nhận giáo viên</div>
-                <div class="check"><span>✔</span>Đã rà lịch sắp dạy 24h tới</div>
-                <div class="check"><span>✔</span>Đã kiểm giáo án còn thiếu</div>
-                <div class="check"><span>✔</span>Đã chốt thông báo vận hành</div>
+          <section class="section" id="test">
+            <div class="section-head"><span class="num">7</span><h2>CHECKLIST KIỂM TRA SAU KHI CẬP NHẬT</h2></div>
+            <div class="grid-2">
+              <div class="checklist">
+                <strong>Test tài khoản giáo viên</strong>
+                <div class="checks">
+                  <div class="check"><span>✓</span>Đăng nhập đúng email giáo viên.</div>
+                  <div class="check"><span>✓</span>Tự vào Lịch của tôi/Lịch dạy.</div>
+                  <div class="check"><span>✓</span>Lịch nhảy đến ngày hiện tại.</div>
+                  <div class="check"><span>✓</span>Bấm ngày có lịch để nhảy nhanh.</div>
+                  <div class="check"><span>✓</span>Mở modal chi tiết lịch.</div>
+                  <div class="check"><span>✓</span>Nộp giáo án và điểm danh.</div>
+                  <div class="check"><span>✓</span>Không thấy lịch người khác.</div>
+                  <div class="check"><span>✓</span>Gửi feedback thành công.</div>
+                </div>
               </div>
-            </div>
-            <div class="checklist">
-              <strong>Checklist cuối ngày</strong>
-              <div class="checks">
-                <div class="check"><span>✔</span>Đã kiểm điểm danh</div>
-                <div class="check"><span>✔</span>Đã tổng hợp lịch trễ</div>
-                <div class="check"><span>✔</span>Đã gom feedback mới</div>
-                <div class="check"><span>✔</span>Đã cập nhật vấn đề tồn</div>
-                <div class="check"><span>✔</span>Đã chuẩn bị kế hoạch ngày mai</div>
+              <div class="checklist">
+                <strong>Test tài khoản Admin</strong>
+                <div class="checks">
+                  <div class="check"><span>✓</span>Mở Lịch tổng và chi tiết lịch.</div>
+                  <div class="check"><span>✓</span>Tạo lịch không trùng.</div>
+                  <div class="check"><span>✓</span>Tạo case trùng để kiểm tra cảnh báo.</div>
+                  <div class="check"><span>✓</span>Kiểm tra Giáo án.</div>
+                  <div class="check"><span>✓</span>Kiểm tra Điểm danh.</div>
+                  <div class="check"><span>✓</span>Tạo banner/thông báo.</div>
+                  <div class="check"><span>✓</span>Mở Observability/Health.</div>
+                  <div class="check"><span>✓</span>Gửi link app kiểm tra ảnh bìa preview.</div>
+                </div>
               </div>
             </div>
           </section>
 
           <section class="section" id="faq">
-            <div class="section-head">
-              <span class="num">6</span>
-              <h2>CÂU HỎI THƯỜNG GẶP</h2>
-            </div>
-            <p class="desc"><strong>Q:</strong> Giáo viên không nhận được email lịch dạy?</p>
-            <p class="desc">
-              <strong>A:</strong> Kiểm tra MailDebug theo requestId, xác minh templateVersion, gasVersion, email nhận và nội
-              dung digest.
-            </p>
-
-            <p class="desc"><strong>Q:</strong> Lịch đã tạo nhưng giáo viên không thấy?</p>
-            <p class="desc">
-              <strong>A:</strong> Kiểm tra teacherId của lịch, trạng thái tài khoản active, và bộ lọc ngày/trạng thái ở tab
-              Lịch của tôi.
-            </p>
-
-            <p class="desc"><strong>Q:</strong> Vì sao không xóa được một lớp hoặc trường?</p>
-            <p class="desc">
-              <strong>A:</strong> Dữ liệu đang liên kết lịch vận hành. Cần xử lý lịch liên quan hoặc dùng xóa mềm/tắt active
-              trước.
-            </p>
+            <div class="section-head"><span class="num">8</span><h2>CÂU HỎI THƯỜNG GẶP</h2></div>
+            <p class="desc"><strong>Q:</strong> Giáo viên không thấy lịch?</p>
+            <p class="desc"><strong>A:</strong> Kiểm tra giáo viên đã đăng nhập đúng email, user có teacherId đúng và lịch có teacherId của giáo viên đó.</p>
+            <p class="desc"><strong>Q:</strong> Không gửi được lịch do cảnh báo trùng?</p>
+            <p class="desc"><strong>A:</strong> Sửa giáo viên/lớp/khung giờ/ngày bị trùng trong preview rồi gửi lại.</p>
+            <p class="desc"><strong>Q:</strong> Gửi link app nhưng ảnh bìa chưa hiện?</p>
+            <p class="desc"><strong>A:</strong> Đợi Vercel deploy xong. Một số nền tảng có cache preview, cần gửi lại link sau vài phút.</p>
           </section>
 
           <section class="section" id="glossary">
-            <div class="section-head">
-              <span class="num">7</span>
-              <h2>GLOSSARY</h2>
-            </div>
+            <div class="section-head"><span class="num">9</span><h2>GLOSSARY</h2></div>
             <table>
-              <thead>
-                <tr>
-                  <th>Thuật ngữ</th>
-                  <th>Giải nghĩa</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Thuật ngữ</th><th>Giải nghĩa</th></tr></thead>
               <tbody>
-                <tr>
-                  <td>MailDebug</td>
-                  <td>Sheet log gửi email để debug request/response giữa ứng dụng và GAS.</td>
-                </tr>
-                <tr>
-                  <td>GAS</td>
-                  <td>Google Apps Script - lớp gửi email và xử lý upload/xóa giáo án trên Google Drive.</td>
-                </tr>
-                <tr>
-                  <td>Schedule status</td>
-                  <td>Trạng thái lịch: sent, confirmed, lesson_plan_uploaded, attended, cancelled, reassigned.</td>
-                </tr>
-                <tr>
-                  <td>AuditLogs</td>
-                  <td>Nhật ký thao tác để truy vết các thay đổi quan trọng trong hệ thống.</td>
-                </tr>
+                <tr><td>Schedule</td><td>Một lịch dạy cụ thể gồm ngày, giờ, trường, lớp, bài học và giáo viên.</td></tr>
+                <tr><td>Lesson Plan</td><td>Giáo án được nộp theo từng lịch, có thể là file hoặc link ngoài.</td></tr>
+                <tr><td>Attendance</td><td>Dữ liệu điểm danh xác nhận giáo viên đã thực hiện tiết dạy.</td></tr>
+                <tr><td>Conflict</td><td>Xung đột lịch, thường là trùng giáo viên hoặc trùng lớp cùng ngày/khung giờ.</td></tr>
+                <tr><td>Observability</td><td>Khu vực theo dõi lỗi, chặn quyền, health và cảnh báo vận hành.</td></tr>
+                <tr><td>GAS</td><td>Google Apps Script, dùng cho một số luồng email/upload/xóa file.</td></tr>
+                <tr><td>Open Graph</td><td>Metadata giúp link app có title, mô tả và ảnh bìa khi gửi qua chat/mạng xã hội.</td></tr>
               </tbody>
             </table>
           </section>
 
-          <p class="footer">© 2026 Học viện MettaSoul. All rights reserved.</p>
+          <p class="footer">© 2026 METTASOUL. Education with love.</p>
         </main>
       </div>
     </div>
 
     <script>
       const links = Array.from(document.querySelectorAll(".menu a"));
-      const sections = links
-        .map((link) => {
-          const id = link.getAttribute("href");
-          return document.querySelector(id);
-        })
-        .filter(Boolean);
+      const sections = links.map((link) => document.querySelector(link.getAttribute("href"))).filter(Boolean);
+      const searchInput = document.querySelector(".search input");
 
-      function setActiveMenu() {
-        const y = window.scrollY + 180;
+      function setActiveLink() {
+        const y = window.scrollY + 120;
         let current = sections[0];
         sections.forEach((section) => {
           if (section.offsetTop <= y) current = section;
         });
-
         links.forEach((link) => {
-          const isActive = current && link.getAttribute("href") === "#" + current.id;
-          link.classList.toggle("active", isActive);
+          link.classList.toggle("active", link.getAttribute("href") === `#${current.id}`);
         });
       }
 
-      window.addEventListener("scroll", setActiveMenu);
-      setActiveMenu();
+      function runSearch(value) {
+        const keyword = value.trim().toLowerCase();
+        document.querySelectorAll(".section, .card, .step-card").forEach((node) => {
+          if (!keyword) {
+            node.style.outline = "";
+            node.style.backgroundColor = "";
+            return;
+          }
+          const matched = node.textContent.toLowerCase().includes(keyword);
+          node.style.outline = matched ? "2px solid rgba(224, 160, 32, 0.45)" : "";
+          node.style.backgroundColor = matched ? "#fffaf0" : "";
+        });
+      }
+
+      window.addEventListener("scroll", setActiveLink, { passive: true });
+      searchInput?.addEventListener("input", (event) => runSearch(event.target.value));
+      window.addEventListener("keydown", (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+          event.preventDefault();
+          searchInput?.focus();
+        }
+      });
+      setActiveLink();
     </script>
   </body>
 </html>
