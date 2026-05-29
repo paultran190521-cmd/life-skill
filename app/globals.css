@@ -272,16 +272,23 @@ button:disabled {
 
 .app-modal-panel {
   display: flex;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(100% - 2rem);
   max-height: calc(var(--app-visual-viewport-height, 100dvh) - 2rem);
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
+  transform: translate3d(-50%, -50%, 0);
 }
 
 .app-modal-scroll {
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .ui-notification-dot {
