@@ -40,6 +40,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { statusLabels, statusStyles } from "@/lib/status";
 import {
   allowedTimeSlotDurations,
@@ -3725,7 +3726,7 @@ export function MettasoulApp() {
               </div>
             </div>
           ) : null}
-          {selectedScheduleDetail ? (
+          {selectedScheduleDetail && typeof document !== "undefined" ? createPortal(
             <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
               <div className="app-modal-panel w-full max-w-3xl rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
                 {(() => {
@@ -3824,7 +3825,8 @@ export function MettasoulApp() {
                   );
                 })()}
               </div>
-            </div>
+            </div>,
+            document.body,
           ) : null}
           {appDialog ? (
             <div
