@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "HỌC VIỆN METTASOUL",
-  description: "Quản lý lịch dạy, giáo án và điểm danh giáo viên HỌC VIỆN METTASOUL.",
+  title: "METTASOUL - Education with love",
+  description: "Quản lý lịch dạy, giáo án và điểm danh giáo viên METTASOUL.",
 };
 
 export default function RootLayout({

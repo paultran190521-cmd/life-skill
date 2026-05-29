@@ -3157,8 +3157,8 @@ export function MettasoulApp() {
               <GraduationCap size={24} />
             </div>
             <div className="min-w-0">
-              <p className="text-lg font-extrabold tracking-tight text-[var(--brand-dark)]">HỌC VIỆN METTASOUL</p>
-              <p className="text-xs font-semibold uppercase text-[var(--muted)]">Lịch dạy</p>
+              <p className="text-lg font-extrabold tracking-tight text-[var(--brand-dark)]">METTASOUL</p>
+              <p className="text-xs font-semibold text-[var(--muted)]">Education with love</p>
             </div>
             <button
               type="button"
