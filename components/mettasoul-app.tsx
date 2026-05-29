@@ -405,6 +405,8 @@ export function MettasoulApp() {
   const [bulkReassignTeacherId, setBulkReassignTeacherId] = useState("");
   const [expandedHistoryScheduleId, setExpandedHistoryScheduleId] = useState("");
   const calendarDetailRef = useRef<HTMLDivElement | null>(null);
+  const selectedCalendarDayRef = useRef<HTMLButtonElement | null>(null);
+  const shouldScrollCalendarDetailRef = useRef(false);
   const [lessonSearchTerm, setLessonSearchTerm] = useState("");
   const [lessonGradeFilter, setLessonGradeFilter] = useState("all");
   const [lessonPlanTeacherFilter, setLessonPlanTeacherFilter] = useState("all");
@@ -567,6 +569,11 @@ export function MettasoulApp() {
     });
   }, [activeLessons, lessonGradeFilter, lessonSearchTerm]);
   const isBusy = Boolean(pendingAction);
+
+  function selectCalendarDate(dateKey: string, { scrollDetail = true }: { scrollDetail?: boolean } = {}) {
+    shouldScrollCalendarDetailRef.current = scrollDetail;
+    setSelectedCalendarDate(dateKey);
+  }
 
   useEffect(() => {
     const slotIds = new Set(timeSlots.map((slot) => slot.id));
@@ -774,13 +781,13 @@ export function MettasoulApp() {
   }, [hasBlockingModal]);
 
   useEffect(() => {
-    if (role !== "teacher" || activeTab !== "calendar") {
+    if (role !== "teacher" || activeTab !== "calendar" || !currentTeacherId) {
       return;
     }
     const today = currentDateKey();
     setCalendarMonth(currentMonthKey());
-    setSelectedCalendarDate(today);
-  }, [activeTab, role]);
+    selectCalendarDate(today, { scrollDetail: false });
+  }, [activeTab, currentTeacherId, role]);
 
   useEffect(() => {
     setDraftSchedule((current) => {
@@ -959,6 +966,11 @@ export function MettasoulApp() {
       return;
     }
     window.requestAnimationFrame(() => {
+      selectedCalendarDayRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      if (!shouldScrollCalendarDetailRef.current) {
+        return;
+      }
+      shouldScrollCalendarDetailRef.current = false;
       calendarDetailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }, [selectedCalendarDate]);
@@ -4303,7 +4315,7 @@ export function MettasoulApp() {
                 type="button"
                 onClick={() => {
                   setCalendarMonth(currentMonthKey());
-                  setSelectedCalendarDate(todayKey);
+                  selectCalendarDate(todayKey);
                 }}
                 className="h-10 rounded-xl bg-cyan-50 px-3 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-100"
               >
@@ -4333,25 +4345,25 @@ export function MettasoulApp() {
             </div>
           </div>
           {role === "teacher" && quickScheduleDates.length > 0 ? (
-            <div className="mb-4 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3">
-              <p className="text-[11px] font-black uppercase tracking-wide text-[var(--brand-dark)]">Ngày có lịch để nhảy nhanh</p>
-              <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mb-4 rounded-2xl border border-orange-200 bg-orange-50/70 p-3">
+              <p className="text-center text-[11px] font-black uppercase tracking-wide text-orange-700">CÁC NGÀY CÓ LỊCH DẠY</p>
+              <div className="mt-2 flex flex-wrap justify-center gap-2">
                 {quickScheduleDates.map((item) => (
                   <button
                     key={item.dateKey}
                     type="button"
                     onClick={() => {
                       setCalendarMonth(item.dateKey.slice(0, 7));
-                      setSelectedCalendarDate(item.dateKey);
+                      selectCalendarDate(item.dateKey);
                     }}
                     className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-black transition ${
                       selectedCalendarDate === item.dateKey
-                        ? "border-[var(--brand)] bg-[var(--brand)] text-white"
-                        : "border-cyan-200 bg-white text-[var(--brand-dark)] hover:bg-cyan-50"
+                        ? "border-orange-500 bg-orange-500 text-white"
+                        : "border-orange-200 bg-white text-orange-800 hover:bg-orange-100"
                     }`}
                   >
                     <span>{formatShortDateLabel(item.dateKey)}</span>
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${selectedCalendarDate === item.dateKey ? "bg-white/20 text-white" : "bg-cyan-50 text-cyan-800"}`}>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${selectedCalendarDate === item.dateKey ? "bg-white/20 text-white" : "bg-orange-50 text-orange-800"}`}>
                       {item.count}
                     </span>
                     {item.isToday ? <span className="text-[10px] uppercase tracking-wide">Hôm nay</span> : null}
@@ -4498,12 +4510,13 @@ export function MettasoulApp() {
               return (
                 <button
                   key={day.dateKey}
+                  ref={isSelected ? selectedCalendarDayRef : undefined}
                   type="button"
                   onClick={() => {
-                    setSelectedCalendarDate(day.dateKey);
+                    selectCalendarDate(day.dateKey);
                     setSelectedScheduleIds([]);
                   }}
-                  className={`min-h-[104px] rounded-2xl border p-2.5 text-left transition sm:min-h-[112px] sm:p-3 ${
+                  className={`flex min-h-[104px] flex-col items-center justify-center rounded-2xl border p-2.5 text-center transition sm:min-h-[112px] sm:p-3 ${
                     isSelected
                       ? "border-[var(--brand)] bg-cyan-50 shadow-lg shadow-cyan-900/10"
                         : day.isToday
@@ -4521,12 +4534,12 @@ export function MettasoulApp() {
                     {day.dayNumber}
                   </span>
                   {day.schedules.length > 0 ? (
-                    <div className="mt-2 space-y-1.5 sm:mt-3 sm:space-y-2">
+                    <div className="mt-2 flex flex-col items-center space-y-1.5 sm:mt-3 sm:space-y-2">
                       <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-black ${statusTone}`}>
                         {day.schedules.length} lịch
                       </span>
                       {showTeacherBadgesInCalendarCell ? (
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap justify-center gap-1">
                           {teacherNamesForSchedules(day.schedules, teachers).map((name) => (
                             <span key={name} className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-[var(--brand-dark)] ring-1 ring-cyan-100">
                               {name}
@@ -7124,29 +7137,25 @@ function AnnouncementTicker({ announcements }: { announcements: AppAnnouncement[
   }
 
   return (
-    <div className="border-b border-white/70 bg-white/75 px-4 py-3 backdrop-blur md:px-7">
-      <div className="overflow-hidden rounded-2xl border border-white/70 bg-white shadow-[0_14px_32px_rgba(18,46,68,0.08)]">
-        <div className="app-announcement-track flex w-max min-w-full items-center gap-4 py-2">
+    <div className="border-b border-orange-100 bg-orange-50/80 py-2 backdrop-blur">
+      <div className="overflow-hidden whitespace-nowrap">
+        <div className="app-announcement-track flex w-max min-w-full items-center gap-8">
           {[...announcements, ...announcements].map((announcement, index) => {
             const urgent = announcement.priority === "important_urgent";
             return (
               <div
                 key={`${announcement.id}-${index}`}
-                className={`mx-2 inline-flex max-w-[min(82vw,760px)] items-center gap-3 rounded-xl border px-4 py-2 text-sm font-black ${
-                  urgent
-                    ? "border-rose-200 bg-rose-50 text-rose-900"
-                    : "border-amber-200 bg-amber-50 text-amber-900"
-                }`}
+                className={`inline-flex items-center gap-2 text-sm font-black ${urgent ? "text-rose-800" : "text-orange-800"}`}
               >
                 <span
-                  className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[11px] uppercase ${
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] uppercase ${
                     urgent ? "bg-rose-600 text-white" : "bg-amber-500 text-white"
                   }`}
                 >
                   {urgent ? <AlertTriangle size={13} /> : <Megaphone size={13} />}
                   {announcementPriorityLabel(announcement.priority)}
                 </span>
-                <span className="truncate">{announcement.title}</span>
+                <span>{announcement.title}</span>
                 <span className="font-semibold opacity-85">{announcement.body}</span>
               </div>
             );
