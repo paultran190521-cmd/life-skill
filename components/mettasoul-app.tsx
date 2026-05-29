@@ -701,6 +701,15 @@ export function MettasoulApp() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (role !== "teacher" || activeTab !== "calendar") {
+      return;
+    }
+    const today = currentDateKey();
+    setCalendarMonth(currentMonthKey());
+    setSelectedCalendarDate(today);
+  }, [activeTab, role]);
+
+  useEffect(() => {
     setDraftSchedule((current) => {
       if (current.items.length === 0) {
         const defaultSchoolId = schools[0]?.id ?? "";
@@ -822,6 +831,27 @@ export function MettasoulApp() {
     [selectedCalendarDate, visibleSchedules],
   );
   const calendarStats = useMemo(() => buildCalendarStats(visibleSchedules), [visibleSchedules]);
+  const scheduleCountByDate = useMemo(() => {
+    const countByDate = new Map<string, number>();
+    for (const schedule of visibleSchedules) {
+      countByDate.set(schedule.date, (countByDate.get(schedule.date) ?? 0) + 1);
+    }
+    return countByDate;
+  }, [visibleSchedules]);
+  const quickScheduleDates = useMemo(() => {
+    const uniqueDates = Array.from(new Set(visibleSchedules.map((schedule) => schedule.date))).sort((a, b) => a.localeCompare(b));
+    const monthDates = uniqueDates.filter((date) => date.startsWith(calendarMonth));
+    const sourceDates = monthDates.length > 0 ? monthDates : uniqueDates;
+    const today = currentDateKey();
+    const futureDates = sourceDates.filter((date) => date >= today);
+    const pastDates = sourceDates.filter((date) => date < today);
+    const prioritized = [...futureDates, ...pastDates.slice(-3)];
+    return prioritized.slice(0, 10).map((dateKey) => ({
+      dateKey,
+      count: scheduleCountByDate.get(dateKey) ?? 0,
+      isToday: dateKey === today,
+    }));
+  }, [calendarMonth, scheduleCountByDate, visibleSchedules]);
   const operationalAlerts = useMemo(
     () => buildOperationalAlerts(visibleSchedules, attendance, teachers),
     [attendance, teachers, visibleSchedules],
@@ -4161,7 +4191,7 @@ export function MettasoulApp() {
       <div className="space-y-5">
         <Panel title={role === "admin" ? "Lịch tổng quan" : "Lịch dạy của tôi"} action={formatMonthTitle(calendarMonth)}>
           <div className="mb-4 grid gap-3 xl:grid-cols-[1fr_auto]">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 title="Tháng trước"
@@ -4188,13 +4218,13 @@ export function MettasoulApp() {
               >
                 Hôm nay
               </button>
-              <div className="ml-2 flex overflow-hidden rounded-xl border border-[var(--line)] bg-white">
+              <div className="order-last mt-1 flex w-full overflow-hidden rounded-xl border border-[var(--line)] bg-white sm:order-none sm:mt-0 sm:ml-2 sm:w-auto">
                 {(["month", "week", "day"] as CalendarViewMode[]).map((mode) => (
                   <button
                     key={mode}
                     type="button"
                     onClick={() => setCalendarViewMode(mode)}
-                    className={`h-10 px-3 text-xs font-black ${
+                    className={`h-10 flex-1 px-3 text-xs font-black sm:flex-none ${
                       calendarViewMode === mode ? "bg-[var(--brand)] text-white" : "text-[var(--brand-dark)] hover:bg-cyan-50"
                     }`}
                   >
@@ -4211,6 +4241,34 @@ export function MettasoulApp() {
               <span className="rounded-full bg-rose-50 px-3 py-1 text-rose-800">{calendarStats.cancelled} hủy</span>
             </div>
           </div>
+          {role === "teacher" && quickScheduleDates.length > 0 ? (
+            <div className="mb-4 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3">
+              <p className="text-[11px] font-black uppercase tracking-wide text-[var(--brand-dark)]">Ngày có lịch để nhảy nhanh</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {quickScheduleDates.map((item) => (
+                  <button
+                    key={item.dateKey}
+                    type="button"
+                    onClick={() => {
+                      setCalendarMonth(item.dateKey.slice(0, 7));
+                      setSelectedCalendarDate(item.dateKey);
+                    }}
+                    className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-black transition ${
+                      selectedCalendarDate === item.dateKey
+                        ? "border-[var(--brand)] bg-[var(--brand)] text-white"
+                        : "border-cyan-200 bg-white text-[var(--brand-dark)] hover:bg-cyan-50"
+                    }`}
+                  >
+                    <span>{formatShortDateLabel(item.dateKey)}</span>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${selectedCalendarDate === item.dateKey ? "bg-white/20 text-white" : "bg-cyan-50 text-cyan-800"}`}>
+                      {item.count}
+                    </span>
+                    {item.isToday ? <span className="text-[10px] uppercase tracking-wide">Hôm nay</span> : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {role === "admin" ? (
             <div className="mb-4 grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/45 p-3 md:grid-cols-2 xl:grid-cols-7">
@@ -6836,7 +6894,7 @@ function SystemFeedbackLayer({
   return (
     <>
       {hasTopRightFeedback ? (
-        <div className="pointer-events-none fixed right-3 top-3 z-[80] flex w-[min(430px,calc(100vw-1.5rem))] flex-col gap-3 sm:right-5 sm:top-5 sm:w-[min(430px,calc(100vw-2.5rem))]">
+        <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] right-3 z-[80] flex w-[min(430px,calc(100vw-1.5rem))] flex-col gap-3 sm:bottom-5 sm:right-5 sm:w-[min(430px,calc(100vw-2.5rem))]">
           {pendingAction ? (
             <div className="pointer-events-auto inline-flex items-center gap-3 self-end rounded-2xl border border-cyan-200 bg-white/95 px-4 py-3 text-sm font-black text-[var(--brand-dark)] shadow-2xl shadow-cyan-950/12 backdrop-blur-xl">
               <LoaderCircle className="animate-spin text-cyan-600" size={18} />
@@ -8155,6 +8213,14 @@ function formatDate(value: string) {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
+  }).format(new Date(`${value}T00:00:00`));
+}
+
+function formatShortDateLabel(value: string) {
+  return new Intl.DateTimeFormat("vi-VN", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
   }).format(new Date(`${value}T00:00:00`));
 }
 
