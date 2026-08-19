@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
 import { validationError } from "@/lib/app-error";
-import { appendSheetRowWithHeaders, ensureSheetHeaders, readSheetRowById, updateSheetRowById } from "@/lib/google-sheets";
+import { appendSheetRowWithHeaders, readSheetRowById, updateSheetRowById } from "@/lib/google-sheets";
 import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 
 export const runtime = "nodejs";
@@ -14,10 +14,10 @@ const lessonPlanHeaders = [
   "fileName",
   "driveFileId",
   "driveUrl",
-  "source",
   "uploadedAt",
   "createdAt",
   "updatedAt",
+  "source",
 ];
 
 export async function POST(request: Request) {
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
       updatedAt: now,
     };
 
-    await ensureSheetHeaders("LessonPlans", lessonPlanHeaders);
+    // appendSheetRowWithHeaders da tu goi ensureSheetHeaders va ghi theo thu tu cot that.
     await appendSheetRowWithHeaders("LessonPlans", lessonPlanHeaders, lessonPlan);
     if (schedule.status !== "attended") {
       await updateSheetRowById("Schedules", scheduleId, { status: "lesson_plan_uploaded", updatedAt: now });

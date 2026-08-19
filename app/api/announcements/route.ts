@@ -32,7 +32,6 @@ export async function POST(request: Request) {
       return apiFailure(403, "Bạn không có quyền thực hiện thao tác này.", undefined, requestId);
     }
 
-    await ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders);
     const body = await request.json();
     const title = String(body.title || "").trim();
     const announcementBody = String(body.body || "").trim();

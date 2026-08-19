@@ -186,10 +186,14 @@ export async function appendSheetRow(sheetName: SheetName, row: Record<string, u
 
 export async function appendSheetRowWithHeaders(
   sheetName: SheetName,
-  headers: string[],
+  requiredHeaders: string[],
   row: Record<string, unknown>,
 ) {
-  const values = headers.map((header) => stringifyCell(row[header]));
+  // Thu tu cot phai lay tu chinh Google Sheet, khong dung thu tu hardcode cua caller.
+  // ensureSheetHeaders them cot moi vao CUOI hang header, nen neu ghi theo thu tu
+  // hardcode thi du lieu se lech cot (su co LessonPlans: uploadedAt <-> source).
+  const sheetHeaders = await ensureSheetHeaders(sheetName, requiredHeaders);
+  const values = sheetHeaders.map((header) => stringifyCell(row[header]));
 
   await getSheetsClient().spreadsheets.values.append({
     spreadsheetId: spreadsheetId(),

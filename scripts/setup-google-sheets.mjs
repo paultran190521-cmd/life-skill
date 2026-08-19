@@ -42,7 +42,7 @@ const SHEETS = [
   },
   {
     title: "Lessons",
-    headers: ["id", "grade", "title", "objective", "durationMinutes", "samplePlanUrl", "active", "createdAt", "updatedAt"],
+    headers: ["id", "grade", "title", "objective", "durationMinutes", "active", "createdAt", "updatedAt", "samplePlanUrl"],
   },
   {
     title: "TimeSlots",
@@ -58,7 +58,6 @@ const SHEETS = [
       "classId",
       "lessonId",
       "timeSlotId",
-      "teachingEnvironment",
       "status",
       "sentAt",
       "confirmedAt",
@@ -67,6 +66,7 @@ const SHEETS = [
       "createdBy",
       "createdAt",
       "updatedAt",
+      "teachingEnvironment",
     ],
   },
   {
@@ -78,10 +78,10 @@ const SHEETS = [
       "fileName",
       "driveFileId",
       "driveUrl",
-      "source",
       "uploadedAt",
       "createdAt",
       "updatedAt",
+      "source",
     ],
   },
   {
@@ -216,22 +216,66 @@ async function ensureSheetsAndHeaders(targetSpreadsheetId) {
     (refreshed.data.sheets || []).map((sheet) => [sheet.properties?.title, sheet.properties?.sheetId]),
   );
 
-  await sheetsApi.spreadsheets.values.batchUpdate({
+  // QUAN TRONG: khong bao gio ghi de hang header cua tab da co du lieu.
+  // Ghi de bang thu tu hardcode se lam lech toan bo cot ben duoi (header doi cho
+  // nhung du lieu thi khong), pha huy du lieu that. Chi giu nguyen thu tu cot dang
+  // co va them cac cot con thieu vao CUOI - dung dung quy uoc cua
+  // ensureSheetHeaders() trong lib/google-sheets.ts.
+  const existingHeaderRows = await sheetsApi.spreadsheets.values.batchGet({
     spreadsheetId: targetSpreadsheetId,
-    requestBody: {
-      valueInputOption: "RAW",
-      data: SHEETS.map((sheet) => ({
+    ranges: SHEETS.map((sheet) => quoteSheetName(sheet.title) + "!1:1"),
+  });
+
+  const headerUpdates = [];
+  const headersByTitle = new Map();
+
+  SHEETS.forEach((sheet, index) => {
+    const currentHeaders = (existingHeaderRows.data.valueRanges?.[index]?.values?.[0] || [])
+      .map((header) => String(header || "").trim())
+      .filter(Boolean);
+
+    if (currentHeaders.length === 0) {
+      // Tab moi hoac chua co header -> ghi bo header chuan.
+      headersByTitle.set(sheet.title, sheet.headers);
+      headerUpdates.push({
         range: quoteSheetName(sheet.title) + "!A1:" + columnName(sheet.headers.length) + "1",
         values: [sheet.headers],
-      })),
-    },
+      });
+      return;
+    }
+
+    const missingHeaders = sheet.headers.filter((header) => !currentHeaders.includes(header));
+    const nextHeaders = [...currentHeaders, ...missingHeaders];
+    headersByTitle.set(sheet.title, nextHeaders);
+
+    if (missingHeaders.length === 0) {
+      return;
+    }
+
+    console.log(`  ${sheet.title}: them cot moi -> ${missingHeaders.join(", ")}`);
+    headerUpdates.push({
+      range: quoteSheetName(sheet.title) + "!A1:" + columnName(nextHeaders.length) + "1",
+      values: [nextHeaders],
+    });
   });
+
+  if (headerUpdates.length > 0) {
+    await sheetsApi.spreadsheets.values.batchUpdate({
+      spreadsheetId: targetSpreadsheetId,
+      requestBody: { valueInputOption: "RAW", data: headerUpdates },
+    });
+    console.log(`Updated headers for ${headerUpdates.length} tabs.`);
+  } else {
+    console.log("Headers already up to date, nothing to change.");
+  }
 
   const formatRequests = SHEETS.flatMap((sheet) => {
     const sheetId = sheetIdByTitle.get(sheet.title);
     if (sheetId === undefined) {
       return [];
     }
+
+    const columnCount = (headersByTitle.get(sheet.title) || sheet.headers).length;
 
     return [
       {
@@ -250,7 +294,7 @@ async function ensureSheetsAndHeaders(targetSpreadsheetId) {
             startRowIndex: 0,
             endRowIndex: 1,
             startColumnIndex: 0,
-            endColumnIndex: sheet.headers.length,
+            endColumnIndex: columnCount,
           },
           cell: {
             userEnteredFormat: {
@@ -270,7 +314,7 @@ async function ensureSheetsAndHeaders(targetSpreadsheetId) {
             sheetId,
             dimension: "COLUMNS",
             startIndex: 0,
-            endIndex: sheet.headers.length,
+            endIndex: columnCount,
           },
         },
       },
@@ -284,7 +328,6 @@ async function ensureSheetsAndHeaders(targetSpreadsheetId) {
     });
   }
 
-  console.log(`Updated headers for ${SHEETS.length} tabs.`);
 }
 
 async function shareSpreadsheetIfRequested(targetSpreadsheetId) {

@@ -1,5 +1,5 @@
 ﻿import { createScheduleConfirmationBatchToken, createScheduleConfirmationToken } from "@/lib/schedule-confirmation";
-import { appendSheetRowWithHeaders, ensureSheetHeaders } from "@/lib/google-sheets";
+import { appendSheetRowWithHeaders } from "@/lib/google-sheets";
 import type { Schedule } from "@/lib/types";
 
 type ScheduleEmailInput = {
@@ -662,7 +662,6 @@ async function logMailDebug(row: {
   htmlPreview?: string;
 }) {
   try {
-    await ensureSheetHeaders("MailDebug", mailDebugHeaders);
     await appendSheetRowWithHeaders("MailDebug", mailDebugHeaders, {
       id: `md-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       requestId: row.requestId,

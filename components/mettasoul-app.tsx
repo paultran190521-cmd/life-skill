@@ -8316,36 +8316,52 @@ function isSupportedLessonPlanFile(file: File) {
   return supportedLessonPlanExtensions.some((extension) => lowerName.endsWith(extension));
 }
 
+const invalidDateFallback = "—";
+
+/**
+ * Intl.DateTimeFormat.format() nem RangeError khi gap Invalid Date.
+ * Du lieu doc tu Google Sheet co the bi trong hoac sai dinh dang, va mot o hong
+ * du de lam sap toan bo cay React. Moi cho format ngay deu phai di qua helper nay.
+ */
+function safeFormatDate(value: string, options: Intl.DateTimeFormatOptions) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return invalidDateFallback;
+  }
+
+  return new Intl.DateTimeFormat("vi-VN", options).format(date);
+}
+
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("vi-VN", {
+  return safeFormatDate(`${value}T00:00:00`, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-  }).format(new Date(`${value}T00:00:00`));
+  });
 }
 
 function formatShortDateLabel(value: string) {
-  return new Intl.DateTimeFormat("vi-VN", {
+  return safeFormatDate(`${value}T00:00:00`, {
     weekday: "short",
     day: "2-digit",
     month: "2-digit",
-  }).format(new Date(`${value}T00:00:00`));
+  });
 }
 
 function formatMonthTitle(monthKey: string) {
-  return new Intl.DateTimeFormat("vi-VN", {
+  return safeFormatDate(`${monthKey}-01T00:00:00`, {
     month: "long",
     year: "numeric",
-  }).format(new Date(`${monthKey}-01T00:00:00`));
+  });
 }
 
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("vi-VN", {
+  return safeFormatDate(value, {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(value));
+  });
 }
 
 function currentDateKey() {
