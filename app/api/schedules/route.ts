@@ -4,16 +4,18 @@ import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
 import { sendScheduleDigestEmail } from "@/lib/email";
 import { appendSheetRows, readSheetRows, readSheetRowsBatch, readSheetRowsCached } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
-import { addSchedulesToConflictIndex, getScheduleConflictIndex } from "@/lib/schedule-conflict-index";
 import type { Notification, Schedule, TeachingEnvironment } from "@/lib/types";
 
 type ScheduleDraftItem = {
   date: string;
   schoolId: string;
   classId: string;
+  classIds: string[];
   lessonId: string;
   timeSlotId: string;
   teachingEnvironment: TeachingEnvironment;
+  teacherIds: string[];
+  assistantIds?: string;
 };
 
 type EmailResult = {
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as Record<string, unknown>;
     const now = new Date().toISOString();
     const teacherIds = parseTeacherIds(body);
-    const items = parseScheduleItems(body);
+    const items = parseScheduleItems(body, teacherIds);
     const { teachers, schools, classes, lessons, slots } = await loadReferenceData();
     const normalizedItems = normalizeScheduleItems(items, { schools, classes, lessons, slots });
 
@@ -70,19 +72,22 @@ export async function POST(request: Request) {
       return apiFailure(400, validationMessage, undefined, requestId);
     }
 
-    const schedules: Schedule[] = teacherIds.flatMap((teacherId) =>
-      normalizedItems.map((item) => ({
-        id: createId("sch"),
-        date: item.date,
-        teacherId,
-        schoolId: item.schoolId,
-        classId: item.classId,
-        lessonId: item.lessonId,
-        timeSlotId: item.timeSlotId,
-        teachingEnvironment: item.teachingEnvironment,
-        status: "sent",
-        sentAt: now,
-      })),
+    const schedules: Schedule[] = normalizedItems.flatMap((item) =>
+      item.teacherIds.flatMap((teacherId) =>
+        item.classIds.map((classId) => ({
+          id: createId("sch"),
+          date: item.date,
+          teacherId,
+          schoolId: item.schoolId,
+          classId,
+          lessonId: item.lessonId,
+          timeSlotId: item.timeSlotId,
+          teachingEnvironment: item.teachingEnvironment,
+          assistantIds: item.assistantIds,
+          status: "sent",
+          sentAt: now,
+        })),
+      ),
     );
 
     const conflicts = await detectScheduleConflictsSafe(schedules);
@@ -99,8 +104,6 @@ export async function POST(request: Request) {
         updatedAt: now,
       })),
     );
-    addSchedulesToConflictIndex(schedules);
-
     const emailResults = await sendScheduleEmailsByTeacher(schedules, { teachers, schools, classes, lessons, slots });
     const notifications = createScheduleNotifications(schedules, emailResults, now);
     await appendSheetRows("Notifications", notifications.map((notification) => ({ ...notification, updatedAt: now })));
@@ -173,164 +176,75 @@ type ScheduleConflict = {
 function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Record<string, string>>) {
   const conflicts: ScheduleConflict[] = [];
   const dedupe = new Set<string>();
-
   const activeExistingRows = existingRows.filter(
     (row) => normalizeComparableText(row.status || "") !== "cancelled",
   );
-  const existingTeacherKeySet = new Set(
-    activeExistingRows.map((row) => buildTeacherSlotKey(row.date, row.timeSlotId, row.teacherId)),
-  );
-  const existingClassKeySet = new Set(
-    activeExistingRows.map((row) => buildClassSlotKey(row.date, row.timeSlotId, row.classId)),
-  );
-
-  const draftTeacherSeen = new Set<string>();
-  const draftClassSeen = new Set<string>();
+  const seenDrafts: Schedule[] = [];
 
   for (const schedule of schedules) {
-    const teacherKey = buildTeacherSlotKey(schedule.date, schedule.timeSlotId, schedule.teacherId);
-    const classKey = buildClassSlotKey(schedule.date, schedule.timeSlotId, schedule.classId);
-
-    if (existingTeacherKeySet.has(teacherKey)) {
-      addConflict(
-        conflicts,
-        dedupe,
-        {
-          conflictType: "teacher",
-          source: "existing",
-          date: schedule.date,
-          timeSlotId: schedule.timeSlotId,
-          teacherId: schedule.teacherId,
-          classId: schedule.classId,
-        },
-      );
+    for (const existing of activeExistingRows) {
+      checkConflictPair(conflicts, dedupe, schedule, existing, "existing");
     }
-    if (existingClassKeySet.has(classKey)) {
-      addConflict(
-        conflicts,
-        dedupe,
-        {
-          conflictType: "class",
-          source: "existing",
-          date: schedule.date,
-          timeSlotId: schedule.timeSlotId,
-          teacherId: schedule.teacherId,
-          classId: schedule.classId,
-        },
-      );
+    for (const draft of seenDrafts) {
+      checkConflictPair(conflicts, dedupe, schedule, draft, "draft");
     }
-
-    if (draftTeacherSeen.has(teacherKey)) {
-      addConflict(
-        conflicts,
-        dedupe,
-        {
-          conflictType: "teacher",
-          source: "draft",
-          date: schedule.date,
-          timeSlotId: schedule.timeSlotId,
-          teacherId: schedule.teacherId,
-          classId: schedule.classId,
-        },
-      );
-    } else {
-      draftTeacherSeen.add(teacherKey);
-    }
-
-    if (draftClassSeen.has(classKey)) {
-      addConflict(
-        conflicts,
-        dedupe,
-        {
-          conflictType: "class",
-          source: "draft",
-          date: schedule.date,
-          timeSlotId: schedule.timeSlotId,
-          teacherId: schedule.teacherId,
-          classId: schedule.classId,
-        },
-      );
-    } else {
-      draftClassSeen.add(classKey);
-    }
+    seenDrafts.push(schedule);
   }
 
   return conflicts;
 }
 
 async function detectScheduleConflictsSafe(schedules: Schedule[]) {
-  const conflictIndex = await getScheduleConflictIndex();
-  if (conflictIndex) {
-    return detectScheduleConflictsWithSets(schedules, conflictIndex.teacherKeySet, conflictIndex.classKeySet);
-  }
-
+  // Môi trường là một phần của luật xung đột. Index cũ chỉ lưu key giáo viên/lớp
+  // nên không đủ ngữ cảnh để phân biệt tiết trong lớp và hoạt động chung.
   const existingSchedules = await readSheetRows("Schedules");
   return detectScheduleConflicts(schedules, existingSchedules);
 }
 
-function detectScheduleConflictsWithSets(
-  schedules: Schedule[],
-  existingTeacherKeySet: Set<string>,
-  existingClassKeySet: Set<string>,
+function checkConflictPair(
+  conflicts: ScheduleConflict[],
+  dedupe: Set<string>,
+  schedule: Schedule,
+  other: Pick<Schedule, "date" | "timeSlotId" | "teacherId" | "classId" | "schoolId" | "teachingEnvironment"> | Record<string, string>,
+  source: "existing" | "draft",
 ) {
-  const conflicts: ScheduleConflict[] = [];
-  const dedupe = new Set<string>();
-  const draftTeacherSeen = new Set<string>();
-  const draftClassSeen = new Set<string>();
-
-  for (const schedule of schedules) {
-    const teacherKey = buildTeacherSlotKey(schedule.date, schedule.timeSlotId, schedule.teacherId);
-    const classKey = buildClassSlotKey(schedule.date, schedule.timeSlotId, schedule.classId);
-
-    if (existingTeacherKeySet.has(teacherKey)) {
-      addConflict(conflicts, dedupe, {
-        conflictType: "teacher",
-        source: "existing",
-        date: schedule.date,
-        timeSlotId: schedule.timeSlotId,
-        teacherId: schedule.teacherId,
-        classId: schedule.classId,
-      });
-    }
-    if (existingClassKeySet.has(classKey)) {
-      addConflict(conflicts, dedupe, {
-        conflictType: "class",
-        source: "existing",
-        date: schedule.date,
-        timeSlotId: schedule.timeSlotId,
-        teacherId: schedule.teacherId,
-        classId: schedule.classId,
-      });
-    }
-
-    if (draftTeacherSeen.has(teacherKey)) {
-      addConflict(conflicts, dedupe, {
-        conflictType: "teacher",
-        source: "draft",
-        date: schedule.date,
-        timeSlotId: schedule.timeSlotId,
-        teacherId: schedule.teacherId,
-        classId: schedule.classId,
-      });
-    } else {
-      draftTeacherSeen.add(teacherKey);
-    }
-
-    if (draftClassSeen.has(classKey)) {
-      addConflict(conflicts, dedupe, {
-        conflictType: "class",
-        source: "draft",
-        date: schedule.date,
-        timeSlotId: schedule.timeSlotId,
-        teacherId: schedule.teacherId,
-        classId: schedule.classId,
-      });
-    } else {
-      draftClassSeen.add(classKey);
-    }
+  if (normalizeId(schedule.date) !== normalizeId(other.date) || normalizeId(schedule.timeSlotId) !== normalizeId(other.timeSlotId)) {
+    return;
   }
+  if (canShareGroupActivitySlot(schedule, other)) {
+    return;
+  }
+  if (normalizeId(schedule.teacherId) === normalizeId(other.teacherId)) {
+    addConflict(conflicts, dedupe, {
+      conflictType: "teacher",
+      source,
+      date: schedule.date,
+      timeSlotId: schedule.timeSlotId,
+      teacherId: schedule.teacherId,
+      classId: schedule.classId,
+    });
+  }
+  if (normalizeId(schedule.classId) === normalizeId(other.classId)) {
+    addConflict(conflicts, dedupe, {
+      conflictType: "class",
+      source,
+      date: schedule.date,
+      timeSlotId: schedule.timeSlotId,
+      teacherId: schedule.teacherId,
+      classId: schedule.classId,
+    });
+  }
+}
 
-  return conflicts;
+function canShareGroupActivitySlot(
+  schedule: Pick<Schedule, "schoolId" | "teachingEnvironment">,
+  other: Pick<Schedule, "schoolId" | "teachingEnvironment"> | Record<string, string>,
+) {
+  return (
+    normalizeId(schedule.schoolId) === normalizeId(other.schoolId) &&
+    normalizeTeachingEnvironment(schedule.teachingEnvironment) !== "in_class" &&
+    normalizeTeachingEnvironment(other.teachingEnvironment) !== "in_class"
+  );
 }
 
 function addConflict(
@@ -356,32 +270,28 @@ function buildConflictMessage(conflicts: ScheduleConflict[]) {
   return `Phát hiện ${conflicts.length} xung đột lịch. Vui lòng kiểm tra lại trước khi gửi. ${sample.join(" | ")}`;
 }
 
-function buildTeacherSlotKey(date: string | undefined, timeSlotId: string | undefined, teacherId: string | undefined) {
-  return `${normalizeId(date)}|${normalizeId(timeSlotId)}|${normalizeId(teacherId)}`;
-}
-
-function buildClassSlotKey(date: string | undefined, timeSlotId: string | undefined, classId: string | undefined) {
-  return `${normalizeId(date)}|${normalizeId(timeSlotId)}|${normalizeId(classId)}`;
-}
-
 function parseTeacherIds(body: Record<string, unknown>) {
   const rawIds = Array.isArray(body.teacherIds) ? body.teacherIds : [body.teacherId];
   return Array.from(new Set(rawIds.map((id) => normalizeId(id)).filter(Boolean)));
 }
 
-function parseScheduleItems(body: Record<string, unknown>): ScheduleDraftItem[] {
+function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: string[]): ScheduleDraftItem[] {
   const rawItems = Array.isArray(body.items) ? body.items : [];
   if (rawItems.length > 0) {
     return rawItems
       .map((item) => {
         const entry = item as Record<string, unknown>;
+        const classIds = parseIds(entry.classIds ?? entry.classId);
         return {
           date: String(entry.date || entry.day || body.date || "").trim(),
           schoolId: normalizeId(entry.schoolId),
-          classId: normalizeId(entry.classId),
+          classId: classIds[0] || "",
+          classIds,
           lessonId: normalizeId(entry.lessonId),
           timeSlotId: normalizeId(entry.timeSlotId),
           teachingEnvironment: normalizeTeachingEnvironment(entry.teachingEnvironment),
+          teacherIds: parseIds(entry.teacherIds).length > 0 ? parseIds(entry.teacherIds) : fallbackTeacherIds,
+          assistantIds: parseIds(entry.assistantIds).join(",") || undefined,
         };
       })
       .filter((item) => item.date && item.schoolId && item.classId && item.lessonId && item.timeSlotId);
@@ -391,11 +301,14 @@ function parseScheduleItems(body: Record<string, unknown>): ScheduleDraftItem[] 
     date: String(body.date || "").trim(),
     schoolId: normalizeId(body.schoolId),
     classId: normalizeId(body.classId),
+    classIds: parseIds(body.classIds ?? body.classId),
     lessonId: normalizeId(body.lessonId),
     timeSlotId: normalizeId(body.timeSlotId),
     teachingEnvironment: normalizeTeachingEnvironment(body.teachingEnvironment),
+    teacherIds: fallbackTeacherIds,
+    assistantIds: parseIds(body.assistantIds).join(",") || undefined,
   };
-  return fallbackItem.date && fallbackItem.schoolId && fallbackItem.classId && fallbackItem.lessonId && fallbackItem.timeSlotId
+  return fallbackItem.date && fallbackItem.schoolId && fallbackItem.classIds.length > 0 && fallbackItem.lessonId && fallbackItem.timeSlotId
     ? [fallbackItem]
     : [];
 }
@@ -413,8 +326,10 @@ function normalizeScheduleItems(
     const school = findSchool(data.schools, item.schoolId);
     const schoolId = normalizeId(school?.id) || item.schoolId;
 
-    const classRoom = findClassRoom(data.classes, item.classId, school);
-    const classId = normalizeId(classRoom?.id) || item.classId;
+    const classIds = item.classIds
+      .map((classId) => findClassRoom(data.classes, classId, school))
+      .filter((classRoom): classRoom is Record<string, string> => Boolean(classRoom))
+      .map((classRoom) => normalizeId(classRoom.id));
 
     const lesson = findLesson(data.lessons, item.lessonId);
     const lessonId = normalizeId(lesson?.id) || item.lessonId;
@@ -425,7 +340,8 @@ function normalizeScheduleItems(
     return {
       ...item,
       schoolId,
-      classId,
+      classId: classIds[0] || item.classId,
+      classIds,
       lessonId,
       timeSlotId,
     };
@@ -444,9 +360,7 @@ function validateScheduleInput(
     slots: Array<Record<string, string>>;
   },
 ) {
-  const teacherIdSet = new Set(teacherIds.map((teacherId) => normalizeId(teacherId)));
-
-  if (teacherIds.length === 0 || items.length === 0) {
+  if (items.length === 0) {
     return "Thiếu thông tin bắt buộc khi tạo lịch.";
   }
 
@@ -458,16 +372,21 @@ function validateScheduleInput(
     if (!school) {
       return "Trường đã chọn không tồn tại.";
     }
-    const classRoom = findClassRoom(data.classes, item.classId, school);
-    if (!classRoom) {
-      return "Lớp đã chọn không thuộc trường đã chọn.";
-    }
     const lesson = findLesson(data.lessons, item.lessonId);
     if (!lesson) {
       return "Bài học đã chọn không tồn tại hoặc đang tắt.";
     }
-    if (normalizeComparableText(classRoom.grade) !== normalizeComparableText(lesson.grade)) {
-      return "Bài học đã chọn không đúng khối của lớp.";
+    if (item.classIds.length === 0) {
+      return "Chưa chọn lớp cần giao lịch.";
+    }
+    for (const classId of item.classIds) {
+      const classRoom = findClassRoom(data.classes, classId, school);
+      if (!classRoom) {
+        return "Lớp đã chọn không thuộc trường đã chọn.";
+      }
+      if (normalizeComparableText(classRoom.grade) !== normalizeComparableText(lesson.grade)) {
+        return "Bài học đã chọn không đúng khối của lớp.";
+      }
     }
     if (!findTimeSlot(data.slots, item.timeSlotId)) {
       return "Khung giờ đã chọn không tồn tại hoặc đang tắt.";
@@ -477,7 +396,8 @@ function validateScheduleInput(
   const activeTeacherIds = new Set(
     data.teachers.filter((item) => isRowActive(item)).map((item) => normalizeId(item.id)),
   );
-  if (!Array.from(teacherIdSet).every((teacherId) => activeTeacherIds.has(teacherId))) {
+  const itemTeacherIds = items.flatMap((item) => item.teacherIds);
+  if (itemTeacherIds.length === 0 || !Array.from(new Set(itemTeacherIds)).every((teacherId) => activeTeacherIds.has(teacherId))) {
     return "Một hoặc nhiều giáo viên đã chọn không tồn tại hoặc đang tắt.";
   }
 
@@ -486,6 +406,11 @@ function validateScheduleInput(
 
 function normalizeId(value: unknown) {
   return String(value || "").trim();
+}
+
+function parseIds(value: unknown) {
+  const values = Array.isArray(value) ? value : String(value || "").split(",");
+  return Array.from(new Set(values.map((item) => normalizeId(item)).filter(Boolean)));
 }
 
 function findSchool(rows: Array<Record<string, string>>, schoolIdOrName: string) {

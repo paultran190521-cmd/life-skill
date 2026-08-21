@@ -87,6 +87,7 @@ type DraftScheduleItem = {
   date: string;
   schoolId: string;
   classId: string;
+  classIds: string[];
   lessonId: string;
   timeSlotId: string;
   teachingEnvironment: NonNullable<Schedule["teachingEnvironment"]>;
@@ -877,6 +878,7 @@ export function MettasoulApp() {
               date: current.items[0]?.date ?? currentDateKey(),
               schoolId: defaultSchoolId,
               classId: defaultClassId,
+              classIds: defaultClassId ? [defaultClassId] : [],
               lessonId: pickLessonIdForGrade(defaultGrade, current.items[0]?.lessonId ?? "", activeLessons),
               timeSlotId: activeTimeSlots[0]?.id ?? "",
               teachingEnvironment: current.items[0]?.teachingEnvironment ?? defaultTeachingEnvironment,
@@ -893,6 +895,7 @@ export function MettasoulApp() {
         return (
           item.schoolId !== currentItem.schoolId ||
           item.classId !== currentItem.classId ||
+          item.classIds.join(",") !== currentItem.classIds.join(",") ||
           item.lessonId !== currentItem.lessonId ||
           item.timeSlotId !== currentItem.timeSlotId ||
           item.teachingEnvironment !== currentItem.teachingEnvironment
@@ -1062,18 +1065,20 @@ export function MettasoulApp() {
   const draftSchedulePreview = useMemo<Schedule[]>(
     () =>
       draftSchedule.items.flatMap((item) =>
-        item.teacherIds.map((teacherId) => ({
-          id: `preview-${teacherId}-${item.id}`,
-          date: item.date,
-          teacherId,
-          schoolId: item.schoolId,
-          classId: item.classId,
-          lessonId: item.lessonId,
-          timeSlotId: item.timeSlotId,
-          teachingEnvironment: item.teachingEnvironment,
-          status: "sent" as const,
-          assistantIds: item.assistantIds.join(","),
-        })),
+        item.teacherIds.flatMap((teacherId) =>
+          item.classIds.map((classId) => ({
+            id: `preview-${teacherId}-${classId}-${item.id}`,
+            date: item.date,
+            teacherId,
+            schoolId: item.schoolId,
+            classId,
+            lessonId: item.lessonId,
+            timeSlotId: item.timeSlotId,
+            teachingEnvironment: item.teachingEnvironment,
+            status: "sent" as const,
+            assistantIds: item.assistantIds.join(","),
+          })),
+        ),
       ),
     [draftSchedule],
   );
@@ -1109,7 +1114,13 @@ export function MettasoulApp() {
       list.push({ schoolId: s.schoolId, env: s.teachingEnvironment ?? "in_class" });
       existingTeacherSlots.set(key, list);
     }
-    const existingClassKeys = new Set(activeSchedules.map((schedule) => buildClassSlotKey(schedule)));
+    const existingClassSlots = new Map<string, SlotInfo[]>();
+    for (const schedule of activeSchedules) {
+      const key = buildClassSlotKey(schedule);
+      const list = existingClassSlots.get(key) ?? [];
+      list.push({ schoolId: schedule.schoolId, env: schedule.teachingEnvironment ?? "in_class" });
+      existingClassSlots.set(key, list);
+    }
 
     // Assistants bypass teacher conflicts
     const assistantTeacherIds = new Set(
@@ -1121,7 +1132,7 @@ export function MettasoulApp() {
 
     // Draft tracking
     const draftTeacherSlots = new Map<string, SlotInfo[]>();
-    const draftClassSeen = new Set<string>();
+    const draftClassSlots = new Map<string, SlotInfo[]>();
 
     for (const schedule of draftSchedulePreview) {
       // Rule 4: assistants bypass teacher conflicts
@@ -1197,9 +1208,14 @@ export function MettasoulApp() {
         draftTeacherSlots.set(teacherKey, draftList);
       }
 
-      // Class conflicts (unchanged)
+      // A class may join another same-school group activity in the same slot.
+      // In-class teaching always remains exclusive.
       const classKey = buildClassSlotKey(schedule);
-      if (existingClassKeys.has(classKey)) {
+      const classEnvironment = schedule.teachingEnvironment ?? "in_class";
+      const conflictsExistingClass = (existingClassSlots.get(classKey) ?? []).some(
+        (entry) => !canShareGroupActivitySlot(entry, { schoolId: schedule.schoolId, env: classEnvironment }),
+      );
+      if (conflictsExistingClass) {
         pushDraftConflict(conflicts, dedupe, {
           source: "existing",
           scope: "class",
@@ -1209,7 +1225,10 @@ export function MettasoulApp() {
           classId: schedule.classId,
         });
       }
-      if (draftClassSeen.has(classKey)) {
+      const conflictsDraftClass = (draftClassSlots.get(classKey) ?? []).some(
+        (entry) => !canShareGroupActivitySlot(entry, { schoolId: schedule.schoolId, env: classEnvironment }),
+      );
+      if (conflictsDraftClass) {
         pushDraftConflict(conflicts, dedupe, {
           source: "draft",
           scope: "class",
@@ -1218,9 +1237,10 @@ export function MettasoulApp() {
           teacherId: schedule.teacherId,
           classId: schedule.classId,
         });
-      } else {
-        draftClassSeen.add(classKey);
       }
+      const classDraftList = draftClassSlots.get(classKey) ?? [];
+      classDraftList.push({ schoolId: schedule.schoolId, env: classEnvironment });
+      draftClassSlots.set(classKey, classDraftList);
     }
 
     return conflicts;
@@ -1464,7 +1484,7 @@ export function MettasoulApp() {
     }
 
     const validItems = draftSchedule.items.filter(
-      (item) => item.date && item.schoolId && item.classId && item.lessonId && item.timeSlotId,
+      (item) => item.date && item.schoolId && item.classIds.length > 0 && item.lessonId && item.timeSlotId,
     );
 
     if (validItems.length === 0) {
@@ -1549,6 +1569,7 @@ export function MettasoulApp() {
             date: item.date,
             schoolId: item.schoolId,
             classId: item.classId,
+            classIds: item.classIds,
             lessonId: item.lessonId,
             timeSlotId: item.timeSlotId,
             teachingEnvironment: item.teachingEnvironment,
@@ -4192,6 +4213,7 @@ export function MettasoulApp() {
                               date: prev?.date ?? currentDateKey(),
                               schoolId,
                               classId,
+                              classIds: prev?.classIds ?? (classId ? [classId] : []),
                               lessonId: pickLessonIdForGrade(grade, prev?.lessonId ?? "", activeLessons),
                               timeSlotId: prev?.timeSlotId ?? activeTimeSlots[0]?.id ?? "",
                               teachingEnvironment: prev?.teachingEnvironment ?? defaultTeachingEnvironment,
@@ -4212,6 +4234,8 @@ export function MettasoulApp() {
                     const rowClasses = classesForSchool(classes, item.schoolId);
                     const rowSelectedGrade = pickDefaultGradeForSchool(item.schoolId, item.classId, classes);
                     const rowGradeClasses = classesForSchoolGrade(classes, item.schoolId, rowSelectedGrade);
+                    const rowSelectedClassIds = item.classIds.length > 0 ? item.classIds : item.classId ? [item.classId] : [];
+                    const allowsGroupClasses = item.teachingEnvironment !== "in_class";
                     const rowTopics = activeTopics.filter(
                       (t) => normalizeComparableText(t.grade) === normalizeComparableText(rowSelectedGrade),
                     );
@@ -4257,6 +4281,7 @@ export function MettasoulApp() {
                               updateDraftItem(item.id, {
                                 schoolId,
                                 classId,
+                                classIds: classId ? [classId] : [],
                                 lessonId: pickLessonIdForGrade(grade, item.lessonId, activeLessons),
                                 topicId: "",
                               });
@@ -4276,6 +4301,7 @@ export function MettasoulApp() {
                               const classId = pickClassIdForSchoolGrade(item.schoolId, grade, item.classId, classes);
                               updateDraftItem(item.id, {
                                 classId,
+                                classIds: classId ? [classId] : [],
                                 lessonId: pickLessonIdForGrade(grade, item.lessonId, activeLessons),
                                 topicId: "",
                               });
@@ -4292,27 +4318,34 @@ export function MettasoulApp() {
                               ))
                             )}
                           </select>
-                          <select
-                            value={item.classId}
-                            onChange={(e) => {
-                              const classId = e.target.value;
-                              updateDraftItem(item.id, {
-                                classId,
-                                lessonId: pickLessonIdForClass(classId, item.lessonId, classes, activeLessons),
-                              });
-                            }}
-                            className={inputClass}
-                          >
-                            {rowGradeClasses.length === 0 ? (
-                              <option value="">Chưa có lớp trong khối</option>
-                            ) : (
-                              rowGradeClasses.map((cr) => (
-                                <option key={cr.id} value={cr.id}>
-                                  {cr.name}
-                                </option>
-                              ))
-                            )}
-                          </select>
+                          {!allowsGroupClasses ? (
+                            <select
+                              value={item.classId}
+                              onChange={(e) => {
+                                const classId = e.target.value;
+                                updateDraftItem(item.id, {
+                                  classId,
+                                  classIds: classId ? [classId] : [],
+                                  lessonId: pickLessonIdForClass(classId, item.lessonId, classes, activeLessons),
+                                });
+                              }}
+                              className={inputClass}
+                            >
+                              {rowGradeClasses.length === 0 ? (
+                                <option value="">Chưa có lớp trong khối</option>
+                              ) : (
+                                rowGradeClasses.map((cr) => (
+                                  <option key={cr.id} value={cr.id}>
+                                    {cr.name}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          ) : (
+                            <div className="rounded-2xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-bold text-violet-800">
+                              Chọn một hoặc nhiều lớp ở phần hoạt động chung bên dưới
+                            </div>
+                          )}
                           <select
                             value={item.timeSlotId}
                             onChange={(e) => updateDraftItem(item.id, { timeSlotId: e.target.value })}
@@ -4363,11 +4396,13 @@ export function MettasoulApp() {
                           </select>
                           <select
                             value={item.teachingEnvironment}
-                            onChange={(e) =>
+                            onChange={(e) => {
+                              const teachingEnvironment = normalizeTeachingEnvironmentValue(e.target.value);
                               updateDraftItem(item.id, {
-                                teachingEnvironment: normalizeTeachingEnvironmentValue(e.target.value),
-                              })
-                            }
+                                teachingEnvironment,
+                                classIds: teachingEnvironment === "in_class" ? (item.classId ? [item.classId] : []) : rowSelectedClassIds,
+                              });
+                            }}
                             className={inputClass}
                           >
                             {teachingEnvironmentOptions.map((option) => (
@@ -4382,6 +4417,44 @@ export function MettasoulApp() {
                             </p>
                           ) : null}
                         </div>
+                        {allowsGroupClasses ? (
+                          <div className="mt-3 rounded-2xl border border-violet-200 bg-violet-50/70 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-black uppercase text-violet-800">Lớp tham gia hoạt động chung</p>
+                              <label className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-black text-violet-800 shadow-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={rowGradeClasses.length > 0 && rowGradeClasses.every((classRoom) => rowSelectedClassIds.includes(classRoom.id))}
+                                  onChange={(event) => {
+                                    const classIds = event.target.checked ? rowGradeClasses.map((classRoom) => classRoom.id) : [];
+                                    updateDraftItem(item.id, { classIds, classId: classIds[0] ?? "" });
+                                  }}
+                                />
+                                Chọn toàn bộ {rowSelectedGrade}
+                              </label>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {rowGradeClasses.map((classRoom) => (
+                                <label key={classRoom.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-semibold text-violet-900 shadow-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={rowSelectedClassIds.includes(classRoom.id)}
+                                    onChange={(event) => {
+                                      const classIds = event.target.checked
+                                        ? Array.from(new Set([...rowSelectedClassIds, classRoom.id]))
+                                        : rowSelectedClassIds.filter((id) => id !== classRoom.id);
+                                      updateDraftItem(item.id, { classIds, classId: classIds[0] ?? "" });
+                                    }}
+                                  />
+                                  {classRoom.name}
+                                </label>
+                              ))}
+                            </div>
+                            <p className="mt-2 text-xs font-semibold text-violet-700">
+                              Đã chọn {rowSelectedClassIds.length} lớp. Hoạt động chung cho phép các lớp và giáo viên đã chọn diễn ra đồng thời.
+                            </p>
+                          </div>
+                        ) : null}
                         {/* Per-item teacher selection */}
                         <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
                           <p className="mb-2 text-xs font-black uppercase text-[var(--brand-dark)]">Giáo viên</p>
@@ -8927,6 +9000,7 @@ function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftSchedu
     date: seed?.date || currentDateKey(),
     schoolId: seed?.schoolId || "",
     classId: seed?.classId || "",
+    classIds: seed?.classIds ?? (seed?.classId ? [seed.classId] : []),
     lessonId: seed?.lessonId || "",
     timeSlotId: seed?.timeSlotId || "",
     teachingEnvironment: normalizeTeachingEnvironmentValue(seed?.teachingEnvironment),
@@ -8942,6 +9016,13 @@ function buildTeacherSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "t
 
 function buildClassSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "classId">) {
   return `${schedule.date}|${schedule.timeSlotId}|${schedule.classId}`;
+}
+
+function canShareGroupActivitySlot(
+  first: { schoolId: string; env: TeachingEnvironment },
+  second: { schoolId: string; env: TeachingEnvironment },
+) {
+  return first.schoolId === second.schoolId && first.env !== "in_class" && second.env !== "in_class";
 }
 
 function pushDraftConflict(
@@ -8988,6 +9069,16 @@ function normalizeDraftScheduleItem(
     : context.schools[0]?.id ?? "";
   const grade = pickDefaultGradeForSchool(schoolId, item.classId, context.classes);
   const classId = pickClassIdForSchoolGrade(schoolId, grade, item.classId, context.classes);
+  const classIds = Array.from(
+    new Set(
+      (item.classIds.length > 0 ? item.classIds : [classId]).filter((selectedClassId) =>
+        context.classes.some((classRoom) => classRoom.id === selectedClassId && classRoom.schoolId === schoolId && classRoom.grade === grade),
+      ),
+    ),
+  );
+  if (classIds.length === 0 && classId) {
+    classIds.push(classId);
+  }
   const lessonId = pickLessonIdForClass(classId, item.lessonId, context.classes, context.activeLessons);
   const timeSlotId = context.activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
     ? item.timeSlotId
@@ -8997,7 +9088,8 @@ function normalizeDraftScheduleItem(
     ...item,
     date,
     schoolId,
-    classId,
+    classId: classIds[0] ?? classId,
+    classIds,
     lessonId,
     timeSlotId,
     teachingEnvironment: normalizeTeachingEnvironmentValue(item.teachingEnvironment),
