@@ -4,6 +4,7 @@ import { requireSessionUser, requireRole } from "@/lib/route-auth";
 import { ensureSheetHeaders } from "@/lib/google-sheets";
 import {
   topicHeaders,
+  lessonHeaders,
   weeklyUpdateHeaders,
   appAnnouncementHeaders,
 } from "@/lib/google-sheets";
@@ -36,10 +37,7 @@ const ALL_SHEETS: { name: Parameters<typeof ensureSheetHeaders>[0]; headers: str
   },
   {
     name: "Lessons",
-    headers: [
-      "id", "topicId", "grade", "title", "lesson1Title", "lesson1Objective", "lesson2Title", "lesson2Objective", "objective", "objectives",
-      "durationMinutes", "sortOrder", "active", "createdAt", "updatedAt", "samplePlanUrl",
-    ],
+    headers: lessonHeaders,
   },
   {
     name: "TimeSlots",

@@ -388,7 +388,7 @@ export async function getAppDataFromSheets() {
     ensureSheetHeaders("Topics", topicHeaders)
       .then(() => readSheetRows("Topics").then(toTopics))
       .catch(() => [] as Topic[]),
-    readSheetRows("Lessons").then(toLessons),
+    ensureSheetHeaders("Lessons", lessonHeaders).then(() => readSheetRows("Lessons").then(toLessons)),
     readSheetRows("TimeSlots").then(toTimeSlots),
     readSheetRows("Schedules").then(toSchedules),
     readSheetRows("LessonPlans").then(toLessonPlans),
@@ -429,6 +429,25 @@ export const topicHeaders = [
   "active",
   "createdAt",
   "updatedAt",
+];
+
+export const lessonHeaders = [
+  "id",
+  "topicId",
+  "grade",
+  "title",
+  "lesson1Title",
+  "lesson1Objective",
+  "lesson2Title",
+  "lesson2Objective",
+  "objective",
+  "objectives",
+  "durationMinutes",
+  "sortOrder",
+  "active",
+  "createdAt",
+  "updatedAt",
+  "samplePlanUrl",
 ];
 
 export const weeklyUpdateHeaders = [
