@@ -143,7 +143,7 @@ async function requireUser(requestId: string) {
 }
 
 function canUploadForSchedule(
-  user: { role: "admin" | "teacher"; teacherId?: string },
+  user: { role: string; teacherId?: string },
   scheduleTeacherId: string,
 ) {
   if (user.role === "admin") {

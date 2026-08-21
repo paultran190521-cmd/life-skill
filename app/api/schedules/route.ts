@@ -585,7 +585,7 @@ function readPositiveIntEnv(key: string, fallback: number) {
 
 function normalizeTeachingEnvironment(value: unknown): TeachingEnvironment {
   const normalized = normalizeId(value) as TeachingEnvironment;
-  const allowed: TeachingEnvironment[] = ["in_class", "outdoor", "gym", "schoolyard_report"];
+  const allowed: TeachingEnvironment[] = ["in_class", "outdoor", "gym", "schoolyard_report", "hall"];
   return allowed.includes(normalized) ? normalized : "in_class";
 }
 

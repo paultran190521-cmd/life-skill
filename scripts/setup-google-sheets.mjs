@@ -41,8 +41,12 @@ const SHEETS = [
     headers: ["id", "schoolId", "name", "grade", "academicYear", "createdAt", "updatedAt"],
   },
   {
+    title: "Topics",
+    headers: ["id", "grade", "title", "description", "active", "createdAt", "updatedAt"],
+  },
+  {
     title: "Lessons",
-    headers: ["id", "grade", "title", "objective", "durationMinutes", "active", "createdAt", "updatedAt", "samplePlanUrl"],
+    headers: ["id", "topicId", "grade", "title", "objective", "objectives", "durationMinutes", "sortOrder", "active", "createdAt", "updatedAt", "samplePlanUrl"],
   },
   {
     title: "TimeSlots",
@@ -67,6 +71,8 @@ const SHEETS = [
       "createdAt",
       "updatedAt",
       "teachingEnvironment",
+      "groupId",
+      "assistantIds",
     ],
   },
   {
@@ -99,6 +105,10 @@ const SHEETS = [
   {
     title: "AuditLogs",
     headers: ["id", "actorId", "actorEmail", "action", "entityType", "entityId", "metadata", "createdAt"],
+  },
+  {
+    title: "WeeklyUpdates",
+    headers: ["id", "weekNumber", "updateDate", "schoolId", "classId", "teachingHours", "updatedBy", "note", "createdAt", "updatedAt"],
   },
   {
     title: "MailDebug",
