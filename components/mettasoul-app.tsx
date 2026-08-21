@@ -4428,7 +4428,7 @@ export function MettasoulApp() {
             </div>
           </Panel>
         </div>
-        {AssignmentSummaryPanel()}
+        <AssignmentSummaryPanel />
       </div>
     );
   }
@@ -9437,6 +9437,5 @@ function splitObjectiveLines(objective: string) {
 
   return normalized.length > 0 ? normalized : [text];
 }
-
 
 

@@ -385,22 +385,22 @@ export async function getAppDataFromSheets() {
     readSheetRows("Users").then(toUsers),
     readSheetRows("Schools").then(toSchools),
     readSheetRows("Classes").then(toClasses),
-    ensureSheetHeaders("Topics", topicHeaders).then(() =>
-      readSheetRows("Topics").then(toTopics),
-    ),
+    ensureSheetHeaders("Topics", topicHeaders)
+      .then(() => readSheetRows("Topics").then(toTopics))
+      .catch(() => [] as Topic[]),
     readSheetRows("Lessons").then(toLessons),
     readSheetRows("TimeSlots").then(toTimeSlots),
     readSheetRows("Schedules").then(toSchedules),
     readSheetRows("LessonPlans").then(toLessonPlans),
     readSheetRows("Attendance").then(toAttendance),
     readSheetRows("Notifications").then(toNotifications),
-    ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders).then(() =>
-      readSheetRows("AppAnnouncements").then(toAppAnnouncements),
-    ),
-    readSheetRows("AuditLogs").then(toAuditLogs).catch(() => []),
-    ensureSheetHeaders("WeeklyUpdates", weeklyUpdateHeaders).then(() =>
-      readSheetRows("WeeklyUpdates").then(toWeeklyUpdates),
-    ),
+    ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders)
+      .then(() => readSheetRows("AppAnnouncements").then(toAppAnnouncements))
+      .catch(() => [] as AppAnnouncement[]),
+    readSheetRows("AuditLogs").then(toAuditLogs).catch(() => [] as AuditLog[]),
+    ensureSheetHeaders("WeeklyUpdates", weeklyUpdateHeaders)
+      .then(() => readSheetRows("WeeklyUpdates").then(toWeeklyUpdates))
+      .catch(() => [] as WeeklyUpdate[]),
   ]);
 
   return {
