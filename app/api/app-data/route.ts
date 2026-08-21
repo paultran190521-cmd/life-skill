@@ -10,25 +10,32 @@ export async function GET(request: Request) {
     const data = await getAppDataFromSheets();
     const teacherId = String(auth.user.teacherId || "").trim();
 
-    if (auth.user.role === "teacher") {
+    if (auth.user.role === "teacher" || auth.user.role === "assistant") {
       const scopedSchedules = teacherId
-        ? data.schedules.filter((schedule) => schedule.teacherId === teacherId)
+        ? data.schedules.filter((schedule) =>
+            schedule.teacherId === teacherId ||
+            (auth.user.role === "assistant" && String(schedule.assistantIds || "").split(",").map((id) => id.trim()).includes(teacherId)),
+          )
         : [];
       const scopedScheduleIds = new Set(scopedSchedules.map((schedule) => schedule.id));
+      const visibleTeacherIds = new Set([
+        teacherId,
+        ...scopedSchedules.map((schedule) => schedule.teacherId),
+      ]);
 
       return NextResponse.json({
         users: [auth.user],
-        teachers: teacherId ? data.teachers.filter((teacher) => teacher.id === teacherId) : [],
+        teachers: teacherId ? data.teachers.filter((teacher) => visibleTeacherIds.has(teacher.id)) : [],
         schools: data.schools,
         classes: data.classes,
         topics: data.topics,
         lessons: data.lessons,
         timeSlots: data.timeSlots,
         schedules: scopedSchedules,
-        lessonPlans: teacherId
+        lessonPlans: auth.user.role === "teacher" && teacherId
           ? data.lessonPlans.filter((plan) => plan.teacherId === teacherId)
           : [],
-        attendance: teacherId
+        attendance: auth.user.role === "teacher" && teacherId
           ? data.attendance.filter(
               (record) => record.teacherId === teacherId || scopedScheduleIds.has(record.scheduleId),
             )

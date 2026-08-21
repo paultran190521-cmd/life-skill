@@ -19,7 +19,7 @@ export async function findAuthorizedUserByEmail(email: string) {
   );
 
   if (existingUser) {
-    if (existingUser.role === "teacher" && !existingUser.teacherId && teacher) {
+    if (["teacher", "assistant"].includes(existingUser.role) && !existingUser.teacherId && teacher) {
       return {
         ...existingUser,
         teacherId: teacher.id,
@@ -122,7 +122,7 @@ function normalizeEmail(email: string) {
 }
 
 function normalizeRole(role: string): Role {
-  return role === "teacher" ? "teacher" : "admin";
+  return role === "teacher" || role === "assistant" ? role : "admin";
 }
 
 function parseBoolean(value: string | undefined, fallback: boolean) {

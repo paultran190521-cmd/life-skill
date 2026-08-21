@@ -397,6 +397,11 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
   { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
 ];
 
+const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
+  { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
+  { id: "calendar", label: "Lịch trợ giảng", icon: CalendarDays },
+];
+
 export function MettasoulApp() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [appUsers, setAppUsers] = useState<User[]>([]);
@@ -567,11 +572,21 @@ export function MettasoulApp() {
     activeUsers[0] ??
     fallbackCurrentUser;
   const role = currentUser.role;
+  const isTeachingStaff = role === "teacher" || role === "assistant";
   const hasAdminAccess = sessionUser?.role === "admin";
   const currentTeacherId = currentUser.teacherId ?? "";
-  const navigationTabs = role === "admin" ? adminTabs : teacherTabs;
+  const navigationTabs = role === "admin" ? adminTabs : role === "assistant" ? assistantTabs : teacherTabs;
   const activeTabMeta = navigationTabs.find((item) => item.id === activeTab) ?? navigationTabs[0];
   const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.active !== false), [teachers]);
+  const activeAssistants = useMemo(() => {
+    const assistantTeacherIds = new Set(
+      activeUsers
+        .filter((user) => user.role === "assistant")
+        .map((user) => user.teacherId)
+        .filter((teacherId): teacherId is string => Boolean(teacherId)),
+    );
+    return activeTeachers.filter((teacher) => assistantTeacherIds.has(teacher.id));
+  }, [activeTeachers, activeUsers]);
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
   const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);
   const hasBlockingModal = Boolean(
@@ -777,9 +792,9 @@ export function MettasoulApp() {
   }, [activeUsers, currentUserId]);
 
   useEffect(() => {
-    const allowedTabs = role === "admin" ? adminTabs : teacherTabs;
+    const allowedTabs = role === "admin" ? adminTabs : role === "assistant" ? assistantTabs : teacherTabs;
     if (!allowedTabs.some((tab) => tab.id === activeTab)) {
-      setActiveTab(role === "teacher" ? "calendar" : "dashboard");
+      setActiveTab(isTeachingStaff ? "calendar" : "dashboard");
     }
   }, [activeTab, role]);
 
@@ -836,7 +851,7 @@ export function MettasoulApp() {
   }, [hasBlockingModal]);
 
   useEffect(() => {
-    if (role !== "teacher" || activeTab !== "calendar" || !currentTeacherId) {
+    if (!isTeachingStaff || activeTab !== "calendar" || !currentTeacherId) {
       return;
     }
     const today = currentDateKey();
@@ -895,14 +910,18 @@ export function MettasoulApp() {
       return;
     }
     const activeTeacherIds = new Set(activeTeachers.map((teacher) => teacher.id));
+    const activeAssistantIds = new Set(activeAssistants.map((teacher) => teacher.id));
     setDraftSchedule((current) => ({
       ...current,
       items: current.items.map((item) => {
-        const nextIds = item.teacherIds.filter((id) => activeTeacherIds.has(id));
-        return nextIds.length === item.teacherIds.length ? item : { ...item, teacherIds: nextIds };
+        const nextTeacherIds = item.teacherIds.filter((id) => activeTeacherIds.has(id));
+        const nextAssistantIds = item.assistantIds.filter((id) => activeAssistantIds.has(id));
+        return nextTeacherIds.length === item.teacherIds.length && nextAssistantIds.length === item.assistantIds.length
+          ? item
+          : { ...item, teacherIds: nextTeacherIds, assistantIds: nextAssistantIds };
       }),
     }));
-  }, [activeTeachers]);
+  }, [activeAssistants, activeTeachers]);
 
   useEffect(() => {
     if (schools.length === 0) {
@@ -918,7 +937,7 @@ export function MettasoulApp() {
   }, [calendarFilters]);
 
   useEffect(() => {
-    if (role !== "teacher" || !currentTeacherId) {
+    if (!isTeachingStaff || !currentTeacherId) {
       return;
     }
     if (calendarFilters.teacherId !== currentTeacherId) {
@@ -930,7 +949,11 @@ export function MettasoulApp() {
     const scoped =
       role === "admin"
         ? schedules
-        : schedules.filter((schedule) => schedule.teacherId === currentTeacherId);
+        : schedules.filter(
+            (schedule) =>
+              schedule.teacherId === currentTeacherId ||
+              (role === "assistant" && splitAssistantIds(schedule.assistantIds).includes(currentTeacherId)),
+          );
 
     const term = searchTerm.trim().toLowerCase();
     return sortSchedules(
@@ -2239,6 +2262,7 @@ export function MettasoulApp() {
       ["Họ tên", "Email Google", "Số điện thoại", "Chuyên môn", "Quyền"],
       ["Nguyễn Văn Admin", "admin@example.com", "0900000001", "Điều phối giáo vụ", "admin"],
       ["Trần Thị Giáo Viên", "giaovien@example.com", "0900000002", "Kỹ năng sống", "giáo viên"],
+      ["Lê Thị Trợ Giảng", "trogiang@example.com", "0900000003", "Hỗ trợ lớp học", "trợ giảng"],
     ]);
     XLSX.utils.book_append_sheet(workbook, worksheet, "Giao vien");
     const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
@@ -3297,7 +3321,7 @@ export function MettasoulApp() {
   function resetCalendarFilters() {
     setCalendarFilters({
       ...defaultCalendarFilters,
-      teacherId: role === "teacher" && currentTeacherId ? currentTeacherId : "all",
+      teacherId: isTeachingStaff && currentTeacherId ? currentTeacherId : "all",
     });
   }
 
@@ -3346,18 +3370,18 @@ export function MettasoulApp() {
                 >
                   {activeUsers.map((user) => (
                     <option key={user.id} value={user.id}>
-                      {user.name} - {user.role === "admin" ? "Quản trị" : "Giáo viên"}
+                      {user.name} - {roleLabel(user.role)}
                     </option>
                   ))}
                 </select>
               ) : (
                 <div className="w-full rounded-xl border border-cyan-100 bg-slate-50 px-3 py-2 text-sm font-bold text-[var(--brand-dark)]">
-                  {currentUser.name} - Giáo viên
+                  {currentUser.name} - {roleLabel(currentUser.role)}
                 </div>
               )}
             </label>
             <div className="mt-3 rounded-xl bg-gradient-to-r from-emerald-50 to-cyan-50 px-3 py-2 text-xs font-black text-[var(--brand-dark)]">
-              {role === "admin" ? "Quyền quản trị" : "Quyền giáo viên"}
+              Quyền {roleLabel(role).toLowerCase()}
             </div>
             <div className="mt-3">
               {authStatus === "signed-in" ? (
@@ -3414,7 +3438,7 @@ export function MettasoulApp() {
                 </button>
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-[var(--brand-dark)]">
-                    {role === "admin" ? "Bàn điều phối giáo vụ" : "Công việc của giáo viên"}
+                    {role === "admin" ? "Bàn điều phối giáo vụ" : role === "assistant" ? "Lịch trợ giảng" : "Công việc của giáo viên"}
                   </p>
                   <h1 className="mt-1 truncate text-xl font-black tracking-tight md:text-3xl">
                     <span className="sm:hidden">{activeTabMeta?.label ?? "Mettasoul"}</span>
@@ -3433,7 +3457,7 @@ export function MettasoulApp() {
                     className="min-w-0 bg-transparent text-sm text-[var(--brand-dark)] outline-none placeholder:text-slate-400"
                   />
                 </label>
-                {role === "teacher" ? (
+                {isTeachingStaff ? (
                   <button
                     type="button"
                     title="Góp ý nâng cấp"
@@ -3706,6 +3730,7 @@ export function MettasoulApp() {
                     className={inputClass}
                   >
                     <option value="teacher">Quyền giáo viên</option>
+                    <option value="assistant">Quyền trợ giảng</option>
                     <option value="admin">Quyền quản trị</option>
                   </select>
                 </div>
@@ -4075,7 +4100,7 @@ export function MettasoulApp() {
   );
 
   function Dashboard() {
-    if (role === "teacher") {
+    if (isTeachingStaff) {
       return TeacherOverviewPanel();
     }
 
@@ -4375,11 +4400,11 @@ export function MettasoulApp() {
                               </label>
                             ))}
                           </div>
-                          {activeTeachers.length > 0 ? (
+                          {activeAssistants.length > 0 ? (
                             <div className="mt-2">
                               <p className="mb-1 text-xs font-bold text-violet-700">Trợ giảng (không tính xung đột)</p>
                               <div className="flex flex-wrap gap-2">
-                                {activeTeachers.map((teacher) => (
+                                {activeAssistants.map((teacher) => (
                                   <label
                                     key={teacher.id}
                                     className="flex items-center gap-2 rounded-lg bg-violet-50 px-2 py-1.5 text-xs font-semibold shadow-sm"
@@ -4621,7 +4646,7 @@ export function MettasoulApp() {
               <span className="rounded-full bg-rose-50 px-3 py-1 text-rose-800">{calendarStats.cancelled} hủy</span>
             </div>
           </div>
-          {role === "teacher" && quickScheduleDates.length > 0 ? (
+          {isTeachingStaff && quickScheduleDates.length > 0 ? (
             <div className="mb-4 rounded-2xl border border-orange-200 bg-orange-50/70 p-3">
               <p className="text-center text-[11px] font-black uppercase tracking-wide text-orange-700">CÁC NGÀY CÓ LỊCH DẠY</p>
               <div className="mt-2 flex flex-wrap justify-center gap-2">
@@ -8186,6 +8211,7 @@ function TeacherTableRow({
           className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-black text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
         >
           <option value="teacher">Giáo viên</option>
+          <option value="assistant">Trợ giảng</option>
           <option value="admin">Quản trị</option>
         </select>
         <span
@@ -8232,6 +8258,7 @@ function TeacherTableRow({
         className="w-full rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-sm font-black text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
       >
         <option value="teacher">Giáo viên</option>
+        <option value="assistant">Trợ giảng</option>
         <option value="admin">Quản trị</option>
       </select>
       <span
@@ -8318,6 +8345,19 @@ function LessonSessionCard({ number, title, objective }: { number: 1 | 2; title:
   );
 }
 
+function roleLabel(role: Role) {
+  if (role === "admin") return "Quản trị";
+  if (role === "assistant") return "Trợ giảng";
+  return "Giáo viên";
+}
+
+function splitAssistantIds(value: string | undefined) {
+  return String(value || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
 function StatusChip({ status }: { status: Schedule["status"] }) {
   return (
     <span className={`whitespace-nowrap rounded-full border px-3 py-1 text-xs font-black ${statusStyles[status]}`}>
@@ -8336,8 +8376,8 @@ function validateTeacherImportDraft(row: TeacherImportDraft, label = "Giáo viê
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email.trim())) {
     return `${label}: Email Google không hợp lệ.`;
   }
-  if (!["teacher", "admin"].includes(row.role)) {
-    return `${label}: Quyền phải là Giáo viên hoặc Quản trị.`;
+  if (!["teacher", "assistant", "admin"].includes(row.role)) {
+    return `${label}: Quyền phải là Giáo viên, Trợ giảng hoặc Quản trị.`;
   }
   return "";
 }
@@ -8360,6 +8400,9 @@ function parseTeacherRole(value: string | undefined): Role {
   const normalized = normalizeComparableText(value || "");
   if (["admin", "quan tri", "quantri", "quan tri vien", "quantrivien", "quyen quan tri", "quyenquantri"].includes(normalized)) {
     return "admin";
+  }
+  if (["tro giang", "trogiang", "quyen tro giang", "quyentrogiang", "assistant"].includes(normalized)) {
+    return "assistant";
   }
   return "teacher";
 }

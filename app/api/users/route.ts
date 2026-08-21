@@ -118,5 +118,5 @@ export async function POST(request: Request) {
 }
 
 function normalizeRole(role: unknown): Role {
-  return role === "teacher" ? "teacher" : "admin";
+  return role === "teacher" || role === "assistant" ? role : "admin";
 }

@@ -40,8 +40,8 @@ export async function POST(request: Request) {
       (item: Notification) => item.role === "admin" && item.title.toLowerCase().startsWith("feedback |"),
     );
     const permission = evaluatePermission({
-      allowed: auth.user.role === "admin" || (auth.user.role === "teacher" && teacherFeedbackOnly),
-      reason: auth.user.role === "teacher" ? "teacher_feedback_only" : "missing_permission",
+      allowed: auth.user.role === "admin" || (["teacher", "assistant"].includes(auth.user.role) && teacherFeedbackOnly),
+      reason: ["teacher", "assistant"].includes(auth.user.role) ? "teacher_feedback_only" : "missing_permission",
     });
     if (permission.decision === "would_block") {
       console.warn(`[auth-shadow][${requestId}] notifications.create ${permission.reason}`);

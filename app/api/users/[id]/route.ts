@@ -59,5 +59,5 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 function normalizeRole(role: unknown): Role {
-  return role === "teacher" ? "teacher" : "admin";
+  return role === "teacher" || role === "assistant" ? role : "admin";
 }
