@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
-import { appendAuditLog } from "@/lib/audit";
-import { appendSheetRow, appendSheetRows, readSheetRows } from "@/lib/google-sheets";
+import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
+import {
+  appendSheetRow,
+  appendSheetRows,
+  ensureSheetHeaders,
+  lessonHeaders,
+  readSheetRows,
+} from "@/lib/google-sheets";
 import { normalizeLessonInput } from "@/lib/lessons";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 
@@ -39,11 +45,16 @@ export async function POST(request: Request) {
       updatedAt: now,
     }));
 
+    // Các Sheet cũ không có các cột tiết 1/tiết 2. Đồng bộ header ngay trước
+    // khi ghi để import không phụ thuộc vào việc người dùng đã mở trang chủ.
+    await ensureSheetHeaders("Lessons", lessonHeaders);
+
     if (isBulk) {
       await appendSheetRows("Lessons", lessons);
-      await Promise.all(
-        lessons.map((lesson: Record<string, unknown>) =>
-          appendAuditLog({
+      // Ghi audit theo lô thay vì mở một request Google Sheets cho từng bài.
+      // Một lượt import 45 bài trước đây tạo 45 ghi đồng thời và dễ chạm quota.
+      await appendAuditLogs(
+        lessons.map((lesson: Record<string, unknown>) => ({
             requestId,
             actor: auth.user,
             action: "lesson.create",
@@ -56,8 +67,7 @@ export async function POST(request: Request) {
             reason: permission.reason,
             source: auth.source,
             after: lesson,
-          }),
-        ),
+          })),
       );
       return NextResponse.json({ lessons });
     }

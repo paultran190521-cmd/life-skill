@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
-import { readSheetRowById, updateSheetRowById } from "@/lib/google-sheets";
+import { ensureSheetHeaders, lessonHeaders, readSheetRowById, updateSheetRowById } from "@/lib/google-sheets";
 import { normalizeLessonInput } from "@/lib/lessons";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 
@@ -20,6 +20,9 @@ export async function PATCH(request: Request, { params }: Params) {
     if (!permission.allowed) {
       return apiFailure(403, "Bạn không có quyền thực hiện thao tác này.", undefined, requestId);
     }
+
+    // Cho phép chỉnh sửa bài học cũ ngay cả khi Sheet chưa được migrate header.
+    await ensureSheetHeaders("Lessons", lessonHeaders);
 
     const { id } = await params;
     const before = await readSheetRowById("Lessons", id);
