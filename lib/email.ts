@@ -487,14 +487,14 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
                 const slotTime = [row.slot?.start, row.slot?.end].filter(Boolean).join(" - ");
                 const confirmUrl = buildConfirmUrl(row.schedule);
                 return `
-                  <tr>
+                  <tr style="border-top:3px solid #ff9500">
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(formatDate(row.schedule.date))}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;white-space:nowrap">${escapeHtml(slotTime || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.school?.name || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.classRoom?.name || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(normalizeKnownLessonTitle(row.lesson?.title))}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(formatScheduledLessonTitle(row.lesson, row.schedule))}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:top">${formatObjectives(formatScheduledLessonObjectives(row.lesson, row.schedule))}</td>
+                    <td style="padding:0;border:1px solid #ff9500;vertical-align:top">${renderScheduledPeriodTitles(row.lesson, row.schedule)}</td>
+                    <td style="padding:0;border:1px solid #ff9500;vertical-align:top">${renderScheduledPeriodObjectives(row.lesson, row.schedule)}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">
                       <a href="${confirmUrl}" style="display:inline-block;background:#ff9500;color:#ffffff;text-decoration:none;border-radius:10px;padding:8px 12px;font-weight:700">XÁC NHẬN</a>
                     </td>
@@ -636,6 +636,27 @@ function formatScheduledLessonObjectives(lesson: ScheduleEmailLesson | undefined
     .map((period) => (period === "lesson1" ? lesson?.lesson1Objective : lesson?.lesson2Objective)?.trim())
     .filter(Boolean);
   return objectives.join("\n") || lesson?.objective || "";
+}
+
+function renderScheduledPeriodTitles(lesson: ScheduleEmailLesson | undefined, schedule: Schedule) {
+  return scheduledPeriods(schedule)
+    .map((period, index) => {
+      const number = period === "lesson1" ? "Tiết 1" : "Tiết 2";
+      const title = period === "lesson1" ? lesson?.lesson1Title : lesson?.lesson2Title;
+      const divider = index > 0 ? "border-top:2px solid #149ac2;" : "";
+      return `<div style="padding:12px 10px;${divider}font-weight:700;text-align:center">${escapeHtml(`${number}: ${title?.trim() || lesson?.title?.trim() || "Chưa cập nhật"}`)}</div>`;
+    })
+    .join("");
+}
+
+function renderScheduledPeriodObjectives(lesson: ScheduleEmailLesson | undefined, schedule: Schedule) {
+  return scheduledPeriods(schedule)
+    .map((period, index) => {
+      const objective = period === "lesson1" ? lesson?.lesson1Objective : lesson?.lesson2Objective;
+      const divider = index > 0 ? "border-top:2px solid #149ac2;" : "";
+      return `<div style="padding:12px 10px;${divider}">${formatObjectives(objective?.trim() || lesson?.objective || "")}</div>`;
+    })
+    .join("");
 }
 
 function normalizeComparableText(value: string) {
