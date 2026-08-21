@@ -385,7 +385,9 @@ export async function getAppDataFromSheets() {
     readSheetRows("Users").then(toUsers),
     readSheetRows("Schools").then(toSchools),
     readSheetRows("Classes").then(toClasses),
-    readSheetRows("Topics").then(toTopics).catch(() => []),
+    ensureSheetHeaders("Topics", topicHeaders).then(() =>
+      readSheetRows("Topics").then(toTopics),
+    ),
     readSheetRows("Lessons").then(toLessons),
     readSheetRows("TimeSlots").then(toTimeSlots),
     readSheetRows("Schedules").then(toSchedules),
@@ -396,7 +398,9 @@ export async function getAppDataFromSheets() {
       readSheetRows("AppAnnouncements").then(toAppAnnouncements),
     ),
     readSheetRows("AuditLogs").then(toAuditLogs).catch(() => []),
-    readSheetRows("WeeklyUpdates").then(toWeeklyUpdates).catch(() => []),
+    ensureSheetHeaders("WeeklyUpdates", weeklyUpdateHeaders).then(() =>
+      readSheetRows("WeeklyUpdates").then(toWeeklyUpdates),
+    ),
   ]);
 
   return {
@@ -416,6 +420,29 @@ export async function getAppDataFromSheets() {
     weeklyUpdates,
   };
 }
+
+export const topicHeaders = [
+  "id",
+  "grade",
+  "title",
+  "description",
+  "active",
+  "createdAt",
+  "updatedAt",
+];
+
+export const weeklyUpdateHeaders = [
+  "id",
+  "weekNumber",
+  "updateDate",
+  "schoolId",
+  "classId",
+  "teachingHours",
+  "updatedBy",
+  "note",
+  "createdAt",
+  "updatedAt",
+];
 
 export const appAnnouncementHeaders = [
   "id",
