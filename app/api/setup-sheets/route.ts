@@ -5,6 +5,7 @@ import { ensureSheetHeaders } from "@/lib/google-sheets";
 import {
   topicHeaders,
   lessonHeaders,
+  scheduleHeaders,
   weeklyUpdateHeaders,
   appAnnouncementHeaders,
 } from "@/lib/google-sheets";
@@ -45,11 +46,7 @@ const ALL_SHEETS: { name: Parameters<typeof ensureSheetHeaders>[0]; headers: str
   },
   {
     name: "Schedules",
-    headers: [
-      "id", "date", "teacherId", "schoolId", "classId", "lessonId", "timeSlotId",
-      "status", "sentAt", "confirmedAt", "reassignedFrom", "cancelledAt",
-      "createdBy", "createdAt", "updatedAt", "teachingEnvironment", "groupId", "assistantIds",
-    ],
+    headers: scheduleHeaders,
   },
   {
     name: "LessonPlans",

@@ -2,12 +2,21 @@
 import { appendSheetRowWithHeaders } from "@/lib/google-sheets";
 import type { Schedule } from "@/lib/types";
 
+type ScheduleEmailLesson = {
+  title?: string;
+  objective?: string;
+  lesson1Title?: string;
+  lesson1Objective?: string;
+  lesson2Title?: string;
+  lesson2Objective?: string;
+};
+
 type ScheduleEmailInput = {
   schedule: Schedule;
   teacher: { name?: string; email?: string };
   school?: { name?: string };
   classRoom?: { name?: string };
-  lesson?: { title?: string; objective?: string };
+  lesson?: ScheduleEmailLesson;
   slot?: { label?: string; start?: string; end?: string };
 };
 
@@ -15,7 +24,7 @@ type ScheduleDigestRow = {
   schedule: Schedule;
   school?: { name?: string };
   classRoom?: { name?: string };
-  lesson?: { title?: string; objective?: string };
+  lesson?: ScheduleEmailLesson;
   slot?: { label?: string; start?: string; end?: string };
 };
 
@@ -481,8 +490,8 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;white-space:nowrap">${escapeHtml(slotTime || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.school?.name || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.classRoom?.name || "Chưa cập nhật")}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(normalizeKnownLessonTitle(row.lesson?.title))}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:top">${formatObjectives(row.lesson?.objective || "")}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(formatScheduledLessonTitle(row.lesson, row.schedule))}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:top">${formatObjectives(formatScheduledLessonObjectives(row.lesson, row.schedule))}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">
                       <a href="${confirmUrl}" style="display:inline-block;background:#ff9500;color:#ffffff;text-decoration:none;border-radius:10px;padding:8px 12px;font-weight:700">XÁC NHẬN</a>
                     </td>
@@ -602,6 +611,30 @@ function normalizeKnownLessonTitle(value: string | undefined) {
   return normalized;
 }
 
+function scheduledPeriods(schedule: Schedule) {
+  const periods = String(schedule.lessonPeriods || "lesson1")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value): value is "lesson1" | "lesson2" => value === "lesson1" || value === "lesson2");
+  return periods.length > 0 ? Array.from(new Set(periods)) : ["lesson1"];
+}
+
+function formatScheduledLessonTitle(lesson: ScheduleEmailLesson | undefined, schedule: Schedule) {
+  const titles = scheduledPeriods(schedule).map((period) => {
+    const number = period === "lesson1" ? "Tiết 1" : "Tiết 2";
+    const title = period === "lesson1" ? lesson?.lesson1Title : lesson?.lesson2Title;
+    return `${number}: ${title?.trim() || lesson?.title?.trim() || "Chưa cập nhật"}`;
+  });
+  return titles.join(" · ");
+}
+
+function formatScheduledLessonObjectives(lesson: ScheduleEmailLesson | undefined, schedule: Schedule) {
+  const objectives = scheduledPeriods(schedule)
+    .map((period) => (period === "lesson1" ? lesson?.lesson1Objective : lesson?.lesson2Objective)?.trim())
+    .filter(Boolean);
+  return objectives.join("\n") || lesson?.objective || "";
+}
+
 function normalizeComparableText(value: string) {
   return String(value)
     .normalize("NFD")
@@ -696,4 +729,3 @@ function formatDate(value: string) {
     year: "numeric",
   }).format(new Date(`${value}T00:00:00`));
 }
-

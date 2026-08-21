@@ -58,6 +58,7 @@ import type {
   AuditLog,
   ClassRoom,
   Lesson,
+  LessonPeriod,
   LessonPlan,
   Notification,
   Role,
@@ -89,6 +90,7 @@ type DraftScheduleItem = {
   classId: string;
   classIds: string[];
   lessonId: string;
+  lessonPeriods: LessonPeriod[];
   timeSlotId: string;
   teachingEnvironment: NonNullable<Schedule["teachingEnvironment"]>;
   teacherIds: string[];
@@ -897,6 +899,7 @@ export function MettasoulApp() {
           item.classId !== currentItem.classId ||
           item.classIds.join(",") !== currentItem.classIds.join(",") ||
           item.lessonId !== currentItem.lessonId ||
+          item.lessonPeriods.join(",") !== currentItem.lessonPeriods.join(",") ||
           item.timeSlotId !== currentItem.timeSlotId ||
           item.teachingEnvironment !== currentItem.teachingEnvironment
         );
@@ -1073,6 +1076,7 @@ export function MettasoulApp() {
             schoolId: item.schoolId,
             classId,
             lessonId: item.lessonId,
+            lessonPeriods: item.lessonPeriods.join(","),
             timeSlotId: item.timeSlotId,
             teachingEnvironment: item.teachingEnvironment,
             status: "sent" as const,
@@ -1484,7 +1488,7 @@ export function MettasoulApp() {
     }
 
     const validItems = draftSchedule.items.filter(
-      (item) => item.date && item.schoolId && item.classIds.length > 0 && item.lessonId && item.timeSlotId,
+      (item) => item.date && item.schoolId && item.classIds.length > 0 && item.lessonId && item.lessonPeriods.length > 0 && item.timeSlotId,
     );
 
     if (validItems.length === 0) {
@@ -1571,6 +1575,7 @@ export function MettasoulApp() {
             classId: item.classId,
             classIds: item.classIds,
             lessonId: item.lessonId,
+            lessonPeriods: item.lessonPeriods,
             timeSlotId: item.timeSlotId,
             teachingEnvironment: item.teachingEnvironment,
             teacherIds: item.teacherIds,
@@ -4438,7 +4443,11 @@ export function MettasoulApp() {
                           ) : null}
                           <select
                             value={item.lessonId}
-                            onChange={(e) => updateDraftItem(item.id, { lessonId: e.target.value })}
+                            onChange={(e) => {
+                              const lessonId = e.target.value;
+                              const lesson = activeLessons.find((entry) => entry.id === lessonId);
+                              updateDraftItem(item.id, { lessonId, lessonPeriods: defaultLessonPeriods(lesson) });
+                            }}
                             className={inputClass}
                           >
                             {rowLessons.length === 0 ? (
@@ -4451,6 +4460,33 @@ export function MettasoulApp() {
                               ))
                             )}
                           </select>
+                          {(() => {
+                            const selectedLesson = activeLessons.find((lesson) => lesson.id === item.lessonId);
+                            const periodOptions = lessonPeriodOptions(selectedLesson);
+                            return (
+                              <div className="rounded-2xl border border-cyan-200 bg-cyan-50/70 p-3 md:col-span-2">
+                                <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Chọn tiết cần giao</p>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {periodOptions.map((period) => (
+                                    <label key={period.value} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-bold text-[var(--brand-dark)] shadow-sm">
+                                      <input
+                                        type="checkbox"
+                                        checked={item.lessonPeriods.includes(period.value)}
+                                        onChange={(event) => {
+                                          const lessonPeriods = event.target.checked
+                                            ? Array.from(new Set([...item.lessonPeriods, period.value]))
+                                            : item.lessonPeriods.filter((value) => value !== period.value);
+                                          updateDraftItem(item.id, { lessonPeriods });
+                                        }}
+                                      />
+                                      {period.label}
+                                    </label>
+                                  ))}
+                                </div>
+                                <p className="mt-2 text-xs font-semibold text-cyan-800">Có thể chọn Tiết 1, Tiết 2 hoặc cả hai tiết cho cùng lịch dạy.</p>
+                              </div>
+                            );
+                          })()}
                           {rowSelectedGrade && rowLessons.length === 0 ? (
                             <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 md:col-span-2">
                               Chưa có bài học đang hoạt động cho {rowSelectedGrade}. Vui lòng vào mục Bài học để thêm hoặc bật bài phù hợp.
@@ -9042,12 +9078,38 @@ function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftSchedu
     classId: seed?.classId || "",
     classIds: seed?.classIds ?? (seed?.classId ? [seed.classId] : []),
     lessonId: seed?.lessonId || "",
+    lessonPeriods: seed?.lessonPeriods ?? ["lesson1"],
     timeSlotId: seed?.timeSlotId || "",
     teachingEnvironment: normalizeTeachingEnvironmentValue(seed?.teachingEnvironment),
     teacherIds: seed?.teacherIds ?? [],
     topicId: seed?.topicId ?? "",
     assistantIds: seed?.assistantIds ?? [],
   };
+}
+
+function lessonPeriodOptions(lesson: Lesson | undefined): Array<{ value: LessonPeriod; label: string }> {
+  if (!lesson) {
+    return [];
+  }
+  const lesson1Title = lesson.lesson1Title?.trim() || lesson.title;
+  const lesson2Title = lesson.lesson2Title?.trim();
+  const options: Array<{ value: LessonPeriod; label: string }> = [
+    { value: "lesson1", label: `Tiết 1: ${lesson1Title}` },
+  ];
+  if (lesson2Title) {
+    options.push({ value: "lesson2", label: `Tiết 2: ${lesson2Title}` });
+  }
+  return options;
+}
+
+function defaultLessonPeriods(lesson: Lesson | undefined): LessonPeriod[] {
+  return lessonPeriodOptions(lesson).slice(0, 1).map((option) => option.value);
+}
+
+function normalizeLessonPeriods(periods: LessonPeriod[], lesson: Lesson | undefined): LessonPeriod[] {
+  const allowed = new Set(lessonPeriodOptions(lesson).map((option) => option.value));
+  const valid = periods.filter((period) => allowed.has(period));
+  return valid.length > 0 ? Array.from(new Set(valid)) : defaultLessonPeriods(lesson);
 }
 
 function buildTeacherSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "teacherId">) {
@@ -9120,6 +9182,7 @@ function normalizeDraftScheduleItem(
     classIds.push(classId);
   }
   const lessonId = pickLessonIdForClass(classId, item.lessonId, context.classes, context.activeLessons);
+  const selectedLesson = context.activeLessons.find((lesson) => lesson.id === lessonId);
   const timeSlotId = context.activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
     ? item.timeSlotId
     : context.activeTimeSlots[0]?.id ?? "";
@@ -9131,6 +9194,7 @@ function normalizeDraftScheduleItem(
     classId: classIds[0] ?? classId,
     classIds,
     lessonId,
+    lessonPeriods: normalizeLessonPeriods(item.lessonPeriods, selectedLesson),
     timeSlotId,
     teachingEnvironment: normalizeTeachingEnvironmentValue(item.teachingEnvironment),
     teacherIds: item.teacherIds ?? [],

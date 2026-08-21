@@ -16,6 +16,8 @@ export type TeachingEnvironment =
   | "schoolyard_report"
   | "hall";
 
+export type LessonPeriod = "lesson1" | "lesson2";
+
 export type User = {
   id: string;
   name: string;
@@ -91,6 +93,8 @@ export type Schedule = {
   schoolId: string;
   classId: string;
   lessonId: string;
+  /** Danh sách tiết đã giao, lưu trên Sheet dạng lesson1,lesson2. */
+  lessonPeriods?: string;
   timeSlotId: string;
   teachingEnvironment?: TeachingEnvironment;
   status: ScheduleStatus;

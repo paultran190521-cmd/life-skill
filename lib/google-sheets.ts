@@ -7,6 +7,7 @@ import type {
   AuditLog,
   ClassRoom,
   Lesson,
+  LessonPeriod,
   LessonPlan,
   Notification,
   Role,
@@ -390,7 +391,7 @@ export async function getAppDataFromSheets() {
       .catch(() => [] as Topic[]),
     ensureSheetHeaders("Lessons", lessonHeaders).then(() => readSheetRows("Lessons").then(toLessons)),
     readSheetRows("TimeSlots").then(toTimeSlots),
-    readSheetRows("Schedules").then(toSchedules),
+    ensureSheetHeaders("Schedules", scheduleHeaders).then(() => readSheetRows("Schedules").then(toSchedules)),
     readSheetRows("LessonPlans").then(toLessonPlans),
     readSheetRows("Attendance").then(toAttendance),
     readSheetRows("Notifications").then(toNotifications),
@@ -448,6 +449,12 @@ export const lessonHeaders = [
   "createdAt",
   "updatedAt",
   "samplePlanUrl",
+];
+
+export const scheduleHeaders = [
+  "id", "date", "teacherId", "schoolId", "classId", "lessonId", "lessonPeriods", "timeSlotId",
+  "status", "sentAt", "confirmedAt", "reassignedFrom", "cancelledAt",
+  "createdBy", "createdAt", "updatedAt", "teachingEnvironment", "groupId", "assistantIds",
 ];
 
 export const weeklyUpdateHeaders = [
@@ -735,6 +742,7 @@ function toSchedules(rows: SheetRow[]): Schedule[] {
     schoolId: row.schoolId,
     classId: row.classId,
     lessonId: row.lessonId,
+    lessonPeriods: normalizeLessonPeriods(row.lessonPeriods),
     timeSlotId: row.timeSlotId,
     teachingEnvironment: parseTeachingEnvironment(row.teachingEnvironment),
     status: (row.status || "sent") as ScheduleStatus,
@@ -744,6 +752,14 @@ function toSchedules(rows: SheetRow[]): Schedule[] {
     groupId: row.groupId || undefined,
     assistantIds: row.assistantIds || undefined,
   }));
+}
+
+function normalizeLessonPeriods(value: string | undefined) {
+  const periods = String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item): item is LessonPeriod => item === "lesson1" || item === "lesson2");
+  return periods.length > 0 ? Array.from(new Set(periods)).join(",") : "lesson1";
 }
 
 function toLessonPlans(rows: SheetRow[]): LessonPlan[] {

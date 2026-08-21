@@ -61,6 +61,7 @@ const SHEETS = [
       "schoolId",
       "classId",
       "lessonId",
+      "lessonPeriods",
       "timeSlotId",
       "status",
       "sentAt",

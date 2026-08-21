@@ -4,7 +4,7 @@ import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
 import { sendScheduleDigestEmail } from "@/lib/email";
 import { appendSheetRows, readSheetRows, readSheetRowsBatch, readSheetRowsCached } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
-import type { Notification, Schedule, TeachingEnvironment } from "@/lib/types";
+import type { LessonPeriod, Notification, Schedule, TeachingEnvironment } from "@/lib/types";
 
 type ScheduleDraftItem = {
   date: string;
@@ -12,6 +12,7 @@ type ScheduleDraftItem = {
   classId: string;
   classIds: string[];
   lessonId: string;
+  lessonPeriods: LessonPeriod[];
   timeSlotId: string;
   teachingEnvironment: TeachingEnvironment;
   teacherIds: string[];
@@ -81,6 +82,7 @@ export async function POST(request: Request) {
           schoolId: item.schoolId,
           classId,
           lessonId: item.lessonId,
+          lessonPeriods: item.lessonPeriods.join(","),
           timeSlotId: item.timeSlotId,
           teachingEnvironment: item.teachingEnvironment,
           assistantIds: item.assistantIds,
@@ -124,6 +126,7 @@ export async function POST(request: Request) {
         teacherId: schedule.teacherId,
         classId: schedule.classId,
         lessonId: schedule.lessonId,
+        lessonPeriods: schedule.lessonPeriods,
         schoolId: schedule.schoolId,
         status: schedule.status,
       },
@@ -288,6 +291,7 @@ function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: s
           classId: classIds[0] || "",
           classIds,
           lessonId: normalizeId(entry.lessonId),
+          lessonPeriods: parseLessonPeriods(entry.lessonPeriods),
           timeSlotId: normalizeId(entry.timeSlotId),
           teachingEnvironment: normalizeTeachingEnvironment(entry.teachingEnvironment),
           teacherIds: parseIds(entry.teacherIds).length > 0 ? parseIds(entry.teacherIds) : fallbackTeacherIds,
@@ -303,6 +307,7 @@ function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: s
     classId: normalizeId(body.classId),
     classIds: parseIds(body.classIds ?? body.classId),
     lessonId: normalizeId(body.lessonId),
+    lessonPeriods: parseLessonPeriods(body.lessonPeriods),
     timeSlotId: normalizeId(body.timeSlotId),
     teachingEnvironment: normalizeTeachingEnvironment(body.teachingEnvironment),
     teacherIds: fallbackTeacherIds,
@@ -414,6 +419,14 @@ function normalizeId(value: unknown) {
 function parseIds(value: unknown) {
   const values = Array.isArray(value) ? value : String(value || "").split(",");
   return Array.from(new Set(values.map((item) => normalizeId(item)).filter(Boolean)));
+}
+
+function parseLessonPeriods(value: unknown): LessonPeriod[] {
+  const raw = Array.isArray(value) ? value : String(value || "lesson1").split(",");
+  const periods = raw
+    .map((item) => normalizeId(item))
+    .filter((item): item is LessonPeriod => item === "lesson1" || item === "lesson2");
+  return periods.length > 0 ? Array.from(new Set(periods)) : ["lesson1"];
 }
 
 function findSchool(rows: Array<Record<string, string>>, schoolIdOrName: string) {
