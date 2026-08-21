@@ -8,7 +8,13 @@ export type TimeSlotInput = {
   active?: unknown;
 };
 
-export const allowedTimeSlotDurations = [45, 90] as const;
+/**
+ * Khung giờ linh hoạt: tối thiểu 15 phút, tối đa 240 phút, bội số 5.
+ * (Trước đây chỉ cho phép 45 hoặc 90 phút.)
+ */
+export const MIN_TIME_SLOT_MINUTES = 15;
+export const MAX_TIME_SLOT_MINUTES = 240;
+export const TIME_SLOT_STEP_MINUTES = 5;
 
 export function normalizeTimeSlotInput(input: TimeSlotInput, fallback?: Partial<TimeSlot>) {
   const label = input.label !== undefined ? String(input.label || "").trim() : fallback?.label ?? "";
@@ -26,8 +32,14 @@ export function normalizeTimeSlotInput(input: TimeSlotInput, fallback?: Partial<
   if (durationMinutes <= 0) {
     throw new Error("Giờ kết thúc phải sau giờ bắt đầu.");
   }
-  if (!allowedTimeSlotDurations.includes(durationMinutes as (typeof allowedTimeSlotDurations)[number])) {
-    throw new Error("Khung giờ chỉ được kéo dài 45 phút hoặc 90 phút.");
+  if (durationMinutes < MIN_TIME_SLOT_MINUTES) {
+    throw new Error(`Khung giờ phải kéo dài ít nhất ${MIN_TIME_SLOT_MINUTES} phút.`);
+  }
+  if (durationMinutes > MAX_TIME_SLOT_MINUTES) {
+    throw new Error(`Khung giờ không được dài quá ${MAX_TIME_SLOT_MINUTES} phút.`);
+  }
+  if (durationMinutes % TIME_SLOT_STEP_MINUTES !== 0) {
+    throw new Error(`Thời lượng khung giờ phải là bội số của ${TIME_SLOT_STEP_MINUTES} phút.`);
   }
 
   return {
@@ -47,10 +59,9 @@ export function getTimeSlotDurationMinutes(start: string, end: string) {
   return endMinutes - startMinutes;
 }
 
-export function isStandardTimeSlotDuration(start: string, end: string) {
-  return allowedTimeSlotDurations.includes(
-    getTimeSlotDurationMinutes(start, end) as (typeof allowedTimeSlotDurations)[number],
-  );
+export function isValidTimeSlotDuration(start: string, end: string) {
+  const d = getTimeSlotDurationMinutes(start, end);
+  return d >= MIN_TIME_SLOT_MINUTES && d <= MAX_TIME_SLOT_MINUTES && d % TIME_SLOT_STEP_MINUTES === 0;
 }
 
 export function normalizeTimeValue(value: unknown) {

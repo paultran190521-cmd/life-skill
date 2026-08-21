@@ -1,4 +1,4 @@
-export type Role = "admin" | "teacher";
+export type Role = "admin" | "teacher" | "assistant";
 
 export type ScheduleStatus =
   | "draft"
@@ -13,7 +13,8 @@ export type TeachingEnvironment =
   | "in_class"
   | "outdoor"
   | "gym"
-  | "schoolyard_report";
+  | "schoolyard_report"
+  | "hall";
 
 export type User = {
   id: string;
@@ -48,12 +49,23 @@ export type ClassRoom = {
   grade: string;
 };
 
-export type Lesson = {
+export type Topic = {
   id: string;
   grade: string;
   title: string;
+  description?: string;
+  active?: boolean;
+};
+
+export type Lesson = {
+  id: string;
+  topicId?: string;
+  grade: string;
+  title: string;
   objective: string;
+  objectives?: string;
   durationMinutes: number;
+  sortOrder?: number;
   samplePlanUrl?: string;
   active?: boolean;
 };
@@ -79,6 +91,8 @@ export type Schedule = {
   sentAt?: string;
   confirmedAt?: string;
   reassignedFrom?: string;
+  groupId?: string;
+  assistantIds?: string;
 };
 
 export type LessonPlan = {
@@ -130,5 +144,17 @@ export type AuditLog = {
   entityType: string;
   entityId: string;
   metadata?: string;
+  createdAt: string;
+};
+
+export type WeeklyUpdate = {
+  id: string;
+  weekNumber: number;
+  updateDate: string;
+  schoolId: string;
+  classId: string;
+  teachingHours: number;
+  updatedBy: string;
+  note?: string;
   createdAt: string;
 };
