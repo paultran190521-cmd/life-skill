@@ -460,13 +460,14 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
         <!-- ${scheduleEmailTemplateVersion} -->
         <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 20px;font-size:13px;border:2px solid #ff9500">
           <colgroup>
-            <col style="width:10%">
-            <col style="width:12%">
-            <col style="width:17%">
-            <col style="width:7%">
-            <col style="width:15%">
-            <col style="width:28%">
+            <col style="width:9%">
             <col style="width:11%">
+            <col style="width:15%">
+            <col style="width:6%">
+            <col style="width:13%">
+            <col style="width:17%">
+            <col style="width:19%">
+            <col style="width:10%">
           </colgroup>
           <thead>
             <tr>
@@ -474,7 +475,8 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">KHUNG GIỜ</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TRƯỜNG</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">LỚP</th>
-              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">BÀI HỌC</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TÊN BÀI</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TÊN TIẾT</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:left">MỤC TIÊU</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">XÁC NHẬN</th>
             </tr>
@@ -490,6 +492,7 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;white-space:nowrap">${escapeHtml(slotTime || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.school?.name || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.classRoom?.name || "Chưa cập nhật")}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(normalizeKnownLessonTitle(row.lesson?.title))}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(formatScheduledLessonTitle(row.lesson, row.schedule))}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:top">${formatObjectives(formatScheduledLessonObjectives(row.lesson, row.schedule))}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">
