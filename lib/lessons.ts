@@ -8,6 +8,39 @@ const lessonGrades = new Set(Array.from({ length: 12 }, (_, index) => `Khối ${
 
 export const lessonGradeOptions = Array.from(lessonGrades);
 
+type LessonDuplicateInput = {
+  title?: unknown;
+  lesson1Title?: unknown;
+  lesson1Objective?: unknown;
+  lesson2Title?: unknown;
+  lesson2Objective?: unknown;
+};
+
+/**
+ * Chỉ khi toàn bộ tên chuyên đề và nội dung của hai tiết giống nhau mới trùng.
+ * Khác mục tiêu (dù cùng tên chuyên đề) luôn được coi là bài mới.
+ */
+export function lessonDuplicateKey(lesson: LessonDuplicateInput) {
+  return [
+    lesson.title,
+    lesson.lesson1Title,
+    lesson.lesson1Objective,
+    lesson.lesson2Title,
+    lesson.lesson2Objective,
+  ].map(normalizeLessonDuplicateValue).join("\u001F");
+}
+
+function normalizeLessonDuplicateValue(value: unknown) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 export function normalizeLessonInput(body: Record<string, unknown>, index = 0) {
   const rowLabel = `Dòng ${index + 1}`;
   const grade = String(body.grade || "").trim();

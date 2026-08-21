@@ -41,6 +41,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { statusLabels, statusStyles } from "@/lib/status";
+import { lessonDuplicateKey } from "@/lib/lessons";
 import {
   MIN_TIME_SLOT_MINUTES,
   MAX_TIME_SLOT_MINUTES,
@@ -2703,13 +2704,7 @@ export function MettasoulApp() {
       const rows = file.name.toLowerCase().endsWith(".xlsx")
         ? await parseLessonWorkbook(file)
         : parseLessonSpreadsheet(await file.text());
-      const errors = rows.reduce<Record<string, string>>((record, row, index) => {
-        const error = validateLessonDraft(row, `Dòng ${index + 2}`);
-        if (error) {
-          record[row.id] = error;
-        }
-        return record;
-      }, {});
+      const errors = collectBulkLessonErrors(rows, lessons, 2);
 
       setBulkLessonRows(rows.length > 0 ? rows : [createBulkLessonRow()]);
       setBulkLessonErrors(errors);
@@ -2760,13 +2755,7 @@ export function MettasoulApp() {
       return;
     }
 
-    const errors = rowsToSave.reduce<Record<string, string>>((record, row, index) => {
-      const error = validateLessonDraft(row, `Dòng ${index + 1}`);
-      if (error) {
-        record[row.id] = error;
-      }
-      return record;
-    }, {});
+    const errors = collectBulkLessonErrors(rowsToSave, lessons, 1);
 
     setBulkLessonErrors(errors);
     if (Object.keys(errors).length > 0) {
@@ -8715,6 +8704,41 @@ function validateLessonDraft(row: LessonDraft, label = "Bài học") {
   }
 
   return "";
+}
+
+function collectBulkLessonErrors(rows: BulkLessonRow[], existingLessons: Lesson[], firstLineNumber: number) {
+  const errors: Record<string, string> = {};
+  const existingByKey = new Map(
+    existingLessons
+      .filter((lesson) => lesson.active !== false)
+      .map((lesson) => [lessonDuplicateKey(lesson), lesson]),
+  );
+  const incomingByKey = new Map<string, number>();
+
+  rows.forEach((row, index) => {
+    const lineNumber = index + firstLineNumber;
+    const validationError = validateLessonDraft(row, `Dòng ${lineNumber}`);
+    if (validationError) {
+      errors[row.id] = validationError;
+      return;
+    }
+
+    const duplicateKey = lessonDuplicateKey(row);
+    const existing = existingByKey.get(duplicateKey);
+    if (existing) {
+      errors[row.id] = `Dòng ${lineNumber} trùng hoàn toàn với bài đã lưu: “${existing.title}” — Tiết 1: ${existing.lesson1Title}; Tiết 2: ${existing.lesson2Title}.`;
+      return;
+    }
+
+    const firstMatchingRow = incomingByKey.get(duplicateKey);
+    if (firstMatchingRow !== undefined) {
+      errors[row.id] = `Dòng ${lineNumber} trùng hoàn toàn với dòng ${firstMatchingRow + firstLineNumber} trong file.`;
+      return;
+    }
+    incomingByKey.set(duplicateKey, index);
+  });
+
+  return errors;
 }
 
 function normalizeTimeSlotDraft<T extends TimeSlotDraft & { id?: string }>(row: T) {

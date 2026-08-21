@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
-import { ensureSheetHeaders, lessonHeaders, readSheetRowById, updateSheetRowById } from "@/lib/google-sheets";
-import { normalizeLessonInput } from "@/lib/lessons";
+import { conflictError } from "@/lib/app-error";
+import { ensureSheetHeaders, lessonHeaders, readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
+import { lessonDuplicateKey, normalizeLessonInput } from "@/lib/lessons";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 
 type Params = {
@@ -38,7 +39,16 @@ export async function PATCH(request: Request, { params }: Params) {
     if (body.active === false) {
       patch.active = false;
     } else {
-      Object.assign(patch, normalizeLessonInput(body));
+      const normalized = normalizeLessonInput(body);
+      const duplicate = (await readSheetRows("Lessons")).find((lesson) =>
+        String(lesson.id || "") !== id
+        && String(lesson.active || "true").trim().toLowerCase() !== "false"
+        && lessonDuplicateKey(lesson) === lessonDuplicateKey(normalized),
+      );
+      if (duplicate) {
+        throw conflictError(`Bài học bị trùng hoàn toàn với bài đã lưu: “${duplicate.title || normalized.title}”.`);
+      }
+      Object.assign(patch, normalized);
       patch.active = body.active ?? true;
     }
 
