@@ -42,9 +42,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { statusLabels, statusStyles } from "@/lib/status";
 import {
-  allowedTimeSlotDurations,
+  MIN_TIME_SLOT_MINUTES,
+  MAX_TIME_SLOT_MINUTES,
+  TIME_SLOT_STEP_MINUTES,
   getTimeSlotDurationMinutes,
-  isStandardTimeSlotDuration,
+  isValidTimeSlotDuration,
   normalizeTimeSlotLabel,
   normalizeTimeValue,
   timeSlotDuplicateKey,
@@ -62,8 +64,11 @@ import type {
   Schedule,
   School,
   Teacher,
+  TeachingEnvironment,
   TimeSlot,
+  Topic,
   User,
+  WeeklyUpdate,
 } from "@/lib/types";
 
 type TabId =
@@ -74,6 +79,7 @@ type TabId =
   | "lessons"
   | "plans"
   | "attendance"
+  | "weekly-updates"
   | "settings";
 
 type DraftScheduleItem = {
@@ -84,10 +90,12 @@ type DraftScheduleItem = {
   lessonId: string;
   timeSlotId: string;
   teachingEnvironment: NonNullable<Schedule["teachingEnvironment"]>;
+  teacherIds: string[];
+  topicId: string;
+  assistantIds: string[];
 };
 
 type DraftSchedule = {
-  teacherIds: string[];
   items: DraftScheduleItem[];
 };
 
@@ -96,6 +104,7 @@ type AppData = {
   teachers: Teacher[];
   schools: School[];
   classes: ClassRoom[];
+  topics: Topic[];
   lessons: Lesson[];
   timeSlots: TimeSlot[];
   schedules: Schedule[];
@@ -104,6 +113,7 @@ type AppData = {
   notifications: Notification[];
   appAnnouncements: AppAnnouncement[];
   auditLogs: AuditLog[];
+  weeklyUpdates: WeeklyUpdate[];
 };
 
 type AuthSession = {
@@ -232,6 +242,7 @@ type GasLessonPlanUploadResponse = {
 
 type LessonDraft = {
   grade: string;
+  topicId: string;
   title: string;
   objective: string;
   samplePlanUrl: string;
@@ -240,6 +251,7 @@ type LessonDraft = {
 
 type BulkLessonRow = LessonDraft & {
   id: string;
+  topicId: string;
 };
 
 type TimeSlotDraft = {
@@ -300,7 +312,10 @@ type AppDialog = {
 };
 
 const lessonGrades = Array.from({ length: 12 }, (_, index) => `Khối ${index + 1}`);
-const lessonDurations = [45, 90];
+const lessonDurations = Array.from(
+  { length: Math.floor((MAX_TIME_SLOT_MINUTES - MIN_TIME_SLOT_MINUTES) / TIME_SLOT_STEP_MINUTES) + 1 },
+  (_, i) => MIN_TIME_SLOT_MINUTES + i * TIME_SLOT_STEP_MINUTES,
+);
 const maxLessonPlanFileBytes = 10 * 1024 * 1024;
 const supportedLessonPlanMimeTypes = new Set([
   "application/pdf",
@@ -346,6 +361,11 @@ const teachingEnvironmentOptions = [
     label: "Báo cáo sân trường",
     chipClass: "bg-amber-50 text-amber-800",
   },
+  {
+    value: "hall" as const,
+    label: "Hội trường",
+    chipClass: "bg-rose-50 text-rose-800",
+  },
 ];
 const defaultTeachingEnvironment = teachingEnvironmentOptions[0].value;
 const fallbackCurrentUser: User = {
@@ -363,6 +383,7 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
   { id: "lessons", label: "Bài học", icon: BookOpen },
   { id: "plans", label: "Giáo án", icon: FileUp },
   { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
+  { id: "weekly-updates", label: "Cập nhật tuần", icon: ListChecks },
   { id: "settings", label: "Cấu hình", icon: Settings2 },
 ];
 
@@ -381,8 +402,10 @@ export function MettasoulApp() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [schools, setSchools] = useState<School[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
+  const [weeklyUpdates, setWeeklyUpdates] = useState<WeeklyUpdate[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
@@ -418,7 +441,6 @@ export function MettasoulApp() {
   const [teacherOverviewFocus, setTeacherOverviewFocus] = useState<TeacherOverviewFocus | null>(null);
   const [assignmentPreviewTeacherId, setAssignmentPreviewTeacherId] = useState("all");
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
-    teacherIds: [],
     items: [createDraftScheduleItem()],
   });
   const [teacherDraft, setTeacherDraft] = useState({
@@ -441,6 +463,7 @@ export function MettasoulApp() {
   const [editingLessonId, setEditingLessonId] = useState("");
   const [lessonEditDraft, setLessonEditDraft] = useState<LessonDraft>({
     grade: "Khối 1",
+    topicId: "",
     title: "",
     objective: "",
     samplePlanUrl: "",
@@ -500,6 +523,24 @@ export function MettasoulApp() {
     desiredFlow: "",
   });
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+  const [weeklyUpdateDraft, setWeeklyUpdateDraft] = useState({
+    weekNumber: "",
+    updateDate: currentDateKey(),
+    schoolId: "",
+    classId: "",
+    teachingHours: "",
+    note: "",
+  });
+  const [editingWeeklyUpdateId, setEditingWeeklyUpdateId] = useState("");
+  const [weeklyUpdateEditDraft, setWeeklyUpdateEditDraft] = useState({
+    weekNumber: "",
+    updateDate: "",
+    schoolId: "",
+    classId: "",
+    teachingHours: "",
+    note: "",
+  });
+  const [weeklyUpdateDeleteTarget, setWeeklyUpdateDeleteTarget] = useState<WeeklyUpdate | null>(null);
   const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
   const [centerFeedback, setCenterFeedback] = useState<CenterFeedback | null>(null);
   const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
@@ -642,6 +683,7 @@ export function MettasoulApp() {
         setTeachers(data.teachers);
         setSchools(data.schools);
         setClasses(data.classes);
+        setTopics(data.topics ?? []);
         setLessons(data.lessons);
         setTimeSlots(data.timeSlots);
         setSchedules(data.schedules);
@@ -650,6 +692,7 @@ export function MettasoulApp() {
         setAuditLogs(data.auditLogs ?? []);
         setNotifications(data.notifications);
         setAppAnnouncements(data.appAnnouncements ?? []);
+        setWeeklyUpdates(data.weeklyUpdates ?? []);
         setDataStatus("connected");
       } catch (error) {
         console.error(error);
@@ -838,17 +881,15 @@ export function MettasoulApp() {
     if (activeTeachers.length === 0) {
       return;
     }
-
     const activeTeacherIds = new Set(activeTeachers.map((teacher) => teacher.id));
-    const nextTeacherIds = draftSchedule.teacherIds.filter((teacherId) => activeTeacherIds.has(teacherId));
-    if (nextTeacherIds.length === 0) {
-      setDraftSchedule((current) => ({ ...current, teacherIds: [activeTeachers[0].id] }));
-      return;
-    }
-    if (nextTeacherIds.length !== draftSchedule.teacherIds.length) {
-      setDraftSchedule((current) => ({ ...current, teacherIds: nextTeacherIds }));
-    }
-  }, [activeTeachers, draftSchedule.teacherIds]);
+    setDraftSchedule((current) => ({
+      ...current,
+      items: current.items.map((item) => {
+        const nextIds = item.teacherIds.filter((id) => activeTeacherIds.has(id));
+        return nextIds.length === item.teacherIds.length ? item : { ...item, teacherIds: nextIds };
+      }),
+    }));
+  }, [activeTeachers]);
 
   useEffect(() => {
     if (schools.length === 0) {
@@ -951,14 +992,22 @@ export function MettasoulApp() {
     setSelectedScheduleIds((ids) => ids.filter((id) => selectedDayScheduleIds.has(id)));
   }, [selectedDayScheduleIds]);
 
+  const allDraftTeacherIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const item of draftSchedule.items) {
+      for (const tid of item.teacherIds) ids.add(tid);
+    }
+    return Array.from(ids);
+  }, [draftSchedule.items]);
+
   useEffect(() => {
     if (assignmentPreviewTeacherId === "all") {
       return;
     }
-    if (!draftSchedule.teacherIds.includes(assignmentPreviewTeacherId)) {
+    if (!allDraftTeacherIds.includes(assignmentPreviewTeacherId)) {
       setAssignmentPreviewTeacherId("all");
     }
-  }, [assignmentPreviewTeacherId, draftSchedule.teacherIds]);
+  }, [assignmentPreviewTeacherId, allDraftTeacherIds]);
 
   useEffect(() => {
     if (!selectedCalendarDate) {
@@ -976,8 +1025,8 @@ export function MettasoulApp() {
 
   const draftSchedulePreview = useMemo<Schedule[]>(
     () =>
-      draftSchedule.teacherIds.flatMap((teacherId) =>
-        draftSchedule.items.map((item) => ({
+      draftSchedule.items.flatMap((item) =>
+        item.teacherIds.map((teacherId) => ({
           id: `preview-${teacherId}-${item.id}`,
           date: item.date,
           teacherId,
@@ -986,17 +1035,18 @@ export function MettasoulApp() {
           lessonId: item.lessonId,
           timeSlotId: item.timeSlotId,
           teachingEnvironment: item.teachingEnvironment,
-          status: "sent",
+          status: "sent" as const,
+          assistantIds: item.assistantIds.join(","),
         })),
       ),
     [draftSchedule],
   );
   const draftPreviewTeacherOptions = useMemo(
     () =>
-      draftSchedule.teacherIds
+      allDraftTeacherIds
         .map((teacherId) => teachers.find((teacher) => teacher.id === teacherId))
         .filter((teacher): teacher is Teacher => Boolean(teacher)),
-    [draftSchedule.teacherIds, teachers],
+    [allDraftTeacherIds, teachers],
   );
   const draftPreviewScheduleCountByTeacher = useMemo(() => {
     const countByTeacher = new Map<string, number>();
@@ -1014,25 +1064,105 @@ export function MettasoulApp() {
     const dedupe = new Set<string>();
     const activeSchedules = schedules.filter((schedule) => schedule.status !== "cancelled");
 
-    const existingTeacherKeys = new Set(activeSchedules.map((schedule) => buildTeacherSlotKey(schedule)));
+    // Build lookup: teacher-slot-key → list of {schoolId, env}
+    type SlotInfo = { schoolId: string; env: TeachingEnvironment };
+    const existingTeacherSlots = new Map<string, SlotInfo[]>();
+    for (const s of activeSchedules) {
+      const key = buildTeacherSlotKey(s);
+      const list = existingTeacherSlots.get(key) ?? [];
+      list.push({ schoolId: s.schoolId, env: s.teachingEnvironment ?? "in_class" });
+      existingTeacherSlots.set(key, list);
+    }
     const existingClassKeys = new Set(activeSchedules.map((schedule) => buildClassSlotKey(schedule)));
-    const draftTeacherSeen = new Set<string>();
+
+    // Assistants bypass teacher conflicts
+    const assistantTeacherIds = new Set(
+      teachers.filter((t) => {
+        const user = appUsers.find((u) => u.teacherId === t.id);
+        return user?.role === "assistant";
+      }).map((t) => t.id),
+    );
+
+    // Draft tracking
+    const draftTeacherSlots = new Map<string, SlotInfo[]>();
     const draftClassSeen = new Set<string>();
 
     for (const schedule of draftSchedulePreview) {
-      const teacherKey = buildTeacherSlotKey(schedule);
-      const classKey = buildClassSlotKey(schedule);
+      // Rule 4: assistants bypass teacher conflicts
+      const isAssistant = assistantTeacherIds.has(schedule.teacherId);
 
-      if (existingTeacherKeys.has(teacherKey)) {
-        pushDraftConflict(conflicts, dedupe, {
-          source: "existing",
-          scope: "teacher",
-          date: schedule.date,
-          timeSlotId: schedule.timeSlotId,
-          teacherId: schedule.teacherId,
-          classId: schedule.classId,
-        });
+      if (!isAssistant) {
+        const teacherKey = buildTeacherSlotKey(schedule);
+        const draftEnv: TeachingEnvironment = (schedule.teachingEnvironment as TeachingEnvironment) ?? "in_class";
+        const draftSchoolId = schedule.schoolId;
+
+        // Check against existing schedules
+        const existingSlots = existingTeacherSlots.get(teacherKey) ?? [];
+        for (const ex of existingSlots) {
+          const sameSchool = ex.schoolId === draftSchoolId;
+          if (!sameSchool) {
+            // Rule 1: different school same slot = ALWAYS conflict
+            pushDraftConflict(conflicts, dedupe, {
+              source: "existing",
+              scope: "teacher",
+              date: schedule.date,
+              timeSlotId: schedule.timeSlotId,
+              teacherId: schedule.teacherId,
+              classId: schedule.classId,
+            });
+          } else {
+            // Same school rules
+            const bothOutdoor = ex.env !== "in_class" && draftEnv !== "in_class";
+            if (!bothOutdoor) {
+              // Rule 2: same school, at least one in_class = conflict
+              pushDraftConflict(conflicts, dedupe, {
+                source: "existing",
+                scope: "teacher",
+                date: schedule.date,
+                timeSlotId: schedule.timeSlotId,
+                teacherId: schedule.teacherId,
+                classId: schedule.classId,
+              });
+            }
+            // Rule 3: same school, all outdoor = allowed (no conflict)
+          }
+        }
+
+        // Check against draft schedules
+        const draftSlots = draftTeacherSlots.get(teacherKey) ?? [];
+        for (const dr of draftSlots) {
+          const sameSchool = dr.schoolId === draftSchoolId;
+          if (!sameSchool) {
+            pushDraftConflict(conflicts, dedupe, {
+              source: "draft",
+              scope: "teacher",
+              date: schedule.date,
+              timeSlotId: schedule.timeSlotId,
+              teacherId: schedule.teacherId,
+              classId: schedule.classId,
+            });
+          } else {
+            const bothOutdoor = dr.env !== "in_class" && draftEnv !== "in_class";
+            if (!bothOutdoor) {
+              pushDraftConflict(conflicts, dedupe, {
+                source: "draft",
+                scope: "teacher",
+                date: schedule.date,
+                timeSlotId: schedule.timeSlotId,
+                teacherId: schedule.teacherId,
+                classId: schedule.classId,
+              });
+            }
+          }
+        }
+
+        const draftList = draftTeacherSlots.get(teacherKey) ?? [];
+        draftList.push({ schoolId: draftSchoolId, env: draftEnv });
+        draftTeacherSlots.set(teacherKey, draftList);
       }
+
+      // Class conflicts (unchanged)
+      const classKey = buildClassSlotKey(schedule);
       if (existingClassKeys.has(classKey)) {
         pushDraftConflict(conflicts, dedupe, {
           source: "existing",
@@ -1043,20 +1173,6 @@ export function MettasoulApp() {
           classId: schedule.classId,
         });
       }
-
-      if (draftTeacherSeen.has(teacherKey)) {
-        pushDraftConflict(conflicts, dedupe, {
-          source: "draft",
-          scope: "teacher",
-          date: schedule.date,
-          timeSlotId: schedule.timeSlotId,
-          teacherId: schedule.teacherId,
-          classId: schedule.classId,
-        });
-      } else {
-        draftTeacherSeen.add(teacherKey);
-      }
-
       if (draftClassSeen.has(classKey)) {
         pushDraftConflict(conflicts, dedupe, {
           source: "draft",
@@ -1072,7 +1188,7 @@ export function MettasoulApp() {
     }
 
     return conflicts;
-  }, [draftSchedulePreview, schedules]);
+  }, [draftSchedulePreview, schedules, teachers, appUsers]);
 
   const roleNotifications = useMemo(
     () =>
@@ -1098,7 +1214,7 @@ export function MettasoulApp() {
   const feedbackMenuSuggestions = useMemo(
     () =>
       role === "admin"
-        ? ["Tổng quan", "Giao lịch", "Lịch tổng", "Giáo viên", "Bài học", "Giáo án", "Điểm danh", "Cấu hình"]
+        ? ["Tổng quan", "Giao lịch", "Lịch tổng", "Giáo viên", "Bài học", "Giáo án", "Điểm danh", "Cập nhật tuần", "Cấu hình"]
         : ["Tổng quan", "Lịch của tôi", "Giáo án", "Điểm danh"],
     [role],
   );
@@ -1326,7 +1442,22 @@ export function MettasoulApp() {
     }
 
     const activeTeacherIds = new Set(activeTeachers.map((teacher) => teacher.id));
-    if (!draftSchedule.teacherIds.every((teacherId) => activeTeacherIds.has(teacherId))) {
+    const rowsMissingTeachers = validItems
+      .map((item, index) => (item.teacherIds.length === 0 ? index + 1 : null))
+      .filter((row): row is number => row !== null);
+    if (rowsMissingTeachers.length > 0) {
+      pushToast(
+        "Chưa chọn giáo viên",
+        `Dòng ${rowsMissingTeachers.join(", ")} chưa chọn giáo viên. Hãy chọn ít nhất một giáo viên cho mỗi dòng.`,
+        "warning",
+      );
+      return;
+    }
+
+    const hasInvalidTeacher = validItems.some((item) =>
+      item.teacherIds.some((tid) => !activeTeacherIds.has(tid)),
+    );
+    if (hasInvalidTeacher) {
       pushToast(
         "Giáo viên không hợp lệ",
         "Danh sách giáo viên đã thay đổi. Hệ thống đã làm mới, vui lòng chọn lại giáo viên rồi gửi lịch.",
@@ -1334,7 +1465,10 @@ export function MettasoulApp() {
       );
       setDraftSchedule((current) => ({
         ...current,
-        teacherIds: current.teacherIds.filter((teacherId) => activeTeacherIds.has(teacherId)),
+        items: current.items.map((item) => ({
+          ...item,
+          teacherIds: item.teacherIds.filter((tid) => activeTeacherIds.has(tid)),
+        })),
       }));
       return;
     }
@@ -1357,13 +1491,6 @@ export function MettasoulApp() {
       return;
     }
 
-    if (draftSchedule.teacherIds.length === 0) {
-      addNotification("Chưa chọn giáo viên", "Hãy chọn ít nhất một giáo viên để gửi lịch.", "admin", {
-        tone: "warning",
-      });
-      return;
-    }
-
     if (draftScheduleConflicts.length > 0) {
       const preview = formatDraftConflictLine(draftScheduleConflicts[0], teachers, classes, timeSlots);
       pushToast(
@@ -1377,10 +1504,11 @@ export function MettasoulApp() {
     let created: Schedule[];
     let emailResults: EmailResult[] = [];
     try {
+      const allTeacherIds = [...new Set(validItems.flatMap((item) => item.teacherIds))];
       const response = await saveRequest<ScheduleCreateResponse>("Đang tạo lịch dạy...", "/api/schedules", {
         method: "POST",
         body: JSON.stringify({
-          teacherIds: draftSchedule.teacherIds,
+          teacherIds: allTeacherIds,
           items: validItems.map((item) => ({
             date: item.date,
             schoolId: item.schoolId,
@@ -1388,6 +1516,8 @@ export function MettasoulApp() {
             lessonId: item.lessonId,
             timeSlotId: item.timeSlotId,
             teachingEnvironment: item.teachingEnvironment,
+            teacherIds: item.teacherIds,
+            assistantIds: item.assistantIds.length > 0 ? item.assistantIds.join(",") : undefined,
           })),
           createdBy: currentUser.id,
         }),
@@ -2584,6 +2714,7 @@ export function MettasoulApp() {
     setEditingLessonId(lesson.id);
     setLessonEditDraft({
       grade: lesson.grade,
+      topicId: lesson.topicId ?? "",
       title: lesson.title,
       objective: lesson.objective,
       samplePlanUrl: lesson.samplePlanUrl ?? "",
@@ -3119,6 +3250,9 @@ export function MettasoulApp() {
     }
     if (activeTab === "attendance") {
       return AttendancePanel();
+    }
+    if (activeTab === "weekly-updates") {
+      return WeeklyUpdatesPanel();
     }
     return SettingsPanel();
   }
@@ -3946,340 +4080,452 @@ export function MettasoulApp() {
   }
 
   function AssignmentPanel() {
-    return (
-      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.35fr]">
-        <Panel title="Tạo lịch dạy mới" action="Email xác nhận">
-          <div className="grid gap-4">
-            <div className="rounded-2xl border border-cyan-100 bg-cyan-50/55 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-extrabold text-[var(--brand-dark)]">Danh sách tiết dạy cần giao</p>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDraftSchedule((current) => {
-                      const schoolId = current.items[0]?.schoolId ?? schools[0]?.id ?? "";
-                      const grade = pickDefaultGradeForSchool(schoolId, current.items[0]?.classId ?? "", classes);
-                      const classId = pickClassIdForSchoolGrade(schoolId, grade, current.items[0]?.classId ?? "", classes);
-                      return {
-                        ...current,
-                        items: [
-                          ...current.items,
-                          createDraftScheduleItem({
-                            date: current.items[0]?.date ?? currentDateKey(),
-                            schoolId,
-                            classId,
-                            lessonId: pickLessonIdForGrade(grade, current.items[0]?.lessonId ?? "", activeLessons),
-                            timeSlotId: current.items[0]?.timeSlotId ?? activeTimeSlots[0]?.id ?? "",
-                            teachingEnvironment: current.items[0]?.teachingEnvironment ?? defaultTeachingEnvironment,
-                          }),
-                        ],
-                      };
-                    })
-                  }
-                  className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--brand)] px-3 text-xs font-black text-white"
-                >
-                  <Plus size={14} />
-                  Thêm dòng
-                </button>
-              </div>
-              <div className="mt-3 grid gap-3">
-                {draftSchedule.items.map((item, index) => {
-                  const rowClasses = classesForSchool(classes, item.schoolId);
-                  const rowSelectedGrade = pickDefaultGradeForSchool(item.schoolId, item.classId, classes);
-                  const rowGradeClasses = classesForSchoolGrade(classes, item.schoolId, rowSelectedGrade);
-                  const rowLessons = lessonsForGrade(activeLessons, rowSelectedGrade);
-                  const rowGrades = gradesForClasses(rowClasses);
-                  return (
-                    <div key={item.id} className="rounded-2xl border border-cyan-100 bg-white p-3 shadow-sm">
-                      <div className="mb-2 flex items-center justify-between">
-                        <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Lịch #{index + 1}</p>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDraftSchedule((current) => ({
-                              ...current,
-                              items:
-                                current.items.length <= 1
-                                  ? current.items
-                                  : current.items.filter((currentItem) => currentItem.id !== item.id),
-                            }))
-                          }
-                          disabled={draftSchedule.items.length <= 1}
-                          className="grid h-8 w-8 place-items-center rounded-lg bg-rose-50 text-rose-700 disabled:opacity-50"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <input
-                          type="date"
-                          value={item.date}
-                          onChange={(event) =>
-                            setDraftSchedule((current) => ({
-                              ...current,
-                              items: current.items.map((currentItem) =>
-                                currentItem.id === item.id ? { ...currentItem, date: event.target.value } : currentItem,
-                              ),
-                            }))
-                          }
-                          className={inputClass}
-                        />
-                        <select
-                          value={item.schoolId}
-                          onChange={(event) =>
-                            setDraftSchedule((current) => ({
-                              ...current,
-                              items: current.items.map((currentItem) => {
-                                if (currentItem.id !== item.id) {
-                                  return currentItem;
-                                }
-                                const schoolId = event.target.value;
-                                const grade = pickDefaultGradeForSchool(schoolId, currentItem.classId, classes);
-                                const classId = pickClassIdForSchoolGrade(schoolId, grade, currentItem.classId, classes);
-                                return {
-                                  ...currentItem,
-                                  schoolId,
-                                  classId,
-                                  lessonId: pickLessonIdForGrade(grade, currentItem.lessonId, activeLessons),
-                                };
-                              }),
-                            }))
-                          }
-                          className={inputClass}
-                        >
-                          {schools.map((school) => (
-                            <option key={school.id} value={school.id}>
-                              {school.name}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          value={rowSelectedGrade}
-                          onChange={(event) =>
-                            setDraftSchedule((current) => ({
-                              ...current,
-                              items: current.items.map((currentItem) => {
-                                if (currentItem.id !== item.id) {
-                                  return currentItem;
-                                }
-                                const grade = event.target.value;
-                                const classId = pickClassIdForSchoolGrade(
-                                  currentItem.schoolId,
-                                  grade,
-                                  currentItem.classId,
-                                  classes,
-                                );
-                                return {
-                                  ...currentItem,
-                                  classId,
-                                  lessonId: pickLessonIdForGrade(grade, currentItem.lessonId, activeLessons),
-                                };
-                              }),
-                            }))
-                          }
-                          className={inputClass}
-                        >
-                          {rowGrades.length === 0 ? (
-                            <option value="">Chưa có khối trong trường</option>
-                          ) : (
-                            rowGrades.map((grade) => (
-                              <option key={grade} value={grade}>
-                                {grade}
-                              </option>
-                            ))
-                          )}
-                        </select>
-                        <select
-                          value={item.classId}
-                          onChange={(event) =>
-                            setDraftSchedule((current) => ({
-                              ...current,
-                              items: current.items.map((currentItem) => {
-                                if (currentItem.id !== item.id) {
-                                  return currentItem;
-                                }
-                                const classId = event.target.value;
-                                return {
-                                  ...currentItem,
-                                  classId,
-                                  lessonId: pickLessonIdForClass(classId, currentItem.lessonId, classes, activeLessons),
-                                };
-                              }),
-                            }))
-                          }
-                          className={inputClass}
-                        >
-                          {rowGradeClasses.length === 0 ? (
-                            <option value="">Chưa có lớp trong khối</option>
-                          ) : (
-                            rowGradeClasses.map((classRoom) => (
-                              <option key={classRoom.id} value={classRoom.id}>
-                                {classRoom.name}
-                              </option>
-                            ))
-                          )}
-                        </select>
-                        <select
-                          value={item.timeSlotId}
-                          onChange={(event) =>
-                            setDraftSchedule((current) => ({
-                              ...current,
-                              items: current.items.map((currentItem) =>
-                                currentItem.id === item.id ? { ...currentItem, timeSlotId: event.target.value } : currentItem,
-                              ),
-                            }))
-                          }
-                          className={inputClass}
-                        >
-                          {activeTimeSlots.map((slot) => (
-                            <option key={slot.id} value={slot.id}>
-                              {slot.label} ({slot.start}-{slot.end})
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          value={item.lessonId}
-                          onChange={(event) =>
-                            setDraftSchedule((current) => ({
-                              ...current,
-                              items: current.items.map((currentItem) =>
-                                currentItem.id === item.id ? { ...currentItem, lessonId: event.target.value } : currentItem,
-                              ),
-                            }))
-                          }
-                          className={inputClass}
-                        >
-                          {rowLessons.length === 0 ? (
-                            <option value="">Chưa có bài học phù hợp khối</option>
-                          ) : (
-                            rowLessons.map((lesson) => (
-                              <option key={lesson.id} value={lesson.id}>
-                                {lesson.title}
-                              </option>
-                            ))
-                          )}
-                        </select>
-                        <select
-                          value={item.teachingEnvironment}
-                          onChange={(event) =>
-                            setDraftSchedule((current) => ({
-                              ...current,
-                              items: current.items.map((currentItem) =>
-                                currentItem.id === item.id
-                                  ? {
-                                      ...currentItem,
-                                      teachingEnvironment: normalizeTeachingEnvironmentValue(event.target.value),
-                                    }
-                                  : currentItem,
-                              ),
-                            }))
-                          }
-                          className={`${inputClass} md:col-span-2`}
-                        >
-                          {teachingEnvironmentOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              Môi trường: {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        {rowSelectedGrade && rowLessons.length === 0 ? (
-                          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 md:col-span-2">
-                            Chưa có bài học đang hoạt động cho {rowSelectedGrade}. Vui lòng vào mục Bài học để thêm hoặc bật bài phù
-                            hợp.
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
-              <p className="text-sm font-extrabold text-[var(--brand-dark)]">Chọn giáo viên</p>
-              <div className="mt-3 grid gap-2">
-                {activeTeachers.map((teacher) => (
-                  <label
-                    key={teacher.id}
-                    className="flex items-center gap-3 rounded-xl bg-white px-3 py-2 text-sm font-semibold shadow-sm"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={draftSchedule.teacherIds.includes(teacher.id)}
-                      onChange={(event) => {
-                        setDraftSchedule((current) => ({
-                          ...current,
-                          teacherIds: event.target.checked
-                            ? [...current.teacherIds, teacher.id]
-                            : current.teacherIds.filter((id) => id !== teacher.id),
-                        }));
-                      }}
-                    />
-                    <img alt="" src={teacher.avatarUrl} className="h-8 w-8 rounded-full object-cover" />
-                    <span>{teacher.name}</span>
-                    <span className="ml-auto text-xs text-[var(--muted)]">{teacher.specialty}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <button
-              onClick={createSchedules}
-              disabled={isBusy || draftScheduleConflicts.length > 0}
-              className={`sticky bottom-24 z-10 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition lg:static ${
-                isBusy || draftScheduleConflicts.length > 0
-                  ? "cursor-not-allowed bg-slate-400 shadow-none"
-                  : "bg-[var(--brand)] hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]"
-              }`}
-            >
-              <Send size={18} />
-              Gửi lịch và email thông báo
-            </button>
-          </div>
-        </Panel>
+    const activeTopics = topics.filter((t) => t.active !== false);
 
-        <Panel
-          title="Xem trước lịch sắp gửi"
-          action={`Sẽ tạo ${filteredDraftSchedulePreview.length}/${draftSchedulePreview.length} lịch`}
-        >
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-3">
-              <label className="grid gap-2 text-xs font-black uppercase tracking-wide text-[var(--brand-dark)]">
-                Xem theo giáo viên
-                <select
-                  value={assignmentPreviewTeacherId}
-                  onChange={(event) => setAssignmentPreviewTeacherId(event.target.value)}
-                  className={compactInputClass}
-                >
-                  <option value="all">Tất cả giáo viên đã chọn</option>
-                  {draftPreviewTeacherOptions.map((teacher) => (
-                    <option key={teacher.id} value={teacher.id}>
-                      {teacher.name} ({draftPreviewScheduleCountByTeacher.get(teacher.id) || 0} lịch)
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {draftScheduleConflicts.length > 0 ? (
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
-                <p className="text-sm font-black text-rose-800">
-                  Phát hiện {draftScheduleConflicts.length} xung đột, cần xử lý trước khi gửi
-                </p>
-                <div className="mt-2 space-y-2">
-                  {draftScheduleConflicts.slice(0, 8).map((conflict) => (
-                    <div key={conflict.key} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-800">
-                      {formatDraftConflictLine(conflict, teachers, classes, timeSlots)}
-                    </div>
-                  ))}
+    function updateDraftItem(itemId: string, patch: Partial<DraftScheduleItem>) {
+      setDraftSchedule((current) => ({
+        ...current,
+        items: current.items.map((ci) => (ci.id === itemId ? { ...ci, ...patch } : ci)),
+      }));
+    }
+
+    function toggleDraftItemTeacher(itemId: string, teacherId: string, checked: boolean) {
+      setDraftSchedule((current) => ({
+        ...current,
+        items: current.items.map((ci) => {
+          if (ci.id !== itemId) return ci;
+          const next = checked ? [...ci.teacherIds, teacherId] : ci.teacherIds.filter((id) => id !== teacherId);
+          return { ...ci, teacherIds: next };
+        }),
+      }));
+    }
+
+    function toggleDraftItemAssistant(itemId: string, teacherId: string, checked: boolean) {
+      setDraftSchedule((current) => ({
+        ...current,
+        items: current.items.map((ci) => {
+          if (ci.id !== itemId) return ci;
+          const next = checked ? [...ci.assistantIds, teacherId] : ci.assistantIds.filter((id) => id !== teacherId);
+          return { ...ci, assistantIds: next };
+        }),
+      }));
+    }
+
+    return (
+      <div className="space-y-5">
+        <div className="grid gap-5 xl:grid-cols-[0.9fr_1.35fr]">
+          <Panel title="Tạo lịch dạy mới" action="Email xác nhận">
+            <div className="grid gap-4">
+              <div className="rounded-2xl border border-cyan-100 bg-cyan-50/55 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-extrabold text-[var(--brand-dark)]">Danh sách tiết dạy cần giao</p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraftSchedule((current) => {
+                        const prev = current.items[0];
+                        const schoolId = prev?.schoolId ?? schools[0]?.id ?? "";
+                        const grade = pickDefaultGradeForSchool(schoolId, prev?.classId ?? "", classes);
+                        const classId = pickClassIdForSchoolGrade(schoolId, grade, prev?.classId ?? "", classes);
+                        return {
+                          ...current,
+                          items: [
+                            ...current.items,
+                            createDraftScheduleItem({
+                              date: prev?.date ?? currentDateKey(),
+                              schoolId,
+                              classId,
+                              lessonId: pickLessonIdForGrade(grade, prev?.lessonId ?? "", activeLessons),
+                              timeSlotId: prev?.timeSlotId ?? activeTimeSlots[0]?.id ?? "",
+                              teachingEnvironment: prev?.teachingEnvironment ?? defaultTeachingEnvironment,
+                              teacherIds: prev?.teacherIds ?? [],
+                            }),
+                          ],
+                        };
+                      })
+                    }
+                    className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--brand)] px-3 text-xs font-black text-white"
+                  >
+                    <Plus size={14} />
+                    Thêm dòng
+                  </button>
+                </div>
+                <div className="mt-3 grid gap-3">
+                  {draftSchedule.items.map((item, index) => {
+                    const rowClasses = classesForSchool(classes, item.schoolId);
+                    const rowSelectedGrade = pickDefaultGradeForSchool(item.schoolId, item.classId, classes);
+                    const rowGradeClasses = classesForSchoolGrade(classes, item.schoolId, rowSelectedGrade);
+                    const rowTopics = activeTopics.filter(
+                      (t) => normalizeComparableText(t.grade) === normalizeComparableText(rowSelectedGrade),
+                    );
+                    const rowLessonsAll = lessonsForGrade(activeLessons, rowSelectedGrade);
+                    const rowLessons = item.topicId
+                      ? rowLessonsAll.filter((l) => l.topicId === item.topicId)
+                      : rowLessonsAll;
+                    const rowGrades = gradesForClasses(rowClasses);
+                    return (
+                      <div key={item.id} className="rounded-2xl border border-cyan-100 bg-white p-3 shadow-sm">
+                        <div className="mb-2 flex items-center justify-between">
+                          <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Lịch #{index + 1}</p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDraftSchedule((current) => ({
+                                ...current,
+                                items:
+                                  current.items.length <= 1
+                                    ? current.items
+                                    : current.items.filter((ci) => ci.id !== item.id),
+                              }))
+                            }
+                            disabled={draftSchedule.items.length <= 1}
+                            className="grid h-8 w-8 place-items-center rounded-lg bg-rose-50 text-rose-700 disabled:opacity-50"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <input
+                            type="date"
+                            value={item.date}
+                            onChange={(e) => updateDraftItem(item.id, { date: e.target.value })}
+                            className={inputClass}
+                          />
+                          <select
+                            value={item.schoolId}
+                            onChange={(e) => {
+                              const schoolId = e.target.value;
+                              const grade = pickDefaultGradeForSchool(schoolId, item.classId, classes);
+                              const classId = pickClassIdForSchoolGrade(schoolId, grade, item.classId, classes);
+                              updateDraftItem(item.id, {
+                                schoolId,
+                                classId,
+                                lessonId: pickLessonIdForGrade(grade, item.lessonId, activeLessons),
+                                topicId: "",
+                              });
+                            }}
+                            className={inputClass}
+                          >
+                            {schools.map((school) => (
+                              <option key={school.id} value={school.id}>
+                                {school.name}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={rowSelectedGrade}
+                            onChange={(e) => {
+                              const grade = e.target.value;
+                              const classId = pickClassIdForSchoolGrade(item.schoolId, grade, item.classId, classes);
+                              updateDraftItem(item.id, {
+                                classId,
+                                lessonId: pickLessonIdForGrade(grade, item.lessonId, activeLessons),
+                                topicId: "",
+                              });
+                            }}
+                            className={inputClass}
+                          >
+                            {rowGrades.length === 0 ? (
+                              <option value="">Chưa có khối trong trường</option>
+                            ) : (
+                              rowGrades.map((grade) => (
+                                <option key={grade} value={grade}>
+                                  {grade}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                          <select
+                            value={item.classId}
+                            onChange={(e) => {
+                              const classId = e.target.value;
+                              updateDraftItem(item.id, {
+                                classId,
+                                lessonId: pickLessonIdForClass(classId, item.lessonId, classes, activeLessons),
+                              });
+                            }}
+                            className={inputClass}
+                          >
+                            {rowGradeClasses.length === 0 ? (
+                              <option value="">Chưa có lớp trong khối</option>
+                            ) : (
+                              rowGradeClasses.map((cr) => (
+                                <option key={cr.id} value={cr.id}>
+                                  {cr.name}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                          <select
+                            value={item.timeSlotId}
+                            onChange={(e) => updateDraftItem(item.id, { timeSlotId: e.target.value })}
+                            className={inputClass}
+                          >
+                            {activeTimeSlots.map((slot) => (
+                              <option key={slot.id} value={slot.id}>
+                                {slot.label} ({slot.start}-{slot.end})
+                              </option>
+                            ))}
+                          </select>
+                          {rowTopics.length > 0 ? (
+                            <select
+                              value={item.topicId}
+                              onChange={(e) => {
+                                const topicId = e.target.value;
+                                const filtered = topicId
+                                  ? rowLessonsAll.filter((l) => l.topicId === topicId)
+                                  : rowLessonsAll;
+                                const lessonId =
+                                  filtered.some((l) => l.id === item.lessonId) ? item.lessonId : filtered[0]?.id ?? "";
+                                updateDraftItem(item.id, { topicId, lessonId });
+                              }}
+                              className={inputClass}
+                            >
+                              <option value="">Tất cả chủ đề</option>
+                              {rowTopics.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.title}
+                                </option>
+                              ))}
+                            </select>
+                          ) : null}
+                          <select
+                            value={item.lessonId}
+                            onChange={(e) => updateDraftItem(item.id, { lessonId: e.target.value })}
+                            className={inputClass}
+                          >
+                            {rowLessons.length === 0 ? (
+                              <option value="">Chưa có bài học phù hợp</option>
+                            ) : (
+                              rowLessons.map((lesson) => (
+                                <option key={lesson.id} value={lesson.id}>
+                                  {lesson.title}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                          <select
+                            value={item.teachingEnvironment}
+                            onChange={(e) =>
+                              updateDraftItem(item.id, {
+                                teachingEnvironment: normalizeTeachingEnvironmentValue(e.target.value),
+                              })
+                            }
+                            className={inputClass}
+                          >
+                            {teachingEnvironmentOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                Môi trường: {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          {rowSelectedGrade && rowLessons.length === 0 ? (
+                            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 md:col-span-2">
+                              Chưa có bài học đang hoạt động cho {rowSelectedGrade}. Vui lòng vào mục Bài học để thêm hoặc bật bài phù hợp.
+                            </p>
+                          ) : null}
+                        </div>
+                        {/* Per-item teacher selection */}
+                        <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
+                          <p className="mb-2 text-xs font-black uppercase text-[var(--brand-dark)]">Giáo viên</p>
+                          <div className="flex flex-wrap gap-2">
+                            {activeTeachers.map((teacher) => (
+                              <label
+                                key={teacher.id}
+                                className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-semibold shadow-sm"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={item.teacherIds.includes(teacher.id)}
+                                  onChange={(e) => toggleDraftItemTeacher(item.id, teacher.id, e.target.checked)}
+                                />
+                                <span>{teacher.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                          {activeTeachers.length > 0 ? (
+                            <div className="mt-2">
+                              <p className="mb-1 text-xs font-bold text-violet-700">Trợ giảng (không tính xung đột)</p>
+                              <div className="flex flex-wrap gap-2">
+                                {activeTeachers.map((teacher) => (
+                                  <label
+                                    key={teacher.id}
+                                    className="flex items-center gap-2 rounded-lg bg-violet-50 px-2 py-1.5 text-xs font-semibold shadow-sm"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={item.assistantIds.includes(teacher.id)}
+                                      onChange={(e) => toggleDraftItemAssistant(item.id, teacher.id, e.target.checked)}
+                                    />
+                                    <span>{teacher.name}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            ) : (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-800">
-                Không phát hiện xung đột lịch. Có thể gửi lịch hàng loạt an toàn.
+              <button
+                onClick={createSchedules}
+                disabled={isBusy || draftScheduleConflicts.length > 0}
+                className={`sticky bottom-24 z-10 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition lg:static ${
+                  isBusy || draftScheduleConflicts.length > 0
+                    ? "cursor-not-allowed bg-slate-400 shadow-none"
+                    : "bg-[var(--brand)] hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]"
+                }`}
+              >
+                <Send size={18} />
+                Gửi lịch và email thông báo
+              </button>
+            </div>
+          </Panel>
+
+          <Panel
+            title="Xem trước lịch sắp gửi"
+            action={`Sẽ tạo ${filteredDraftSchedulePreview.length}/${draftSchedulePreview.length} lịch`}
+          >
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-3">
+                <label className="grid gap-2 text-xs font-black uppercase tracking-wide text-[var(--brand-dark)]">
+                  Xem theo giáo viên
+                  <select
+                    value={assignmentPreviewTeacherId}
+                    onChange={(event) => setAssignmentPreviewTeacherId(event.target.value)}
+                    className={compactInputClass}
+                  >
+                    <option value="all">Tất cả giáo viên đã chọn</option>
+                    {draftPreviewTeacherOptions.map((teacher) => (
+                      <option key={teacher.id} value={teacher.id}>
+                        {teacher.name} ({draftPreviewScheduleCountByTeacher.get(teacher.id) || 0} lịch)
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
-            )}
-            <ScheduleList items={filteredDraftSchedulePreview} compact />
-          </div>
-        </Panel>
+              {draftScheduleConflicts.length > 0 ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
+                  <p className="text-sm font-black text-rose-800">
+                    Phát hiện {draftScheduleConflicts.length} xung đột, cần xử lý trước khi gửi
+                  </p>
+                  <div className="mt-2 space-y-2">
+                    {draftScheduleConflicts.slice(0, 8).map((conflict) => (
+                      <div key={conflict.key} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-800">
+                        {formatDraftConflictLine(conflict, teachers, classes, timeSlots)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-800">
+                  Không phát hiện xung đột lịch. Có thể gửi lịch hàng loạt an toàn.
+                </div>
+              )}
+              <ScheduleList items={filteredDraftSchedulePreview} compact />
+            </div>
+          </Panel>
+        </div>
+        {AssignmentSummaryPanel()}
       </div>
+    );
+  }
+
+  function AssignmentSummaryPanel() {
+    const activeSchedules = schedules.filter((s) => s.status !== "cancelled");
+    const summaryByTeacher = useMemo(() => {
+      const map = new Map<string, { total: number; envCounts: Record<string, number>; schools: Set<string> }>();
+      for (const s of activeSchedules) {
+        let entry = map.get(s.teacherId);
+        if (!entry) {
+          entry = { total: 0, envCounts: {}, schools: new Set() };
+          map.set(s.teacherId, entry);
+        }
+        entry.total++;
+        const env = s.teachingEnvironment ?? "in_class";
+        entry.envCounts[env] = (entry.envCounts[env] || 0) + 1;
+        entry.schools.add(s.schoolId);
+      }
+      return map;
+    }, [activeSchedules]);
+
+    async function exportScheduleExcel() {
+      setPendingAction("Đang xuất Excel...");
+      try {
+        const XLSX = await import("xlsx");
+        const rows = activeSchedules.map((s) => {
+          const teacher = teachers.find((t) => t.id === s.teacherId);
+          const school = schools.find((sc) => sc.id === s.schoolId);
+          const cls = classes.find((c) => c.id === s.classId);
+          const lesson = lessons.find((l) => l.id === s.lessonId);
+          const slot = timeSlots.find((ts) => ts.id === s.timeSlotId);
+          const envLabel = teachingEnvironmentOptions.find((o) => o.value === s.teachingEnvironment)?.label ?? s.teachingEnvironment ?? "";
+          return {
+            "Ngày": s.date,
+            "Giáo viên": teacher?.name ?? s.teacherId,
+            "Trường": school?.name ?? s.schoolId,
+            "Lớp": cls?.name ?? s.classId,
+            "Bài học": lesson?.title ?? s.lessonId,
+            "Khung giờ": slot ? `${slot.label} (${slot.start}-${slot.end})` : s.timeSlotId,
+            "Môi trường": envLabel,
+            "Trạng thái": statusLabels[s.status] ?? s.status,
+            "Trợ giảng": s.assistantIds ?? "",
+          };
+        });
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Lịch dạy");
+        XLSX.writeFile(wb, `lich-day-${currentDateKey()}.xlsx`);
+        pushToast("Xuất Excel thành công", `Đã xuất ${rows.length} lịch dạy.`, "success");
+      } catch (error) {
+        pushToast("Lỗi xuất Excel", String(error), "error");
+      } finally {
+        setPendingAction("");
+      }
+    }
+
+    return (
+      <Panel title="Bảng tổng hợp lịch" action={`${activeSchedules.length} lịch đang hoạt động`}>
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <button onClick={exportScheduleExcel} disabled={isBusy} className={ghostButtonClass}>
+              <Download size={16} />
+              Xuất Excel
+            </button>
+          </div>
+          <div className="app-scrollbar overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-[var(--line)] text-xs font-black uppercase text-[var(--brand-dark)]">
+                  <th className="px-3 py-2">Giáo viên</th>
+                  <th className="px-3 py-2">Tổng lịch</th>
+                  <th className="px-3 py-2">Trường</th>
+                  {teachingEnvironmentOptions.map((o) => (
+                    <th key={o.value} className="px-3 py-2">{o.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {activeTeachers.map((teacher) => {
+                  const entry = summaryByTeacher.get(teacher.id);
+                  return (
+                    <tr key={teacher.id} className="border-b border-[var(--line)] hover:bg-cyan-50/40">
+                      <td className="px-3 py-2 font-semibold">{teacher.name}</td>
+                      <td className="px-3 py-2">{entry?.total ?? 0}</td>
+                      <td className="px-3 py-2">{entry ? entry.schools.size : 0}</td>
+                      {teachingEnvironmentOptions.map((o) => (
+                        <td key={o.value} className="px-3 py-2">{entry?.envCounts[o.value] ?? 0}</td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Panel>
     );
   }
 
@@ -5053,7 +5299,7 @@ export function MettasoulApp() {
               {orderedSlots.map((slot) => {
                 const duration = getTimeSlotDurationMinutes(slot.start, slot.end);
                 const isEditing = editingSlotId === slot.id;
-                const standardDuration = isStandardTimeSlotDuration(slot.start, slot.end);
+                const standardDuration = isValidTimeSlotDuration(slot.start, slot.end);
                 return (
                   <div
                     key={slot.id}
@@ -6290,6 +6536,426 @@ export function MettasoulApp() {
         <div className="justify-self-end self-start">
           <StatusChip status={schedule.status} />
         </div>
+      </div>
+    );
+  }
+
+  function WeeklyUpdatesPanel() {
+    const sortedUpdates = [...weeklyUpdates].sort((a, b) => {
+      if (b.weekNumber !== a.weekNumber) return b.weekNumber - a.weekNumber;
+      return (b.updateDate || "").localeCompare(a.updateDate || "");
+    });
+
+    const classesForSchool = (sid: string) => classes.filter((c) => c.schoolId === sid);
+
+    async function createWeeklyUpdate() {
+      const weekNum = Number(weeklyUpdateDraft.weekNumber);
+      if (!weekNum || weekNum <= 0) {
+        pushToast("Lỗi", "Tuần phải lớn hơn 0.", "error");
+        return;
+      }
+      if (!weeklyUpdateDraft.schoolId) {
+        pushToast("Lỗi", "Vui lòng chọn trường.", "error");
+        return;
+      }
+      if (!weeklyUpdateDraft.classId) {
+        pushToast("Lỗi", "Vui lòng chọn lớp.", "error");
+        return;
+      }
+      const hours = Number(weeklyUpdateDraft.teachingHours || 0);
+      if (hours < 0 || Number.isNaN(hours)) {
+        pushToast("Lỗi", "Số giờ dạy phải lớn hơn hoặc bằng 0.", "error");
+        return;
+      }
+
+      try {
+        const created = await saveRequest<WeeklyUpdate>("Đang lưu cập nhật tuần...", "/api/weekly-updates", {
+          method: "POST",
+          body: JSON.stringify({
+            weekNumber: weekNum,
+            updateDate: weeklyUpdateDraft.updateDate,
+            schoolId: weeklyUpdateDraft.schoolId,
+            classId: weeklyUpdateDraft.classId,
+            teachingHours: hours,
+            note: weeklyUpdateDraft.note || undefined,
+          }),
+        });
+        setWeeklyUpdates((items) => [created, ...items]);
+        setWeeklyUpdateDraft({
+          weekNumber: "",
+          updateDate: currentDateKey(),
+          schoolId: "",
+          classId: "",
+          teachingHours: "",
+          note: "",
+        });
+        setDataStatus("connected");
+        setSaveError("");
+        pushToast("Thành công", "Đã lưu cập nhật tuần.", "success");
+      } catch (error) {
+        handleSaveError(error);
+      }
+    }
+
+    function startEditWeeklyUpdate(update: WeeklyUpdate) {
+      setEditingWeeklyUpdateId(update.id);
+      setWeeklyUpdateEditDraft({
+        weekNumber: String(update.weekNumber),
+        updateDate: update.updateDate || "",
+        schoolId: update.schoolId,
+        classId: update.classId,
+        teachingHours: String(update.teachingHours ?? 0),
+        note: update.note ?? "",
+      });
+    }
+
+    async function saveWeeklyUpdateEdit(id: string) {
+      const weekNum = Number(weeklyUpdateEditDraft.weekNumber);
+      if (!weekNum || weekNum <= 0) {
+        pushToast("Lỗi", "Tuần phải lớn hơn 0.", "error");
+        return;
+      }
+      const hours = Number(weeklyUpdateEditDraft.teachingHours || 0);
+      if (hours < 0 || Number.isNaN(hours)) {
+        pushToast("Lỗi", "Số giờ dạy phải lớn hơn hoặc bằng 0.", "error");
+        return;
+      }
+
+      try {
+        const updated = await saveRequest<WeeklyUpdate>("Đang cập nhật...", "/api/weekly-updates", {
+          method: "PUT",
+          body: JSON.stringify({
+            id,
+            weekNumber: weekNum,
+            updateDate: weeklyUpdateEditDraft.updateDate,
+            schoolId: weeklyUpdateEditDraft.schoolId,
+            classId: weeklyUpdateEditDraft.classId,
+            teachingHours: hours,
+            note: weeklyUpdateEditDraft.note || undefined,
+          }),
+        });
+        setWeeklyUpdates((items) => items.map((item) => (item.id === id ? { ...item, ...updated } : item)));
+        setEditingWeeklyUpdateId("");
+        setDataStatus("connected");
+        setSaveError("");
+        pushToast("Thành công", "Đã cập nhật.", "success");
+      } catch (error) {
+        handleSaveError(error);
+      }
+    }
+
+    async function deleteWeeklyUpdate(id: string) {
+      try {
+        await saveRequest("Đang xóa...", `/api/weekly-updates?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        setWeeklyUpdates((items) => items.filter((item) => item.id !== id));
+        setWeeklyUpdateDeleteTarget(null);
+        setDataStatus("connected");
+        setSaveError("");
+        pushToast("Thành công", "Đã xóa cập nhật tuần.", "success");
+      } catch (error) {
+        handleSaveError(error);
+      }
+    }
+
+    const totalHours = weeklyUpdates.reduce((sum, u) => sum + (u.teachingHours ?? 0), 0);
+    const uniqueWeeks = new Set(weeklyUpdates.map((u) => u.weekNumber)).size;
+
+    return (
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <Stat icon={ListChecks} label="Tổng cập nhật" value={weeklyUpdates.length} tone="cyan" />
+          <Stat icon={CalendarDays} label="Số tuần" value={uniqueWeeks} tone="emerald" />
+          <Stat icon={Clock3} label="Tổng giờ dạy" value={totalHours} tone="blue" />
+        </div>
+
+        <Panel title="Thêm cập nhật tuần" action="Nhập mới">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold text-slate-600">Tuần số *</span>
+              <input
+                type="number"
+                min={1}
+                value={weeklyUpdateDraft.weekNumber}
+                onChange={(e) => setWeeklyUpdateDraft({ ...weeklyUpdateDraft, weekNumber: e.target.value })}
+                placeholder="VD: 1"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold text-slate-600">Ngày cập nhật</span>
+              <input
+                type="date"
+                value={weeklyUpdateDraft.updateDate}
+                onChange={(e) => setWeeklyUpdateDraft({ ...weeklyUpdateDraft, updateDate: e.target.value })}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold text-slate-600">Trường *</span>
+              <select
+                value={weeklyUpdateDraft.schoolId}
+                onChange={(e) =>
+                  setWeeklyUpdateDraft({ ...weeklyUpdateDraft, schoolId: e.target.value, classId: "" })
+                }
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
+              >
+                <option value="">-- Chọn trường --</option>
+                {schools.map((school) => (
+                  <option key={school.id} value={school.id}>
+                    {school.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold text-slate-600">Lớp *</span>
+              <select
+                value={weeklyUpdateDraft.classId}
+                onChange={(e) => setWeeklyUpdateDraft({ ...weeklyUpdateDraft, classId: e.target.value })}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
+              >
+                <option value="">-- Chọn lớp --</option>
+                {classesForSchool(weeklyUpdateDraft.schoolId).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold text-slate-600">Số giờ dạy</span>
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                value={weeklyUpdateDraft.teachingHours}
+                onChange={(e) => setWeeklyUpdateDraft({ ...weeklyUpdateDraft, teachingHours: e.target.value })}
+                placeholder="VD: 2"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
+              />
+            </label>
+            <label className="block sm:col-span-2 lg:col-span-1">
+              <span className="mb-1 block text-xs font-bold text-slate-600">Ghi chú</span>
+              <input
+                type="text"
+                value={weeklyUpdateDraft.note}
+                onChange={(e) => setWeeklyUpdateDraft({ ...weeklyUpdateDraft, note: e.target.value })}
+                placeholder="Ghi chú tùy chọn..."
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-[var(--brand)] focus:ring-1 focus:ring-[var(--brand)]"
+              />
+            </label>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={createWeeklyUpdate}
+              disabled={!!pendingAction}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[var(--brand)] to-[var(--brand-dark)] px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:shadow-lg disabled:opacity-60"
+            >
+              <Plus size={16} />
+              Thêm cập nhật
+            </button>
+          </div>
+        </Panel>
+
+        <Panel title="Lịch sử cập nhật tuần" action={`${sortedUpdates.length} bản ghi`}>
+          {sortedUpdates.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-400">Chưa có cập nhật tuần nào.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-2">Tuần</th>
+                    <th className="px-3 py-2">Ngày</th>
+                    <th className="px-3 py-2">Trường</th>
+                    <th className="px-3 py-2">Lớp</th>
+                    <th className="px-3 py-2">Giờ dạy</th>
+                    <th className="px-3 py-2">Ghi chú</th>
+                    <th className="px-3 py-2">Người cập nhật</th>
+                    <th className="px-3 py-2 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedUpdates.map((update) => {
+                    const isEditing = editingWeeklyUpdateId === update.id;
+                    const schoolLabel = schools.find((s) => s.id === update.schoolId)?.name || update.schoolId;
+                    const classLabel = classes.find((c) => c.id === update.classId)?.name || update.classId;
+
+                    if (isEditing) {
+                      return (
+                        <tr key={update.id} className="border-b border-slate-50 bg-cyan-50/50">
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              min={1}
+                              value={weeklyUpdateEditDraft.weekNumber}
+                              onChange={(e) =>
+                                setWeeklyUpdateEditDraft({ ...weeklyUpdateEditDraft, weekNumber: e.target.value })
+                              }
+                              className="w-16 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="date"
+                              value={weeklyUpdateEditDraft.updateDate}
+                              onChange={(e) =>
+                                setWeeklyUpdateEditDraft({ ...weeklyUpdateEditDraft, updateDate: e.target.value })
+                              }
+                              className="w-36 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={weeklyUpdateEditDraft.schoolId}
+                              onChange={(e) =>
+                                setWeeklyUpdateEditDraft({
+                                  ...weeklyUpdateEditDraft,
+                                  schoolId: e.target.value,
+                                  classId: "",
+                                })
+                              }
+                              className="w-32 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                            >
+                              <option value="">--</option>
+                              {schools.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={weeklyUpdateEditDraft.classId}
+                              onChange={(e) =>
+                                setWeeklyUpdateEditDraft({ ...weeklyUpdateEditDraft, classId: e.target.value })
+                              }
+                              className="w-28 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                            >
+                              <option value="">--</option>
+                              {classesForSchool(weeklyUpdateEditDraft.schoolId).map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.5}
+                              value={weeklyUpdateEditDraft.teachingHours}
+                              onChange={(e) =>
+                                setWeeklyUpdateEditDraft({ ...weeklyUpdateEditDraft, teachingHours: e.target.value })
+                              }
+                              className="w-16 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={weeklyUpdateEditDraft.note}
+                              onChange={(e) =>
+                                setWeeklyUpdateEditDraft({ ...weeklyUpdateEditDraft, note: e.target.value })
+                              }
+                              className="w-32 rounded-lg border border-slate-200 px-2 py-1 text-sm"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-slate-500">{update.updatedBy}</td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => saveWeeklyUpdateEdit(update.id)}
+                                disabled={!!pendingAction}
+                                className="rounded-lg bg-emerald-500 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-60"
+                              >
+                                Lưu
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingWeeklyUpdateId("")}
+                                className="rounded-lg bg-slate-200 px-2.5 py-1 text-xs font-bold text-slate-600 hover:bg-slate-300"
+                              >
+                                Hủy
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return (
+                      <tr key={update.id} className="border-b border-slate-50 hover:bg-slate-50/60">
+                        <td className="px-3 py-2 font-bold text-[var(--brand-dark)]">{update.weekNumber}</td>
+                        <td className="px-3 py-2 text-slate-600">{formatDate(update.updateDate)}</td>
+                        <td className="px-3 py-2">{schoolLabel}</td>
+                        <td className="px-3 py-2">{classLabel}</td>
+                        <td className="px-3 py-2 text-center font-medium">{update.teachingHours ?? 0}</td>
+                        <td className="max-w-[200px] truncate px-3 py-2 text-slate-500">{update.note || "—"}</td>
+                        <td className="px-3 py-2 text-slate-500">{update.updatedBy}</td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => startEditWeeklyUpdate(update)}
+                              title="Sửa"
+                              className="rounded-lg p-1.5 text-slate-400 hover:bg-cyan-50 hover:text-[var(--brand-dark)]"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setWeeklyUpdateDeleteTarget(update)}
+                              title="Xóa"
+                              className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+
+        {weeklyUpdateDeleteTarget ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+              <h3 className="mb-2 text-base font-black text-slate-800">Xóa cập nhật tuần?</h3>
+              <p className="mb-4 text-sm text-slate-600">
+                Bạn có chắc muốn xóa cập nhật tuần {weeklyUpdateDeleteTarget.weekNumber} —{" "}
+                {schools.find((s) => s.id === weeklyUpdateDeleteTarget.schoolId)?.name || ""}?
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setWeeklyUpdateDeleteTarget(null)}
+                  className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteWeeklyUpdate(weeklyUpdateDeleteTarget.id)}
+                  disabled={!!pendingAction}
+                  className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white hover:bg-rose-600 disabled:opacity-60"
+                >
+                  Xóa
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -7673,6 +8339,7 @@ function createTeacherHeaderMap(headers: string[]) {
 function createEmptyLessonDraft(): LessonDraft {
   return {
     grade: "Khối 1",
+    topicId: "",
     title: "",
     objective: "",
     samplePlanUrl: "",
@@ -7694,6 +8361,7 @@ function hasLessonContent(row: BulkLessonRow) {
 function stripBulkLessonId(row: BulkLessonRow): LessonDraft {
   return {
     grade: row.grade,
+    topicId: row.topicId ?? "",
     title: row.title,
     objective: row.objective,
     samplePlanUrl: row.samplePlanUrl,
@@ -7722,8 +8390,9 @@ function validateLessonDraft(row: LessonDraft, label = "Bài học") {
     return `${label}: Giáo án mẫu phải là link http hoặc https.`;
   }
 
-  if (!lessonDurations.includes(Number(row.durationMinutes))) {
-    return `${label}: Số phút chỉ được là 45 hoặc 90.`;
+  const dur = Number(row.durationMinutes);
+  if (dur < MIN_TIME_SLOT_MINUTES || dur > MAX_TIME_SLOT_MINUTES || dur % TIME_SLOT_STEP_MINUTES !== 0) {
+    return `${label}: Số phút phải từ ${MIN_TIME_SLOT_MINUTES} đến ${MAX_TIME_SLOT_MINUTES}, bội số của ${TIME_SLOT_STEP_MINUTES}.`;
   }
 
   return "";
@@ -7761,8 +8430,14 @@ function validateTimeSlotDraft(
   if (declaredDuration !== undefined && declaredDuration !== "" && Number(declaredDuration) !== duration) {
     return `${label}: Số phút phải khớp với giờ bắt đầu/kết thúc.`;
   }
-  if (!allowedTimeSlotDurations.includes(duration as (typeof allowedTimeSlotDurations)[number])) {
-    return `${label}: Thời lượng chỉ được là 45 hoặc 90 phút.`;
+  if (duration < MIN_TIME_SLOT_MINUTES) {
+    return `${label}: Khung giờ phải kéo dài ít nhất ${MIN_TIME_SLOT_MINUTES} phút.`;
+  }
+  if (duration > MAX_TIME_SLOT_MINUTES) {
+    return `${label}: Khung giờ không được dài quá ${MAX_TIME_SLOT_MINUTES} phút.`;
+  }
+  if (duration % TIME_SLOT_STEP_MINUTES !== 0) {
+    return `${label}: Thời lượng phải là bội số của ${TIME_SLOT_STEP_MINUTES} phút.`;
   }
 
   const labelKey = normalizeTimeSlotLabel(normalized.label);
@@ -7890,6 +8565,7 @@ function parseLessonClipboard(text: string): BulkLessonRow[] {
     .map((cells) => ({
       id: createId("bulk-lesson"),
       grade: normalizeGrade(cells[0]),
+      topicId: "",
       title: cells[1]?.trim() ?? "",
       objective: cells[2]?.trim() ?? "",
       samplePlanUrl: cells.length >= 5 ? cells[3]?.trim() ?? "" : "",
@@ -7937,6 +8613,7 @@ function parseLessonSpreadsheetRows(rows: string[][]) {
   return dataRows.map((cells) => ({
     id: createId("bulk-lesson"),
     grade: normalizeGrade(cells[headerMap.grade]),
+    topicId: "",
     title: cells[headerMap.title]?.trim() ?? "",
     objective: cells[headerMap.objective]?.trim() ?? "",
     samplePlanUrl: cells[headerMap.samplePlanUrl]?.trim() ?? "",
@@ -8071,6 +8748,9 @@ function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftSchedu
     lessonId: seed?.lessonId || "",
     timeSlotId: seed?.timeSlotId || "",
     teachingEnvironment: normalizeTeachingEnvironmentValue(seed?.teachingEnvironment),
+    teacherIds: seed?.teacherIds ?? [],
+    topicId: seed?.topicId ?? "",
+    assistantIds: seed?.assistantIds ?? [],
   };
 }
 
@@ -8139,6 +8819,9 @@ function normalizeDraftScheduleItem(
     lessonId,
     timeSlotId,
     teachingEnvironment: normalizeTeachingEnvironmentValue(item.teachingEnvironment),
+    teacherIds: item.teacherIds ?? [],
+    topicId: item.topicId ?? "",
+    assistantIds: item.assistantIds ?? [],
   };
 }
 

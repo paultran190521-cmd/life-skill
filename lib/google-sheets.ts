@@ -15,7 +15,9 @@ import type {
   School,
   Teacher,
   TeachingEnvironment,
+  Topic,
   User,
+  WeeklyUpdate,
 } from "@/lib/types";
 
 type SheetName =
@@ -23,6 +25,7 @@ type SheetName =
   | "Teachers"
   | "Schools"
   | "Classes"
+  | "Topics"
   | "Lessons"
   | "TimeSlots"
   | "Schedules"
@@ -31,6 +34,7 @@ type SheetName =
   | "Notifications"
   | "AuditLogs"
   | "AppAnnouncements"
+  | "WeeklyUpdates"
   | "MailDebug";
 
 export type { SheetName };
@@ -366,6 +370,7 @@ export async function getAppDataFromSheets() {
     users,
     schools,
     classes,
+    topics,
     lessons,
     timeSlots,
     schedules,
@@ -374,11 +379,13 @@ export async function getAppDataFromSheets() {
     notifications,
     appAnnouncements,
     auditLogs,
+    weeklyUpdates,
   ] = await Promise.all([
     readSheetRows("Teachers").then(toTeachers),
     readSheetRows("Users").then(toUsers),
     readSheetRows("Schools").then(toSchools),
     readSheetRows("Classes").then(toClasses),
+    readSheetRows("Topics").then(toTopics),
     readSheetRows("Lessons").then(toLessons),
     readSheetRows("TimeSlots").then(toTimeSlots),
     readSheetRows("Schedules").then(toSchedules),
@@ -389,6 +396,7 @@ export async function getAppDataFromSheets() {
       readSheetRows("AppAnnouncements").then(toAppAnnouncements),
     ),
     readSheetRows("AuditLogs").then(toAuditLogs),
+    readSheetRows("WeeklyUpdates").then(toWeeklyUpdates),
   ]);
 
   return {
@@ -396,6 +404,7 @@ export async function getAppDataFromSheets() {
     users,
     schools,
     classes,
+    topics,
     lessons,
     timeSlots,
     schedules,
@@ -404,6 +413,7 @@ export async function getAppDataFromSheets() {
     notifications,
     appAnnouncements,
     auditLogs,
+    weeklyUpdates,
   };
 }
 
@@ -559,6 +569,18 @@ function normalizeSheetHeader(value: unknown) {
     metadata: "metadata",
     read: "read",
     academicyear: "academicYear",
+    topicid: "topicId",
+    objectives: "objectives",
+    sortorder: "sortOrder",
+    groupid: "groupId",
+    assistantids: "assistantIds",
+    weeknumber: "weekNumber",
+    updatedate: "updateDate",
+    teachinghours: "teachingHours",
+    updatedby: "updatedBy",
+    description: "description",
+    targetuserid: "targetUserId",
+    cancelledat: "cancelledAt",
   };
 
   return headerAliases[normalizedKey] || raw;
@@ -625,10 +647,13 @@ function toClasses(rows: SheetRow[]): ClassRoom[] {
 function toLessons(rows: SheetRow[]): Lesson[] {
   return rows.map((row) => ({
     id: row.id,
+    topicId: row.topicId || undefined,
     grade: row.grade,
     title: row.title,
     objective: row.objective,
+    objectives: row.objectives || undefined,
     durationMinutes: Number(row.durationMinutes || 45),
+    sortOrder: row.sortOrder ? Number(row.sortOrder) : undefined,
     samplePlanUrl: row.samplePlanUrl || undefined,
     active: parseBoolean(row.active, true),
   }));
@@ -658,6 +683,8 @@ function toSchedules(rows: SheetRow[]): Schedule[] {
     sentAt: row.sentAt || undefined,
     confirmedAt: row.confirmedAt || undefined,
     reassignedFrom: row.reassignedFrom || undefined,
+    groupId: row.groupId || undefined,
+    assistantIds: row.assistantIds || undefined,
   }));
 }
 
@@ -708,6 +735,30 @@ function toAppAnnouncements(rows: SheetRow[]): AppAnnouncement[] {
   }));
 }
 
+function toTopics(rows: SheetRow[]): Topic[] {
+  return rows.map((row) => ({
+    id: row.id,
+    grade: row.grade,
+    title: row.title,
+    description: row.description || undefined,
+    active: parseBoolean(row.active, true),
+  }));
+}
+
+function toWeeklyUpdates(rows: SheetRow[]): WeeklyUpdate[] {
+  return rows.map((row) => ({
+    id: row.id,
+    weekNumber: Number(row.weekNumber || 0),
+    updateDate: row.updateDate,
+    schoolId: row.schoolId,
+    classId: row.classId,
+    teachingHours: Number(row.teachingHours || 0),
+    updatedBy: row.updatedBy || "",
+    note: row.note || undefined,
+    createdAt: row.createdAt,
+  }));
+}
+
 function toAuditLogs(rows: SheetRow[]): AuditLog[] {
   return rows.map((row) => ({
     id: row.id,
@@ -727,7 +778,7 @@ function parseAnnouncementPriority(value: string | undefined): AppAnnouncementPr
 
 function parseTeachingEnvironment(value: string | undefined): TeachingEnvironment | undefined {
   const normalized = String(value || "").trim() as TeachingEnvironment;
-  const allowed: TeachingEnvironment[] = ["in_class", "outdoor", "gym", "schoolyard_report"];
+  const allowed: TeachingEnvironment[] = ["in_class", "outdoor", "gym", "schoolyard_report", "hall"];
   return allowed.includes(normalized) ? normalized : undefined;
 }
 

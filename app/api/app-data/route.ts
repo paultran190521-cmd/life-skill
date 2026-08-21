@@ -21,6 +21,7 @@ export async function GET(request: Request) {
         teachers: teacherId ? data.teachers.filter((teacher) => teacher.id === teacherId) : [],
         schools: data.schools,
         classes: data.classes,
+        topics: data.topics,
         lessons: data.lessons,
         timeSlots: data.timeSlots,
         schedules: scopedSchedules,
@@ -37,6 +38,7 @@ export async function GET(request: Request) {
         ),
         appAnnouncements: data.appAnnouncements.filter((announcement) => announcement.active),
         auditLogs: [],
+        weeklyUpdates: [],
       });
     }
 
@@ -45,6 +47,7 @@ export async function GET(request: Request) {
       teachers: data.teachers,
       schools: data.schools,
       classes: data.classes,
+      topics: data.topics,
       lessons: data.lessons,
       timeSlots: data.timeSlots,
       schedules: data.schedules,
@@ -53,6 +56,7 @@ export async function GET(request: Request) {
       notifications: data.notifications,
       appAnnouncements: data.appAnnouncements,
       auditLogs: data.auditLogs,
+      weeklyUpdates: data.weeklyUpdates,
     });
   } catch (error) {
     return apiError(error, requestId);
