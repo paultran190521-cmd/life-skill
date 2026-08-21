@@ -45,6 +45,9 @@ type SheetRow = Record<string, string>;
 let sheetsClient: ReturnType<typeof google.sheets> | null = null;
 const headerCache = new Map<SheetName, { headers: string[]; expiresAt: number }>();
 const rowCache = new Map<SheetName, { rows: SheetRow[]; expiresAt: number }>();
+const APP_DATA_SCHEMA_TTL_MS = 10 * 60 * 1000;
+let appDataSchemaReadyAt = 0;
+let appDataSchemaPromise: Promise<void> | null = null;
 
 function getSheetsClient() {
   if (sheetsClient) {
@@ -366,60 +369,68 @@ export async function deleteSheetRowById(sheetName: SheetName, id: string) {
 }
 
 export async function getAppDataFromSheets() {
-  const [
-    teachers,
-    users,
-    schools,
-    classes,
-    topics,
-    lessons,
-    timeSlots,
-    schedules,
-    lessonPlans,
-    attendance,
-    notifications,
-    appAnnouncements,
-    auditLogs,
-    weeklyUpdates,
-  ] = await Promise.all([
-    readSheetRows("Teachers").then(toTeachers),
-    readSheetRows("Users").then(toUsers),
-    readSheetRows("Schools").then(toSchools),
-    readSheetRows("Classes").then(toClasses),
-    ensureSheetHeaders("Topics", topicHeaders)
-      .then(() => readSheetRows("Topics").then(toTopics))
-      .catch(() => [] as Topic[]),
-    ensureSheetHeaders("Lessons", lessonHeaders).then(() => readSheetRows("Lessons").then(toLessons)),
-    readSheetRows("TimeSlots").then(toTimeSlots),
-    ensureSheetHeaders("Schedules", scheduleHeaders).then(() => readSheetRows("Schedules").then(toSchedules)),
-    readSheetRows("LessonPlans").then(toLessonPlans),
-    readSheetRows("Attendance").then(toAttendance),
-    readSheetRows("Notifications").then(toNotifications),
-    ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders)
-      .then(() => readSheetRows("AppAnnouncements").then(toAppAnnouncements))
-      .catch(() => [] as AppAnnouncement[]),
-    readSheetRows("AuditLogs").then(toAuditLogs).catch(() => [] as AuditLog[]),
-    ensureSheetHeaders("WeeklyUpdates", weeklyUpdateHeaders)
-      .then(() => readSheetRows("WeeklyUpdates").then(toWeeklyUpdates))
-      .catch(() => [] as WeeklyUpdate[]),
-  ]);
+  await ensureAppDataSchema();
+
+  // Một batchGet thay cho 14 request Google Sheets riêng lẻ. Đây là đường tải
+  // nóng khi mở ứng dụng; giảm round-trip giúp chuyển màn và tải lại mượt hơn.
+  const rows = await readSheetRowsBatch([
+    "Teachers",
+    "Users",
+    "Schools",
+    "Classes",
+    "Topics",
+    "Lessons",
+    "TimeSlots",
+    "Schedules",
+    "LessonPlans",
+    "Attendance",
+    "Notifications",
+    "AppAnnouncements",
+    "AuditLogs",
+    "WeeklyUpdates",
+  ] as const);
 
   return {
-    teachers,
-    users,
-    schools,
-    classes,
-    topics,
-    lessons,
-    timeSlots,
-    schedules,
-    lessonPlans,
-    attendance,
-    notifications,
-    appAnnouncements,
-    auditLogs,
-    weeklyUpdates,
+    teachers: toTeachers(rows.Teachers),
+    users: toUsers(rows.Users),
+    schools: toSchools(rows.Schools),
+    classes: toClasses(rows.Classes),
+    topics: toTopics(rows.Topics),
+    lessons: toLessons(rows.Lessons),
+    timeSlots: toTimeSlots(rows.TimeSlots),
+    schedules: toSchedules(rows.Schedules),
+    lessonPlans: toLessonPlans(rows.LessonPlans),
+    attendance: toAttendance(rows.Attendance),
+    notifications: toNotifications(rows.Notifications),
+    appAnnouncements: toAppAnnouncements(rows.AppAnnouncements),
+    auditLogs: toAuditLogs(rows.AuditLogs),
+    weeklyUpdates: toWeeklyUpdates(rows.WeeklyUpdates),
   };
+}
+
+async function ensureAppDataSchema() {
+  if (appDataSchemaReadyAt > Date.now()) {
+    return;
+  }
+  if (appDataSchemaPromise) {
+    return appDataSchemaPromise;
+  }
+
+  appDataSchemaPromise = Promise.all([
+    ensureSheetHeaders("Topics", topicHeaders),
+    ensureSheetHeaders("Lessons", lessonHeaders),
+    ensureSheetHeaders("Schedules", scheduleHeaders),
+    ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders),
+    ensureSheetHeaders("WeeklyUpdates", weeklyUpdateHeaders),
+  ])
+    .then(() => {
+      appDataSchemaReadyAt = Date.now() + APP_DATA_SCHEMA_TTL_MS;
+    })
+    .finally(() => {
+      appDataSchemaPromise = null;
+    });
+
+  return appDataSchemaPromise;
 }
 
 export const topicHeaders = [

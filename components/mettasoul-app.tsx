@@ -38,7 +38,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { statusLabels, statusStyles } from "@/lib/status";
 import { lessonDuplicateKey } from "@/lib/lessons";
@@ -408,6 +408,7 @@ const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }
 
 export function MettasoulApp() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
+  const [, startTabTransition] = useTransition();
   const [appUsers, setAppUsers] = useState<User[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
   const [sessionUserId, setSessionUserId] = useState("");
@@ -3329,7 +3330,9 @@ export function MettasoulApp() {
   }
 
   function changeTab(tabId: TabId) {
-    setActiveTab(tabId);
+    startTabTransition(() => {
+      setActiveTab(tabId);
+    });
     setMobileSidebarOpen(false);
   }
 
