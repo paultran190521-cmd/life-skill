@@ -385,7 +385,7 @@ export async function getAppDataFromSheets() {
     readSheetRows("Users").then(toUsers),
     readSheetRows("Schools").then(toSchools),
     readSheetRows("Classes").then(toClasses),
-    readSheetRows("Topics").then(toTopics),
+    readSheetRows("Topics").then(toTopics).catch(() => []),
     readSheetRows("Lessons").then(toLessons),
     readSheetRows("TimeSlots").then(toTimeSlots),
     readSheetRows("Schedules").then(toSchedules),
@@ -395,8 +395,8 @@ export async function getAppDataFromSheets() {
     ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders).then(() =>
       readSheetRows("AppAnnouncements").then(toAppAnnouncements),
     ),
-    readSheetRows("AuditLogs").then(toAuditLogs),
-    readSheetRows("WeeklyUpdates").then(toWeeklyUpdates),
+    readSheetRows("AuditLogs").then(toAuditLogs).catch(() => []),
+    readSheetRows("WeeklyUpdates").then(toWeeklyUpdates).catch(() => []),
   ]);
 
   return {
