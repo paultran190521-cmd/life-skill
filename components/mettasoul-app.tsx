@@ -4236,14 +4236,23 @@ export function MettasoulApp() {
                     const rowGradeClasses = classesForSchoolGrade(classes, item.schoolId, rowSelectedGrade);
                     const rowSelectedClassIds = item.classIds.length > 0 ? item.classIds : item.classId ? [item.classId] : [];
                     const allowsGroupClasses = item.teachingEnvironment !== "in_class";
-                    const rowTopics = activeTopics.filter(
-                      (t) => normalizeComparableText(t.grade) === normalizeComparableText(rowSelectedGrade),
-                    );
-                    const rowLessonsAll = lessonsForGrade(activeLessons, rowSelectedGrade);
+                    const rowTopics = allowsGroupClasses
+                      ? activeTopics
+                      : activeTopics.filter((t) => normalizeComparableText(t.grade) === normalizeComparableText(rowSelectedGrade));
+                    const rowLessonsAll = allowsGroupClasses ? activeLessons : lessonsForGrade(activeLessons, rowSelectedGrade);
                     const rowLessons = item.topicId
                       ? rowLessonsAll.filter((l) => l.topicId === item.topicId)
                       : rowLessonsAll;
                     const rowGrades = gradesForClasses(rowClasses);
+                    const groupGradeScopes = Array.from({ length: 12 }, (_, index) => {
+                      const number = index + 1;
+                      const grade = rowGrades.find((value) => gradeNumber(value) === number);
+                      return { number, grade, classIds: grade ? classesForSchoolGrade(classes, item.schoolId, grade).map((classRoom) => classRoom.id) : [] };
+                    });
+                    const groupScopeValue =
+                      rowClasses.length > 0 && rowSelectedClassIds.length === rowClasses.length && rowClasses.every((classRoom) => rowSelectedClassIds.includes(classRoom.id))
+                        ? "__all_school__"
+                        : `grade:${gradeNumber(rowSelectedGrade)}`;
                     return (
                       <div key={item.id} className="rounded-2xl border border-cyan-100 bg-white p-3 shadow-sm">
                         <div className="mb-2 flex items-center justify-between">
@@ -4266,6 +4275,23 @@ export function MettasoulApp() {
                           </button>
                         </div>
                         <div className="grid gap-3 md:grid-cols-2">
+                          <select
+                            value={item.teachingEnvironment}
+                            onChange={(e) => {
+                              const teachingEnvironment = normalizeTeachingEnvironmentValue(e.target.value);
+                              updateDraftItem(item.id, {
+                                teachingEnvironment,
+                                classIds: teachingEnvironment === "in_class" ? (item.classId ? [item.classId] : []) : rowSelectedClassIds,
+                              });
+                            }}
+                            className={inputClass}
+                          >
+                            {teachingEnvironmentOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                Môi trường: {option.label}
+                              </option>
+                            ))}
+                          </select>
                           <input
                             type="date"
                             value={item.date}
@@ -4294,30 +4320,61 @@ export function MettasoulApp() {
                               </option>
                             ))}
                           </select>
-                          <select
-                            value={rowSelectedGrade}
-                            onChange={(e) => {
-                              const grade = e.target.value;
-                              const classId = pickClassIdForSchoolGrade(item.schoolId, grade, item.classId, classes);
-                              updateDraftItem(item.id, {
-                                classId,
-                                classIds: classId ? [classId] : [],
-                                lessonId: pickLessonIdForGrade(grade, item.lessonId, activeLessons),
-                                topicId: "",
-                              });
-                            }}
-                            className={inputClass}
-                          >
-                            {rowGrades.length === 0 ? (
-                              <option value="">Chưa có khối trong trường</option>
-                            ) : (
-                              rowGrades.map((grade) => (
-                                <option key={grade} value={grade}>
-                                  {grade}
+                          {allowsGroupClasses ? (
+                            <select
+                              value={groupScopeValue}
+                              onChange={(e) => {
+                                const scope = e.target.value;
+                                const classIds = scope === "__all_school__"
+                                  ? rowClasses.map((classRoom) => classRoom.id)
+                                  : groupGradeScopes.find((option) => `grade:${option.number}` === scope)?.classIds ?? [];
+                                const selectedGrade = scope === "__all_school__"
+                                  ? rowSelectedGrade
+                                  : groupGradeScopes.find((option) => `grade:${option.number}` === scope)?.grade ?? rowSelectedGrade;
+                                updateDraftItem(item.id, {
+                                  classIds,
+                                  classId: classIds[0] ?? "",
+                                  lessonId: scope === "__all_school__"
+                                    ? (activeLessons.some((lesson) => lesson.id === item.lessonId) ? item.lessonId : activeLessons[0]?.id ?? "")
+                                    : pickLessonIdForGrade(selectedGrade, item.lessonId, activeLessons),
+                                  topicId: "",
+                                });
+                              }}
+                              className={inputClass}
+                            >
+                              <option value="__all_school__">Toàn trường</option>
+                              {groupGradeScopes.map((option) => (
+                                <option key={option.number} value={`grade:${option.number}`} disabled={option.classIds.length === 0}>
+                                  Toàn khối {option.number}{option.classIds.length === 0 ? " (chưa có lớp)" : ""}
                                 </option>
-                              ))
-                            )}
-                          </select>
+                              ))}
+                            </select>
+                          ) : (
+                            <select
+                              value={rowSelectedGrade}
+                              onChange={(e) => {
+                                const grade = e.target.value;
+                                const classId = pickClassIdForSchoolGrade(item.schoolId, grade, item.classId, classes);
+                                updateDraftItem(item.id, {
+                                  classId,
+                                  classIds: classId ? [classId] : [],
+                                  lessonId: pickLessonIdForGrade(grade, item.lessonId, activeLessons),
+                                  topicId: "",
+                                });
+                              }}
+                              className={inputClass}
+                            >
+                              {rowGrades.length === 0 ? (
+                                <option value="">Chưa có khối trong trường</option>
+                              ) : (
+                                rowGrades.map((grade) => (
+                                  <option key={grade} value={grade}>
+                                    {grade}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          )}
                           {!allowsGroupClasses ? (
                             <select
                               value={item.classId}
@@ -4393,23 +4450,6 @@ export function MettasoulApp() {
                                 </option>
                               ))
                             )}
-                          </select>
-                          <select
-                            value={item.teachingEnvironment}
-                            onChange={(e) => {
-                              const teachingEnvironment = normalizeTeachingEnvironmentValue(e.target.value);
-                              updateDraftItem(item.id, {
-                                teachingEnvironment,
-                                classIds: teachingEnvironment === "in_class" ? (item.classId ? [item.classId] : []) : rowSelectedClassIds,
-                              });
-                            }}
-                            className={inputClass}
-                          >
-                            {teachingEnvironmentOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                Môi trường: {option.label}
-                              </option>
-                            ))}
                           </select>
                           {rowSelectedGrade && rowLessons.length === 0 ? (
                             <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 md:col-span-2">
@@ -9137,6 +9177,11 @@ function classesForSchoolGrade(classRooms: ClassRoom[], schoolId: string, grade:
   return classesForSchool(classRooms, schoolId).filter(
     (classRoom) => normalizeComparableText(classRoom.grade) === normalizedGrade,
   );
+}
+
+function gradeNumber(grade: string) {
+  const number = Number(grade.match(/\d+/)?.[0]);
+  return Number.isFinite(number) ? number : 0;
 }
 
 function gradesForClasses(classRooms: ClassRoom[]) {

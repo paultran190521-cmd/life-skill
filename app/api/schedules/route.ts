@@ -384,7 +384,10 @@ function validateScheduleInput(
       if (!classRoom) {
         return "Lớp đã chọn không thuộc trường đã chọn.";
       }
-      if (normalizeComparableText(classRoom.grade) !== normalizeComparableText(lesson.grade)) {
+      if (
+        item.teachingEnvironment === "in_class" &&
+        normalizeComparableText(classRoom.grade) !== normalizeComparableText(lesson.grade)
+      ) {
         return "Bài học đã chọn không đúng khối của lớp.";
       }
     }
