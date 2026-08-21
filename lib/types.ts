@@ -61,8 +61,14 @@ export type Lesson = {
   id: string;
   topicId?: string;
   grade: string;
+  /** Tên chuyên đề. Giữ trường title để tương thích các lịch đã tạo. */
   title: string;
+  /** Mục tiêu tổng hợp của hai tiết, dùng cho các luồng cũ. */
   objective: string;
+  lesson1Title?: string;
+  lesson1Objective?: string;
+  lesson2Title?: string;
+  lesson2Objective?: string;
   objectives?: string;
   durationMinutes: number;
   sortOrder?: number;

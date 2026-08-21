@@ -244,7 +244,10 @@ type LessonDraft = {
   grade: string;
   topicId: string;
   title: string;
-  objective: string;
+  lesson1Title: string;
+  lesson1Objective: string;
+  lesson2Title: string;
+  lesson2Objective: string;
   samplePlanUrl: string;
   durationMinutes: number | "";
 };
@@ -465,7 +468,10 @@ export function MettasoulApp() {
     grade: "Khối 1",
     topicId: "",
     title: "",
-    objective: "",
+    lesson1Title: "",
+    lesson1Objective: "",
+    lesson2Title: "",
+    lesson2Objective: "",
     samplePlanUrl: "",
     durationMinutes: 45,
   });
@@ -600,7 +606,14 @@ export function MettasoulApp() {
       const matchesGrade = lessonGradeFilter === "all" || lesson.grade === lessonGradeFilter;
       const matchesTerm =
         !term ||
-        [lesson.title, lesson.objective]
+        [
+          lesson.title,
+          lesson.objective,
+          lesson.lesson1Title,
+          lesson.lesson1Objective,
+          lesson.lesson2Title,
+          lesson.lesson2Objective,
+        ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase()
@@ -2597,7 +2610,23 @@ export function MettasoulApp() {
   async function downloadLessonSpreadsheetTemplate() {
     const XLSX = await import("xlsx");
     const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet([["Khối", "Tên chuyên đề", "Mục tiêu", "Giáo án mẫu", "Số phút"]]);
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ["Khối", "Tên chuyên đề", "Tên tiết 1", "Mục tiêu tiết 1", "Tên tiết 2", "Mục tiêu tiết 2", "Giáo án mẫu", "Số phút"],
+      [
+        "Khối 1",
+        "Làm quen với cảm xúc",
+        "Nhận biết cảm xúc",
+        "Nhận biết và gọi tên các cảm xúc cơ bản: vui, buồn, tức giận, sợ hãi.",
+        "Chia sẻ cảm xúc",
+        "Biết cách chia sẻ cảm xúc của mình với cha mẹ hoặc thầy cô.",
+        "https://drive.google.com/",
+        "45",
+      ],
+    ]);
+    worksheet["!cols"] = [
+      { wch: 12 }, { wch: 30 }, { wch: 30 }, { wch: 58 },
+      { wch: 30 }, { wch: 58 }, { wch: 34 }, { wch: 12 },
+    ];
     XLSX.utils.book_append_sheet(workbook, worksheet, "Bai hoc");
     const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
     const blob = new Blob([fileData], {
@@ -2716,7 +2745,10 @@ export function MettasoulApp() {
       grade: lesson.grade,
       topicId: lesson.topicId ?? "",
       title: lesson.title,
-      objective: lesson.objective,
+      lesson1Title: lesson.lesson1Title ?? "Tiết 1",
+      lesson1Objective: lesson.lesson1Objective ?? lesson.objective,
+      lesson2Title: lesson.lesson2Title ?? "Tiết 2",
+      lesson2Objective: lesson.lesson2Objective ?? "",
       samplePlanUrl: lesson.samplePlanUrl ?? "",
       durationMinutes: lesson.durationMinutes,
     });
@@ -4935,11 +4967,14 @@ export function MettasoulApp() {
         <Panel title="Nhập mẫu bài học" action="Spreadsheet / hàng loạt">
           <div className="grid gap-4">
             <div className="app-scrollbar overflow-x-auto">
-              <div className="min-w-[920px]">
-                <div className="grid grid-cols-[130px_210px_1fr_220px_120px_48px] gap-2 px-2 pb-2 text-xs font-black uppercase text-[var(--brand-dark)]">
+              <div className="min-w-[1480px]">
+                <div className="grid grid-cols-[130px_190px_190px_1fr_190px_1fr_220px_100px_48px] gap-2 px-2 pb-2 text-xs font-black uppercase text-[var(--brand-dark)]">
                   <span>Khối</span>
                   <span>Tên chuyên đề</span>
-                  <span>Mục tiêu</span>
+                  <span>Tên tiết 1</span>
+                  <span>Mục tiêu tiết 1</span>
+                  <span>Tên tiết 2</span>
+                  <span>Mục tiêu tiết 2</span>
                   <span>Giáo án mẫu</span>
                   <span>Số phút</span>
                   <span />
@@ -4947,7 +4982,7 @@ export function MettasoulApp() {
                 <div className="space-y-2">
                   {bulkLessonRows.map((row) => (
                     <div key={row.id}>
-                      <div className="grid grid-cols-[130px_210px_1fr_220px_120px_48px] items-start gap-2">
+                      <div className="grid grid-cols-[130px_190px_190px_1fr_190px_1fr_220px_100px_48px] items-start gap-2">
                         <select
                           value={row.grade}
                           onChange={(event) => updateBulkLessonRow(row.id, { grade: event.target.value })}
@@ -4965,11 +5000,32 @@ export function MettasoulApp() {
                           placeholder="Tên chuyên đề"
                           className={compactInputClass}
                         />
-                        <textarea
-                          value={row.objective}
-                          onChange={(event) => updateBulkLessonRow(row.id, { objective: event.target.value })}
+                        <input
+                          value={row.lesson1Title}
+                          onChange={(event) => updateBulkLessonRow(row.id, { lesson1Title: event.target.value })}
                           onPaste={(event) => pasteBulkLessons(row.id, event)}
-                          placeholder="Mỗi mục tiêu một dòng"
+                          placeholder="Tên tiết 1"
+                          className={compactInputClass}
+                        />
+                        <textarea
+                          value={row.lesson1Objective}
+                          onChange={(event) => updateBulkLessonRow(row.id, { lesson1Objective: event.target.value })}
+                          onPaste={(event) => pasteBulkLessons(row.id, event)}
+                          placeholder="Mục tiêu tiết 1"
+                          className={`${compactInputClass} min-h-12 resize-y whitespace-pre-line`}
+                        />
+                        <input
+                          value={row.lesson2Title}
+                          onChange={(event) => updateBulkLessonRow(row.id, { lesson2Title: event.target.value })}
+                          onPaste={(event) => pasteBulkLessons(row.id, event)}
+                          placeholder="Tên tiết 2"
+                          className={compactInputClass}
+                        />
+                        <textarea
+                          value={row.lesson2Objective}
+                          onChange={(event) => updateBulkLessonRow(row.id, { lesson2Objective: event.target.value })}
+                          onPaste={(event) => pasteBulkLessons(row.id, event)}
+                          placeholder="Mục tiêu tiết 2"
                           className={`${compactInputClass} min-h-12 resize-y whitespace-pre-line`}
                         />
                         <input
@@ -5104,11 +5160,38 @@ export function MettasoulApp() {
                           ))}
                         </select>
                       </div>
-                      <textarea
-                        value={lessonEditDraft.objective}
-                        onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, objective: event.target.value })}
-                        className={`${compactInputClass} min-h-28 resize-y whitespace-pre-line`}
-                      />
+                      <div className="grid gap-3 lg:grid-cols-2">
+                        <div className="grid gap-2 rounded-2xl border border-cyan-100 bg-cyan-50/45 p-3">
+                          <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Tiết 1</p>
+                          <input
+                            value={lessonEditDraft.lesson1Title}
+                            onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, lesson1Title: event.target.value })}
+                            placeholder="Tên tiết 1"
+                            className={compactInputClass}
+                          />
+                          <textarea
+                            value={lessonEditDraft.lesson1Objective}
+                            onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, lesson1Objective: event.target.value })}
+                            placeholder="Mục tiêu tiết 1"
+                            className={`${compactInputClass} min-h-24 resize-y whitespace-pre-line`}
+                          />
+                        </div>
+                        <div className="grid gap-2 rounded-2xl border border-violet-100 bg-violet-50/45 p-3">
+                          <p className="text-xs font-black uppercase text-violet-800">Tiết 2</p>
+                          <input
+                            value={lessonEditDraft.lesson2Title}
+                            onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, lesson2Title: event.target.value })}
+                            placeholder="Tên tiết 2"
+                            className={compactInputClass}
+                          />
+                          <textarea
+                            value={lessonEditDraft.lesson2Objective}
+                            onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, lesson2Objective: event.target.value })}
+                            placeholder="Mục tiêu tiết 2"
+                            className={`${compactInputClass} min-h-24 resize-y whitespace-pre-line`}
+                          />
+                        </div>
+                      </div>
                       <input
                         value={lessonEditDraft.samplePlanUrl}
                         onChange={(event) =>
@@ -5137,9 +5220,18 @@ export function MettasoulApp() {
                         <div className="min-w-0">
                           <p className="text-xs font-black uppercase text-[var(--brand)]">{lesson.grade}</p>
                           <h3 className="mt-1 text-base font-black text-[var(--brand-dark)]">{lesson.title}</h3>
-                          <p className="mt-2 whitespace-pre-line text-sm leading-6 text-[var(--muted)]">
-                            {lesson.objective}
-                          </p>
+                          <div className="mt-3 grid gap-2">
+                            <LessonSessionCard
+                              number={1}
+                              title={lesson.lesson1Title ?? "Tiết 1"}
+                              objective={lesson.lesson1Objective ?? lesson.objective}
+                            />
+                            <LessonSessionCard
+                              number={2}
+                              title={lesson.lesson2Title ?? "Tiết 2"}
+                              objective={lesson.lesson2Objective ?? "Chưa cập nhật mục tiêu tiết 2."}
+                            />
+                          </div>
                           {lesson.samplePlanUrl ? (
                             <a
                               href={lesson.samplePlanUrl}
@@ -8216,6 +8308,16 @@ function TeacherHover({ teacher }: { teacher?: Teacher }) {
   );
 }
 
+function LessonSessionCard({ number, title, objective }: { number: 1 | 2; title: string; objective: string }) {
+  const tone = number === 1 ? "border-cyan-100 bg-cyan-50/55 text-[var(--brand-dark)]" : "border-violet-100 bg-violet-50/55 text-violet-900";
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${tone}`}>
+      <p className="text-sm font-black">Tiết {number}: {title}</p>
+      <p className="mt-1 whitespace-pre-line text-sm leading-6 text-slate-600">{objective}</p>
+    </div>
+  );
+}
+
 function StatusChip({ status }: { status: Schedule["status"] }) {
   return (
     <span className={`whitespace-nowrap rounded-full border px-3 py-1 text-xs font-black ${statusStyles[status]}`}>
@@ -8341,7 +8443,10 @@ function createEmptyLessonDraft(): LessonDraft {
     grade: "Khối 1",
     topicId: "",
     title: "",
-    objective: "",
+    lesson1Title: "",
+    lesson1Objective: "",
+    lesson2Title: "",
+    lesson2Objective: "",
     samplePlanUrl: "",
     durationMinutes: 45,
   };
@@ -8355,7 +8460,14 @@ function createBulkLessonRow(): BulkLessonRow {
 }
 
 function hasLessonContent(row: BulkLessonRow) {
-  return Boolean(row.title.trim() || row.objective.trim() || row.samplePlanUrl.trim());
+  return Boolean(
+    row.title.trim() ||
+      row.lesson1Title.trim() ||
+      row.lesson1Objective.trim() ||
+      row.lesson2Title.trim() ||
+      row.lesson2Objective.trim() ||
+      row.samplePlanUrl.trim(),
+  );
 }
 
 function stripBulkLessonId(row: BulkLessonRow): LessonDraft {
@@ -8363,7 +8475,10 @@ function stripBulkLessonId(row: BulkLessonRow): LessonDraft {
     grade: row.grade,
     topicId: row.topicId ?? "",
     title: row.title,
-    objective: row.objective,
+    lesson1Title: row.lesson1Title,
+    lesson1Objective: row.lesson1Objective,
+    lesson2Title: row.lesson2Title,
+    lesson2Objective: row.lesson2Objective,
     samplePlanUrl: row.samplePlanUrl,
     durationMinutes: row.durationMinutes,
   };
@@ -8378,8 +8493,20 @@ function validateLessonDraft(row: LessonDraft, label = "Bài học") {
     return `${label}: Tên chuyên đề là bắt buộc.`;
   }
 
-  if (!row.objective.trim()) {
-    return `${label}: Mục tiêu là bắt buộc.`;
+  if (!row.lesson1Title.trim()) {
+    return `${label}: Tên tiết 1 là bắt buộc.`;
+  }
+
+  if (!row.lesson1Objective.trim()) {
+    return `${label}: Mục tiêu tiết 1 là bắt buộc.`;
+  }
+
+  if (!row.lesson2Title.trim()) {
+    return `${label}: Tên tiết 2 là bắt buộc.`;
+  }
+
+  if (!row.lesson2Objective.trim()) {
+    return `${label}: Mục tiêu tiết 2 là bắt buộc.`;
   }
 
   if (row.durationMinutes === "") {
@@ -8567,9 +8694,12 @@ function parseLessonClipboard(text: string): BulkLessonRow[] {
       grade: normalizeGrade(cells[0]),
       topicId: "",
       title: cells[1]?.trim() ?? "",
-      objective: cells[2]?.trim() ?? "",
-      samplePlanUrl: cells.length >= 5 ? cells[3]?.trim() ?? "" : "",
-      durationMinutes: normalizeDuration(cells.length >= 5 ? cells[4] : cells[3]),
+      lesson1Title: cells[2]?.trim() ?? "",
+      lesson1Objective: cells[3]?.trim() ?? "",
+      lesson2Title: cells[4]?.trim() ?? "",
+      lesson2Objective: cells[5]?.trim() ?? "",
+      samplePlanUrl: cells[6]?.trim() ?? "",
+      durationMinutes: normalizeDuration(cells[7]),
     }));
 }
 
@@ -8615,7 +8745,10 @@ function parseLessonSpreadsheetRows(rows: string[][]) {
     grade: normalizeGrade(cells[headerMap.grade]),
     topicId: "",
     title: cells[headerMap.title]?.trim() ?? "",
-    objective: cells[headerMap.objective]?.trim() ?? "",
+    lesson1Title: cells[headerMap.lesson1Title]?.trim() ?? "",
+    lesson1Objective: cells[headerMap.lesson1Objective]?.trim() ?? "",
+    lesson2Title: cells[headerMap.lesson2Title]?.trim() ?? "",
+    lesson2Objective: cells[headerMap.lesson2Objective]?.trim() ?? "",
     samplePlanUrl: cells[headerMap.samplePlanUrl]?.trim() ?? "",
     durationMinutes: normalizeDuration(cells[headerMap.durationMinutes]),
   }));
@@ -8626,7 +8759,10 @@ function createLessonHeaderMap(headers: string[]) {
   const headerMap = {
     grade: findHeaderIndex(normalized, ["khoi", "grade"]),
     title: findHeaderIndex(normalized, ["tenchuyende", "tenbaihoc", "title"]),
-    objective: findHeaderIndex(normalized, ["muctieu", "objective"]),
+    lesson1Title: findHeaderIndex(normalized, ["tentiet1", "lesson1title"]),
+    lesson1Objective: findHeaderIndex(normalized, ["muctieutiet1", "lesson1objective"]),
+    lesson2Title: findHeaderIndex(normalized, ["tentiet2", "lesson2title"]),
+    lesson2Objective: findHeaderIndex(normalized, ["muctieutiet2", "lesson2objective"]),
     samplePlanUrl: findHeaderIndex(normalized, ["giaoanmau", "sampleplanurl", "sampleplan", "pdf"]),
     durationMinutes: findHeaderIndex(normalized, ["sophut", "durationminutes", "duration"]),
   };
@@ -8637,7 +8773,10 @@ function createLessonHeaderMap(headers: string[]) {
       const labels: Record<string, string> = {
         grade: "Khối",
         title: "Tên chuyên đề",
-        objective: "Mục tiêu",
+        lesson1Title: "Tên tiết 1",
+        lesson1Objective: "Mục tiêu tiết 1",
+        lesson2Title: "Tên tiết 2",
+        lesson2Objective: "Mục tiêu tiết 2",
         samplePlanUrl: "Giáo án mẫu",
         durationMinutes: "Số phút",
       };
@@ -9437,5 +9576,3 @@ function splitObjectiveLines(objective: string) {
 
   return normalized.length > 0 ? normalized : [text];
 }
-
-

@@ -13,6 +13,10 @@ export function normalizeLessonInput(body: Record<string, unknown>, index = 0) {
   const grade = String(body.grade || "").trim();
   const title = String(body.title || "").trim();
   const objective = String(body.objective || "").trim();
+  const lesson1Title = String(body.lesson1Title || "").trim();
+  const lesson1Objective = String(body.lesson1Objective || "").trim();
+  const lesson2Title = String(body.lesson2Title || "").trim();
+  const lesson2Objective = String(body.lesson2Objective || "").trim();
   const objectives = String(body.objectives || "").trim();
   const samplePlanUrl = String(body.samplePlanUrl || "").trim();
   const topicId = String(body.topicId || "").trim();
@@ -27,8 +31,20 @@ export function normalizeLessonInput(body: Record<string, unknown>, index = 0) {
     throw new Error(`${rowLabel}: Tên bài học là bắt buộc.`);
   }
 
-  if (!objective) {
-    throw new Error(`${rowLabel}: Mục tiêu là bắt buộc.`);
+  if (!lesson1Title) {
+    throw new Error(`${rowLabel}: Tên tiết 1 là bắt buộc.`);
+  }
+
+  if (!lesson1Objective) {
+    throw new Error(`${rowLabel}: Mục tiêu tiết 1 là bắt buộc.`);
+  }
+
+  if (!lesson2Title) {
+    throw new Error(`${rowLabel}: Tên tiết 2 là bắt buộc.`);
+  }
+
+  if (!lesson2Objective) {
+    throw new Error(`${rowLabel}: Mục tiêu tiết 2 là bắt buộc.`);
   }
 
   if (!Number.isFinite(durationMinutes)) {
@@ -52,7 +68,12 @@ export function normalizeLessonInput(body: Record<string, unknown>, index = 0) {
   return {
     grade,
     title,
-    objective,
+    objective:
+      objective || `Tiết 1 - ${lesson1Title}:\n${lesson1Objective}\n\nTiết 2 - ${lesson2Title}:\n${lesson2Objective}`,
+    lesson1Title,
+    lesson1Objective,
+    lesson2Title,
+    lesson2Objective,
     objectives,
     durationMinutes,
     samplePlanUrl,

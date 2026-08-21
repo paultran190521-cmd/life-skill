@@ -37,7 +37,7 @@ const ALL_SHEETS: { name: Parameters<typeof ensureSheetHeaders>[0]; headers: str
   {
     name: "Lessons",
     headers: [
-      "id", "topicId", "grade", "title", "objective", "objectives",
+      "id", "topicId", "grade", "title", "lesson1Title", "lesson1Objective", "lesson2Title", "lesson2Objective", "objective", "objectives",
       "durationMinutes", "sortOrder", "active", "createdAt", "updatedAt", "samplePlanUrl",
     ],
   },
