@@ -4058,15 +4058,20 @@ export function MettasoulApp() {
             </div>,
             document.body,
           ) : null}
-          {appDialog ? (
+          {appDialog && typeof document !== "undefined"
+            ? createPortal(
             <div
-              className={`fixed inset-0 z-[60] grid place-items-center overflow-hidden bg-slate-950/45 p-4 backdrop-blur-sm transition-opacity duration-200 ${
+              className={`app-modal-overlay fixed inset-0 z-[100] grid place-items-center overflow-hidden bg-slate-950/45 p-4 backdrop-blur-sm transition-opacity duration-200 ${
                 appDialog.leaving ? "opacity-0" : "opacity-100"
               }`}
             >
               <div
                 data-modal-scroll="true"
-                className={`app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-3xl border bg-white p-5 shadow-2xl transition duration-200 ${
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={`app-dialog-title-${appDialog.id}`}
+                aria-describedby={`app-dialog-message-${appDialog.id}`}
+                className={`app-modal-panel app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-3xl border bg-white p-5 shadow-2xl transition duration-200 ${
                   appDialog.leaving ? "translate-y-2 scale-[0.98] opacity-0" : "translate-y-0 scale-100 opacity-100"
                 } ${appDialog.tone === "danger" ? "border-rose-100" : "border-cyan-100"}`}
               >
@@ -4077,8 +4082,8 @@ export function MettasoulApp() {
                 >
                   {appDialog.tone === "danger" ? <Trash2 size={20} /> : <Pencil size={20} />}
                 </div>
-                <h2 className="mt-4 text-xl font-black text-[var(--brand-dark)]">{appDialog.title}</h2>
-                <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{appDialog.message}</p>
+                <h2 id={`app-dialog-title-${appDialog.id}`} className="mt-4 text-xl font-black text-[var(--brand-dark)]">{appDialog.title}</h2>
+                <p id={`app-dialog-message-${appDialog.id}`} className="mt-2 text-sm leading-6 text-[var(--muted)]">{appDialog.message}</p>
                 {appDialog.variant === "prompt" ? (
                   <input
                     autoFocus
@@ -4120,8 +4125,10 @@ export function MettasoulApp() {
                   </button>
                 </div>
               </div>
-            </div>
-          ) : null}
+            </div>,
+            document.body,
+          )
+            : null}
         </section>
       </div>
     </main>
