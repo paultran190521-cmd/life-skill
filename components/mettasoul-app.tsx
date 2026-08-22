@@ -7238,7 +7238,8 @@ export function MettasoulApp() {
   function SettingsPanel() {
     const usageGuideUrl = "/huong-dan-su-dung/";
     return (
-      <div className="space-y-5">
+      <div className="flex flex-col gap-5">
+        <div className="order-1">
         <Panel
           title="Thông báo chạy đầu ứng dụng"
           action={`${appAnnouncements.filter((item) => item.active).length} đang chạy`}
@@ -7372,7 +7373,9 @@ export function MettasoulApp() {
             </div>
           </div>
         </Panel>
+        </div>
 
+        <div className="order-6">
         <Panel title="Observability vận hành" action="Admin-only">
           <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -7448,7 +7451,9 @@ export function MettasoulApp() {
             </div>
           </div>
         </Panel>
+        </div>
 
+        <div className="order-5">
         <Panel title="Hướng dẫn sử dụng & Feedback" action="Dành cho admin">
           <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
             <div className="rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 via-white to-sky-50 p-4 shadow-sm">
@@ -7545,7 +7550,9 @@ export function MettasoulApp() {
             </div>
           </div>
         </Panel>
+        </div>
 
+        <div className="order-2">
         <Panel
           title="Thiết lập Trường và Lớp"
           action={`${schools.length} trường`}
@@ -7636,7 +7643,9 @@ export function MettasoulApp() {
             </div>
           </div>
         </Panel>
+        </div>
 
+        <div className="order-3">
         <Panel
           title="Thêm lớp"
           action={`${classes.length} lớp`}
@@ -7750,8 +7759,11 @@ export function MettasoulApp() {
             </div>
           </div>
         </Panel>
+        </div>
 
-        <SlotsPanel />
+        <div className="order-4">
+          <SlotsPanel />
+        </div>
       </div>
     );
   }
