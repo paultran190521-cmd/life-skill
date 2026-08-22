@@ -46,7 +46,7 @@ export async function GET(request: Request) {
         appAnnouncements: data.appAnnouncements.filter((announcement) => announcement.active),
         auditLogs: [],
         weeklyUpdates: [],
-      });
+      }, { headers: { "Cache-Control": "no-store, max-age=0" } });
     }
 
     return NextResponse.json({
@@ -64,7 +64,7 @@ export async function GET(request: Request) {
       appAnnouncements: data.appAnnouncements,
       auditLogs: data.auditLogs,
       weeklyUpdates: data.weeklyUpdates,
-    });
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return apiError(error, requestId);
   }

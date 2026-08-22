@@ -662,7 +662,7 @@ function renderScheduledPeriodMatrix(lesson: ScheduleEmailLesson | undefined, sc
       const objective = period === "lesson1" ? lesson?.lesson1Objective : lesson?.lesson2Objective;
       const divider = index > 0 ? "border-top:2px solid #149ac2;" : "";
       return `<tr>
-        <td style="width:46%;padding:12px 10px;${divider}font-weight:700;text-align:center;vertical-align:middle">${escapeHtml(`${number}: ${title?.trim() || lesson?.title?.trim() || "Chưa cập nhật"}`)}</td>
+        <td style="width:46%;padding:12px 10px;${divider}font-weight:800;color:#e67e00;text-align:center;vertical-align:middle">${escapeHtml(`${number}: ${title?.trim() || lesson?.title?.trim() || "Chưa cập nhật"}`)}</td>
         <td style="padding:12px 10px;${divider}border-left:1px solid #149ac2;vertical-align:top">${formatObjectives(objective?.trim() || lesson?.objective || "")}</td>
       </tr>`;
     })

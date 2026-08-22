@@ -54,7 +54,10 @@ export async function GET(request: NextRequest) {
 
     const redirectUrl = new URL("/", request.nextUrl.origin);
     redirectUrl.searchParams.set("confirmedAll", String(confirmableRows.length));
-    return NextResponse.redirect(redirectUrl);
+    redirectUrl.searchParams.set("confirmedAt", String(Date.now()));
+    return NextResponse.redirect(redirectUrl, {
+      headers: { "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate" },
+    });
   } catch (error) {
     return apiError(error, requestId);
   }

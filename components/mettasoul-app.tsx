@@ -711,7 +711,7 @@ export function MettasoulApp() {
 
     async function loadAppData() {
       try {
-        const data = await apiRequest<AppData>("/api/app-data");
+        const data = await apiRequest<AppData>("/api/app-data", { cache: "no-store" });
         if (cancelled) {
           return;
         }
@@ -759,6 +759,30 @@ export function MettasoulApp() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (authStatus !== "signed-in" || dataStatus !== "connected" || typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    const confirmedAll = url.searchParams.get("confirmedAll");
+    if (confirmedAll === null) {
+      return;
+    }
+    const confirmedCount = Number(confirmedAll);
+    if (!Number.isFinite(confirmedCount) || confirmedCount < 0) {
+      return;
+    }
+
+    pushToast(
+      "Đã nhận lịch",
+      confirmedCount > 0 ? `Đã xác nhận ${confirmedCount} lịch dạy của bạn.` : "Các lịch chờ xác nhận của bạn đã được kiểm tra.",
+      "success",
+    );
+    url.searchParams.delete("confirmedAll");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [authStatus, dataStatus]);
 
   useEffect(() => {
     const updateViewport = () => {
@@ -4108,7 +4132,10 @@ export function MettasoulApp() {
                           <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Mục tiêu bài học</p>
                           <div className="mt-3 space-y-2">
                             {splitObjectiveLines(meta.lesson?.objective || "").map((line, index) => (
-                              <div key={`${line}-${index}`} className="rounded-xl border border-orange-100 bg-white px-3 py-2 text-sm font-bold leading-6 text-[var(--brand-dark)] shadow-sm">
+                              <div
+                                key={`${line}-${index}`}
+                                className={`rounded-xl border border-orange-100 bg-white px-3 py-2 text-sm font-bold leading-6 shadow-sm ${/^Tiết\s*[12]\s*[-:]/i.test(line) ? "text-orange-600" : "text-[var(--brand-dark)]"}`}
+                              >
                                 {line}
                               </div>
                             ))}
