@@ -457,7 +457,7 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
         <p style="margin:0 0 12px;font-size:14px;color:#1992b0;font-weight:700;text-align:center;text-transform:uppercase">HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL</p>
         <h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;color:#0b6f89;text-align:center;text-transform:uppercase">BẠN CÓ LỊCH DẠY MỚI</h1>
         <p style="margin:0 0 8px;font-size:15px">Chào ${escapeHtml(input.teacher.name || "Thầy/Cô")}, giáo vụ vừa giao lịch dạy cho ${escapeHtml(weekText)}.</p>
-        <p style="margin:0 0 20px;font-size:13px;color:#667985">Mỗi dòng bên dưới là một tiết dạy cần xác nhận.</p>
+        <p style="margin:0 0 20px;font-size:13px;color:#667985">Kiểm tra lịch bên dưới, sau đó dùng nút xác nhận tất cả ở cuối email.</p>
 
         <!-- ${scheduleEmailTemplateVersion} -->
         <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 20px;font-size:13px;border:2px solid #ff9500">
@@ -465,12 +465,11 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
             <col style="width:8%">
             <col style="width:9%">
             <col style="width:13%">
-            <col style="width:10%">
+            <col style="width:13%">
             <col style="width:12%">
-            <col style="width:14%">
-            <col style="width:16%">
+            <col style="width:17%">
+            <col style="width:18%">
             <col style="width:10%">
-            <col style="width:8%">
           </colgroup>
           <thead>
             <tr>
@@ -479,30 +478,23 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TRƯỜNG</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">LỚP/PHẠM VI</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TÊN BÀI</th>
-              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TÊN TIẾT</th>
-              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:left">MỤC TIÊU</th>
+              <th colspan="2" style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TÊN TIẾT VÀ MỤC TIÊU</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:left">THÔNG TIN BUỔI DẠY</th>
-              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">XÁC NHẬN</th>
             </tr>
           </thead>
           <tbody>
             ${rows
               .map((row) => {
                 const slotTime = [row.slot?.start, row.slot?.end].filter(Boolean).join(" - ");
-                const confirmUrl = buildConfirmUrl(row.schedule);
                 return `
                   <tr style="border-top:3px solid #ff9500">
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(formatDate(row.schedule.date))}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;white-space:nowrap">${escapeHtml(slotTime || "Chưa cập nhật")}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;word-break:break-word;overflow-wrap:anywhere">${escapeHtml(formatDate(row.schedule.date))}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;white-space:normal;word-break:break-word;overflow-wrap:anywhere">${escapeHtml(slotTime || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.school?.name || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(formatParticipantClasses(row))}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(normalizeKnownLessonTitle(row.lesson?.title))}</td>
-                    <td style="padding:0;border:1px solid #ff9500;vertical-align:top">${renderScheduledPeriodTitles(row.lesson, row.schedule)}</td>
-                    <td style="padding:0;border:1px solid #ff9500;vertical-align:top">${renderScheduledPeriodObjectives(row.lesson, row.schedule)}</td>
+                    <td colspan="2" style="padding:0;border:1px solid #ff9500;vertical-align:top">${renderScheduledPeriodMatrix(row.lesson, row.schedule)}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;line-height:1.55">${renderScheduleLogistics(row)}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">
-                      <a href="${confirmUrl}" style="display:inline-block;background:#ff9500;color:#ffffff;text-decoration:none;border-radius:10px;padding:8px 12px;font-weight:700">XÁC NHẬN</a>
-                    </td>
                   </tr>
                 `;
               })
@@ -524,7 +516,7 @@ function formatParticipantClasses(row: ScheduleDigestRow) {
   if (names.length <= 1) {
     return names[0] || row.classRoom?.name || "Chưa cập nhật";
   }
-  return `${names.length} lớp tham gia`;
+  return names.join(", ");
 }
 
 function renderScheduleLogistics(row: ScheduleDigestRow) {
@@ -669,25 +661,21 @@ function formatScheduledLessonObjectives(lesson: ScheduleEmailLesson | undefined
   return objectives.join("\n") || lesson?.objective || "";
 }
 
-function renderScheduledPeriodTitles(lesson: ScheduleEmailLesson | undefined, schedule: Schedule) {
+function renderScheduledPeriodMatrix(lesson: ScheduleEmailLesson | undefined, schedule: Schedule) {
   return scheduledPeriods(schedule)
     .map((period, index) => {
       const number = period === "lesson1" ? "Tiết 1" : "Tiết 2";
       const title = period === "lesson1" ? lesson?.lesson1Title : lesson?.lesson2Title;
-      const divider = index > 0 ? "border-top:2px solid #149ac2;" : "";
-      return `<div style="padding:12px 10px;${divider}font-weight:700;text-align:center">${escapeHtml(`${number}: ${title?.trim() || lesson?.title?.trim() || "Chưa cập nhật"}`)}</div>`;
-    })
-    .join("");
-}
-
-function renderScheduledPeriodObjectives(lesson: ScheduleEmailLesson | undefined, schedule: Schedule) {
-  return scheduledPeriods(schedule)
-    .map((period, index) => {
       const objective = period === "lesson1" ? lesson?.lesson1Objective : lesson?.lesson2Objective;
       const divider = index > 0 ? "border-top:2px solid #149ac2;" : "";
-      return `<div style="padding:12px 10px;${divider}">${formatObjectives(objective?.trim() || lesson?.objective || "")}</div>`;
+      return `<tr>
+        <td style="width:46%;padding:12px 10px;${divider}font-weight:700;text-align:center;vertical-align:top">${escapeHtml(`${number}: ${title?.trim() || lesson?.title?.trim() || "Chưa cập nhật"}`)}</td>
+        <td style="padding:12px 10px;${divider}border-left:1px solid #149ac2;vertical-align:top">${formatObjectives(objective?.trim() || lesson?.objective || "")}</td>
+      </tr>`;
     })
-    .join("");
+    .join("")
+    .replace(/^/, '<table role="presentation" style="width:100%;border-collapse:collapse;table-layout:fixed">')
+    .concat("</table>");
 }
 
 function normalizeComparableText(value: string) {
