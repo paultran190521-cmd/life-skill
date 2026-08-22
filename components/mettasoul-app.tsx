@@ -4259,6 +4259,13 @@ export function MettasoulApp() {
     const periodsByEnvironment = buildPeriodTotals((schedule) => teachingEnvironmentLabel(schedule.teachingEnvironment));
     const periodsByTeacher = buildPeriodTotals((schedule) => teacherName(schedule.teacherId));
     const periodsBySchool = buildPeriodTotals((schedule) => schools.find((school) => school.id === schedule.schoolId)?.name || "Chưa rõ trường");
+    const reportDates = Array.from(new Set(reportSchedules.map((schedule) => schedule.date))).sort();
+    const schoolTrendSeries = Array.from(new Set(reportSchedules.map((schedule) => schedule.schoolId))).map((schoolId) => ({
+      label: schools.find((school) => school.id === schoolId)?.name || "Chưa rõ trường",
+      values: reportDates.map((date) => reportSchedules
+        .filter((schedule) => schedule.schoolId === schoolId && schedule.date === date)
+        .reduce((total, schedule) => total + periodCount(schedule), 0)),
+    }));
 
     async function exportAssignmentReport() {
       setPendingAction("Đang xuất Excel đối soát...");
@@ -4306,26 +4313,91 @@ export function MettasoulApp() {
       }
     }
 
-    function ReportBarChart({ title, rows }: { title: string; rows: Array<{ label: string; value: number }> }) {
+    function ReportLineChart({ title, rows }: { title: string; rows: Array<{ label: string; value: number }> }) {
+      const width = 520;
+      const height = 220;
+      const padding = { top: 22, right: 18, bottom: 52, left: 34 };
       const maxValue = Math.max(1, ...rows.map((row) => row.value));
+      const chartWidth = width - padding.left - padding.right;
+      const chartHeight = height - padding.top - padding.bottom;
+      const points = rows.map((row, index) => {
+        const x = padding.left + (rows.length <= 1 ? chartWidth / 2 : (index / (rows.length - 1)) * chartWidth);
+        const y = padding.top + chartHeight - (row.value / maxValue) * chartHeight;
+        return { ...row, x, y };
+      });
       return (
         <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
           <p className="text-sm font-black text-[var(--brand-dark)]">{title}</p>
-          <div className="mt-4 space-y-3">
+          <div className="mt-3 overflow-x-auto">
             {rows.length === 0 ? (
               <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-[var(--muted)]">Chưa có dữ liệu theo bộ lọc.</p>
-            ) : rows.map((row) => (
-              <div key={row.label}>
-                <div className="mb-1 flex items-center justify-between gap-3 text-xs font-bold text-[var(--brand-dark)]">
-                  <span className="truncate">{row.label}</span>
-                  <span className="shrink-0">{row.value} tiết</span>
-                </div>
-                <div className="h-2.5 overflow-hidden rounded-full bg-cyan-50">
-                  <div className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-teal-400 to-amber-400" style={{ width: `${Math.max(8, (row.value / maxValue) * 100)}%` }} />
-                </div>
-              </div>
-            ))}
+            ) : (
+              <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[420px] w-full" role="img" aria-label={title}>
+                {[0, 0.5, 1].map((step) => {
+                  const y = padding.top + chartHeight - step * chartHeight;
+                  return <line key={step} x1={padding.left} x2={width - padding.right} y1={y} y2={y} stroke="#d9f2f7" strokeWidth="1" />;
+                })}
+                <text x="4" y={padding.top + 4} fill="#5f7485" fontSize="10">{maxValue}</text>
+                <text x="10" y={padding.top + chartHeight + 4} fill="#5f7485" fontSize="10">0</text>
+                <polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke="#0ea5b7" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                {points.map((point) => (
+                  <g key={point.label}>
+                    <circle cx={point.x} cy={point.y} r="5" fill="#f59e0b" stroke="white" strokeWidth="3" />
+                    <text x={point.x} y={point.y - 11} textAnchor="middle" fill="#0b5062" fontSize="11" fontWeight="700">{point.value}</text>
+                    <text x={point.x} y={height - 18} textAnchor="middle" fill="#526b7b" fontSize="10">
+                      {point.label.length > 20 ? `${point.label.slice(0, 18)}…` : point.label}
+                    </text>
+                  </g>
+                ))}
+              </svg>
+            )}
           </div>
+        </div>
+      );
+    }
+
+    function SchoolTrendLineChart() {
+      const width = 520;
+      const height = 220;
+      const padding = { top: 22, right: 18, bottom: 52, left: 34 };
+      const chartWidth = width - padding.left - padding.right;
+      const chartHeight = height - padding.top - padding.bottom;
+      const maxValue = Math.max(1, ...schoolTrendSeries.flatMap((series) => series.values));
+      const colors = ["#0ea5b7", "#f59e0b", "#7c3aed", "#10b981", "#f43f5e", "#2563eb"];
+      return (
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+          <p className="text-sm font-black text-[var(--brand-dark)]">So sánh số tiết giữa các trường theo ngày</p>
+          {reportDates.length === 0 ? (
+            <p className="mt-3 rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-[var(--muted)]">Chưa có dữ liệu theo bộ lọc.</p>
+          ) : (
+            <>
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-bold text-[var(--muted)]">
+                {schoolTrendSeries.map((series, index) => <span key={series.label} className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />{series.label}</span>)}
+              </div>
+              <div className="mt-3 overflow-x-auto">
+                <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[420px] w-full" role="img" aria-label="So sánh số tiết giữa các trường theo ngày">
+                  {[0, 0.5, 1].map((step) => {
+                    const y = padding.top + chartHeight - step * chartHeight;
+                    return <line key={step} x1={padding.left} x2={width - padding.right} y1={y} y2={y} stroke="#d9f2f7" strokeWidth="1" />;
+                  })}
+                  <text x="4" y={padding.top + 4} fill="#5f7485" fontSize="10">{maxValue}</text>
+                  {schoolTrendSeries.map((series, seriesIndex) => {
+                    const color = colors[seriesIndex % colors.length];
+                    const points = series.values.map((value, index) => {
+                      const x = padding.left + (reportDates.length <= 1 ? chartWidth / 2 : (index / (reportDates.length - 1)) * chartWidth);
+                      const y = padding.top + chartHeight - (value / maxValue) * chartHeight;
+                      return { x, y, value };
+                    });
+                    return <g key={series.label}><polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />{points.map((point, index) => <circle key={index} cx={point.x} cy={point.y} r="3.5" fill={color} stroke="white" strokeWidth="2" />)}</g>;
+                  })}
+                  {reportDates.map((date, index) => {
+                    const x = padding.left + (reportDates.length <= 1 ? chartWidth / 2 : (index / (reportDates.length - 1)) * chartWidth);
+                    return <text key={date} x={x} y={height - 18} textAnchor="middle" fill="#526b7b" fontSize="10">{formatDate(date)}</text>;
+                  })}
+                </svg>
+              </div>
+            </>
+          )}
         </div>
       );
     }
@@ -4871,18 +4943,10 @@ export function MettasoulApp() {
                 </div>
               </div>
               <div className="grid gap-4 xl:grid-cols-2">
-                <ReportBarChart title="Số tiết theo môi trường dạy" rows={periodsByEnvironment} />
-                <ReportBarChart title="Số tiết theo giáo viên" rows={periodsByTeacher} />
-                <ReportBarChart title="Số tiết theo trường" rows={periodsBySchool} />
-                <div className="rounded-2xl border border-cyan-100 bg-cyan-50/55 p-4 shadow-sm">
-                  <p className="text-sm font-black text-[var(--brand-dark)]">Tổng quan kỳ đối soát</p>
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-[var(--muted)]">Lịch đã giao</p><p className="mt-1 text-2xl font-black text-[var(--brand-dark)]">{reportSchedules.length}</p></div>
-                    <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-[var(--muted)]">Giáo viên có lịch</p><p className="mt-1 text-2xl font-black text-[var(--brand-dark)]">{new Set(reportSchedules.map((schedule) => schedule.teacherId)).size}</p></div>
-                    <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-[var(--muted)]">Trường có lịch</p><p className="mt-1 text-2xl font-black text-[var(--brand-dark)]">{new Set(reportSchedules.map((schedule) => schedule.schoolId)).size}</p></div>
-                    <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-[var(--muted)]">Tiết đã xác nhận</p><p className="mt-1 text-2xl font-black text-[var(--brand-dark)]">{reportSchedules.filter((schedule) => schedule.status === "confirmed").reduce((total, schedule) => total + periodCount(schedule), 0)}</p></div>
-                  </div>
-                </div>
+                <ReportLineChart title="Đường số tiết theo giáo viên" rows={periodsByTeacher} />
+                <ReportLineChart title="Đường số tiết theo trường" rows={periodsBySchool} />
+                <ReportLineChart title="Đường số tiết theo môi trường dạy" rows={periodsByEnvironment} />
+                <SchoolTrendLineChart />
               </div>
             </div>
           </div>
