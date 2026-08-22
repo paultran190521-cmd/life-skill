@@ -150,7 +150,7 @@ button:disabled {
     radial-gradient(900px 430px at 105% 3%, rgba(32, 176, 176, 0.11), transparent 48%),
     radial-gradient(760px 360px at 72% 104%, rgba(0, 64, 80, 0.07), transparent 46%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0));
-  background-attachment: fixed;
+  background-attachment: scroll;
 }
 
 .ui-polish .ui-enter {
@@ -288,6 +288,12 @@ button:disabled {
   -webkit-overflow-scrolling: touch;
 }
 
+.ui-list-item {
+  content-visibility: auto;
+  contain: layout paint style;
+  contain-intrinsic-size: auto 118px;
+}
+
 .ui-notification-dot {
   animation: pulse-glow 1.8s var(--ease-smooth) infinite;
 }
@@ -333,6 +339,13 @@ button:disabled {
   select,
   textarea {
     font-size: 16px;
+  }
+}
+
+@media (pointer: coarse) {
+  .ui-polish :is(section, div, article, li)[class*="rounded-3xl"][class*="bg-white"][class*="border"],
+  .ui-polish :is(section, div, article, li)[class*="rounded-2xl"][class*="bg-white"][class*="border"] {
+    transition: border-color 0.16s var(--ease-smooth);
   }
 }
 

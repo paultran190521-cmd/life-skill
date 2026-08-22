@@ -38,7 +38,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { statusLabels, statusStyles } from "@/lib/status";
 import { lessonDuplicateKey } from "@/lib/lessons";
@@ -408,7 +408,6 @@ const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }
 
 export function MettasoulApp() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
-  const [, startTabTransition] = useTransition();
   const [appUsers, setAppUsers] = useState<User[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
   const [sessionUserId, setSessionUserId] = useState("");
@@ -598,6 +597,37 @@ export function MettasoulApp() {
   }, [activeTeachers, activeUsers]);
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
   const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);
+  const teachersById = useMemo(() => new Map(teachers.map((teacher) => [teacher.id, teacher])), [teachers]);
+  const schoolsById = useMemo(() => new Map(schools.map((school) => [school.id, school])), [schools]);
+  const classesById = useMemo(() => new Map(classes.map((classRoom) => [classRoom.id, classRoom])), [classes]);
+  const lessonsById = useMemo(() => new Map(lessons.map((lesson) => [lesson.id, lesson])), [lessons]);
+  const timeSlotsById = useMemo(() => new Map(timeSlots.map((slot) => [slot.id, slot])), [timeSlots]);
+  const attendanceByScheduleId = useMemo(
+    () => new Map(attendance.map((item) => [item.scheduleId, item])),
+    [attendance],
+  );
+  const lessonPlansByScheduleId = useMemo(() => {
+    const grouped = new Map<string, LessonPlan[]>();
+    for (const plan of lessonPlans) {
+      const items = grouped.get(plan.scheduleId) ?? [];
+      items.push(plan);
+      grouped.set(plan.scheduleId, items);
+    }
+    for (const items of grouped.values()) {
+      items.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+    }
+    return grouped;
+  }, [lessonPlans]);
+  const schedulesByGroupId = useMemo(() => {
+    const grouped = new Map<string, Schedule[]>();
+    for (const schedule of schedules) {
+      if (!schedule.groupId) continue;
+      const items = grouped.get(schedule.groupId) ?? [];
+      items.push(schedule);
+      grouped.set(schedule.groupId, items);
+    }
+    return grouped;
+  }, [schedules]);
   const hasBlockingModal = Boolean(
     feedbackModalOpen ||
       teacherModalOpen ||
@@ -1001,10 +1031,10 @@ export function MettasoulApp() {
           return true;
         }
 
-        const teacher = teachers.find((item) => item.id === schedule.teacherId);
-        const school = schools.find((item) => item.id === schedule.schoolId);
-        const classRoom = classes.find((item) => item.id === schedule.classId);
-        const lesson = lessons.find((item) => item.id === schedule.lessonId);
+        const teacher = teachersById.get(schedule.teacherId);
+        const school = schoolsById.get(schedule.schoolId);
+        const classRoom = classesById.get(schedule.classId);
+        const lesson = lessonsById.get(schedule.lessonId);
         return [teacher?.name, school?.name, classRoom?.name, lesson?.title, schedule.date]
           .filter(Boolean)
           .join(" ")
@@ -1013,7 +1043,7 @@ export function MettasoulApp() {
       }),
       calendarFilters.sort,
     );
-  }, [calendarFilters, classes, currentTeacherId, lessons, role, schedules, schools, searchTerm, teachers]);
+  }, [calendarFilters, classesById, currentTeacherId, lessonsById, role, schedules, schoolsById, searchTerm, teachersById]);
   const calendarDays = useMemo(
     () => buildCalendarDays(calendarMonth, selectedCalendarDate, calendarViewMode, visibleSchedules),
     [calendarMonth, calendarViewMode, selectedCalendarDate, visibleSchedules],
@@ -1349,29 +1379,27 @@ export function MettasoulApp() {
   function lookupSchedule(schedule: Schedule) {
     const coTeacherCandidates =
       schedule.teachingEnvironment !== "in_class" && schedule.groupId
-        ? schedules
-            .filter((item) => item.groupId === schedule.groupId && item.teacherId !== schedule.teacherId)
-            .map((item) => teachers.find((teacher) => teacher.id === item.teacherId))
+        ? (schedulesByGroupId.get(schedule.groupId) ?? [])
+            .filter((item) => item.teacherId !== schedule.teacherId)
+            .map((item) => teachersById.get(item.teacherId))
             .filter((teacher): teacher is Teacher => Boolean(teacher))
         : [];
     const coTeachers = Array.from(new Map(coTeacherCandidates.map((teacher) => [teacher.id, teacher])).values());
     return {
-      teacher: teachers.find((item) => item.id === schedule.teacherId),
-      school: schools.find((item) => item.id === schedule.schoolId),
-      classRoom: classes.find((item) => item.id === schedule.classId),
+      teacher: teachersById.get(schedule.teacherId),
+      school: schoolsById.get(schedule.schoolId),
+      classRoom: classesById.get(schedule.classId),
       participantClasses: scheduleParticipantClassIds(schedule)
-        .map((classId) => classes.find((item) => item.id === classId))
+        .map((classId) => classesById.get(classId))
         .filter((classRoom): classRoom is ClassRoom => Boolean(classRoom)),
       assistants: splitAssistantIds(schedule.assistantIds)
-        .map((assistantId) => teachers.find((item) => item.id === assistantId))
+        .map((assistantId) => teachersById.get(assistantId))
         .filter((assistant): assistant is Teacher => Boolean(assistant)),
       coTeachers,
-      lesson: lessons.find((item) => item.id === schedule.lessonId),
-      slot: timeSlots.find((item) => item.id === schedule.timeSlotId),
-      plans: lessonPlans
-        .filter((item) => item.scheduleId === schedule.id)
-        .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)),
-      checkIn: attendance.find((item) => item.scheduleId === schedule.id),
+      lesson: lessonsById.get(schedule.lessonId),
+      slot: timeSlotsById.get(schedule.timeSlotId),
+      plans: lessonPlansByScheduleId.get(schedule.id) ?? [],
+      checkIn: attendanceByScheduleId.get(schedule.id),
     };
   }
 
@@ -1380,7 +1408,7 @@ export function MettasoulApp() {
   }
 
   function formatScheduleDateTime(schedule: Schedule) {
-    const slot = timeSlots.find((item) => item.id === schedule.timeSlotId);
+    const slot = timeSlotsById.get(schedule.timeSlotId);
     const timeText = slot ? `${slot.label} ${slot.start}-${slot.end}` : "Chưa có khung giờ";
     return `${formatDate(schedule.date)} • ${timeText}`;
   }
@@ -3440,9 +3468,7 @@ export function MettasoulApp() {
   }
 
   function changeTab(tabId: TabId) {
-    startTabTransition(() => {
-      setActiveTab(tabId);
-    });
+    setActiveTab(tabId);
     setMobileSidebarOpen(false);
   }
 
@@ -3553,7 +3579,7 @@ export function MettasoulApp() {
         </aside>
 
         <section className="min-w-0">
-          <header className="ui-glass-header sticky top-0 z-20 border-b border-white/70 px-4 py-4 backdrop-blur-xl md:px-7">
+          <header className="ui-glass-header sticky top-0 z-20 border-b border-white/70 px-4 py-4 md:px-7">
             <div className="relative flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex min-w-0 items-start gap-3">
                 <button
@@ -3685,7 +3711,7 @@ export function MettasoulApp() {
 
           <AnnouncementTicker announcements={activeAppAnnouncements} />
           <div className="px-3 pb-28 pt-4 sm:px-4 md:p-7">{renderMain()}</div>
-          <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-cyan-100 bg-white/95 px-2 py-2 shadow-[0_-18px_42px_rgba(18,46,68,0.12)] backdrop-blur-xl lg:hidden">
+          <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-cyan-100 bg-white px-2 py-2 shadow-[0_-12px_28px_rgba(18,46,68,0.1)] lg:hidden">
             <div className="app-scrollbar flex gap-2 overflow-x-auto pb-[env(safe-area-inset-bottom)]">
               {navigationTabs.map((item) => {
                 const Icon = item.icon;
@@ -8191,6 +8217,20 @@ export function MettasoulApp() {
     onToggleHistory?: (scheduleId: string) => void;
   }) {
     const [expandedParticipantScheduleId, setExpandedParticipantScheduleId] = useState("");
+    const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+    const scheduleLogsById = useMemo(() => {
+      const grouped = new Map<string, AuditLog[]>();
+      for (const log of rowAuditLogs) {
+        if (log.entityType !== "Schedule") continue;
+        const items = grouped.get(log.entityId) ?? [];
+        items.push(log);
+        grouped.set(log.entityId, items);
+      }
+      for (const items of grouped.values()) {
+        items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      }
+      return grouped;
+    }, [rowAuditLogs]);
     if (items.length === 0) {
       return (
         <div className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 p-8 text-center">
@@ -8206,9 +8246,7 @@ export function MettasoulApp() {
           {items.map((schedule) => {
             const meta = lookupSchedule(schedule);
             const checkedIn = Boolean(meta.checkIn);
-            const scheduleLogs = rowAuditLogs
-              .filter((log) => log.entityType === "Schedule" && log.entityId === schedule.id)
-              .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+            const scheduleLogs = scheduleLogsById.get(schedule.id) ?? [];
             const isHistoryOpen = expandedHistoryId === schedule.id;
             const participantNames = formatScheduleParticipantClassNames(meta.participantClasses, meta.classRoom);
             const hasMultipleParticipantClasses = meta.participantClasses.length > 1;
@@ -8225,14 +8263,14 @@ export function MettasoulApp() {
                     onOpenDetail(schedule);
                   }
                 }}
-                className={`rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-lg sm:p-4 ${scheduleAccentBorder(schedule.status)}`}
+                className={`ui-list-item rounded-2xl border bg-white p-3 shadow-sm transition hover:border-orange-200 sm:p-4 ${scheduleAccentBorder(schedule.status)}`}
               >
                 <div className="grid gap-3 sm:grid-cols-[130px_1fr_160px_190px] sm:items-center sm:gap-4">
                   <div className="flex items-start gap-2">
                     {onToggleSelect ? (
                       <input
                         type="checkbox"
-                        checked={selectedIds.includes(schedule.id)}
+                        checked={selectedIdSet.has(schedule.id)}
                         onClick={(event) => event.stopPropagation()}
                         onChange={() => onToggleSelect(schedule.id)}
                         className="mt-1"
