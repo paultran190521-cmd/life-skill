@@ -4365,8 +4365,8 @@ export function MettasoulApp() {
 
     function ReportLineChart({ title, rows }: { title: string; rows: Array<{ label: string; value: number }> }) {
       const width = 520;
-      const height = 220;
-      const padding = { top: 22, right: 18, bottom: 52, left: 34 };
+      const height = 250;
+      const padding = { top: 22, right: 18, bottom: 82, left: 34 };
       const maxValue = Math.max(1, ...rows.map((row) => row.value));
       const chartWidth = width - padding.left - padding.right;
       const chartHeight = height - padding.top - padding.bottom;
@@ -4394,8 +4394,13 @@ export function MettasoulApp() {
                   <g key={point.label}>
                     <circle cx={point.x} cy={point.y} r="5" fill="#f59e0b" stroke="white" strokeWidth="3" />
                     <text x={point.x} y={point.y - 11} textAnchor="middle" fill="#0b5062" fontSize="11" fontWeight="700">{point.value}</text>
-                    <text x={point.x} y={height - 18} textAnchor="middle" fill="#526b7b" fontSize="10">
-                      {point.label.length > 20 ? `${point.label.slice(0, 18)}…` : point.label}
+                    <text
+                      transform={`translate(${point.x} ${height - 28}) rotate(-38)`}
+                      textAnchor="end"
+                      fill="#526b7b"
+                      fontSize="10"
+                    >
+                      {point.label}
                     </text>
                   </g>
                 ))}
