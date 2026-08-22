@@ -24,6 +24,8 @@ type ScheduleDigestRow = {
   schedule: Schedule;
   school?: { name?: string };
   classRoom?: { name?: string };
+  participantClassNames?: string[];
+  assistantNames?: string[];
   lesson?: ScheduleEmailLesson;
   slot?: { label?: string; start?: string; end?: string };
 };
@@ -460,24 +462,26 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
         <!-- ${scheduleEmailTemplateVersion} -->
         <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 20px;font-size:13px;border:2px solid #ff9500">
           <colgroup>
+            <col style="width:8%">
             <col style="width:9%">
-            <col style="width:11%">
-            <col style="width:15%">
-            <col style="width:6%">
             <col style="width:13%">
-            <col style="width:17%">
-            <col style="width:19%">
             <col style="width:10%">
+            <col style="width:12%">
+            <col style="width:14%">
+            <col style="width:16%">
+            <col style="width:10%">
+            <col style="width:8%">
           </colgroup>
           <thead>
             <tr>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">NGÀY</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">KHUNG GIỜ</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TRƯỜNG</th>
-              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">LỚP</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">LỚP/PHẠM VI</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TÊN BÀI</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TÊN TIẾT</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:left">MỤC TIÊU</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:left">THÔNG TIN BUỔI DẠY</th>
               <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">XÁC NHẬN</th>
             </tr>
           </thead>
@@ -491,10 +495,11 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(formatDate(row.schedule.date))}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;white-space:nowrap">${escapeHtml(slotTime || "Chưa cập nhật")}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.school?.name || "Chưa cập nhật")}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.classRoom?.name || "Chưa cập nhật")}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(formatParticipantClasses(row))}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(normalizeKnownLessonTitle(row.lesson?.title))}</td>
                     <td style="padding:0;border:1px solid #ff9500;vertical-align:top">${renderScheduledPeriodTitles(row.lesson, row.schedule)}</td>
                     <td style="padding:0;border:1px solid #ff9500;vertical-align:top">${renderScheduledPeriodObjectives(row.lesson, row.schedule)}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;line-height:1.55">${renderScheduleLogistics(row)}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">
                       <a href="${confirmUrl}" style="display:inline-block;background:#ff9500;color:#ffffff;text-decoration:none;border-radius:10px;padding:8px 12px;font-weight:700">XÁC NHẬN</a>
                     </td>
@@ -512,6 +517,32 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
       </div>
     </div>
   `;
+}
+
+function formatParticipantClasses(row: ScheduleDigestRow) {
+  const names = row.participantClassNames?.filter(Boolean) ?? [];
+  if (names.length <= 1) {
+    return names[0] || row.classRoom?.name || "Chưa cập nhật";
+  }
+  return `${names.length} lớp tham gia`;
+}
+
+function renderScheduleLogistics(row: ScheduleDigestRow) {
+  const place = teachingEnvironmentEmailLabel(row.schedule.teachingEnvironment);
+  const assistants = row.assistantNames?.filter(Boolean) ?? [];
+  const assistantText = assistants.length > 0 ? `Có - ${assistants.join(", ")}` : "Không có";
+  return `<div><strong>Nơi dạy:</strong> ${escapeHtml(place)}</div><div style="margin-top:8px"><strong>Trợ giảng:</strong> ${escapeHtml(assistantText)}</div>`;
+}
+
+function teachingEnvironmentEmailLabel(value: Schedule["teachingEnvironment"]) {
+  const labels: Record<string, string> = {
+    in_class: "Trong lớp",
+    outdoor: "Ngoài sân",
+    gym: "Nhà thi đấu",
+    schoolyard_report: "Báo cáo sân trường",
+    hall: "Hội trường",
+  };
+  return labels[String(value || "in_class")] || "Trong lớp";
 }
 
 function buildConfirmUrl(schedule: Schedule) {

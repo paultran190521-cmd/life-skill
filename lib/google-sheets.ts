@@ -465,7 +465,7 @@ export const lessonHeaders = [
 export const scheduleHeaders = [
   "id", "date", "teacherId", "schoolId", "classId", "lessonId", "lessonPeriods", "timeSlotId",
   "status", "sentAt", "confirmedAt", "reassignedFrom", "cancelledAt",
-  "createdBy", "createdAt", "updatedAt", "teachingEnvironment", "groupId", "assistantIds",
+  "createdBy", "createdAt", "updatedAt", "teachingEnvironment", "groupId", "assistantIds", "participantClassIds",
 ];
 
 export const weeklyUpdateHeaders = [
@@ -752,6 +752,7 @@ function toSchedules(rows: SheetRow[]): Schedule[] {
     teacherId: row.teacherId,
     schoolId: row.schoolId,
     classId: row.classId,
+    participantClassIds: row.participantClassIds || undefined,
     lessonId: row.lessonId,
     lessonPeriods: normalizeLessonPeriods(row.lessonPeriods),
     timeSlotId: row.timeSlotId,

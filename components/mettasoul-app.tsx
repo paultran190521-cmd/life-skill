@@ -1070,21 +1070,21 @@ export function MettasoulApp() {
   const draftSchedulePreview = useMemo<Schedule[]>(
     () =>
       draftSchedule.items.flatMap((item) =>
-        item.teacherIds.flatMap((teacherId) =>
-          item.classIds.map((classId) => ({
-            id: `preview-${teacherId}-${classId}-${item.id}`,
+        item.teacherIds.map((teacherId) => ({
+            id: `preview-${teacherId}-${item.id}`,
             date: item.date,
             teacherId,
             schoolId: item.schoolId,
-            classId,
+            classId: item.classIds[0] ?? item.classId,
+            participantClassIds: item.classIds.join(","),
             lessonId: item.lessonId,
             lessonPeriods: item.lessonPeriods.join(","),
             timeSlotId: item.timeSlotId,
             teachingEnvironment: item.teachingEnvironment,
+            groupId: item.teachingEnvironment === "in_class" ? undefined : `preview-group-${item.id}`,
             status: "sent" as const,
             assistantIds: item.assistantIds.join(","),
           })),
-        ),
       ),
     [draftSchedule],
   );
@@ -1122,10 +1122,12 @@ export function MettasoulApp() {
     }
     const existingClassSlots = new Map<string, SlotInfo[]>();
     for (const schedule of activeSchedules) {
-      const key = buildClassSlotKey(schedule);
-      const list = existingClassSlots.get(key) ?? [];
-      list.push({ schoolId: schedule.schoolId, env: schedule.teachingEnvironment ?? "in_class" });
-      existingClassSlots.set(key, list);
+      for (const classId of scheduleParticipantClassIds(schedule)) {
+        const key = buildClassSlotKey({ ...schedule, classId });
+        const list = existingClassSlots.get(key) ?? [];
+        list.push({ schoolId: schedule.schoolId, env: schedule.teachingEnvironment ?? "in_class" });
+        existingClassSlots.set(key, list);
+      }
     }
 
     // Assistants bypass teacher conflicts
@@ -1216,37 +1218,39 @@ export function MettasoulApp() {
 
       // A class may join another same-school group activity in the same slot.
       // In-class teaching always remains exclusive.
-      const classKey = buildClassSlotKey(schedule);
       const classEnvironment = schedule.teachingEnvironment ?? "in_class";
-      const conflictsExistingClass = (existingClassSlots.get(classKey) ?? []).some(
-        (entry) => !canShareGroupActivitySlot(entry, { schoolId: schedule.schoolId, env: classEnvironment }),
-      );
-      if (conflictsExistingClass) {
-        pushDraftConflict(conflicts, dedupe, {
-          source: "existing",
-          scope: "class",
-          date: schedule.date,
-          timeSlotId: schedule.timeSlotId,
-          teacherId: schedule.teacherId,
-          classId: schedule.classId,
-        });
+      for (const classId of scheduleParticipantClassIds(schedule)) {
+        const classKey = buildClassSlotKey({ ...schedule, classId });
+        const conflictsExistingClass = (existingClassSlots.get(classKey) ?? []).some(
+          (entry) => !canShareGroupActivitySlot(entry, { schoolId: schedule.schoolId, env: classEnvironment }),
+        );
+        if (conflictsExistingClass) {
+          pushDraftConflict(conflicts, dedupe, {
+            source: "existing",
+            scope: "class",
+            date: schedule.date,
+            timeSlotId: schedule.timeSlotId,
+            teacherId: schedule.teacherId,
+            classId,
+          });
+        }
+        const conflictsDraftClass = (draftClassSlots.get(classKey) ?? []).some(
+          (entry) => !canShareGroupActivitySlot(entry, { schoolId: schedule.schoolId, env: classEnvironment }),
+        );
+        if (conflictsDraftClass) {
+          pushDraftConflict(conflicts, dedupe, {
+            source: "draft",
+            scope: "class",
+            date: schedule.date,
+            timeSlotId: schedule.timeSlotId,
+            teacherId: schedule.teacherId,
+            classId,
+          });
+        }
+        const classDraftList = draftClassSlots.get(classKey) ?? [];
+        classDraftList.push({ schoolId: schedule.schoolId, env: classEnvironment });
+        draftClassSlots.set(classKey, classDraftList);
       }
-      const conflictsDraftClass = (draftClassSlots.get(classKey) ?? []).some(
-        (entry) => !canShareGroupActivitySlot(entry, { schoolId: schedule.schoolId, env: classEnvironment }),
-      );
-      if (conflictsDraftClass) {
-        pushDraftConflict(conflicts, dedupe, {
-          source: "draft",
-          scope: "class",
-          date: schedule.date,
-          timeSlotId: schedule.timeSlotId,
-          teacherId: schedule.teacherId,
-          classId: schedule.classId,
-        });
-      }
-      const classDraftList = draftClassSlots.get(classKey) ?? [];
-      classDraftList.push({ schoolId: schedule.schoolId, env: classEnvironment });
-      draftClassSlots.set(classKey, classDraftList);
     }
 
     return conflicts;
@@ -1319,6 +1323,12 @@ export function MettasoulApp() {
       teacher: teachers.find((item) => item.id === schedule.teacherId),
       school: schools.find((item) => item.id === schedule.schoolId),
       classRoom: classes.find((item) => item.id === schedule.classId),
+      participantClasses: scheduleParticipantClassIds(schedule)
+        .map((classId) => classes.find((item) => item.id === classId))
+        .filter((classRoom): classRoom is ClassRoom => Boolean(classRoom)),
+      assistants: splitAssistantIds(schedule.assistantIds)
+        .map((assistantId) => teachers.find((item) => item.id === assistantId))
+        .filter((assistant): assistant is Teacher => Boolean(assistant)),
       lesson: lessons.find((item) => item.id === schedule.lessonId),
       slot: timeSlots.find((item) => item.id === schedule.timeSlotId),
       plans: lessonPlans
@@ -7828,9 +7838,18 @@ export function MettasoulApp() {
                     </div>
                     <p className="mt-2 flex flex-wrap gap-1 text-xs font-black">
                       <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">{meta.school?.name}</span>
-                      <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700">Lớp {meta.classRoom?.name}</span>
+                      <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700">
+                        {formatScheduleParticipantScope(meta.participantClasses, meta.classRoom)}
+                      </span>
                       <span className={`rounded-full px-2 py-1 ${checkedIn ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
                         {checkedIn ? "Đã điểm danh" : "Chưa điểm danh"}
+                      </span>
+                    </p>
+                    <p className="mt-2 flex flex-wrap gap-2 text-xs font-bold text-[var(--muted)]">
+                      <span>Nơi dạy: {teachingEnvironmentLabel(schedule.teachingEnvironment)}</span>
+                      <span>•</span>
+                      <span>
+                        Trợ giảng: {meta.assistants.length > 0 ? meta.assistants.map((assistant) => assistant.name).join(", ") : "Không có"}
                       </span>
                     </p>
                   </div>
@@ -9145,6 +9164,21 @@ function buildTeacherSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "t
 
 function buildClassSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "classId">) {
   return `${schedule.date}|${schedule.timeSlotId}|${schedule.classId}`;
+}
+
+function scheduleParticipantClassIds(schedule: Pick<Schedule, "classId" | "participantClassIds">) {
+  const values = String(schedule.participantClassIds || schedule.classId)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return Array.from(new Set(values));
+}
+
+function formatScheduleParticipantScope(participantClasses: ClassRoom[], primaryClass?: ClassRoom) {
+  if (participantClasses.length <= 1) {
+    return `Lớp ${participantClasses[0]?.name || primaryClass?.name || "chưa cập nhật"}`;
+  }
+  return `${participantClasses.length} lớp tham gia`;
 }
 
 function canShareGroupActivitySlot(

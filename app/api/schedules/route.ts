@@ -73,24 +73,31 @@ export async function POST(request: Request) {
       return apiFailure(400, validationMessage, undefined, requestId);
     }
 
-    const schedules: Schedule[] = normalizedItems.flatMap((item) =>
-      item.teacherIds.flatMap((teacherId) =>
-        item.classIds.map((classId) => ({
+    const schedules: Schedule[] = normalizedItems.flatMap((item) => {
+      const isGroupActivity = item.teachingEnvironment !== "in_class";
+      const participantClassIds = item.classIds.join(",");
+      const groupId = isGroupActivity ? createId("grp") : undefined;
+      const primaryClassId = item.classIds[0];
+
+      // Hoạt động chung chỉ là một buổi dạy cho mỗi giáo viên. Danh sách lớp
+      // được giữ ở participantClassIds thay vì nhân bản lịch và email theo lớp.
+      return item.teacherIds.map((teacherId) => ({
           id: createId("sch"),
           date: item.date,
           teacherId,
           schoolId: item.schoolId,
-          classId,
+          classId: primaryClassId,
+          participantClassIds,
           lessonId: item.lessonId,
           lessonPeriods: item.lessonPeriods.join(","),
           timeSlotId: item.timeSlotId,
           teachingEnvironment: item.teachingEnvironment,
+          groupId,
           assistantIds: item.assistantIds,
           status: "sent",
           sentAt: now,
-        })),
-      ),
-    );
+        }));
+    });
 
     const conflicts = await detectScheduleConflictsSafe(schedules);
     if (conflicts.length > 0) {
@@ -125,6 +132,7 @@ export async function POST(request: Request) {
       after: {
         teacherId: schedule.teacherId,
         classId: schedule.classId,
+        participantClassIds: schedule.participantClassIds,
         lessonId: schedule.lessonId,
         lessonPeriods: schedule.lessonPeriods,
         schoolId: schedule.schoolId,
@@ -227,7 +235,7 @@ function checkConflictPair(
       classId: schedule.classId,
     });
   }
-  if (normalizeId(schedule.classId) === normalizeId(other.classId)) {
+  if (scheduleParticipantClassIds(schedule).some((classId) => scheduleParticipantClassIds(other).includes(classId))) {
     addConflict(conflicts, dedupe, {
       conflictType: "class",
       source,
@@ -237,6 +245,10 @@ function checkConflictPair(
       classId: schedule.classId,
     });
   }
+}
+
+function scheduleParticipantClassIds(schedule: Pick<Schedule, "classId" | "participantClassIds"> | Record<string, string>) {
+  return parseIds(schedule.participantClassIds || schedule.classId);
 }
 
 function canShareGroupActivitySlot(
@@ -607,8 +619,14 @@ async function sendScheduleEmailsByTeacher(
           schedule,
           school: data.schools.find((item) => normalizeId(item.id) === normalizeId(schedule.schoolId)),
           classRoom: data.classes.find((item) => normalizeId(item.id) === normalizeId(schedule.classId)),
+          participantClassNames: scheduleParticipantClassIds(schedule)
+            .map((classId) => data.classes.find((item) => normalizeId(item.id) === classId)?.name)
+            .filter((name): name is string => Boolean(name)),
           lesson: data.lessons.find((item) => normalizeId(item.id) === normalizeId(schedule.lessonId)),
           slot: data.slots.find((item) => normalizeId(item.id) === normalizeId(schedule.timeSlotId)),
+          assistantNames: parseIds(schedule.assistantIds)
+            .map((assistantId) => data.teachers.find((item) => normalizeId(item.id) === assistantId)?.name)
+            .filter((name): name is string => Boolean(name)),
         })),
       });
 

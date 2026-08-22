@@ -92,6 +92,8 @@ export type Schedule = {
   teacherId: string;
   schoolId: string;
   classId: string;
+  /** Các lớp tham gia một hoạt động chung, lưu dạng id phân tách bằng dấu phẩy. */
+  participantClassIds?: string;
   lessonId: string;
   /** Danh sách tiết đã giao, lưu trên Sheet dạng lesson1,lesson2. */
   lessonPeriods?: string;
