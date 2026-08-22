@@ -4306,12 +4306,27 @@ export function MettasoulApp() {
       });
       return Array.from(totals, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
     };
+    const shortSchoolLabel = (name: string) => {
+      const normalized = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const knownNames = [
+        ["minh khai", "Minh Khai"],
+        ["nam sai gon", "Nam Sài Gòn"],
+        ["the thao", "Thể thao"],
+        ["chi lang", "Chi Lăng"],
+        ["tan tuc", "Tân Túc"],
+        ["phong phu", "Phong Phú"],
+        ["duong van thi", "Dương Văn Thì"],
+        ["thu duc", "Thủ Đức"],
+      ] as const;
+      const matched = knownNames.find(([needle]) => normalized.includes(needle));
+      return matched?.[1] || name.replace(/^TRƯỜNG\s+(THPT|THCS|TIỂU HỌC)\s+/i, "").trim() || "Chưa rõ trường";
+    };
     const periodsByEnvironment = buildPeriodTotals((schedule) => teachingEnvironmentLabel(schedule.teachingEnvironment));
     const periodsByTeacher = buildPeriodTotals((schedule) => teacherName(schedule.teacherId));
-    const periodsBySchool = buildPeriodTotals((schedule) => schools.find((school) => school.id === schedule.schoolId)?.name || "Chưa rõ trường");
+    const periodsBySchool = buildPeriodTotals((schedule) => shortSchoolLabel(schools.find((school) => school.id === schedule.schoolId)?.name || "Chưa rõ trường"));
     const reportDates = Array.from(new Set(reportSchedules.map((schedule) => schedule.date))).sort();
     const schoolTrendSeries = Array.from(new Set(reportSchedules.map((schedule) => schedule.schoolId))).map((schoolId) => ({
-      label: schools.find((school) => school.id === schoolId)?.name || "Chưa rõ trường",
+      label: shortSchoolLabel(schools.find((school) => school.id === schoolId)?.name || "Chưa rõ trường"),
       values: reportDates.map((date) => reportSchedules
         .filter((schedule) => schedule.schoolId === schoolId && schedule.date === date)
         .reduce((total, schedule) => total + periodCount(schedule), 0)),
@@ -4363,18 +4378,15 @@ export function MettasoulApp() {
       }
     }
 
-    function ReportLineChart({ title, rows }: { title: string; rows: Array<{ label: string; value: number }> }) {
-      const width = Math.max(520, rows.length * 145);
-      const height = 290;
-      const padding = { top: 22, right: 54, bottom: 118, left: 54 };
+    function ReportBarChart({ title, rows, tone = "#0ea5b7" }: { title: string; rows: Array<{ label: string; value: number }>; tone?: string }) {
+      const width = Math.max(520, rows.length * 104);
+      const height = 282;
+      const padding = { top: 24, right: 26, bottom: 88, left: 42 };
       const maxValue = Math.max(1, ...rows.map((row) => row.value));
       const chartWidth = width - padding.left - padding.right;
       const chartHeight = height - padding.top - padding.bottom;
-      const points = rows.map((row, index) => {
-        const x = padding.left + (rows.length <= 1 ? chartWidth / 2 : (index / (rows.length - 1)) * chartWidth);
-        const y = padding.top + chartHeight - (row.value / maxValue) * chartHeight;
-        return { ...row, x, y };
-      });
+      const step = chartWidth / Math.max(rows.length, 1);
+      const barWidth = Math.min(54, Math.max(28, step * 0.56));
       return (
         <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
           <p className="text-sm font-black text-[var(--brand-dark)]">{title}</p>
@@ -4383,40 +4395,57 @@ export function MettasoulApp() {
               <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-[var(--muted)]">Chưa có dữ liệu theo bộ lọc.</p>
             ) : (
               <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ minWidth: `${width}px` }} role="img" aria-label={title}>
-                {[0, 0.5, 1].map((step) => {
-                  const y = padding.top + chartHeight - step * chartHeight;
-                  return <line key={step} x1={padding.left} x2={width - padding.right} y1={y} y2={y} stroke="#d9f2f7" strokeWidth="1" />;
+                {[0, 0.25, 0.5, 0.75, 1].map((stepValue) => {
+                  const y = padding.top + chartHeight - stepValue * chartHeight;
+                  return <g key={stepValue}><line x1={padding.left} x2={width - padding.right} y1={y} y2={y} stroke="#d9f2f7" strokeWidth="1" /><text x={padding.left - 9} y={y + 4} textAnchor="end" fill="#5f7485" fontSize="10">{Math.round(maxValue * stepValue)}</text></g>;
                 })}
-                <text x="4" y={padding.top + 4} fill="#5f7485" fontSize="10">{maxValue}</text>
-                <text x="10" y={padding.top + chartHeight + 4} fill="#5f7485" fontSize="10">0</text>
-                {points.map((point) => (
-                  <line key={`grid-${point.label}`} x1={point.x} x2={point.x} y1={padding.top} y2={padding.top + chartHeight} stroke="#eef7fa" strokeWidth="1" strokeDasharray="3 4" />
-                ))}
-                <polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke="#0ea5b7" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                {points.map((point, index) => {
-                  const isFirst = index === 0;
-                  const isLast = index === points.length - 1;
-                  const labelX = isFirst ? padding.left + 8 : isLast ? width - padding.right - 8 : point.x;
-                  const textAnchor = isFirst ? "start" : isLast ? "end" : "middle";
-                  return (
-                  <g key={point.label}>
-                    <circle cx={point.x} cy={point.y} r="5" fill="#f59e0b" stroke="white" strokeWidth="3" />
-                    <text x={point.x} y={point.y - 11} textAnchor="middle" fill="#0b5062" fontSize="11" fontWeight="700">{point.value}</text>
-                    <text
-                      transform={`translate(${labelX} ${height - 35}) rotate(-42)`}
-                      textAnchor={textAnchor}
-                      fill="#526b7b"
-                      fontSize="10"
-                      fontWeight="600"
-                    >
-                      {point.label}
-                    </text>
-                  </g>
-                  );
+                {rows.map((row, index) => {
+                  const x = padding.left + step * index + (step - barWidth) / 2;
+                  const barHeight = (row.value / maxValue) * chartHeight;
+                  const y = padding.top + chartHeight - barHeight;
+                  const center = x + barWidth / 2;
+                  return <g key={row.label}>
+                    <rect x={x} y={y} width={barWidth} height={barHeight} rx="7" fill={tone} fillOpacity="0.82" />
+                    <text x={center} y={y - 9} textAnchor="middle" fill="#0b5062" fontSize="12" fontWeight="800">{row.value}</text>
+                    <text transform={`translate(${center} ${height - 30}) rotate(-28)`} textAnchor="end" fill="#526b7b" fontSize="10" fontWeight="700">{row.label}</text>
+                  </g>;
                 })}
               </svg>
             )}
           </div>
+        </div>
+      );
+    }
+
+    function ReportDonutChart({ title, rows }: { title: string; rows: Array<{ label: string; value: number }> }) {
+      const colors = ["#0ea5b7", "#10b981", "#f59e0b", "#7c3aed", "#f43f5e", "#2563eb"];
+      const total = rows.reduce((sum, row) => sum + row.value, 0);
+      const radius = 58;
+      const circumference = 2 * Math.PI * radius;
+      let offset = 0;
+      return (
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+          <p className="text-sm font-black text-[var(--brand-dark)]">{title}</p>
+          {rows.length === 0 ? (
+            <p className="mt-3 rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-[var(--muted)]">Chưa có dữ liệu theo bộ lọc.</p>
+          ) : (
+            <div className="mt-3 grid items-center gap-3 sm:grid-cols-[150px_1fr]">
+              <svg viewBox="0 0 150 150" className="mx-auto h-36 w-36" role="img" aria-label={title}>
+                <circle cx="75" cy="75" r={radius} fill="none" stroke="#e9f7fa" strokeWidth="24" />
+                {rows.map((row, index) => {
+                  const length = total ? (row.value / total) * circumference : 0;
+                  const segment = <circle key={row.label} cx="75" cy="75" r={radius} fill="none" stroke={colors[index % colors.length]} strokeWidth="24" strokeDasharray={`${Math.max(0, length - 2)} ${circumference - Math.max(0, length - 2)}`} strokeDashoffset={-offset} strokeLinecap="butt" transform="rotate(-90 75 75)" />;
+                  offset += length;
+                  return segment;
+                })}
+                <text x="75" y="70" textAnchor="middle" fill="#0b5062" fontSize="10" fontWeight="700">TỔNG SỐ TIẾT</text>
+                <text x="75" y="90" textAnchor="middle" fill="#0b5062" fontSize="22" fontWeight="800">{total}</text>
+              </svg>
+              <div className="grid gap-2 text-xs font-bold text-[var(--muted)]">
+                {rows.map((row, index) => <div key={row.label} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2"><span className="inline-flex min-w-0 items-center gap-2"><i className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} /><span className="truncate">{row.label}</span></span><strong className="text-[var(--brand-dark)]">{row.value} tiết</strong></div>)}
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -5008,9 +5037,9 @@ export function MettasoulApp() {
                 </div>
               </div>
               <div className="grid gap-4 xl:grid-cols-2">
-                <ReportLineChart title="Đường số tiết theo giáo viên" rows={periodsByTeacher} />
-                <ReportLineChart title="Đường số tiết theo trường" rows={periodsBySchool} />
-                <ReportLineChart title="Đường số tiết theo môi trường dạy" rows={periodsByEnvironment} />
+                <ReportBarChart title="Số tiết theo giáo viên" rows={periodsByTeacher} />
+                <ReportBarChart title="Số tiết theo trường" rows={periodsBySchool} tone="#2563eb" />
+                <ReportDonutChart title="Phân bổ tiết theo môi trường dạy" rows={periodsByEnvironment} />
                 <SchoolTrendLineChart />
               </div>
             </div>
