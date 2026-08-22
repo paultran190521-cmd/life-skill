@@ -435,6 +435,7 @@ export function MettasoulApp() {
   const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("week");
   const [calendarFilters, setCalendarFilters] = useState<CalendarFilters>(() => loadCalendarFilters());
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
+  const [selectedAssignmentScheduleIds, setSelectedAssignmentScheduleIds] = useState<string[]>([]);
   const [selectedScheduleDetail, setSelectedScheduleDetail] = useState<Schedule | null>(null);
   const [selectedOperationalAlert, setSelectedOperationalAlert] = useState<OperationalAlert | null>(null);
   const [bulkReassignTeacherId, setBulkReassignTeacherId] = useState("");
@@ -1915,6 +1916,69 @@ export function MettasoulApp() {
     );
     addLocalAudit("schedule.cancel", schedule.id, { status: "cancelled", teacherId: schedule.teacherId });
     pushToast("Đã hủy lịch", "Lịch dạy đã được hủy và đồng bộ lên Google Sheet.", "warning");
+  }
+
+  async function deleteSchedule(schedule: Schedule) {
+    const confirmed = await openConfirmDialog({
+      title: "Xóa lịch đã giao",
+      message: "Lịch này sẽ bị xóa khỏi hệ thống. Thao tác này không thể hoàn tác.",
+      confirmText: "Xóa lịch",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+
+    try {
+      await saveRequest<{ id: string; deleted: boolean }>("Đang xóa lịch...", `/api/schedules/${schedule.id}`, {
+        method: "DELETE",
+      });
+      setSchedules((items) => items.filter((item) => item.id !== schedule.id));
+      setSelectedAssignmentScheduleIds((ids) => ids.filter((id) => id !== schedule.id));
+      setSelectedScheduleIds((ids) => ids.filter((id) => id !== schedule.id));
+      setSelectedScheduleDetail((current) => (current?.id === schedule.id ? null : current));
+      addLocalAudit("schedule.delete", schedule.id, { teacherId: schedule.teacherId });
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã xóa lịch", "Lịch đã được xóa khỏi Google Sheet.", "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function bulkDeleteAssignmentSchedules() {
+    const targets = schedules.filter((schedule) => selectedAssignmentScheduleIds.includes(schedule.id));
+    if (targets.length === 0) return;
+
+    const confirmed = await openConfirmDialog({
+      title: "Xóa nhiều lịch",
+      message: `Bạn chắc chắn muốn xóa vĩnh viễn ${targets.length} lịch đã chọn?`,
+      confirmText: "Xóa lịch",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+
+    try {
+      await Promise.all(
+        targets.map((schedule) =>
+          saveRequest<{ id: string; deleted: boolean }>("Đang xóa lịch hàng loạt...", `/api/schedules/${schedule.id}`, {
+            method: "DELETE",
+          }),
+        ),
+      );
+      const deletedIds = new Set(targets.map((schedule) => schedule.id));
+      setSchedules((items) => items.filter((item) => !deletedIds.has(item.id)));
+      setSelectedAssignmentScheduleIds([]);
+      setSelectedScheduleIds((ids) => ids.filter((id) => !deletedIds.has(id)));
+      setSelectedScheduleDetail((current) => (current && deletedIds.has(current.id) ? null : current));
+      setAuditLogs((items) => [
+        ...targets.map((schedule) => createLocalAuditLog("schedule.delete", schedule.id, { teacherId: schedule.teacherId })),
+        ...items,
+      ]);
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã xóa lịch", `Đã xóa ${targets.length} lịch khỏi hệ thống.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
   }
 
   function reassignSchedule(schedule: Schedule) {
@@ -4643,6 +4707,45 @@ export function MettasoulApp() {
             </div>
           </Panel>
         </div>
+        <Panel title="Lịch đã giao" action={`${schedules.length} lịch`}>
+          <div className="space-y-4">
+            {role === "admin" && schedules.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedAssignmentScheduleIds((current) =>
+                      current.length === schedules.length ? [] : schedules.map((schedule) => schedule.id),
+                    )
+                  }
+                  className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] ring-1 ring-cyan-100"
+                >
+                  <ListChecks size={15} />
+                  {selectedAssignmentScheduleIds.length === schedules.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+                </button>
+                <span className="text-xs font-black text-[var(--muted)]">{selectedAssignmentScheduleIds.length} lịch đã chọn</span>
+                <button
+                  type="button"
+                  onClick={bulkDeleteAssignmentSchedules}
+                  disabled={selectedAssignmentScheduleIds.length === 0}
+                  className="inline-flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
+                >
+                  <Trash2 size={15} />
+                  Xóa lịch đã chọn
+                </button>
+              </div>
+            ) : null}
+            <ScheduleList
+              items={schedules.slice().sort((a, b) => `${b.date}|${b.timeSlotId}`.localeCompare(`${a.date}|${a.timeSlotId}`))}
+              selectedIds={selectedAssignmentScheduleIds}
+              onToggleSelect={role === "admin" ? (scheduleId) => setSelectedAssignmentScheduleIds((ids) =>
+                ids.includes(scheduleId) ? ids.filter((id) => id !== scheduleId) : [...ids, scheduleId],
+              ) : undefined}
+              onOpenDetail={setSelectedScheduleDetail}
+              onDelete={role === "admin" ? deleteSchedule : undefined}
+            />
+          </div>
+        </Panel>
         <AssignmentSummaryPanel />
       </div>
     );
@@ -7773,6 +7876,7 @@ export function MettasoulApp() {
     selectedIds = [],
     onToggleSelect,
     onOpenDetail,
+    onDelete,
     auditLogs: rowAuditLogs = [],
     expandedHistoryId = "",
     onToggleHistory,
@@ -7782,6 +7886,7 @@ export function MettasoulApp() {
     selectedIds?: string[];
     onToggleSelect?: (scheduleId: string) => void;
     onOpenDetail?: (schedule: Schedule) => void;
+    onDelete?: (schedule: Schedule) => void;
     auditLogs?: AuditLog[];
     expandedHistoryId?: string;
     onToggleHistory?: (scheduleId: string) => void;
@@ -7900,10 +8005,14 @@ export function MettasoulApp() {
                           <RefreshCcw size={16} />
                         </button>
                         <button
-                          title="Hủy lịch"
+                          title={onDelete ? "Xóa lịch" : "Hủy lịch"}
                           onClick={(event) => {
                             event.stopPropagation();
-                            cancelSchedule(schedule);
+                            if (onDelete) {
+                              onDelete(schedule);
+                            } else {
+                              cancelSchedule(schedule);
+                            }
                           }}
                           className="grid h-9 w-9 place-items-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
                         >

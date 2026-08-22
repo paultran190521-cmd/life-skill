@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
 import { sendScheduleEmail } from "@/lib/email";
-import { appendSheetRows, readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
+import { appendSheetRows, deleteSheetRowById, readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
 import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 import type { Notification, Schedule, ScheduleStatus, User } from "@/lib/types";
 
@@ -107,6 +107,48 @@ export async function PATCH(request: Request, { params }: Params) {
     });
 
     return NextResponse.json({ id, ...patch, emailResult, notifications });
+  } catch (error) {
+    return apiError(error, requestId);
+  }
+}
+
+export async function DELETE(request: Request, { params }: Params) {
+  const requestId = createRequestId("schedule-delete");
+  try {
+    const auth = await requireSessionUser(request);
+    const { id } = await params;
+    const schedule = await readSheetRowById("Schedules", id);
+    if (!schedule) {
+      return apiFailure(404, "Không tìm thấy lịch.", undefined, requestId);
+    }
+
+    const permission = evaluatePermission({
+      allowed: auth.user.role === "admin",
+      reason: "admin_only_schedule_delete",
+    });
+    if (permission.decision === "would_block") {
+      console.warn(`[auth-shadow][${requestId}] schedules.delete ${permission.reason}`);
+    }
+    if (!permission.allowed) {
+      return apiFailure(403, "Bạn không có quyền xóa lịch.", undefined, requestId);
+    }
+
+    await deleteSheetRowById("Schedules", id);
+    await appendAuditLog({
+      requestId,
+      actor: auth.user,
+      action: "schedule.delete",
+      entityType: "Schedule",
+      entityId: id,
+      route: `/api/schedules/${id}`,
+      method: "DELETE",
+      authMode: permission.authMode,
+      decision: permission.decision,
+      reason: permission.reason,
+      source: auth.source,
+      before: schedule,
+    });
+    return NextResponse.json({ id, deleted: true });
   } catch (error) {
     return apiError(error, requestId);
   }
