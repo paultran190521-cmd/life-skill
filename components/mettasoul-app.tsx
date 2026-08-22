@@ -4364,9 +4364,9 @@ export function MettasoulApp() {
     }
 
     function ReportLineChart({ title, rows }: { title: string; rows: Array<{ label: string; value: number }> }) {
-      const width = 520;
-      const height = 250;
-      const padding = { top: 22, right: 18, bottom: 82, left: 34 };
+      const width = Math.max(520, rows.length * 145);
+      const height = 290;
+      const padding = { top: 22, right: 54, bottom: 118, left: 54 };
       const maxValue = Math.max(1, ...rows.map((row) => row.value));
       const chartWidth = width - padding.left - padding.right;
       const chartHeight = height - padding.top - padding.bottom;
@@ -4382,28 +4382,38 @@ export function MettasoulApp() {
             {rows.length === 0 ? (
               <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-[var(--muted)]">Chưa có dữ liệu theo bộ lọc.</p>
             ) : (
-              <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[420px] w-full" role="img" aria-label={title}>
+              <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ minWidth: `${width}px` }} role="img" aria-label={title}>
                 {[0, 0.5, 1].map((step) => {
                   const y = padding.top + chartHeight - step * chartHeight;
                   return <line key={step} x1={padding.left} x2={width - padding.right} y1={y} y2={y} stroke="#d9f2f7" strokeWidth="1" />;
                 })}
                 <text x="4" y={padding.top + 4} fill="#5f7485" fontSize="10">{maxValue}</text>
                 <text x="10" y={padding.top + chartHeight + 4} fill="#5f7485" fontSize="10">0</text>
-                <polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke="#0ea5b7" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
                 {points.map((point) => (
+                  <line key={`grid-${point.label}`} x1={point.x} x2={point.x} y1={padding.top} y2={padding.top + chartHeight} stroke="#eef7fa" strokeWidth="1" strokeDasharray="3 4" />
+                ))}
+                <polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke="#0ea5b7" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                {points.map((point, index) => {
+                  const isFirst = index === 0;
+                  const isLast = index === points.length - 1;
+                  const labelX = isFirst ? padding.left + 8 : isLast ? width - padding.right - 8 : point.x;
+                  const textAnchor = isFirst ? "start" : isLast ? "end" : "middle";
+                  return (
                   <g key={point.label}>
                     <circle cx={point.x} cy={point.y} r="5" fill="#f59e0b" stroke="white" strokeWidth="3" />
                     <text x={point.x} y={point.y - 11} textAnchor="middle" fill="#0b5062" fontSize="11" fontWeight="700">{point.value}</text>
                     <text
-                      transform={`translate(${point.x} ${height - 28}) rotate(-38)`}
-                      textAnchor="end"
+                      transform={`translate(${labelX} ${height - 35}) rotate(-42)`}
+                      textAnchor={textAnchor}
                       fill="#526b7b"
                       fontSize="10"
+                      fontWeight="600"
                     >
                       {point.label}
                     </text>
                   </g>
-                ))}
+                  );
+                })}
               </svg>
             )}
           </div>
