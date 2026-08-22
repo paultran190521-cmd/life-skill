@@ -436,6 +436,9 @@ export function MettasoulApp() {
   const [calendarFilters, setCalendarFilters] = useState<CalendarFilters>(() => loadCalendarFilters());
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
   const [selectedAssignmentScheduleIds, setSelectedAssignmentScheduleIds] = useState<string[]>([]);
+  const [assignmentReportDateFrom, setAssignmentReportDateFrom] = useState(() => `${currentDateKey().slice(0, 7)}-01`);
+  const [assignmentReportDateTo, setAssignmentReportDateTo] = useState(() => currentDateKey());
+  const [assignmentReportTeacherId, setAssignmentReportTeacherId] = useState("all");
   const [selectedScheduleDetail, setSelectedScheduleDetail] = useState<Schedule | null>(null);
   const [selectedOperationalAlert, setSelectedOperationalAlert] = useState<OperationalAlert | null>(null);
   const [bulkReassignTeacherId, setBulkReassignTeacherId] = useState("");
@@ -1944,8 +1947,8 @@ export function MettasoulApp() {
     }
   }
 
-  async function bulkDeleteAssignmentSchedules() {
-    const targets = schedules.filter((schedule) => selectedAssignmentScheduleIds.includes(schedule.id));
+  async function bulkDeleteAssignmentSchedules(scheduleIds = selectedAssignmentScheduleIds) {
+    const targets = schedules.filter((schedule) => scheduleIds.includes(schedule.id));
     if (targets.length === 0) return;
 
     const confirmed = await openConfirmDialog({
@@ -4237,6 +4240,95 @@ export function MettasoulApp() {
 
   function AssignmentPanel() {
     const activeTopics = topics.filter((t) => t.active !== false);
+    const reportSchedules = schedules
+      .filter((schedule) => schedule.status !== "cancelled")
+      .filter((schedule) => !assignmentReportDateFrom || schedule.date >= assignmentReportDateFrom)
+      .filter((schedule) => !assignmentReportDateTo || schedule.date <= assignmentReportDateTo)
+      .filter((schedule) => assignmentReportTeacherId === "all" || schedule.teacherId === assignmentReportTeacherId);
+    const selectedAssignmentReportIds = selectedAssignmentScheduleIds.filter((id) => reportSchedules.some((schedule) => schedule.id === id));
+    const periodCount = (schedule: Schedule) => Math.max(1, String(schedule.lessonPeriods || "lesson1").split(",").filter(Boolean).length);
+    const totalReportedPeriods = reportSchedules.reduce((total, schedule) => total + periodCount(schedule), 0);
+    const buildPeriodTotals = (labelFor: (schedule: Schedule) => string) => {
+      const totals = new Map<string, number>();
+      reportSchedules.forEach((schedule) => {
+        const label = labelFor(schedule);
+        totals.set(label, (totals.get(label) || 0) + periodCount(schedule));
+      });
+      return Array.from(totals, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+    };
+    const periodsByEnvironment = buildPeriodTotals((schedule) => teachingEnvironmentLabel(schedule.teachingEnvironment));
+    const periodsByTeacher = buildPeriodTotals((schedule) => teacherName(schedule.teacherId));
+    const periodsBySchool = buildPeriodTotals((schedule) => schools.find((school) => school.id === schedule.schoolId)?.name || "Chưa rõ trường");
+
+    async function exportAssignmentReport() {
+      setPendingAction("Đang xuất Excel đối soát...");
+      try {
+        const XLSX = await import("xlsx");
+        const rows = reportSchedules.map((schedule) => {
+          const lesson = lessons.find((item) => item.id === schedule.lessonId);
+          const slot = timeSlots.find((item) => item.id === schedule.timeSlotId);
+          const participantClasses = scheduleParticipantClassIds(schedule)
+            .map((classId) => classes.find((item) => item.id === classId)?.name)
+            .filter(Boolean)
+            .join(", ");
+          const selectedPeriods = String(schedule.lessonPeriods || "lesson1").split(",").filter(Boolean);
+          const periodRows = selectedPeriods.map((period) => {
+            const isLesson2 = period === "lesson2";
+            return {
+              "Ngày": formatDate(schedule.date),
+              "Khung giờ": slot ? `${slot.label} (${slot.start}-${slot.end})` : "Chưa cập nhật",
+              "Giáo viên": teacherName(schedule.teacherId),
+              "Trợ giảng": String(schedule.assistantIds || "").split(",").map((id) => teacherName(id.trim())).filter(Boolean).join(", ") || "Không có",
+              "Môi trường dạy": teachingEnvironmentLabel(schedule.teachingEnvironment),
+              "Trường": schools.find((school) => school.id === schedule.schoolId)?.name || "Chưa cập nhật",
+              "Lớp / phạm vi": participantClasses || classes.find((item) => item.id === schedule.classId)?.name || "Chưa cập nhật",
+              "Khối": lesson?.grade || classes.find((item) => item.id === schedule.classId)?.grade || "",
+              "Tên bài": lesson?.title || "Chưa cập nhật",
+              "Tên tiết": isLesson2 ? `Tiết 2: ${lesson?.lesson2Title || ""}` : `Tiết 1: ${lesson?.lesson1Title || lesson?.title || ""}`,
+              "Mục tiêu tiết": isLesson2 ? lesson?.lesson2Objective || "" : lesson?.lesson1Objective || lesson?.objective || "",
+              "Trạng thái": statusLabels[schedule.status] || schedule.status,
+              "Gửi lúc": schedule.sentAt ? formatDateTime(schedule.sentAt) : "",
+              "Xác nhận lúc": schedule.confirmedAt ? formatDateTime(schedule.confirmedAt) : "",
+            };
+          });
+          return periodRows;
+        }).flat();
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+        worksheet["!cols"] = [12, 18, 20, 20, 20, 30, 28, 12, 34, 40, 60, 16, 22, 22].map((wch) => ({ wch }));
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Đối soát tiết dạy");
+        XLSX.writeFile(workbook, `doi-soat-tiet-day-${assignmentReportDateFrom || "tat-ca"}-${assignmentReportDateTo || "tat-ca"}.xlsx`);
+        pushToast("Đã xuất Excel", `Đã xuất ${rows.length} tiết theo bộ lọc hiện tại.`, "success");
+      } catch (error) {
+        pushToast("Không thể xuất Excel", String(error), "error");
+      } finally {
+        setPendingAction("");
+      }
+    }
+
+    function ReportBarChart({ title, rows }: { title: string; rows: Array<{ label: string; value: number }> }) {
+      const maxValue = Math.max(1, ...rows.map((row) => row.value));
+      return (
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+          <p className="text-sm font-black text-[var(--brand-dark)]">{title}</p>
+          <div className="mt-4 space-y-3">
+            {rows.length === 0 ? (
+              <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-[var(--muted)]">Chưa có dữ liệu theo bộ lọc.</p>
+            ) : rows.map((row) => (
+              <div key={row.label}>
+                <div className="mb-1 flex items-center justify-between gap-3 text-xs font-bold text-[var(--brand-dark)]">
+                  <span className="truncate">{row.label}</span>
+                  <span className="shrink-0">{row.value} tiết</span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full bg-cyan-50">
+                  <div className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-teal-400 to-amber-400" style={{ width: `${Math.max(8, (row.value / maxValue) * 100)}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
 
     function updateDraftItem(itemId: string, patch: Partial<DraftScheduleItem>) {
       setDraftSchedule((current) => ({
@@ -4707,27 +4799,50 @@ export function MettasoulApp() {
             </div>
           </Panel>
         </div>
-        <Panel title="Lịch đã giao" action={`${schedules.length} lịch`}>
+        <Panel title="Lịch đã giao" action={`${reportSchedules.length} lịch • ${totalReportedPeriods} tiết`}>
           <div className="space-y-4">
-            {role === "admin" && schedules.length > 0 ? (
+            <div className="grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3 lg:grid-cols-[1fr_1fr_1.25fr_auto] lg:items-end">
+              <label className="grid gap-1 text-xs font-black text-[var(--brand-dark)]">
+                Từ ngày
+                <input type="date" value={assignmentReportDateFrom} onChange={(event) => setAssignmentReportDateFrom(event.target.value)} className={compactInputClass} />
+              </label>
+              <label className="grid gap-1 text-xs font-black text-[var(--brand-dark)]">
+                Đến ngày
+                <input type="date" value={assignmentReportDateTo} onChange={(event) => setAssignmentReportDateTo(event.target.value)} className={compactInputClass} />
+              </label>
+              <label className="grid gap-1 text-xs font-black text-[var(--brand-dark)]">
+                Giáo viên
+                <select value={assignmentReportTeacherId} onChange={(event) => setAssignmentReportTeacherId(event.target.value)} className={compactInputClass}>
+                  <option value="all">Tất cả giáo viên</option>
+                  {activeTeachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
+                </select>
+              </label>
+              <button type="button" onClick={exportAssignmentReport} disabled={isBusy || reportSchedules.length === 0} className={primaryButtonClass}>
+                <Download size={16} />
+                Xuất Excel
+              </button>
+            </div>
+            {role === "admin" && reportSchedules.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3">
                 <button
                   type="button"
                   onClick={() =>
                     setSelectedAssignmentScheduleIds((current) =>
-                      current.length === schedules.length ? [] : schedules.map((schedule) => schedule.id),
+                      selectedAssignmentReportIds.length === reportSchedules.length
+                        ? current.filter((id) => !reportSchedules.some((schedule) => schedule.id === id))
+                        : Array.from(new Set([...current, ...reportSchedules.map((schedule) => schedule.id)])),
                     )
                   }
                   className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] ring-1 ring-cyan-100"
                 >
                   <ListChecks size={15} />
-                  {selectedAssignmentScheduleIds.length === schedules.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+                  {selectedAssignmentReportIds.length === reportSchedules.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}
                 </button>
-                <span className="text-xs font-black text-[var(--muted)]">{selectedAssignmentScheduleIds.length} lịch đã chọn</span>
+                <span className="text-xs font-black text-[var(--muted)]">{selectedAssignmentReportIds.length} lịch đã chọn</span>
                 <button
                   type="button"
-                  onClick={bulkDeleteAssignmentSchedules}
-                  disabled={selectedAssignmentScheduleIds.length === 0}
+                  onClick={() => bulkDeleteAssignmentSchedules(selectedAssignmentReportIds)}
+                  disabled={selectedAssignmentReportIds.length === 0}
                   className="inline-flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:opacity-50"
                 >
                   <Trash2 size={15} />
@@ -4736,7 +4851,7 @@ export function MettasoulApp() {
               </div>
             ) : null}
             <ScheduleList
-              items={schedules.slice().sort((a, b) => `${b.date}|${b.timeSlotId}`.localeCompare(`${a.date}|${a.timeSlotId}`))}
+              items={reportSchedules.slice().sort((a, b) => `${b.date}|${b.timeSlotId}`.localeCompare(`${a.date}|${a.timeSlotId}`))}
               selectedIds={selectedAssignmentScheduleIds}
               onToggleSelect={role === "admin" ? (scheduleId) => setSelectedAssignmentScheduleIds((ids) =>
                 ids.includes(scheduleId) ? ids.filter((id) => id !== scheduleId) : [...ids, scheduleId],
@@ -4744,6 +4859,32 @@ export function MettasoulApp() {
               onOpenDetail={setSelectedScheduleDetail}
               onDelete={role === "admin" ? deleteSchedule : undefined}
             />
+            <div className="border-t border-cyan-100 pt-5">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-black text-[var(--brand-dark)]">Thống kê đối soát</h3>
+                  <p className="mt-1 text-xs font-bold text-[var(--muted)]">Tất cả số liệu chạy theo khoảng thời gian và giáo viên đã chọn.</p>
+                </div>
+                <div className="rounded-2xl bg-gradient-to-r from-cyan-600 to-teal-500 px-4 py-3 text-white shadow-lg shadow-cyan-700/20">
+                  <p className="text-xs font-bold text-cyan-50">Tổng số tiết dạy</p>
+                  <p className="mt-1 text-3xl font-black">{totalReportedPeriods}</p>
+                </div>
+              </div>
+              <div className="grid gap-4 xl:grid-cols-2">
+                <ReportBarChart title="Số tiết theo môi trường dạy" rows={periodsByEnvironment} />
+                <ReportBarChart title="Số tiết theo giáo viên" rows={periodsByTeacher} />
+                <ReportBarChart title="Số tiết theo trường" rows={periodsBySchool} />
+                <div className="rounded-2xl border border-cyan-100 bg-cyan-50/55 p-4 shadow-sm">
+                  <p className="text-sm font-black text-[var(--brand-dark)]">Tổng quan kỳ đối soát</p>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-[var(--muted)]">Lịch đã giao</p><p className="mt-1 text-2xl font-black text-[var(--brand-dark)]">{reportSchedules.length}</p></div>
+                    <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-[var(--muted)]">Giáo viên có lịch</p><p className="mt-1 text-2xl font-black text-[var(--brand-dark)]">{new Set(reportSchedules.map((schedule) => schedule.teacherId)).size}</p></div>
+                    <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-[var(--muted)]">Trường có lịch</p><p className="mt-1 text-2xl font-black text-[var(--brand-dark)]">{new Set(reportSchedules.map((schedule) => schedule.schoolId)).size}</p></div>
+                    <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-[var(--muted)]">Tiết đã xác nhận</p><p className="mt-1 text-2xl font-black text-[var(--brand-dark)]">{reportSchedules.filter((schedule) => schedule.status === "confirmed").reduce((total, schedule) => total + periodCount(schedule), 0)}</p></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </Panel>
         <AssignmentSummaryPanel />
