@@ -4099,6 +4099,13 @@ export function MettasoulApp() {
                           tone: "violet" as const,
                         }]
                       : []),
+                    ...(meta.assistants.length > 0
+                      ? [{
+                          label: "Trợ giảng",
+                          value: meta.assistants.map((assistant) => assistant.name).join(", "),
+                          tone: "emerald" as const,
+                        }]
+                      : []),
                   ] as const;
                   return (
                     <>
