@@ -1323,6 +1323,14 @@ export function MettasoulApp() {
   }, [notificationPanelOpen]);
 
   function lookupSchedule(schedule: Schedule) {
+    const coTeacherCandidates =
+      schedule.teachingEnvironment !== "in_class" && schedule.groupId
+        ? schedules
+            .filter((item) => item.groupId === schedule.groupId && item.teacherId !== schedule.teacherId)
+            .map((item) => teachers.find((teacher) => teacher.id === item.teacherId))
+            .filter((teacher): teacher is Teacher => Boolean(teacher))
+        : [];
+    const coTeachers = Array.from(new Map(coTeacherCandidates.map((teacher) => [teacher.id, teacher])).values());
     return {
       teacher: teachers.find((item) => item.id === schedule.teacherId),
       school: schools.find((item) => item.id === schedule.schoolId),
@@ -1333,6 +1341,7 @@ export function MettasoulApp() {
       assistants: splitAssistantIds(schedule.assistantIds)
         .map((assistantId) => teachers.find((item) => item.id === assistantId))
         .filter((assistant): assistant is Teacher => Boolean(assistant)),
+      coTeachers,
       lesson: lessons.find((item) => item.id === schedule.lessonId),
       slot: timeSlots.find((item) => item.id === schedule.timeSlotId),
       plans: lessonPlans
@@ -4046,7 +4055,7 @@ export function MettasoulApp() {
                     },
                     {
                       label: "Lớp",
-                      value: meta.classRoom?.name || "Chưa rõ",
+                      value: formatScheduleParticipantClassNames(meta.participantClasses, meta.classRoom),
                       tone: "orange",
                     },
                     {
@@ -4059,6 +4068,13 @@ export function MettasoulApp() {
                       value: `${meta.teacher?.name || "Chưa rõ"} - ${meta.teacher?.phone || "Chưa cập nhật"}`,
                       tone: "slate",
                     },
+                    ...(meta.coTeachers.length > 0
+                      ? [{
+                          label: "Giáo viên đồng giảng",
+                          value: meta.coTeachers.map((teacher) => teacher.name).join(", "),
+                          tone: "violet" as const,
+                        }]
+                      : []),
                   ] as const;
                   return (
                     <>
@@ -8096,6 +8112,7 @@ export function MettasoulApp() {
     expandedHistoryId?: string;
     onToggleHistory?: (scheduleId: string) => void;
   }) {
+    const [expandedParticipantScheduleId, setExpandedParticipantScheduleId] = useState("");
     if (items.length === 0) {
       return (
         <div className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 p-8 text-center">
@@ -8115,6 +8132,9 @@ export function MettasoulApp() {
               .filter((log) => log.entityType === "Schedule" && log.entityId === schedule.id)
               .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
             const isHistoryOpen = expandedHistoryId === schedule.id;
+            const participantNames = formatScheduleParticipantClassNames(meta.participantClasses, meta.classRoom);
+            const hasMultipleParticipantClasses = meta.participantClasses.length > 1;
+            const isParticipantClassesOpen = expandedParticipantScheduleId === schedule.id;
             return (
               <div
                 key={schedule.id}
@@ -8167,16 +8187,37 @@ export function MettasoulApp() {
                     </div>
                     <p className="mt-2 flex flex-wrap gap-1 text-xs font-black">
                       <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">{meta.school?.name}</span>
-                      <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700">
-                        {formatScheduleParticipantScope(meta.participantClasses, meta.classRoom)}
-                      </span>
+                      {hasMultipleParticipantClasses ? (
+                        <button
+                          type="button"
+                          title="Bấm để xem đầy đủ các lớp tham gia"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setExpandedParticipantScheduleId((current) => (current === schedule.id ? "" : schedule.id));
+                          }}
+                          className="rounded-full bg-orange-50 px-2 py-1 text-orange-700 transition hover:bg-orange-100"
+                        >
+                          {formatScheduleParticipantScope(meta.participantClasses, meta.classRoom)}
+                        </button>
+                      ) : (
+                        <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700">
+                          {formatScheduleParticipantScope(meta.participantClasses, meta.classRoom)}
+                        </span>
+                      )}
                       <span className={`rounded-full px-2 py-1 ${checkedIn ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
                         {checkedIn ? "Đã điểm danh" : "Chưa điểm danh"}
                       </span>
                     </p>
+                    {isParticipantClassesOpen ? (
+                      <p className="mt-2 text-xs font-bold text-orange-800">Các lớp tham gia: {participantNames}</p>
+                    ) : null}
                     <p className="mt-2 flex flex-wrap gap-2 text-xs font-bold text-[var(--muted)]">
-                      <span>Nơi dạy: {teachingEnvironmentLabel(schedule.teachingEnvironment)}</span>
-                      <span>•</span>
+                      {meta.coTeachers.length > 0 ? (
+                        <>
+                          <span>Giáo viên đồng giảng: {meta.coTeachers.map((teacher) => teacher.name).join(", ")}</span>
+                          <span>•</span>
+                        </>
+                      ) : null}
                       <span>
                         Trợ giảng: {meta.assistants.length > 0 ? meta.assistants.map((assistant) => assistant.name).join(", ") : "Không có"}
                       </span>
@@ -9512,6 +9553,11 @@ function formatScheduleParticipantScope(participantClasses: ClassRoom[], primary
     return `Lớp ${participantClasses[0]?.name || primaryClass?.name || "chưa cập nhật"}`;
   }
   return `${participantClasses.length} lớp tham gia`;
+}
+
+function formatScheduleParticipantClassNames(participantClasses: ClassRoom[], primaryClass?: ClassRoom) {
+  const names = participantClasses.map((classRoom) => classRoom.name).filter(Boolean);
+  return names.length > 0 ? names.join(", ") : primaryClass?.name || "Chưa rõ";
 }
 
 function canShareGroupActivitySlot(

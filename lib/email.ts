@@ -26,6 +26,7 @@ type ScheduleDigestRow = {
   classRoom?: { name?: string };
   participantClassNames?: string[];
   assistantNames?: string[];
+  coTeacherNames?: string[];
   lesson?: ScheduleEmailLesson;
   slot?: { label?: string; start?: string; end?: string };
 };
@@ -520,21 +521,13 @@ function formatParticipantClasses(row: ScheduleDigestRow) {
 }
 
 function renderScheduleLogistics(row: ScheduleDigestRow) {
-  const place = teachingEnvironmentEmailLabel(row.schedule.teachingEnvironment);
   const assistants = row.assistantNames?.filter(Boolean) ?? [];
+  const coTeachers = row.coTeacherNames?.filter(Boolean) ?? [];
   const assistantText = assistants.length > 0 ? `Có - ${assistants.join(", ")}` : "Không có";
-  return `<div><strong>Nơi dạy:</strong> ${escapeHtml(place)}</div><div style="margin-top:8px"><strong>Trợ giảng:</strong> ${escapeHtml(assistantText)}</div>`;
-}
-
-function teachingEnvironmentEmailLabel(value: Schedule["teachingEnvironment"]) {
-  const labels: Record<string, string> = {
-    in_class: "Trong lớp",
-    outdoor: "Ngoài sân",
-    gym: "Nhà thi đấu",
-    schoolyard_report: "Báo cáo sân trường",
-    hall: "Hội trường",
-  };
-  return labels[String(value || "in_class")] || "Trong lớp";
+  const coTeacherLine = coTeachers.length > 0
+    ? `<div><strong>Thầy/Cô sẽ dạy cùng:</strong> ${escapeHtml(coTeachers.join(", "))}</div>`
+    : "";
+  return `${coTeacherLine}<div style="margin-top:${coTeacherLine ? "8px" : "0"}"><strong>Trợ giảng:</strong> ${escapeHtml(assistantText)}</div>`;
 }
 
 function buildConfirmUrl(schedule: Schedule) {

@@ -627,6 +627,17 @@ async function sendScheduleEmailsByTeacher(
           assistantNames: parseIds(schedule.assistantIds)
             .map((assistantId) => data.teachers.find((item) => normalizeId(item.id) === assistantId)?.name)
             .filter((name): name is string => Boolean(name)),
+          coTeacherNames:
+            schedule.teachingEnvironment !== "in_class" && schedule.groupId
+              ? Array.from(
+                  new Set(
+                    schedules
+                      .filter((item) => item.groupId === schedule.groupId && normalizeId(item.teacherId) !== normalizeId(schedule.teacherId))
+                      .map((item) => data.teachers.find((teacher) => normalizeId(teacher.id) === normalizeId(item.teacherId))?.name)
+                      .filter((name): name is string => Boolean(name)),
+                  ),
+                )
+              : [],
         })),
       });
 
