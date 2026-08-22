@@ -503,9 +503,9 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
         </table>
 
         <div style="text-align:center">
-          <a href="${confirmAllUrl}" style="display:inline-block;background:#0b6f89;color:#ffffff;text-decoration:none;border-radius:12px;padding:12px 18px;font-weight:700;text-align:center">XÁC NHẬN TẤT CẢ (TẤT CẢ LỊCH ĐƯỢC XÁC NHẬN)</a>
+          <a href="${confirmAllUrl}" style="display:inline-block;background:#0b6f89;color:#ffffff;text-decoration:none;border-radius:12px;padding:12px 18px;font-weight:700;text-align:center">XÁC NHẬN TẤT CẢ LỊCH CỦA TÔI</a>
         </div>
-        <p style="margin:20px 0 0;font-size:12px;color:#667985">Nút này sẽ xác nhận toàn bộ lịch trong email và mở ứng dụng web ngay sau khi hoàn tất.</p>
+        <p style="margin:20px 0 0;font-size:12px;color:#667985">Nút này sẽ xác nhận tất cả lịch đang chờ xác nhận của bạn, ghi nhận vào hệ thống và mở ứng dụng web ngay sau khi hoàn tất.</p>
       </div>
     </div>
   `;
@@ -669,7 +669,7 @@ function renderScheduledPeriodMatrix(lesson: ScheduleEmailLesson | undefined, sc
       const objective = period === "lesson1" ? lesson?.lesson1Objective : lesson?.lesson2Objective;
       const divider = index > 0 ? "border-top:2px solid #149ac2;" : "";
       return `<tr>
-        <td style="width:46%;padding:12px 10px;${divider}font-weight:700;text-align:center;vertical-align:top">${escapeHtml(`${number}: ${title?.trim() || lesson?.title?.trim() || "Chưa cập nhật"}`)}</td>
+        <td style="width:46%;padding:12px 10px;${divider}font-weight:700;text-align:center;vertical-align:middle">${escapeHtml(`${number}: ${title?.trim() || lesson?.title?.trim() || "Chưa cập nhật"}`)}</td>
         <td style="padding:12px 10px;${divider}border-left:1px solid #149ac2;vertical-align:top">${formatObjectives(objective?.trim() || lesson?.objective || "")}</td>
       </tr>`;
     })

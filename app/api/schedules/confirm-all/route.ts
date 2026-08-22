@@ -12,19 +12,12 @@ export async function GET(request: NextRequest) {
       return apiFailure(401, "Link xác nhận tất cả không hợp lệ hoặc đã hết hạn.", "UNAUTHORIZED", requestId);
     }
 
-    const scheduleIdSet = new Set(payload.scheduleIds);
     const rows = await readSheetRows("Schedules");
-    const targetRows = rows.filter((row) => scheduleIdSet.has(String(row.id || "").trim()));
-    if (targetRows.length === 0) {
-      return apiFailure(404, "Không tìm thấy lịch cần xác nhận.", "NOT_FOUND", requestId);
-    }
-
-    const teacherRows = targetRows.filter((row) => String(row.teacherId || "").trim() === payload.teacherId);
-    if (teacherRows.length === 0) {
-      return apiFailure(403, "Link xác nhận không còn đúng giáo viên được phân công.", "FORBIDDEN", requestId);
-    }
-
-    const confirmableRows = teacherRows.filter((row) => ["sent", "reassigned"].includes(String(row.status || "").trim()));
+    const confirmableRows = rows.filter(
+      (row) =>
+        String(row.teacherId || "").trim() === payload.teacherId &&
+        ["sent", "reassigned"].includes(String(row.status || "").trim()),
+    );
     const now = new Date().toISOString();
 
     if (confirmableRows.length > 0) {
