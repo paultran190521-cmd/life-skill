@@ -8987,12 +8987,37 @@ function TeacherHover({ teacher }: { teacher?: Teacher }) {
 
 function LessonSessionCard({ number, title, objective }: { number: 1 | 2; title: string; objective: string }) {
   const tone = number === 1 ? "border-cyan-100 bg-cyan-50/55 text-[var(--brand-dark)]" : "border-violet-100 bg-violet-50/55 text-violet-900";
+  const objectiveItems = splitLessonObjectives(objective);
   return (
     <div className={`rounded-xl border px-3 py-2 ${tone}`}>
       <p className="text-sm font-black">Tiết {number}: {title}</p>
-      <p className="mt-1 whitespace-pre-line text-sm leading-6 text-slate-600">{objective}</p>
+      <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-600 marker:text-[var(--brand)]">
+        {objectiveItems.map((item, index) => (
+          <li key={`${item.label}-${index}`}>
+            <span className="font-semibold text-slate-700">{item.label}:</span> {item.content}
+          </li>
+        ))}
+      </ul>
     </div>
   );
+}
+
+function splitLessonObjectives(rawObjective: string) {
+  const normalized = String(rawObjective || "").trim();
+  const markers = [...normalized.matchAll(/(?:^|\s)[•·\-–]?\s*Mục tiêu\s*(\d+)\s*:/gi)];
+
+  if (!markers.length) {
+    return [{ label: "Mục tiêu 1", content: normalized || "Chưa cập nhật." }];
+  }
+
+  return markers.map((marker, index) => {
+    const start = (marker.index ?? 0) + marker[0].length;
+    const end = markers[index + 1]?.index ?? normalized.length;
+    return {
+      label: `Mục tiêu ${marker[1]}`,
+      content: normalized.slice(start, end).trim().replace(/^[•·\-–]\s*/, "") || "Chưa cập nhật.",
+    };
+  });
 }
 
 function roleLabel(role: Role) {
