@@ -7412,7 +7412,11 @@ export function MettasoulApp() {
 
     return (
       <div className={embedded ? "border-t border-cyan-100 pt-5" : "space-y-5"}>
-        <Panel title="Thêm cập nhật tuần" action="Nhập mới">
+        <Panel
+          title="Thêm cập nhật tuần"
+          action="Nhập mới"
+          className="border-2 border-rose-400 bg-rose-50/20 shadow-[0_20px_52px_rgba(244,63,94,0.14),inset_0_1px_0_rgba(255,255,255,0.9)]"
+        >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="block">
               <span className="mb-1 block text-xs font-bold text-slate-600">Tuần số *</span>
@@ -8642,16 +8646,18 @@ function Panel({
   action,
   collapsed = false,
   onToggleCollapse,
+  className = "",
   children,
 }: {
   title: string;
   action?: string;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-white/75 bg-white/90 p-4 shadow-[0_20px_52px_rgba(18,46,68,0.09),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur sm:rounded-3xl sm:p-5">
+    <section className={`rounded-2xl border border-white/75 bg-white/90 p-4 shadow-[0_20px_52px_rgba(18,46,68,0.09),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur sm:rounded-3xl sm:p-5 ${className}`}>
       <div className={`${collapsed ? "" : "mb-4 sm:mb-5"} flex items-start justify-between gap-3`}>
         <h2 className="text-base font-black tracking-tight text-[var(--brand-dark)] sm:text-lg">{title}</h2>
         <div className="flex items-center gap-2">
