@@ -1,5 +1,6 @@
 ﻿import { createScheduleConfirmationBatchToken, createScheduleConfirmationToken } from "@/lib/schedule-confirmation";
 import { appendSheetRowWithHeaders } from "@/lib/google-sheets";
+import { formatAcademicWeekLabel } from "@/lib/academic-week";
 import type { Schedule } from "@/lib/types";
 
 type ScheduleEmailLesson = {
@@ -553,41 +554,11 @@ function buildConfirmAllUrl(schedules: Schedule[]) {
 }
 
 function buildScheduleWeekSubject(schedules: Schedule[]) {
-  const { weekRangeText, yearText } = computeWeekRange(schedules.map((schedule) => schedule.date));
-  return `LỊCH DẠY TUẦN ${weekRangeText} NĂM ${yearText}`;
+  return `LỊCH DẠY ${buildWeekLabel(schedules).toUpperCase()}`;
 }
 
 function buildWeekLabel(schedules: Schedule[]) {
-  const { weekRangeText, yearText } = computeWeekRange(schedules.map((schedule) => schedule.date));
-  return `tuần ${weekRangeText} năm ${yearText}`;
-}
-
-function computeWeekRange(dates: string[]) {
-  const weekYears = dates
-    .map((date) => getIsoWeekYear(new Date(`${date}T00:00:00`)))
-    .filter((item) => Number.isFinite(item.week));
-
-  if (weekYears.length === 0) {
-    const fallbackYear = new Date().getFullYear();
-    return { weekRangeText: "?", yearText: String(fallbackYear) };
-  }
-
-  const weeks = weekYears.map((item) => item.week);
-  const years = Array.from(new Set(weekYears.map((item) => item.year))).sort((a, b) => a - b);
-  const minWeek = Math.min(...weeks);
-  const maxWeek = Math.max(...weeks);
-  const weekRangeText = minWeek === maxWeek ? String(minWeek) : `${minWeek}-${maxWeek}`;
-  const yearText = years.length === 1 ? String(years[0]) : `${years[0]}-${years[years.length - 1]}`;
-  return { weekRangeText, yearText };
-}
-
-function getIsoWeekYear(date: Date) {
-  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const day = target.getUTCDay() || 7;
-  target.setUTCDate(target.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
-  const week = Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  return { week, year: target.getUTCFullYear() };
+  return formatAcademicWeekLabel(schedules.map((schedule) => schedule.date));
 }
 
 function formatObjectives(rawObjective: string) {
