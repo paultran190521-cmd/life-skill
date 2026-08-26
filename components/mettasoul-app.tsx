@@ -81,7 +81,6 @@ type TabId =
   | "lessons"
   | "plans"
   | "attendance"
-  | "weekly-updates"
   | "settings";
 
 type DraftScheduleItem = {
@@ -244,6 +243,11 @@ type GasLessonPlanUploadResponse = {
   lessonPlan: LessonPlan;
 };
 
+type LessonPlanUploadStatus = {
+  phase: "uploading" | "success" | "error";
+  message: string;
+};
+
 type LessonDraft = {
   grade: string;
   topicId: string;
@@ -390,7 +394,6 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
   { id: "lessons", label: "Bài học", icon: BookOpen },
   { id: "plans", label: "Giáo án", icon: FileUp },
   { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
-  { id: "weekly-updates", label: "Cập nhật tuần", icon: ListChecks },
   { id: "settings", label: "Cấu hình", icon: Settings2 },
 ];
 
@@ -452,6 +455,7 @@ export function MettasoulApp() {
   const [lessonPlanAdminFocus, setLessonPlanAdminFocus] = useState<LessonPlanAdminFocus>("uploaded");
   const [lessonPlanTeacherFocus, setLessonPlanTeacherFocus] = useState<LessonPlanTeacherFocus>("uploaded");
   const [lessonPlanLinkDrafts, setLessonPlanLinkDrafts] = useState<Record<string, string>>({});
+  const [lessonPlanUploadStatuses, setLessonPlanUploadStatuses] = useState<Record<string, LessonPlanUploadStatus>>({});
   const [teacherOverviewDateFrom, setTeacherOverviewDateFrom] = useState("");
   const [teacherOverviewDateTo, setTeacherOverviewDateTo] = useState("");
   const [teacherOverviewFocus, setTeacherOverviewFocus] = useState<TeacherOverviewFocus | null>(null);
@@ -1721,21 +1725,31 @@ export function MettasoulApp() {
     }
 
     const files = Array.from(selectedFiles);
+    const setUploadStatus = (status: LessonPlanUploadStatus) => {
+      setLessonPlanUploadStatuses((items) => ({ ...items, [schedule.id]: status }));
+    };
+    setUploadStatus({
+      phase: "uploading",
+      message: files.length === 1 ? `Đang tải lên ${files[0].name}...` : `Đang tải lên ${files.length} file giáo án...`,
+    });
+
     const invalidTypeFile = files.find((file) => !isSupportedLessonPlanFile(file));
     if (invalidTypeFile) {
-      handleSaveError(
-        new Error(`File ${invalidTypeFile.name} không đúng định dạng. Chỉ hỗ trợ PDF, DOC/DOCX, PPT/PPTX, XLS/XLSX, TXT, CSV.`),
+      const error = new Error(
+        `File ${invalidTypeFile.name} không đúng định dạng. Chỉ hỗ trợ PDF, DOC/DOCX, PPT/PPTX, XLS/XLSX, TXT, CSV.`,
       );
+      setUploadStatus({ phase: "error", message: error.message });
+      handleSaveError(error);
       return;
     }
 
     const tooLargeFile = files.find((file) => file.size > maxLessonPlanFileBytes);
     if (tooLargeFile) {
-      handleSaveError(
-        new Error(
-          `File ${tooLargeFile.name} vượt quá 10 MB. Với file PPT/PPTX nặng, hãy upload lên Google Drive của bạn, mở quyền xem cho admin rồi dán link vào ô Link PPT/Drive trong card lịch.`,
-        ),
+      const error = new Error(
+        `File ${tooLargeFile.name} vượt quá 10 MB. Với file PPT/PPTX nặng, hãy upload lên Google Drive của bạn, mở quyền xem cho admin rồi dán link vào ô Link PPT/Drive trong card lịch.`,
       );
+      setUploadStatus({ phase: "error", message: error.message });
+      handleSaveError(error);
       return;
     }
 
@@ -1761,8 +1775,22 @@ export function MettasoulApp() {
 
     if (failures.length > 0) {
       const firstError = failures[0]?.error?.message || "Không thể tải một số file giáo án.";
-      handleSaveError(new Error(`${firstError} (${failures.length}/${files.length} file thất bại)`));
+      const error = new Error(`${firstError} (${failures.length}/${files.length} file thất bại)`);
+      setUploadStatus({
+        phase: "error",
+        message:
+          successCount > 0
+            ? `Đã tải ${successCount}/${files.length} file; ${failures.length} file gặp lỗi.`
+            : `Tải lên chưa hoàn tất: ${error.message}`,
+      });
+      handleSaveError(error);
+      return;
     }
+
+    const completedMessage =
+      files.length === 1 ? `Đã tải lên hoàn tất: ${files[0].name}.` : `Đã tải lên hoàn tất ${successCount}/${files.length} file giáo án.`;
+    setUploadStatus({ phase: "success", message: completedMessage });
+    pushToast("Tải lên hoàn tất", completedMessage, "success");
   }
 
   async function attachLessonPlanLink(schedule: Schedule) {
@@ -3461,9 +3489,6 @@ export function MettasoulApp() {
     if (activeTab === "attendance") {
       return AttendancePanel();
     }
-    if (activeTab === "weekly-updates") {
-      return WeeklyUpdatesPanel();
-    }
     return SettingsPanel();
   }
 
@@ -5051,6 +5076,7 @@ export function MettasoulApp() {
               onOpenDetail={setSelectedScheduleDetail}
               onDelete={role === "admin" ? deleteSchedule : undefined}
             />
+            <WeeklyUpdatesPanel embedded />
             <div className="border-t border-cyan-100 pt-5">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -6925,25 +6951,47 @@ export function MettasoulApp() {
   }
 
   function LessonPlanUploadButton({ schedule, compact = false }: { schedule: Schedule; compact?: boolean }) {
+    const uploadStatus = lessonPlanUploadStatuses[schedule.id];
+    const isUploading = uploadStatus?.phase === "uploading";
+
     return (
-      <label
-        className={`inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 text-sm font-black text-white shadow-lg shadow-orange-500/20 transition hover:-translate-y-0.5 ${
-          compact ? "h-9 px-3 text-xs" : "h-11 px-4"
-        }`}
-      >
-        <FileUp size={compact ? 15 : 17} />
-        Tải lên
-        <input
-          type="file"
-          multiple
-          accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv"
-          className="hidden"
-          onChange={(event) => {
-            uploadLessonPlans(schedule, event.target.files);
-            event.currentTarget.value = "";
-          }}
-        />
-      </label>
+      <div className="flex min-w-0 flex-col items-start gap-1.5">
+        <label
+          aria-busy={isUploading}
+          className={`inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 text-sm font-black text-white shadow-lg shadow-orange-500/20 transition ${
+            compact ? "h-9 px-3 text-xs" : "h-11 px-4"
+          } ${isUploading ? "cursor-wait opacity-75" : "cursor-pointer hover:-translate-y-0.5"}`}
+        >
+          {isUploading ? <LoaderCircle className="animate-spin" size={compact ? 15 : 17} /> : <FileUp size={compact ? 15 : 17} />}
+          {isUploading ? "Đang tải lên..." : "Tải lên"}
+          <input
+            type="file"
+            multiple
+            disabled={isUploading}
+            accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv"
+            className="hidden"
+            onChange={async (event) => {
+              const selectedFiles = event.currentTarget.files;
+              await uploadLessonPlans(schedule, selectedFiles);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
+        {uploadStatus ? (
+          <p
+            role={uploadStatus.phase === "error" ? "alert" : "status"}
+            className={`max-w-full text-xs font-bold leading-5 ${
+              uploadStatus.phase === "error"
+                ? "text-rose-700"
+                : uploadStatus.phase === "success"
+                  ? "text-emerald-700"
+                  : "text-amber-700"
+            }`}
+          >
+            {uploadStatus.message}
+          </p>
+        ) : null}
+      </div>
     );
   }
 
@@ -7243,7 +7291,7 @@ export function MettasoulApp() {
     );
   }
 
-  function WeeklyUpdatesPanel() {
+  function WeeklyUpdatesPanel({ embedded = false }: { embedded?: boolean }) {
     const sortedUpdates = [...weeklyUpdates].sort((a, b) => {
       if (b.weekNumber !== a.weekNumber) return b.weekNumber - a.weekNumber;
       return (b.updateDate || "").localeCompare(a.updateDate || "");
@@ -7362,17 +7410,8 @@ export function MettasoulApp() {
       }
     }
 
-    const totalHours = weeklyUpdates.reduce((sum, u) => sum + (u.teachingHours ?? 0), 0);
-    const uniqueWeeks = new Set(weeklyUpdates.map((u) => u.weekNumber)).size;
-
     return (
-      <div className="space-y-5">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <Stat icon={ListChecks} label="Tổng cập nhật" value={weeklyUpdates.length} tone="cyan" />
-          <Stat icon={CalendarDays} label="Số tuần" value={uniqueWeeks} tone="emerald" />
-          <Stat icon={Clock3} label="Tổng giờ dạy" value={totalHours} tone="blue" />
-        </div>
-
+      <div className={embedded ? "border-t border-cyan-100 pt-5" : "space-y-5"}>
         <Panel title="Thêm cập nhật tuần" action="Nhập mới">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="block">
