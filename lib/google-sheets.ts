@@ -366,47 +366,70 @@ export async function deleteSheetRowById(sheetName: SheetName, id: string) {
 
 /**
  * Xóa toàn bộ dữ liệu trong sheet nhưng giữ nguyên hàng header (row 1).
+ * Thử deleteDimension trước, nếu lỗi thì fallback sang values.clear.
  */
 export async function clearSheetData(sheetName: SheetName) {
   const client = getSheetsClient();
 
-  const sheetMeta = await client.spreadsheets.get({
+  // Đếm số dòng dữ liệu hiện có
+  const dataResponse = await client.spreadsheets.values.get({
     spreadsheetId: spreadsheetId(),
-    fields: "sheets(properties(sheetId,title,gridProperties(rowCount)))",
+    range: quoteSheetName(sheetName),
   });
+  const allValues = dataResponse.data.values || [];
+  const dataRowCount = Math.max(0, allValues.length - 1);
 
-  const targetSheet = sheetMeta.data.sheets?.find((sheet) => sheet.properties?.title === sheetName);
-  if (!targetSheet?.properties) {
-    throw new Error(`Sheet "${sheetName}" không tồn tại.`);
-  }
-
-  const sheetId = targetSheet.properties.sheetId;
-  const rowCount = targetSheet.properties.gridProperties?.rowCount ?? 0;
-
-  if (rowCount <= 1) {
+  if (dataRowCount === 0) {
     return 0;
   }
 
-  await client.spreadsheets.batchUpdate({
-    spreadsheetId: spreadsheetId(),
-    requestBody: {
-      requests: [
-        {
-          deleteDimension: {
-            range: {
-              sheetId,
-              dimension: "ROWS",
-              startIndex: 1,
-              endIndex: rowCount,
+  // Thử xóa bằng deleteDimension (xóa hẳn dòng)
+  try {
+    const sheetMeta = await client.spreadsheets.get({
+      spreadsheetId: spreadsheetId(),
+      fields: "sheets(properties(sheetId,title,gridProperties(rowCount)))",
+    });
+
+    const targetSheet = sheetMeta.data.sheets?.find((sheet) => sheet.properties?.title === sheetName);
+    const sheetId = targetSheet?.properties?.sheetId;
+    const rowCount = targetSheet?.properties?.gridProperties?.rowCount ?? 0;
+
+    if (sheetId != null && rowCount > 1) {
+      await client.spreadsheets.batchUpdate({
+        spreadsheetId: spreadsheetId(),
+        requestBody: {
+          requests: [
+            {
+              deleteDimension: {
+                range: {
+                  sheetId,
+                  dimension: "ROWS",
+                  startIndex: 1,
+                  endIndex: rowCount,
+                },
+              },
             },
-          },
+          ],
         },
-      ],
-    },
+      });
+      invalidateSheetRowsCache(sheetName);
+      return rowCount - 1;
+    }
+  } catch (deleteError) {
+    console.warn(
+      `[clearSheetData] deleteDimension failed for ${sheetName}, falling back to values.clear:`,
+      deleteError instanceof Error ? deleteError.message : deleteError,
+    );
+  }
+
+  // Fallback: xóa giá trị ô (dòng rỗng sẽ bị toRows lọc bỏ)
+  await client.spreadsheets.values.clear({
+    spreadsheetId: spreadsheetId(),
+    range: `${quoteSheetName(sheetName)}!A2:ZZ`,
   });
 
   invalidateSheetRowsCache(sheetName);
-  return rowCount - 1;
+  return dataRowCount;
 }
 
 export async function getAppDataFromSheets() {
