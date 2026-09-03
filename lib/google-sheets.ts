@@ -466,6 +466,42 @@ export async function getAppDataFromSheets() {
   };
 }
 
+export const lessonHeaders = [
+  "id",
+  "topicId",
+  "grade",
+  "title",
+  "objective",
+  "objectives",
+  "durationMinutes",
+  "sortOrder",
+  "active",
+  "createdAt",
+  "updatedAt",
+  "samplePlanUrl",
+];
+
+export const scheduleHeaders = [
+  "id",
+  "date",
+  "teacherId",
+  "schoolId",
+  "classId",
+  "lessonId",
+  "timeSlotId",
+  "status",
+  "sentAt",
+  "confirmedAt",
+  "reassignedFrom",
+  "cancelledAt",
+  "createdBy",
+  "createdAt",
+  "updatedAt",
+  "teachingEnvironment",
+  "groupId",
+  "assistantIds",
+];
+
 export const topicHeaders = [
   "id",
   "grade",
