@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
 import { validationError } from "@/lib/app-error";
-import { appendSheetRow, appendSheetRows, readSheetRows } from "@/lib/google-sheets";
+import { appendSheetRow, appendSheetRows, clearSheetData, readSheetRows } from "@/lib/google-sheets";
 import { normalizeTimeSlotInput, normalizeTimeSlotLabel, timeSlotDuplicateKey } from "@/lib/time-slots";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 
@@ -104,6 +104,36 @@ export async function POST(request: Request) {
       ),
     );
     return NextResponse.json({ timeSlots });
+  } catch (error) {
+    return apiError(error, requestId);
+  }
+}
+
+export async function DELETE(request: Request) {
+  const requestId = createRequestId("slot-clear");
+  try {
+    const auth = await requireSessionUser(request);
+    const permission = evaluateRolePermission(auth.user, "admin", "admin_only_time_slots_write");
+    if (!permission.allowed) {
+      return apiFailure(403, "Bạn không có quyền thực hiện thao tác này.", undefined, requestId);
+    }
+
+    const deletedCount = await clearSheetData("TimeSlots");
+    await appendAuditLog({
+      requestId,
+      actor: auth.user,
+      action: "time_slot.clear_all",
+      entityType: "TimeSlot",
+      entityId: "*",
+      route: "/api/time-slots",
+      method: "DELETE",
+      authMode: permission.authMode,
+      decision: permission.decision,
+      reason: permission.reason,
+      source: auth.source,
+      after: { deletedCount },
+    });
+    return NextResponse.json({ success: true, deletedCount });
   } catch (error) {
     return apiError(error, requestId);
   }

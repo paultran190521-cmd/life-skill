@@ -7,7 +7,6 @@ import type {
   AuditLog,
   ClassRoom,
   Lesson,
-  LessonPeriod,
   LessonPlan,
   Notification,
   Role,
@@ -45,9 +44,6 @@ type SheetRow = Record<string, string>;
 let sheetsClient: ReturnType<typeof google.sheets> | null = null;
 const headerCache = new Map<SheetName, { headers: string[]; expiresAt: number }>();
 const rowCache = new Map<SheetName, { rows: SheetRow[]; expiresAt: number }>();
-const APP_DATA_SCHEMA_TTL_MS = 10 * 60 * 1000;
-let appDataSchemaReadyAt = 0;
-let appDataSchemaPromise: Promise<void> | null = null;
 
 function getSheetsClient() {
   if (sheetsClient) {
@@ -368,69 +364,106 @@ export async function deleteSheetRowById(sheetName: SheetName, id: string) {
   invalidateSheetRowsCache(sheetName);
 }
 
-export async function getAppDataFromSheets() {
-  await ensureAppDataSchema();
+/**
+ * Xóa toàn bộ dữ liệu trong sheet nhưng giữ nguyên hàng header (row 1).
+ */
+export async function clearSheetData(sheetName: SheetName) {
+  const client = getSheetsClient();
 
-  // Một batchGet thay cho 14 request Google Sheets riêng lẻ. Đây là đường tải
-  // nóng khi mở ứng dụng; giảm round-trip giúp chuyển màn và tải lại mượt hơn.
-  const rows = await readSheetRowsBatch([
-    "Teachers",
-    "Users",
-    "Schools",
-    "Classes",
-    "Topics",
-    "Lessons",
-    "TimeSlots",
-    "Schedules",
-    "LessonPlans",
-    "Attendance",
-    "Notifications",
-    "AppAnnouncements",
-    "AuditLogs",
-    "WeeklyUpdates",
-  ] as const);
+  const sheetMeta = await client.spreadsheets.get({
+    spreadsheetId: spreadsheetId(),
+    fields: "sheets(properties(sheetId,title,gridProperties(rowCount)))",
+  });
 
-  return {
-    teachers: toTeachers(rows.Teachers),
-    users: toUsers(rows.Users),
-    schools: toSchools(rows.Schools),
-    classes: toClasses(rows.Classes),
-    topics: toTopics(rows.Topics),
-    lessons: toLessons(rows.Lessons),
-    timeSlots: toTimeSlots(rows.TimeSlots),
-    schedules: toSchedules(rows.Schedules),
-    lessonPlans: toLessonPlans(rows.LessonPlans),
-    attendance: toAttendance(rows.Attendance),
-    notifications: toNotifications(rows.Notifications),
-    appAnnouncements: toAppAnnouncements(rows.AppAnnouncements),
-    auditLogs: toAuditLogs(rows.AuditLogs),
-    weeklyUpdates: toWeeklyUpdates(rows.WeeklyUpdates),
-  };
+  const targetSheet = sheetMeta.data.sheets?.find((sheet) => sheet.properties?.title === sheetName);
+  if (!targetSheet?.properties) {
+    throw new Error(`Sheet "${sheetName}" không tồn tại.`);
+  }
+
+  const sheetId = targetSheet.properties.sheetId;
+  const rowCount = targetSheet.properties.gridProperties?.rowCount ?? 0;
+
+  if (rowCount <= 1) {
+    return 0;
+  }
+
+  await client.spreadsheets.batchUpdate({
+    spreadsheetId: spreadsheetId(),
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: 1,
+              endIndex: rowCount,
+            },
+          },
+        },
+      ],
+    },
+  });
+
+  invalidateSheetRowsCache(sheetName);
+  return rowCount - 1;
 }
 
-async function ensureAppDataSchema() {
-  if (appDataSchemaReadyAt > Date.now()) {
-    return;
-  }
-  if (appDataSchemaPromise) {
-    return appDataSchemaPromise;
-  }
+export async function getAppDataFromSheets() {
+  const [
+    teachers,
+    users,
+    schools,
+    classes,
+    topics,
+    lessons,
+    timeSlots,
+    schedules,
+    lessonPlans,
+    attendance,
+    notifications,
+    appAnnouncements,
+    auditLogs,
+    weeklyUpdates,
+  ] = await Promise.all([
+    readSheetRows("Teachers").then(toTeachers),
+    readSheetRows("Users").then(toUsers),
+    readSheetRows("Schools").then(toSchools),
+    readSheetRows("Classes").then(toClasses),
+    ensureSheetHeaders("Topics", topicHeaders)
+      .then(() => readSheetRows("Topics").then(toTopics))
+      .catch(() => [] as Topic[]),
+    readSheetRows("Lessons").then(toLessons),
+    readSheetRows("TimeSlots").then(toTimeSlots),
+    readSheetRows("Schedules").then(toSchedules),
+    readSheetRows("LessonPlans").then(toLessonPlans),
+    readSheetRows("Attendance").then(toAttendance),
+    readSheetRows("Notifications").then(toNotifications),
+    ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders)
+      .then(() => readSheetRows("AppAnnouncements").then(toAppAnnouncements))
+      .catch(() => [] as AppAnnouncement[]),
+    readSheetRows("AuditLogs").then(toAuditLogs).catch(() => [] as AuditLog[]),
+    ensureSheetHeaders("WeeklyUpdates", weeklyUpdateHeaders)
+      .then(() => readSheetRows("WeeklyUpdates").then(toWeeklyUpdates))
+      .catch(() => [] as WeeklyUpdate[]),
+  ]);
 
-  appDataSchemaPromise = Promise.all([
-    ensureSheetHeaders("Topics", topicHeaders),
-    ensureSheetHeaders("Lessons", lessonHeaders),
-    ensureSheetHeaders("Schedules", scheduleHeaders),
-    ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders),
-    ensureSheetHeaders("WeeklyUpdates", weeklyUpdateHeaders),
-  ])
-    .then(() => {
-      appDataSchemaReadyAt = Date.now() + APP_DATA_SCHEMA_TTL_MS;
-    })
-    .finally(() => {
-      appDataSchemaPromise = null;
-    });
-
-  return appDataSchemaPromise;
+  return {
+    teachers,
+    users,
+    schools,
+    classes,
+    topics,
+    lessons,
+    timeSlots,
+    schedules,
+    lessonPlans,
+    attendance,
+    notifications,
+    appAnnouncements,
+    auditLogs,
+    weeklyUpdates,
+  };
 }
 
 export const topicHeaders = [
@@ -441,31 +474,6 @@ export const topicHeaders = [
   "active",
   "createdAt",
   "updatedAt",
-];
-
-export const lessonHeaders = [
-  "id",
-  "topicId",
-  "grade",
-  "title",
-  "lesson1Title",
-  "lesson1Objective",
-  "lesson2Title",
-  "lesson2Objective",
-  "objective",
-  "objectives",
-  "durationMinutes",
-  "sortOrder",
-  "active",
-  "createdAt",
-  "updatedAt",
-  "samplePlanUrl",
-];
-
-export const scheduleHeaders = [
-  "id", "date", "teacherId", "schoolId", "classId", "lessonId", "lessonPeriods", "timeSlotId",
-  "status", "sentAt", "confirmedAt", "reassignedFrom", "cancelledAt",
-  "createdBy", "createdAt", "updatedAt", "teachingEnvironment", "groupId", "assistantIds", "participantClassIds",
 ];
 
 export const weeklyUpdateHeaders = [
@@ -635,14 +643,6 @@ function normalizeSheetHeader(value: unknown) {
     academicyear: "academicYear",
     topicid: "topicId",
     objectives: "objectives",
-    lesson1title: "lesson1Title",
-    tentiet1: "lesson1Title",
-    lesson1objective: "lesson1Objective",
-    muctieutiet1: "lesson1Objective",
-    lesson2title: "lesson2Title",
-    tentiet2: "lesson2Title",
-    lesson2objective: "lesson2Objective",
-    muctieutiet2: "lesson2Objective",
     sortorder: "sortOrder",
     groupid: "groupId",
     assistantids: "assistantIds",
@@ -680,7 +680,7 @@ function toUsers(rows: SheetRow[]): User[] {
     id: row.id,
     name: row.name,
     email: row.email,
-    role: (row.role === "teacher" || row.role === "assistant" ? row.role : "admin") as Role,
+    role: row.role === "teacher" ? "teacher" : "admin",
     teacherId: row.teacherId || undefined,
     avatarUrl: row.avatarUrl || getAvatarUrl(row.email, row.name),
     isActive: parseBoolean(row.isActive, true),
@@ -723,10 +723,6 @@ function toLessons(rows: SheetRow[]): Lesson[] {
     grade: row.grade,
     title: row.title,
     objective: row.objective,
-    lesson1Title: row.lesson1Title || undefined,
-    lesson1Objective: row.lesson1Objective || undefined,
-    lesson2Title: row.lesson2Title || undefined,
-    lesson2Objective: row.lesson2Objective || undefined,
     objectives: row.objectives || undefined,
     durationMinutes: Number(row.durationMinutes || 45),
     sortOrder: row.sortOrder ? Number(row.sortOrder) : undefined,
@@ -752,9 +748,7 @@ function toSchedules(rows: SheetRow[]): Schedule[] {
     teacherId: row.teacherId,
     schoolId: row.schoolId,
     classId: row.classId,
-    participantClassIds: row.participantClassIds || undefined,
     lessonId: row.lessonId,
-    lessonPeriods: normalizeLessonPeriods(row.lessonPeriods),
     timeSlotId: row.timeSlotId,
     teachingEnvironment: parseTeachingEnvironment(row.teachingEnvironment),
     status: (row.status || "sent") as ScheduleStatus,
@@ -764,14 +758,6 @@ function toSchedules(rows: SheetRow[]): Schedule[] {
     groupId: row.groupId || undefined,
     assistantIds: row.assistantIds || undefined,
   }));
-}
-
-function normalizeLessonPeriods(value: string | undefined) {
-  const periods = String(value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item): item is LessonPeriod => item === "lesson1" || item === "lesson2");
-  return periods.length > 0 ? Array.from(new Set(periods)).join(",") : "lesson1";
 }
 
 function toLessonPlans(rows: SheetRow[]): LessonPlan[] {
