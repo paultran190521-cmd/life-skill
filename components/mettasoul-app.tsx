@@ -9224,7 +9224,7 @@ function getCompositeTimeSlotInfo(slot: TimeSlot, slots: TimeSlot[]): CompositeT
           candidate,
           getTimeSlotDurationMinutes(candidate.start, candidate.end),
           getTimeSlotLabelDuration(candidate.label),
-        ),
+        ) && !isLegacyCompositeTimeSlotCandidate(candidate),
     )
     .sort((left, right) => left.start.localeCompare(right.start));
 
@@ -9249,6 +9249,48 @@ function getCompositeTimeSlotInfo(slot: TimeSlot, slots: TimeSlot[]): CompositeT
   }
 
   return null;
+}
+
+/**
+ * Older imports named a double slot "Khung 90/95 phút từ …".  Keep the
+ * stored label intact, but derive the two consecutive periods for a concise
+ * scheduler label.  These legacy slots can have an interval that ends before
+ * the second simple period ends, so they deliberately do not use the strict
+ * timetable-boundary check above.
+ */
+function getLegacyCompositeTimeSlotInfo(slot: TimeSlot, slots: TimeSlot[]): CompositeTimeSlotInfo | null {
+  if (!isLegacyCompositeTimeSlotCandidate(slot)) {
+    return null;
+  }
+
+  const simplePeriods = slots
+    .filter(
+      (candidate) =>
+        getTimeSlotGroupKey(candidate.label) === getTimeSlotGroupKey(slot.label) &&
+        getTimeSlotDurationMinutes(candidate.start, candidate.end) > 0 &&
+        !isCompositeTimeSlotCandidate(
+          candidate,
+          getTimeSlotDurationMinutes(candidate.start, candidate.end),
+          getTimeSlotLabelDuration(candidate.label),
+        ) &&
+        !isLegacyCompositeTimeSlotCandidate(candidate),
+    )
+    .sort((left, right) => left.start.localeCompare(right.start));
+
+  const firstIndex = simplePeriods.findIndex(
+    (candidate) => normalizeTimeValue(candidate.start) === normalizeTimeValue(slot.start),
+  );
+  const first = simplePeriods[firstIndex];
+  const second = simplePeriods[firstIndex + 1];
+  if (!first || !second) {
+    return null;
+  }
+
+  return {
+    first,
+    second,
+    duration: getTimeSlotDurationMinutes(slot.start, slot.end),
+  };
 }
 
 function schedulingTimeSlotsForSchool(slots: TimeSlot[], schoolName: string): TimeSlot[] {
@@ -9280,7 +9322,7 @@ function schedulingTimeSlotsForSchoolGrade(slots: TimeSlot[], schoolName: string
 }
 
 function formatTimeSlotDisplay(slot: TimeSlot, slots: TimeSlot[]) {
-  const composite = getCompositeTimeSlotInfo(slot, slots);
+  const composite = getCompositeTimeSlotInfo(slot, slots) ?? getLegacyCompositeTimeSlotInfo(slot, slots);
   if (!composite) {
     return slot.label;
   }
@@ -9302,6 +9344,16 @@ function isCompositeTimeSlotCandidate(slot: TimeSlot, elapsedDuration: number, d
   const label = normalizeComparableText(shortenPeriodLabel(slot.label));
   const hasPeriodPair = /^tiet\s*\d+\s*,\s*\d+\s*[sc]?$/.test(label);
   return hasPeriodPair || (declaredDuration !== undefined && [70, 90, 95].includes(declaredDuration) && elapsedDuration >= 70);
+}
+
+function isLegacyCompositeTimeSlotCandidate(slot: TimeSlot) {
+  const label = normalizeComparableText(slot.label);
+  const declaredDuration = label.match(/\bkhung\s*(90|95)\s*phut\b/);
+  if (!declaredDuration) {
+    return false;
+  }
+
+  return getTimeSlotDurationMinutes(slot.start, slot.end) === Number(declaredDuration[1]);
 }
 
 function getTimeSlotSchoolPrefix(label: string) {
