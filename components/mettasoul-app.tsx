@@ -244,6 +244,10 @@ type LessonDraft = {
   topicId: string;
   title: string;
   objective: string;
+  lesson1Title?: string;
+  lesson1Objective?: string;
+  lesson2Title?: string;
+  lesson2Objective?: string;
   samplePlanUrl: string;
   durationMinutes: number | "";
 };
@@ -2596,7 +2600,7 @@ export function MettasoulApp() {
   async function downloadLessonSpreadsheetTemplate() {
     const XLSX = await import("xlsx");
     const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet([["Khối", "Tên chuyên đề", "Mục tiêu", "Giáo án mẫu", "Số phút"]]);
+    const worksheet = XLSX.utils.aoa_to_sheet([["Khối", "Tên chuyên đề", "Tên tiết 1", "Mục tiêu tiết 1", "Tên tiết 2", "Mục tiêu tiết 2", "Giáo án mẫu", "Số phút"]]);
     XLSX.utils.book_append_sheet(workbook, worksheet, "Bai hoc");
     const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
     const blob = new Blob([fileData], {
@@ -8396,6 +8400,10 @@ function createEmptyLessonDraft(): LessonDraft {
     topicId: "",
     title: "",
     objective: "",
+    lesson1Title: "",
+    lesson1Objective: "",
+    lesson2Title: "",
+    lesson2Objective: "",
     samplePlanUrl: "",
     durationMinutes: 45,
   };
@@ -8418,6 +8426,10 @@ function stripBulkLessonId(row: BulkLessonRow): LessonDraft {
     topicId: row.topicId ?? "",
     title: row.title,
     objective: row.objective,
+    lesson1Title: row.lesson1Title ?? "",
+    lesson1Objective: row.lesson1Objective ?? "",
+    lesson2Title: row.lesson2Title ?? "",
+    lesson2Objective: row.lesson2Objective ?? "",
     samplePlanUrl: row.samplePlanUrl,
     durationMinutes: row.durationMinutes,
   };
@@ -8434,6 +8446,10 @@ function validateLessonDraft(row: LessonDraft, label = "Bài học") {
 
   if (!row.objective.trim()) {
     return `${label}: Mục tiêu là bắt buộc.`;
+  }
+
+  if (!row.lesson1Title?.trim() || !row.lesson1Objective?.trim() || !row.lesson2Title?.trim() || !row.lesson2Objective?.trim()) {
+    return `${label}: cần có tên và mục tiêu cho cả Tiết 1, Tiết 2.`;
   }
 
   if (row.durationMinutes === "") {
@@ -8670,6 +8686,10 @@ function parseLessonSpreadsheetRows(rows: string[][]) {
     topicId: "",
     title: cells[headerMap.title]?.trim() ?? "",
     objective: cells[headerMap.objective]?.trim() ?? "",
+    lesson1Title: cells[headerMap.lesson1Title]?.trim() ?? "",
+    lesson1Objective: cells[headerMap.lesson1Objective]?.trim() ?? "",
+    lesson2Title: cells[headerMap.lesson2Title]?.trim() ?? "",
+    lesson2Objective: cells[headerMap.lesson2Objective]?.trim() ?? "",
     samplePlanUrl: cells[headerMap.samplePlanUrl]?.trim() ?? "",
     durationMinutes: normalizeDuration(cells[headerMap.durationMinutes]),
   }));
@@ -8681,6 +8701,10 @@ function createLessonHeaderMap(headers: string[]) {
     grade: findHeaderIndex(normalized, ["khoi", "grade"]),
     title: findHeaderIndex(normalized, ["tenchuyende", "tenbaihoc", "title"]),
     objective: findHeaderIndex(normalized, ["muctieu", "objective"]),
+    lesson1Title: findHeaderIndex(normalized, ["tentiet1", "lesson1title"]),
+    lesson1Objective: findHeaderIndex(normalized, ["muctieutiet1", "lesson1objective"]),
+    lesson2Title: findHeaderIndex(normalized, ["tentiet2", "lesson2title"]),
+    lesson2Objective: findHeaderIndex(normalized, ["muctieutiet2", "lesson2objective"]),
     samplePlanUrl: findHeaderIndex(normalized, ["giaoanmau", "sampleplanurl", "sampleplan", "pdf"]),
     durationMinutes: findHeaderIndex(normalized, ["sophut", "durationminutes", "duration"]),
   };
@@ -8692,6 +8716,10 @@ function createLessonHeaderMap(headers: string[]) {
         grade: "Khối",
         title: "Tên chuyên đề",
         objective: "Mục tiêu",
+        lesson1Title: "Tên tiết 1",
+        lesson1Objective: "Mục tiêu tiết 1",
+        lesson2Title: "Tên tiết 2",
+        lesson2Objective: "Mục tiêu tiết 2",
         samplePlanUrl: "Giáo án mẫu",
         durationMinutes: "Số phút",
       };
@@ -9516,6 +9544,3 @@ function splitObjectiveLines(objective: string) {
 
   return normalized.length > 0 ? normalized : [text];
 }
-
-
-
