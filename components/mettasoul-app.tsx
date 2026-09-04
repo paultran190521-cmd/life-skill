@@ -8680,19 +8680,27 @@ function parseLessonSpreadsheetRows(rows: string[][]) {
   }
 
   const headerMap = createLessonHeaderMap(headers);
-  return dataRows.map((cells) => ({
-    id: createId("bulk-lesson"),
-    grade: normalizeGrade(cells[headerMap.grade]),
-    topicId: "",
-    title: cells[headerMap.title]?.trim() ?? "",
-    objective: cells[headerMap.objective]?.trim() ?? "",
-    lesson1Title: cells[headerMap.lesson1Title]?.trim() ?? "",
-    lesson1Objective: cells[headerMap.lesson1Objective]?.trim() ?? "",
-    lesson2Title: cells[headerMap.lesson2Title]?.trim() ?? "",
-    lesson2Objective: cells[headerMap.lesson2Objective]?.trim() ?? "",
-    samplePlanUrl: cells[headerMap.samplePlanUrl]?.trim() ?? "",
-    durationMinutes: normalizeDuration(cells[headerMap.durationMinutes]),
-  }));
+  return dataRows.map((cells) => {
+    const lesson1Title = cells[headerMap.lesson1Title]?.trim() ?? "";
+    const lesson1Objective = cells[headerMap.lesson1Objective]?.trim() ?? "";
+    const lesson2Title = cells[headerMap.lesson2Title]?.trim() ?? "";
+    const lesson2Objective = cells[headerMap.lesson2Objective]?.trim() ?? "";
+    const objective = cells[headerMap.objective]?.trim()
+      || `Tiết 1 - ${lesson1Title}:\n${lesson1Objective}\n\nTiết 2 - ${lesson2Title}:\n${lesson2Objective}`;
+    return {
+      id: createId("bulk-lesson"),
+      grade: normalizeGrade(cells[headerMap.grade]),
+      topicId: "",
+      title: cells[headerMap.title]?.trim() ?? "",
+      objective,
+      lesson1Title,
+      lesson1Objective,
+      lesson2Title,
+      lesson2Objective,
+      samplePlanUrl: cells[headerMap.samplePlanUrl]?.trim() ?? "",
+      durationMinutes: normalizeDuration(cells[headerMap.durationMinutes]),
+    };
+  });
 }
 
 function createLessonHeaderMap(headers: string[]) {
@@ -8710,7 +8718,7 @@ function createLessonHeaderMap(headers: string[]) {
   };
 
   const missingHeaders = Object.entries(headerMap)
-    .filter(([, index]) => index === -1)
+    .filter(([key, index]) => key !== "objective" && index === -1)
     .map(([key]) => {
       const labels: Record<string, string> = {
         grade: "Khối",
