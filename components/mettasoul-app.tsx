@@ -9324,7 +9324,7 @@ function schedulingTimeSlotsForSchoolGrade(slots: TimeSlot[], schoolName: string
 function formatTimeSlotDisplay(slot: TimeSlot, slots: TimeSlot[]) {
   const composite = getCompositeTimeSlotInfo(slot, slots) ?? getLegacyCompositeTimeSlotInfo(slot, slots);
   if (!composite) {
-    return slot.label;
+    return getLegacyCompositeTimeSlotDisplay(slot, slots) ?? slot.label;
   }
 
   const explicitPair = shortenPeriodLabel(slot.label);
@@ -9333,6 +9333,36 @@ function formatTimeSlotDisplay(slot: TimeSlot, slots: TimeSlot[]) {
   }
 
   return `${formatPeriodPair(composite.first.label, composite.second.label)} (${composite.duration}ph)`;
+}
+
+function getLegacyCompositeTimeSlotDisplay(slot: TimeSlot, slots: TimeSlot[]) {
+  if (!isLegacyCompositeTimeSlotCandidate(slot)) {
+    return null;
+  }
+
+  const first = slots
+    .filter(
+      (candidate) =>
+        getTimeSlotGroupKey(candidate.label) === getTimeSlotGroupKey(slot.label) &&
+        !isCompositeTimeSlotCandidate(
+          candidate,
+          getTimeSlotDurationMinutes(candidate.start, candidate.end),
+          getTimeSlotLabelDuration(candidate.label),
+        ) &&
+        !isLegacyCompositeTimeSlotCandidate(candidate),
+    )
+    .find((candidate) => normalizeTimeValue(candidate.start) === normalizeTimeValue(slot.start));
+  if (!first) {
+    return null;
+  }
+
+  const period = parsePeriodLabel(first.label);
+  const duration = getTimeSlotDurationMinutes(slot.start, slot.end);
+  if (!period) {
+    return `${shortenPeriodLabel(first.label)} (${duration}ph)`;
+  }
+
+  return `Tiết ${period.number}, ${Number(period.number) + 1}${period.session} (${duration}ph)`;
 }
 
 function getTimeSlotLabelDuration(label: string): number | undefined {
