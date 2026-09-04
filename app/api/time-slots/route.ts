@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
 import { validationError } from "@/lib/app-error";
-import { appendSheetRows, clearSheetData, readSheetRows, updateSheetRowsById } from "@/lib/google-sheets";
+import { appendSheetRows, clearSheetData, deleteSheetRowsByIds, readSheetRows, updateSheetRowsById } from "@/lib/google-sheets";
 import { normalizeTimeSlotInput, normalizeTimeSlotLabel } from "@/lib/time-slots";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 
@@ -142,20 +142,23 @@ export async function DELETE(request: Request) {
       return apiFailure(403, "Bạn không có quyền thực hiện thao tác này.", undefined, requestId);
     }
 
-    const deletedCount = await clearSheetData("TimeSlots");
+    const body = await request.json().catch(() => null);
+    const ids = Array.isArray(body?.ids) ? body.ids.map((id: unknown) => String(id || "").trim()).filter(Boolean) : [];
+    const deletedCount = ids.length > 0 ? await deleteSheetRowsByIds("TimeSlots", ids) : await clearSheetData("TimeSlots");
+    const action = ids.length > 0 ? "time_slot.delete_selected" : "time_slot.clear_all";
     await appendAuditLog({
       requestId,
       actor: auth.user,
-      action: "time_slot.clear_all",
+      action,
       entityType: "TimeSlot",
-      entityId: "*",
+      entityId: ids.length > 0 ? ids.join(",") : "*",
       route: "/api/time-slots",
       method: "DELETE",
       authMode: permission.authMode,
       decision: permission.decision,
       reason: permission.reason,
       source: auth.source,
-      after: { deletedCount },
+      after: { deletedCount, selectedIds: ids.length > 0 ? ids : undefined },
     });
     return NextResponse.json({ success: true, deletedCount });
   } catch (error) {

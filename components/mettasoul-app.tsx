@@ -2954,6 +2954,78 @@ export function MettasoulApp() {
     }
   }
 
+  async function deleteSelectedSlots() {
+    if (selectedSlotIds.length === 0) {
+      pushToast("Chưa chọn khung giờ", "Chọn ít nhất một khung giờ trước khi xóa.", "warning");
+      return;
+    }
+
+    const selectedIdSet = new Set(selectedSlotIds);
+    const selectedSlots = timeSlots.filter((slot) => selectedIdSet.has(slot.id));
+    const linkedScheduleCount = schedules.filter((schedule) => selectedIdSet.has(schedule.timeSlotId)).length;
+    const confirmed = await openConfirmDialog({
+      title: `Xóa ${selectedSlots.length} khung giờ`,
+      message:
+        linkedScheduleCount > 0
+          ? `Có ${linkedScheduleCount} lịch cũ đang dùng các khung này. Khung giờ sẽ bị xóa để bạn nạp lại dữ liệu, nhưng các lịch cũ vẫn được giữ để tra cứu.`
+          : `Các khung giờ đã chọn sẽ bị xóa vĩnh viễn để bạn nạp dữ liệu mới.`,
+      confirmText: "Xóa đã chọn",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await saveRequest<{ deletedCount: number }>("Đang xóa khung giờ đã chọn...", "/api/time-slots", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: selectedSlots.map((slot) => slot.id) }),
+      });
+      setTimeSlots((items) => items.filter((slot) => !selectedIdSet.has(slot.id)));
+      setSelectedSlotIds([]);
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã xóa khung giờ", `Đã xóa ${response.deletedCount} khung giờ đã chọn.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function deleteAllSlots() {
+    if (timeSlots.length === 0) {
+      pushToast("Không có khung giờ", "Danh sách khung giờ đang trống.", "info");
+      return;
+    }
+
+    const linkedScheduleCount = schedules.filter((schedule) => timeSlots.some((slot) => slot.id === schedule.timeSlotId)).length;
+    const confirmed = await openConfirmDialog({
+      title: "Xóa tất cả khung giờ",
+      message:
+        linkedScheduleCount > 0
+          ? `Bạn sắp xóa toàn bộ ${timeSlots.length} khung giờ. Có ${linkedScheduleCount} lịch cũ sẽ không còn khung giờ để đối chiếu, nhưng lịch vẫn được giữ.`
+          : `Bạn sắp xóa toàn bộ ${timeSlots.length} khung giờ để nạp lại dữ liệu sạch.`,
+      confirmText: "Xóa tất cả",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await saveRequest<{ deletedCount: number }>("Đang xóa tất cả khung giờ...", "/api/time-slots", {
+        method: "DELETE",
+      });
+      setTimeSlots([]);
+      setSelectedSlotIds([]);
+      cancelEditSlot();
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã xóa tất cả", `Đã xóa ${response.deletedCount} khung giờ.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
   async function downloadTimeSlotSpreadsheetTemplate() {
     const XLSX = await import("xlsx");
     const workbook = XLSX.utils.book_new();
@@ -5411,8 +5483,16 @@ export function MettasoulApp() {
             <div className="min-w-[960px]">
               <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)] px-4 py-3">
                 <span className="mr-auto text-sm font-black text-[var(--brand-dark)]">
-                  {selectedSlotCount > 0 ? `Đã chọn ${selectedSlotCount} khung giờ` : "Chọn nhiều để bật/tắt nhanh"}
+                  {selectedSlotCount > 0 ? `Đã chọn ${selectedSlotCount} khung giờ` : "Chọn nhiều để thao tác hàng loạt"}
                 </span>
+                <button
+                  onClick={() => toggleAllVisibleSlots(orderedSlots, !allVisibleSlotsSelected)}
+                  disabled={orderedSlots.length === 0 || isBusy}
+                  className="inline-flex items-center gap-2 rounded-xl bg-cyan-50 px-3 py-2 text-sm font-black text-[var(--brand-dark)] transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {allVisibleSlotsSelected ? <X size={16} /> : <CheckCircle2 size={16} />}
+                  {allVisibleSlotsSelected ? "Bỏ chọn" : "Chọn tất cả"}
+                </button>
                 <button
                   onClick={() => updateSelectedSlotsActive(true)}
                   disabled={selectedSlotCount === 0 || isBusy}
@@ -5428,6 +5508,22 @@ export function MettasoulApp() {
                 >
                   <X size={16} />
                   Tắt đã chọn
+                </button>
+                <button
+                  onClick={deleteSelectedSlots}
+                  disabled={selectedSlotCount === 0 || isBusy}
+                  className="inline-flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-sm font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 size={16} />
+                  Xóa đã chọn
+                </button>
+                <button
+                  onClick={deleteAllSlots}
+                  disabled={orderedSlots.length === 0 || isBusy}
+                  className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-3 py-2 text-sm font-black text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 size={16} />
+                  Xóa tất cả
                 </button>
               </div>
               <div className="grid grid-cols-[40px_1.2fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] gap-3 border-b border-[var(--line)] bg-cyan-50 px-4 py-3 text-xs font-black uppercase text-[var(--brand-dark)]">

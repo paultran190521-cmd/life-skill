@@ -415,6 +415,55 @@ export async function deleteSheetRowById(sheetName: SheetName, id: string) {
 }
 
 /**
+ * Xóa nhiều dòng theo id trong cùng một batch request. Xóa từ dưới lên để
+ * chỉ số dòng không bị thay đổi khi Google Sheets xử lý các deleteDimension.
+ */
+export async function deleteSheetRowsByIds(sheetName: SheetName, ids: string[]) {
+  const uniqueIds = Array.from(new Set(ids.map((id) => String(id || "").trim()).filter(Boolean)));
+  if (uniqueIds.length === 0) {
+    return 0;
+  }
+
+  const client = getSheetsClient();
+  const response = await client.spreadsheets.values.get({
+    spreadsheetId: spreadsheetId(),
+    range: quoteSheetName(sheetName),
+  });
+  const idSet = new Set(uniqueIds);
+  const rowIndexes = (response.data.values || [])
+    .map((row, index) => ({ id: String(row[0] || "").trim(), index }))
+    .filter(({ id, index }) => index > 0 && idSet.has(id))
+    .map(({ index }) => index)
+    .sort((left, right) => right - left);
+
+  if (rowIndexes.length === 0) {
+    return 0;
+  }
+
+  const sheetMeta = await client.spreadsheets.get({
+    spreadsheetId: spreadsheetId(),
+    fields: "sheets(properties(sheetId,title))",
+  });
+  const sheetId = sheetMeta.data.sheets?.find((sheet) => sheet.properties?.title === sheetName)?.properties?.sheetId;
+  if (sheetId === undefined) {
+    throw new Error(`Cannot find sheet metadata for ${sheetName}.`);
+  }
+
+  await client.spreadsheets.batchUpdate({
+    spreadsheetId: spreadsheetId(),
+    requestBody: {
+      requests: rowIndexes.map((rowIndex) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: rowIndex, endIndex: rowIndex + 1 },
+        },
+      })),
+    },
+  });
+  invalidateSheetRowsCache(sheetName);
+  return rowIndexes.length;
+}
+
+/**
  * Xóa toàn bộ dữ liệu trong sheet nhưng giữ nguyên hàng header (row 1).
  * Thử deleteDimension trước, nếu lỗi thì fallback sang values.clear.
  */
