@@ -94,7 +94,14 @@ export function timeSlotDuplicateKey(slot: Pick<TimeSlot, "start" | "end">) {
 }
 
 export function normalizeTimeSlotLabel(label: string) {
-  return label.trim().replace(/\s+/g, " ").toLowerCase();
+  return label
+    .trim()
+    // Duration annotations are display metadata, not part of a slot's identity.
+    // This lets an import such as "NSG - Tiết 1 (45p)" overwrite the former
+    // "NSG - Tiết 1 (35p)" instead of creating a duplicate time slot.
+    .replace(/\s*\(\s*\d+\s*(?:p|phut|phút)\s*\)\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 }
 
 export function timeToMinutes(value: string) {
