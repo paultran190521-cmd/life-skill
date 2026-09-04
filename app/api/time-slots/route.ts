@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
-import { appendAuditLog } from "@/lib/audit";
+import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
 import { validationError } from "@/lib/app-error";
-import { appendSheetRow, appendSheetRows, clearSheetData, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
+import { appendSheetRows, clearSheetData, readSheetRows, updateSheetRowsById } from "@/lib/google-sheets";
 import { normalizeTimeSlotInput, normalizeTimeSlotLabel } from "@/lib/time-slots";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 
@@ -83,33 +83,31 @@ export async function POST(request: Request) {
 
     // Perform updates for existing slots
     const updatedSlots: Array<Record<string, unknown>> = [];
-    for (const { existingId, patch } of toUpdate) {
-      await updateSheetRowById("TimeSlots", existingId, patch);
-      updatedSlots.push({ id: existingId, ...patch });
-      await appendAuditLog({
+    if (toUpdate.length > 0) {
+      await updateSheetRowsById("TimeSlots", toUpdate.map(({ existingId, patch }) => ({ id: existingId, patch })));
+      updatedSlots.push(...toUpdate.map(({ existingId, patch }) => ({ id: existingId, ...patch })));
+    }
+
+    // Perform inserts for new slots
+    if (toInsert.length > 0) {
+      await appendSheetRows("TimeSlots", toInsert);
+    }
+    await appendAuditLogs([
+      ...updatedSlots.map((slot) => ({
         requestId,
         actor: auth.user,
         action: "time_slot.update",
         entityType: "TimeSlot",
-        entityId: existingId,
+        entityId: String(slot.id),
         route: "/api/time-slots",
         method: "POST",
         authMode: permission.authMode,
         decision: permission.decision,
         reason: permission.reason,
         source: auth.source,
-        after: patch,
-      });
-    }
-
-    // Perform inserts for new slots
-    if (toInsert.length === 1) {
-      await appendSheetRow("TimeSlots", toInsert[0]);
-    } else if (toInsert.length > 1) {
-      await appendSheetRows("TimeSlots", toInsert);
-    }
-    for (const slot of toInsert) {
-      await appendAuditLog({
+        after: slot,
+      })),
+      ...toInsert.map((slot) => ({
         requestId,
         actor: auth.user,
         action: "time_slot.create",
@@ -122,8 +120,8 @@ export async function POST(request: Request) {
         reason: permission.reason,
         source: auth.source,
         after: slot,
-      });
-    }
+      })),
+    ]);
 
     return NextResponse.json({
       timeSlots: [...updatedSlots, ...toInsert],

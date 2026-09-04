@@ -318,6 +318,56 @@ export async function updateSheetRowById(sheetName: SheetName, id: string, patch
   invalidateSheetRowsCache(sheetName);
 }
 
+export async function updateSheetRowsById(
+  sheetName: SheetName,
+  updates: Array<{ id: string; patch: Record<string, unknown> }>,
+) {
+  if (updates.length === 0) {
+    return;
+  }
+
+  const client = getSheetsClient();
+  const response = await client.spreadsheets.values.get({
+    spreadsheetId: spreadsheetId(),
+    range: quoteSheetName(sheetName),
+  });
+
+  const values = response.data.values || [];
+  const rawHeaders = (values[0] || []).map(String);
+  const headers = rawHeaders.map((header) => normalizeSheetHeader(header));
+  const rowIndexesById = new Map<string, number>();
+  values.forEach((row, index) => {
+    if (index > 0) {
+      rowIndexesById.set(String(row[0] || ""), index);
+    }
+  });
+
+  const data = updates.map(({ id, patch }) => {
+    const rowIndex = rowIndexesById.get(id);
+    if (rowIndex === undefined) {
+      throw new Error(`Cannot find row ${id} in ${sheetName}.`);
+    }
+    const currentRow = values[rowIndex] || [];
+    const nextRow = headers.map((header, index) =>
+      Object.prototype.hasOwnProperty.call(patch, header) ? stringifyCell(patch[header]) : String(currentRow[index] ?? ""),
+    );
+    const sheetRowNumber = rowIndex + 1;
+    return {
+      range: `${quoteSheetName(sheetName)}!A${sheetRowNumber}:${columnName(rawHeaders.length)}${sheetRowNumber}`,
+      values: [nextRow],
+    };
+  });
+
+  await client.spreadsheets.values.batchUpdate({
+    spreadsheetId: spreadsheetId(),
+    requestBody: {
+      valueInputOption: "RAW",
+      data,
+    },
+  });
+  invalidateSheetRowsCache(sheetName);
+}
+
 export async function deleteSheetRowById(sheetName: SheetName, id: string) {
   const client = getSheetsClient();
   const response = await client.spreadsheets.values.get({
