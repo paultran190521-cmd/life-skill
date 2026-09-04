@@ -9173,7 +9173,13 @@ function schedulingTimeSlotsForSchoolGrade(slots: TimeSlot[], schoolName: string
   }
 
   const targetLevel = gradeNumber <= 5 ? "1" : "2";
-  const levelSlots = schoolSlots.filter((slot) => getTimeSlotEducationLevel(slot.label) === targetLevel);
+  const levelSlots = schoolSlots.filter(
+    (slot) =>
+      getTimeSlotEducationLevel(slot.label) === targetLevel &&
+      // Cấp 1 NSG chỉ dùng tiết 35 phút và tiết đôi 70 phút. Ẩn cả những
+      // khung 40 phút cũ còn lưu trong Sheet sau khi nhập lại dữ liệu.
+      !(targetLevel === "1" && getTimeSlotDurationMinutes(slot.start, slot.end) === 40),
+  );
   return levelSlots.length > 0 ? levelSlots : schoolSlots;
 }
 
@@ -9212,7 +9218,13 @@ function getTimeSlotGroupKey(label: string) {
 }
 
 function getTimeSlotEducationLevel(label: string) {
-  const matched = normalizeComparableText(label).match(/cap\s*(1|2)\b/);
+  const normalized = normalizeComparableText(label);
+  const matched = normalized.match(/cap\s*(1|2)\b/);
+  // Nhãn tiểu học NSG được rút gọn để giao diện dễ đọc: "NSG - Tiết …".
+  // Cấp 2 vẫn có nhãn "Cấp 2", nên hai nhóm không thể lẫn vào nhau.
+  if (!matched && /^nsg\s*-\s*tiet\b/.test(normalized)) {
+    return "1";
+  }
   return matched?.[1] ?? "";
 }
 
