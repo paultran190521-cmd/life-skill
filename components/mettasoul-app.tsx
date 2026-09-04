@@ -3342,30 +3342,30 @@ export function MettasoulApp() {
 
   function renderMain() {
     if (activeTab === "dashboard") {
-      return Dashboard();
+      return <Dashboard />;
     }
     if (activeTab === "assignment") {
-      return AssignmentPanel();
+      return <AssignmentPanel />;
     }
     if (activeTab === "calendar") {
-      return CalendarPanel();
+      return <CalendarPanel />;
     }
     if (activeTab === "teachers") {
-      return TeachersPanel();
+      return <TeachersPanel />;
     }
     if (activeTab === "lessons") {
-      return LessonsPanel();
+      return <LessonsPanel />;
     }
     if (activeTab === "plans") {
-      return LessonPlansPanel();
+      return <LessonPlansPanel />;
     }
     if (activeTab === "attendance") {
-      return AttendancePanel();
+      return <AttendancePanel />;
     }
     if (activeTab === "weekly-updates") {
-      return WeeklyUpdatesPanel();
+      return <WeeklyUpdatesPanel />;
     }
-    return SettingsPanel();
+    return <SettingsPanel />;
   }
 
   function changeTab(tabId: TabId) {
@@ -4166,7 +4166,7 @@ export function MettasoulApp() {
 
   function Dashboard() {
     if (role === "teacher") {
-      return TeacherOverviewPanel();
+      return <TeacherOverviewPanel />;
     }
 
     const confirmed = schedules.filter((item) => item.status === "confirmed").length;
@@ -4558,7 +4558,7 @@ export function MettasoulApp() {
             </div>
           </Panel>
         </div>
-        {AssignmentSummaryPanel()}
+        <AssignmentSummaryPanel />
       </div>
     );
   }
@@ -5557,7 +5557,7 @@ export function MettasoulApp() {
   }
 
   function LessonPlansPanel() {
-    return role === "admin" ? AdminLessonPlansPanel() : TeacherLessonPlansPanel();
+    return role === "admin" ? <AdminLessonPlansPanel /> : <TeacherLessonPlansPanel />;
   }
 
   function AdminLessonPlansPanel() {
