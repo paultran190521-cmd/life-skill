@@ -1275,7 +1275,7 @@ export function MettasoulApp() {
 
   function formatScheduleDateTime(schedule: Schedule) {
     const slot = timeSlots.find((item) => item.id === schedule.timeSlotId);
-    const timeText = slot ? `${slot.label} ${slot.start}-${slot.end}` : "Chưa có khung giờ";
+    const timeText = slot ? `${formatTimeSlotDisplay(slot, timeSlots)} · ${slot.start}-${slot.end}` : "Chưa có khung giờ";
     return `${formatDate(schedule.date)} • ${timeText}`;
   }
 
@@ -4275,7 +4275,7 @@ export function MettasoulApp() {
                 <div className="mt-3 grid gap-3">
                   {draftSchedule.items.map((item, index) => {
                     const rowSchool = schools.find((s) => s.id === item.schoolId);
-                    const rowTimeSlots = timeSlotsForSchool(activeTimeSlots, rowSchool?.name ?? "");
+                    const rowTimeSlots = schedulingTimeSlotsForSchool(activeTimeSlots, rowSchool?.name ?? "");
                     const rowClasses = classesForSchool(classes, item.schoolId);
                     const rowSelectedGrade = pickDefaultGradeForSchool(item.schoolId, item.classId, classes);
                     const rowGradeClasses = classesForSchoolGrade(classes, item.schoolId, rowSelectedGrade);
@@ -4322,7 +4322,7 @@ export function MettasoulApp() {
                               const grade = pickDefaultGradeForSchool(schoolId, item.classId, classes);
                               const classId = pickClassIdForSchoolGrade(schoolId, grade, item.classId, classes);
                               const selectedSchool = schools.find((s) => s.id === schoolId);
-                              const schoolSlots = timeSlotsForSchool(activeTimeSlots, selectedSchool?.name ?? "");
+                              const schoolSlots = schedulingTimeSlotsForSchool(activeTimeSlots, selectedSchool?.name ?? "");
                               const timeSlotId = schoolSlots.some((s) => s.id === item.timeSlotId)
                                 ? item.timeSlotId
                                 : schoolSlots[0]?.id ?? "";
@@ -4393,7 +4393,7 @@ export function MettasoulApp() {
                           >
                             {rowTimeSlots.map((slot) => (
                               <option key={slot.id} value={slot.id}>
-                                {slot.label} ({slot.start}-{slot.end})
+                                {formatTimeSlotDisplay(slot, activeTimeSlots)} · {slot.start}-{slot.end}
                               </option>
                             ))}
                           </select>
@@ -9079,6 +9079,100 @@ function timeSlotsForSchool(slots: TimeSlot[], schoolName: string): TimeSlot[] {
   });
 
   return filtered.length > 0 ? filtered : slots;
+}
+
+type CompositeTimeSlotInfo = {
+  first: TimeSlot;
+  second: TimeSlot;
+  duration: 90 | 95;
+};
+
+/**
+ * Finds the two 45-minute periods represented by a 90/95-minute slot.
+ * A continuous pair is 90 minutes; a five-minute break makes it 95 minutes.
+ * Slots that do not match a real adjacent pair are legacy/generated variants
+ * and must not be offered when assigning a new schedule.
+ */
+function getCompositeTimeSlotInfo(slot: TimeSlot, slots: TimeSlot[]): CompositeTimeSlotInfo | null {
+  const duration = getTimeSlotDurationMinutes(slot.start, slot.end);
+  if (duration !== 90 && duration !== 95) {
+    return null;
+  }
+
+  const prefix = getTimeSlotSchoolPrefix(slot.label);
+  const simplePeriods = slots
+    .filter(
+      (candidate) =>
+        getTimeSlotSchoolPrefix(candidate.label) === prefix &&
+        getTimeSlotDurationMinutes(candidate.start, candidate.end) === 45,
+    )
+    .sort((left, right) => left.start.localeCompare(right.start));
+
+  for (let index = 0; index < simplePeriods.length - 1; index += 1) {
+    const first = simplePeriods[index];
+    const second = simplePeriods[index + 1];
+    const breakMinutes = getTimeSlotDurationMinutes(first.end, second.start);
+    const expectedDuration = breakMinutes === 0 ? 90 : breakMinutes === 5 ? 95 : 0;
+
+    if (
+      expectedDuration === duration &&
+      normalizeTimeValue(slot.start) === normalizeTimeValue(first.start) &&
+      normalizeTimeValue(slot.end) === normalizeTimeValue(second.end)
+    ) {
+      return { first, second, duration: expectedDuration as 90 | 95 };
+    }
+  }
+
+  return null;
+}
+
+function schedulingTimeSlotsForSchool(slots: TimeSlot[], schoolName: string): TimeSlot[] {
+  return timeSlotsForSchool(slots, schoolName)
+    .filter((slot) => {
+      const duration = getTimeSlotDurationMinutes(slot.start, slot.end);
+      return duration !== 90 && duration !== 95 || Boolean(getCompositeTimeSlotInfo(slot, slots));
+    })
+    .sort((left, right) => left.start.localeCompare(right.start) || left.end.localeCompare(right.end));
+}
+
+function formatTimeSlotDisplay(slot: TimeSlot, slots: TimeSlot[]) {
+  const composite = getCompositeTimeSlotInfo(slot, slots);
+  if (!composite) {
+    return slot.label;
+  }
+
+  return `${formatPeriodPair(composite.first.label, composite.second.label)} (${composite.duration}ph)`;
+}
+
+function getTimeSlotSchoolPrefix(label: string) {
+  const dashIndex = label.indexOf(" - ");
+  return normalizeComparableText(dashIndex === -1 ? "" : label.slice(0, dashIndex));
+}
+
+function formatPeriodPair(firstLabel: string, secondLabel: string) {
+  const first = parsePeriodLabel(firstLabel);
+  const second = parsePeriodLabel(secondLabel);
+  if (!first || !second || first.session !== second.session) {
+    return `${shortenPeriodLabel(firstLabel)}, ${shortenPeriodLabel(secondLabel)}`;
+  }
+
+  return `Tiết ${first.number}, ${second.number}${first.session}`;
+}
+
+function parsePeriodLabel(label: string): { number: string; session: "S" | "C" } | null {
+  const normalized = normalizeComparableText(shortenPeriodLabel(label));
+  const matched = normalized.match(/tiet\s*(\d+)\s*(c)?/);
+  if (!matched) {
+    return null;
+  }
+  return { number: matched[1], session: matched[2] ? "C" : "S" };
+}
+
+function shortenPeriodLabel(label: string) {
+  const dashIndex = label.indexOf(" - ");
+  return (dashIndex === -1 ? label : label.slice(dashIndex + 3))
+    .replace(/\s*\(\s*\d+\s*(?:p|phut|phút)\s*\)\s*$/i, "")
+    .trim();
 }
 
 function pickDefaultGradeForSchool(schoolId: string, currentClassId: string, classRooms: ClassRoom[]) {
