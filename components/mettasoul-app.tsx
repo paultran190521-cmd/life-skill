@@ -41,6 +41,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { statusLabels, statusStyles } from "@/lib/status";
+import { hasTeacherTimeConflict } from "@/lib/schedule-conflict-policy";
 import {
   MIN_TIME_SLOT_MINUTES,
   MAX_TIME_SLOT_MINUTES,
@@ -1115,8 +1116,7 @@ export function MettasoulApp() {
             });
           } else {
             // Same school rules
-            const bothOutdoor = ex.env !== "in_class" && draftEnv !== "in_class";
-            if (!bothOutdoor) {
+            if (hasTeacherTimeConflict([ex], { schoolId: draftSchoolId, teachingEnvironment: draftEnv })) {
               // Rule 2: same school, at least one in_class = conflict
               pushDraftConflict(conflicts, dedupe, {
                 source: "existing",
@@ -1145,8 +1145,7 @@ export function MettasoulApp() {
               classId: schedule.classId,
             });
           } else {
-            const bothOutdoor = dr.env !== "in_class" && draftEnv !== "in_class";
-            if (!bothOutdoor) {
+            if (hasTeacherTimeConflict([dr], { schoolId: draftSchoolId, teachingEnvironment: draftEnv })) {
               pushDraftConflict(conflicts, dedupe, {
                 source: "draft",
                 scope: "teacher",

@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "test:authz": "node scripts/test-authz.mjs",
+    "test:schedule-conflicts": "node scripts/test-schedule-conflict-policy.mjs",
     "benchmark:schedules": "node scripts/benchmark-schedules.mjs",
     "setup:sheets": "node scripts/setup-google-sheets.mjs",
     "lint": "next lint"

@@ -5,11 +5,18 @@ type ScheduleLike = {
   timeSlotId?: string;
   teacherId?: string;
   classId?: string;
+  schoolId?: string;
+  teachingEnvironment?: string;
   status?: string;
 };
 
+export type TeacherSlotInfo = {
+  schoolId: string;
+  teachingEnvironment: string;
+};
+
 type ScheduleConflictIndex = {
-  teacherKeySet: Set<string>;
+  teacherSlotsByKey: Map<string, TeacherSlotInfo[]>;
   classKeySet: Set<string>;
   source: "cache" | "sheet";
 };
@@ -17,7 +24,7 @@ type ScheduleConflictIndex = {
 let scheduleConflictCache:
   | {
       expiresAt: number;
-      teacherKeySet: Set<string>;
+      teacherSlotsByKey: Map<string, TeacherSlotInfo[]>;
       classKeySet: Set<string>;
     }
   | null = null;
@@ -30,7 +37,7 @@ export async function getScheduleConflictIndex(): Promise<ScheduleConflictIndex 
   const now = Date.now();
   if (scheduleConflictCache && scheduleConflictCache.expiresAt > now) {
     return {
-      teacherKeySet: new Set(scheduleConflictCache.teacherKeySet),
+      teacherSlotsByKey: cloneTeacherSlots(scheduleConflictCache.teacherSlotsByKey),
       classKeySet: new Set(scheduleConflictCache.classKeySet),
       source: "cache",
     };
@@ -41,21 +48,19 @@ export async function getScheduleConflictIndex(): Promise<ScheduleConflictIndex 
       ttlMs: readPositiveIntEnv("SCHEDULE_CONFLICT_INDEX_SOURCE_TTL_MS", 60_000),
     });
     const activeRows = rows.filter((row) => isScheduleActive(row.status));
-    const teacherKeySet = new Set(
-      activeRows.map((row) => buildTeacherSlotKey(row.date, row.timeSlotId, row.teacherId)),
-    );
+    const teacherSlotsByKey = buildTeacherSlots(activeRows);
     const classKeySet = new Set(
       activeRows.map((row) => buildClassSlotKey(row.date, row.timeSlotId, row.classId)),
     );
 
     scheduleConflictCache = {
-      teacherKeySet,
+      teacherSlotsByKey,
       classKeySet,
       expiresAt: now + readPositiveIntEnv("SCHEDULE_CONFLICT_INDEX_TTL_MS", 60_000),
     };
 
     return {
-      teacherKeySet: new Set(teacherKeySet),
+      teacherSlotsByKey: cloneTeacherSlots(teacherSlotsByKey),
       classKeySet: new Set(classKeySet),
       source: "sheet",
     };
@@ -74,11 +79,33 @@ export function addSchedulesToConflictIndex(schedules: ScheduleLike[]) {
     if (!isScheduleActive(schedule.status)) {
       continue;
     }
-    scheduleConflictCache.teacherKeySet.add(
-      buildTeacherSlotKey(schedule.date, schedule.timeSlotId, schedule.teacherId),
-    );
+    const teacherKey = buildTeacherSlotKey(schedule.date, schedule.timeSlotId, schedule.teacherId);
+    const slots = scheduleConflictCache.teacherSlotsByKey.get(teacherKey) ?? [];
+    slots.push({
+      schoolId: normalizeId(schedule.schoolId),
+      teachingEnvironment: normalizeId(schedule.teachingEnvironment) || "in_class",
+    });
+    scheduleConflictCache.teacherSlotsByKey.set(teacherKey, slots);
     scheduleConflictCache.classKeySet.add(buildClassSlotKey(schedule.date, schedule.timeSlotId, schedule.classId));
   }
+}
+
+function buildTeacherSlots(rows: ScheduleLike[]) {
+  const slotsByKey = new Map<string, TeacherSlotInfo[]>();
+  for (const row of rows) {
+    const key = buildTeacherSlotKey(row.date, row.timeSlotId, row.teacherId);
+    const slots = slotsByKey.get(key) ?? [];
+    slots.push({
+      schoolId: normalizeId(row.schoolId),
+      teachingEnvironment: normalizeId(row.teachingEnvironment) || "in_class",
+    });
+    slotsByKey.set(key, slots);
+  }
+  return slotsByKey;
+}
+
+function cloneTeacherSlots(source: Map<string, TeacherSlotInfo[]>) {
+  return new Map(Array.from(source, ([key, slots]) => [key, slots.map((slot) => ({ ...slot }))]));
 }
 
 export function invalidateScheduleConflictIndex() {

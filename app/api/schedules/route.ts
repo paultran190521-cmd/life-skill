@@ -4,7 +4,12 @@ import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
 import { sendScheduleDigestEmail } from "@/lib/email";
 import { appendSheetRows, clearSheetData, readSheetRows, readSheetRowsBatch, readSheetRowsCached } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
-import { addSchedulesToConflictIndex, getScheduleConflictIndex } from "@/lib/schedule-conflict-index";
+import { hasTeacherTimeConflict } from "@/lib/schedule-conflict-policy";
+import {
+  addSchedulesToConflictIndex,
+  getScheduleConflictIndex,
+  type TeacherSlotInfo,
+} from "@/lib/schedule-conflict-index";
 import type { Notification, Schedule, TeachingEnvironment } from "@/lib/types";
 
 type ScheduleDraftItem = {
@@ -14,6 +19,8 @@ type ScheduleDraftItem = {
   lessonId: string;
   timeSlotId: string;
   teachingEnvironment: TeachingEnvironment;
+  teacherIds: string[];
+  assistantIds: string[];
 };
 
 type EmailResult = {
@@ -54,12 +61,13 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as Record<string, unknown>;
     const now = new Date().toISOString();
-    const teacherIds = parseTeacherIds(body);
-    const items = parseScheduleItems(body);
+    const fallbackTeacherIds = parseTeacherIds(body);
+    const items = parseScheduleItems(body, fallbackTeacherIds);
     const { teachers, schools, classes, lessons, slots } = await loadReferenceData();
     const normalizedItems = normalizeScheduleItems(items, { schools, classes, lessons, slots });
+    const teacherIds = Array.from(new Set(normalizedItems.flatMap((item) => item.teacherIds)));
 
-    const validationMessage = validateScheduleInput(body, teacherIds, normalizedItems, {
+    const validationMessage = validateScheduleInput(teacherIds, normalizedItems, {
       teachers,
       schools,
       classes,
@@ -70,8 +78,8 @@ export async function POST(request: Request) {
       return apiFailure(400, validationMessage, undefined, requestId);
     }
 
-    const schedules: Schedule[] = teacherIds.flatMap((teacherId) =>
-      normalizedItems.map((item) => ({
+    const schedules: Schedule[] = normalizedItems.flatMap((item) =>
+      item.teacherIds.map((teacherId) => ({
         id: createId("sch"),
         date: item.date,
         teacherId,
@@ -80,6 +88,7 @@ export async function POST(request: Request) {
         lessonId: item.lessonId,
         timeSlotId: item.timeSlotId,
         teachingEnvironment: item.teachingEnvironment,
+        assistantIds: item.assistantIds.join(",") || undefined,
         status: "sent",
         sentAt: now,
       })),
@@ -207,21 +216,19 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
   const activeExistingRows = existingRows.filter(
     (row) => normalizeComparableText(row.status || "") !== "cancelled",
   );
-  const existingTeacherKeySet = new Set(
-    activeExistingRows.map((row) => buildTeacherSlotKey(row.date, row.timeSlotId, row.teacherId)),
-  );
+  const existingTeacherSlots = buildTeacherSlots(activeExistingRows);
   const existingClassKeySet = new Set(
     activeExistingRows.map((row) => buildClassSlotKey(row.date, row.timeSlotId, row.classId)),
   );
 
-  const draftTeacherSeen = new Set<string>();
+  const draftTeacherSlots = new Map<string, TeacherSlotInfo[]>();
   const draftClassSeen = new Set<string>();
 
   for (const schedule of schedules) {
     const teacherKey = buildTeacherSlotKey(schedule.date, schedule.timeSlotId, schedule.teacherId);
     const classKey = buildClassSlotKey(schedule.date, schedule.timeSlotId, schedule.classId);
 
-    if (existingTeacherKeySet.has(teacherKey)) {
+    if (hasTeacherConflict(existingTeacherSlots.get(teacherKey) ?? [], schedule)) {
       addConflict(
         conflicts,
         dedupe,
@@ -250,7 +257,7 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
       );
     }
 
-    if (draftTeacherSeen.has(teacherKey)) {
+    if (hasTeacherConflict(draftTeacherSlots.get(teacherKey) ?? [], schedule)) {
       addConflict(
         conflicts,
         dedupe,
@@ -263,9 +270,8 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
           classId: schedule.classId,
         },
       );
-    } else {
-      draftTeacherSeen.add(teacherKey);
     }
+    addTeacherSlot(draftTeacherSlots, teacherKey, schedule);
 
     if (draftClassSeen.has(classKey)) {
       addConflict(
@@ -291,7 +297,7 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
 async function detectScheduleConflictsSafe(schedules: Schedule[]) {
   const conflictIndex = await getScheduleConflictIndex();
   if (conflictIndex) {
-    return detectScheduleConflictsWithSets(schedules, conflictIndex.teacherKeySet, conflictIndex.classKeySet);
+    return detectScheduleConflictsWithSets(schedules, conflictIndex.teacherSlotsByKey, conflictIndex.classKeySet);
   }
 
   const existingSchedules = await readSheetRows("Schedules");
@@ -300,19 +306,19 @@ async function detectScheduleConflictsSafe(schedules: Schedule[]) {
 
 function detectScheduleConflictsWithSets(
   schedules: Schedule[],
-  existingTeacherKeySet: Set<string>,
+  existingTeacherSlots: Map<string, TeacherSlotInfo[]>,
   existingClassKeySet: Set<string>,
 ) {
   const conflicts: ScheduleConflict[] = [];
   const dedupe = new Set<string>();
-  const draftTeacherSeen = new Set<string>();
+  const draftTeacherSlots = new Map<string, TeacherSlotInfo[]>();
   const draftClassSeen = new Set<string>();
 
   for (const schedule of schedules) {
     const teacherKey = buildTeacherSlotKey(schedule.date, schedule.timeSlotId, schedule.teacherId);
     const classKey = buildClassSlotKey(schedule.date, schedule.timeSlotId, schedule.classId);
 
-    if (existingTeacherKeySet.has(teacherKey)) {
+    if (hasTeacherConflict(existingTeacherSlots.get(teacherKey) ?? [], schedule)) {
       addConflict(conflicts, dedupe, {
         conflictType: "teacher",
         source: "existing",
@@ -333,7 +339,7 @@ function detectScheduleConflictsWithSets(
       });
     }
 
-    if (draftTeacherSeen.has(teacherKey)) {
+    if (hasTeacherConflict(draftTeacherSlots.get(teacherKey) ?? [], schedule)) {
       addConflict(conflicts, dedupe, {
         conflictType: "teacher",
         source: "draft",
@@ -342,9 +348,8 @@ function detectScheduleConflictsWithSets(
         teacherId: schedule.teacherId,
         classId: schedule.classId,
       });
-    } else {
-      draftTeacherSeen.add(teacherKey);
     }
+    addTeacherSlot(draftTeacherSlots, teacherKey, schedule);
 
     if (draftClassSeen.has(classKey)) {
       addConflict(conflicts, dedupe, {
@@ -361,6 +366,33 @@ function detectScheduleConflictsWithSets(
   }
 
   return conflicts;
+}
+
+function buildTeacherSlots(rows: Array<Record<string, string>>) {
+  const slotsByKey = new Map<string, TeacherSlotInfo[]>();
+  for (const row of rows) {
+    const key = buildTeacherSlotKey(row.date, row.timeSlotId, row.teacherId);
+    const slots = slotsByKey.get(key) ?? [];
+    slots.push({
+      schoolId: normalizeId(row.schoolId),
+      teachingEnvironment: normalizeTeachingEnvironment(row.teachingEnvironment),
+    });
+    slotsByKey.set(key, slots);
+  }
+  return slotsByKey;
+}
+
+function hasTeacherConflict(existingSlots: TeacherSlotInfo[], schedule: Schedule) {
+  return hasTeacherTimeConflict(existingSlots, schedule);
+}
+
+function addTeacherSlot(slotsByKey: Map<string, TeacherSlotInfo[]>, key: string, schedule: Schedule) {
+  const slots = slotsByKey.get(key) ?? [];
+  slots.push({
+    schoolId: schedule.schoolId,
+    teachingEnvironment: schedule.teachingEnvironment ?? "in_class",
+  });
+  slotsByKey.set(key, slots);
 }
 
 function addConflict(
@@ -399,7 +431,12 @@ function parseTeacherIds(body: Record<string, unknown>) {
   return Array.from(new Set(rawIds.map((id) => normalizeId(id)).filter(Boolean)));
 }
 
-function parseScheduleItems(body: Record<string, unknown>): ScheduleDraftItem[] {
+function parseIdList(value: unknown) {
+  const values = Array.isArray(value) ? value : String(value || "").split(",");
+  return Array.from(new Set(values.map((id) => normalizeId(id)).filter(Boolean)));
+}
+
+function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: string[]): ScheduleDraftItem[] {
   const rawItems = Array.isArray(body.items) ? body.items : [];
   if (rawItems.length > 0) {
     return rawItems
@@ -412,6 +449,8 @@ function parseScheduleItems(body: Record<string, unknown>): ScheduleDraftItem[] 
           lessonId: normalizeId(entry.lessonId),
           timeSlotId: normalizeId(entry.timeSlotId),
           teachingEnvironment: normalizeTeachingEnvironment(entry.teachingEnvironment),
+          teacherIds: Object.hasOwn(entry, "teacherIds") ? parseIdList(entry.teacherIds) : fallbackTeacherIds,
+          assistantIds: parseIdList(entry.assistantIds),
         };
       })
       .filter((item) => item.date && item.schoolId && item.classId && item.lessonId && item.timeSlotId);
@@ -424,6 +463,8 @@ function parseScheduleItems(body: Record<string, unknown>): ScheduleDraftItem[] 
     lessonId: normalizeId(body.lessonId),
     timeSlotId: normalizeId(body.timeSlotId),
     teachingEnvironment: normalizeTeachingEnvironment(body.teachingEnvironment),
+    teacherIds: fallbackTeacherIds,
+    assistantIds: parseIdList(body.assistantIds),
   };
   return fallbackItem.date && fallbackItem.schoolId && fallbackItem.classId && fallbackItem.lessonId && fallbackItem.timeSlotId
     ? [fallbackItem]
@@ -463,7 +504,6 @@ function normalizeScheduleItems(
 }
 
 function validateScheduleInput(
-  body: Record<string, unknown>,
   teacherIds: string[],
   items: ScheduleDraftItem[],
   data: {
@@ -483,6 +523,9 @@ function validateScheduleInput(
   for (const item of items) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
       return "Ngày dạy không hợp lệ.";
+    }
+    if (item.teacherIds.length === 0) {
+      return "Mỗi dòng lịch phải chọn ít nhất một giáo viên.";
     }
     const school = findSchool(data.schools, item.schoolId);
     if (!school) {
