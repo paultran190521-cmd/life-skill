@@ -413,7 +413,7 @@ export async function clearSheetData(sheetName: SheetName) {
         },
       });
       invalidateSheetRowsCache(sheetName);
-      return rowCount - 1;
+      return dataRowCount;
     }
   } catch (deleteError) {
     console.warn(

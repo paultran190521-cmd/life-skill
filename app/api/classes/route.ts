@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
-import { appendSheetRow, appendSheetRows, readSheetRows } from "@/lib/google-sheets";
+import { appendSheetRow, appendSheetRows, clearSheetData, readSheetRows } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 
 export async function GET() {
@@ -105,6 +105,57 @@ export async function POST(request: Request) {
   }
 }
 
+export async function DELETE(request: Request) {
+  const requestId = createRequestId("classes-delete-all");
+  try {
+    const auth = await requireSessionUser(request);
+    const permission = evaluateRolePermission(auth.user, "admin", "admin_only_classes_write");
+    if (permission.decision === "would_block") {
+      console.warn(`[auth-shadow][${requestId}] classes.delete_all ${permission.reason}`);
+    }
+    if (!permission.allowed) {
+      return apiFailure(403, "Bạn không có quyền thực hiện thao tác này.", undefined, requestId);
+    }
+
+    const [classes, schedules] = await Promise.all([readSheetRows("Classes"), readSheetRows("Schedules")]);
+    const classIds = new Set(classes.map((classRoom) => classRoom.id));
+    const linkedSchedules = schedules.filter(
+      (schedule) => schedule.status !== "cancelled" && scheduleReferencesAnyClass(schedule, classIds),
+    );
+
+    if (linkedSchedules.length > 0) {
+      return apiFailure(
+        400,
+        `Không thể xóa toàn bộ lớp vì còn ${linkedSchedules.length} lịch dạy chưa hủy đang liên quan. Hãy hủy hoặc xóa các lịch đó trước.`,
+        undefined,
+        requestId,
+      );
+    }
+
+    const deleted = await clearSheetData("Classes");
+    await appendAuditLog({
+      requestId,
+      actor: auth.user,
+      action: "classes.delete_all",
+      entityType: "Class",
+      entityId: "all",
+      route: "/api/classes",
+      method: "DELETE",
+      authMode: permission.authMode,
+      decision: permission.decision,
+      reason: permission.reason,
+      source: auth.source,
+      before: {
+        count: classes.length,
+        classIds: classes.map((classRoom) => classRoom.id),
+      },
+    });
+    return NextResponse.json({ deleted });
+  } catch (error) {
+    return apiError(error, requestId);
+  }
+}
+
 function inferGradeFromClassName(className: string, fallbackGrade: string) {
   const matched = className.match(/\d{1,2}/);
   if (!matched) {
@@ -117,4 +168,15 @@ function inferGradeFromClassName(className: string, fallbackGrade: string) {
   }
 
   return `Khối ${gradeNumber}`;
+}
+
+function scheduleReferencesAnyClass(schedule: Record<string, string>, classIds: Set<string>) {
+  if (classIds.has(schedule.classId)) {
+    return true;
+  }
+
+  return String(schedule.participantClassIds || "")
+    .split(",")
+    .map((id) => id.trim())
+    .some((id) => classIds.has(id));
 }

@@ -3246,6 +3246,20 @@ export function MettasoulApp() {
   }
 
   async function deleteClassRoom(classId: string) {
+    const linkedSchedules = schedules.filter(
+      (schedule) =>
+        schedule.status !== "cancelled" &&
+        (schedule.classId === classId || schedule.participantClassIds?.split(",").some((id) => id.trim() === classId)),
+    ).length;
+    if (linkedSchedules > 0) {
+      pushToast(
+        "Chưa thể xóa lớp",
+        `Lớp này đang được dùng trong ${linkedSchedules} lịch dạy chưa hủy. Hãy hủy hoặc xóa lịch liên quan trước.`,
+        "warning",
+      );
+      return;
+    }
+
     const confirmed = await openConfirmDialog({
       title: "Xóa lớp",
       message: "Bạn chắc chắn muốn xóa lớp này khỏi hệ thống?",
@@ -3267,6 +3281,56 @@ export function MettasoulApp() {
         cancelEditClassRoom();
       }
       pushToast("Đã xóa lớp", "Lớp đã được xóa khỏi hệ thống.", "warning");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function deleteAllClassRooms() {
+    if (classes.length === 0) {
+      return;
+    }
+
+    const classIds = new Set(classes.map((classRoom) => classRoom.id));
+    const linkedSchedules = schedules.filter(
+      (schedule) =>
+        schedule.status !== "cancelled" &&
+        (classIds.has(schedule.classId) ||
+          schedule.participantClassIds?.split(",").some((id) => classIds.has(id.trim()))),
+    ).length;
+    if (linkedSchedules > 0) {
+      pushToast(
+        "Chưa thể xóa toàn bộ lớp",
+        `Còn ${linkedSchedules} lịch dạy chưa hủy đang gắn với lớp. Hãy hủy hoặc xóa các lịch đó trước để tránh mất liên kết dữ liệu.`,
+        "warning",
+      );
+      return;
+    }
+
+    const confirmed = await openConfirmDialog({
+      title: "Xóa toàn bộ lớp",
+      message: `Bạn sắp xóa vĩnh viễn ${classes.length} lớp. Thao tác này không thể hoàn tác.`,
+      confirmText: "Xóa toàn bộ lớp",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const result = await saveRequest<{ deleted: number }>("Đang xóa toàn bộ lớp...", "/api/classes", {
+        method: "DELETE",
+      });
+      setClasses([]);
+      setDraftSchedule((current) => ({
+        ...current,
+        classId: "",
+        items: current.items.map((item) => ({ ...item, classId: "" })),
+      }));
+      setDataStatus("connected");
+      setSaveError("");
+      cancelEditClassRoom();
+      pushToast("Đã xóa toàn bộ lớp", `Đã xóa ${result.deleted} lớp. Bạn có thể nhập danh sách lớp mới.`, "warning");
     } catch (error) {
       handleSaveError(error);
     }
@@ -7458,6 +7522,17 @@ export function MettasoulApp() {
               </button>
             </div>
             <div className="mt-4 space-y-2">
+              {classes.length > 0 ? (
+                <div className="flex justify-end">
+                  <button
+                    onClick={deleteAllClassRooms}
+                    className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-100"
+                  >
+                    <Trash2 size={14} />
+                    Xóa toàn bộ {classes.length} lớp
+                  </button>
+                </div>
+              ) : null}
               {classes.map((classRoom) => (
                 <div key={classRoom.id} className="rounded-xl bg-cyan-50 px-3 py-2 text-sm font-semibold text-[var(--brand-dark)]">
                   {editingClassId === classRoom.id ? (

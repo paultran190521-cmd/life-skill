@@ -89,7 +89,7 @@ export async function DELETE(request: Request, { params }: Params) {
       return apiFailure(404, "Không tìm thấy lớp.", undefined, requestId);
     }
     const schedules = await readSheetRows("Schedules");
-    if (schedules.some((item) => item.classId === id && item.status !== "cancelled")) {
+    if (schedules.some((item) => item.status !== "cancelled" && scheduleReferencesClass(item, id))) {
       return apiFailure(400, "Không thể xóa lớp vì đang có lịch dạy liên quan.", undefined, requestId);
     }
 
@@ -112,4 +112,15 @@ export async function DELETE(request: Request, { params }: Params) {
   } catch (error) {
     return apiError(error, requestId);
   }
+}
+
+function scheduleReferencesClass(schedule: Record<string, string>, classId: string) {
+  if (schedule.classId === classId) {
+    return true;
+  }
+
+  return String(schedule.participantClassIds || "")
+    .split(",")
+    .map((id) => id.trim())
+    .includes(classId);
 }
