@@ -4084,8 +4084,16 @@ export function MettasoulApp() {
             </div>,
             document.body,
           ) : null}
-          {appDialog ? (
+          {appDialog && typeof document !== "undefined" ? createPortal(
             <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={`dialog-title-${appDialog.id}`}
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  resolveDialog(appDialog.variant === "prompt" ? null : false);
+                }
+              }}
               className={`fixed inset-0 z-[60] grid place-items-center overflow-hidden bg-slate-950/45 p-4 backdrop-blur-sm transition-opacity duration-200 ${
                 appDialog.leaving ? "opacity-0" : "opacity-100"
               }`}
@@ -4103,7 +4111,9 @@ export function MettasoulApp() {
                 >
                   {appDialog.tone === "danger" ? <Trash2 size={20} /> : <Pencil size={20} />}
                 </div>
-                <h2 className="mt-4 text-xl font-black text-[var(--brand-dark)]">{appDialog.title}</h2>
+                <h2 id={`dialog-title-${appDialog.id}`} className="mt-4 text-xl font-black text-[var(--brand-dark)]">
+                  {appDialog.title}
+                </h2>
                 <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{appDialog.message}</p>
                 {appDialog.variant === "prompt" ? (
                   <input
@@ -4146,7 +4156,8 @@ export function MettasoulApp() {
                   </button>
                 </div>
               </div>
-            </div>
+            </div>,
+            document.body,
           ) : null}
         </section>
       </div>
