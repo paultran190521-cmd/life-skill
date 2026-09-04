@@ -49,7 +49,6 @@ import {
   isValidTimeSlotDuration,
   normalizeTimeSlotLabel,
   normalizeTimeValue,
-  timeSlotDuplicateKey,
 } from "@/lib/time-slots";
 import type {
   Attendance,
@@ -3007,11 +3006,11 @@ export function MettasoulApp() {
       return;
     }
 
-    // Check within-file duplicates (always reject)
+    // Check within-file duplicate labels (always reject)
+    // NOTE: only check labels — different schools can share the same start/end times
     const duplicateLabels = findDuplicateValues(rows.map((row) => normalizeTimeSlotLabel(row.label)));
-    const duplicateTimes = findDuplicateValues(rows.map((row) => timeSlotDuplicateKey(normalizeTimeSlotDraft(row))));
-    if (duplicateLabels.length > 0 || duplicateTimes.length > 0) {
-      pushToast("Dữ liệu bị trùng", "File có khung giờ trùng tên hoặc trùng giờ bắt đầu/kết thúc.", "warning");
+    if (duplicateLabels.length > 0) {
+      pushToast("Dữ liệu bị trùng", "File có khung giờ trùng tên.", "warning");
       return;
     }
 
@@ -5247,7 +5246,7 @@ export function MettasoulApp() {
     return (
       <Panel
         title="Thiết lập Khung giờ dạy"
-        action={`${timeSlots.length} khung • chuẩn 45/90 phút`}
+        action={`${timeSlots.length} khung`}
         collapsed={collapsedSettingsSections.slots}
         onToggleCollapse={() => toggleSettingsSection("slots")}
       >
@@ -5289,7 +5288,7 @@ export function MettasoulApp() {
             <div className="mt-5 rounded-2xl bg-cyan-50 p-4">
               <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Import Excel nhanh</p>
               <p className="mt-1 text-sm font-semibold text-[var(--muted)]">
-                File mẫu chỉ nhận khung 45 phút hoặc 90 phút để đồng bộ với lịch dạy.
+                File mẫu nhận khung giờ từ {MIN_TIME_SLOT_MINUTES}–{MAX_TIME_SLOT_MINUTES} phút (bội số {TIME_SLOT_STEP_MINUTES}).
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
@@ -8496,15 +8495,15 @@ function validateTimeSlotDraft(
   }
 
   const labelKey = normalizeTimeSlotLabel(normalized.label);
-  const timeKey = timeSlotDuplicateKey(normalized);
   const duplicated = existingSlots.some((slot) => {
     if (slot.id === ignoreId) {
       return false;
     }
-    return normalizeTimeSlotLabel(slot.label) === labelKey || timeSlotDuplicateKey(slot) === timeKey;
+    // Only check label — different schools can share the same start/end times
+    return normalizeTimeSlotLabel(slot.label) === labelKey;
   });
   if (duplicated) {
-    return `${label}: Khung giờ bị trùng tên hoặc trùng giờ bắt đầu/kết thúc.`;
+    return `${label}: Khung giờ bị trùng tên.`;
   }
 
   return "";

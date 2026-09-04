@@ -3,7 +3,7 @@ import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
 import { validationError } from "@/lib/app-error";
 import { appendSheetRow, appendSheetRows, clearSheetData, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
-import { normalizeTimeSlotInput, normalizeTimeSlotLabel, timeSlotDuplicateKey } from "@/lib/time-slots";
+import { normalizeTimeSlotInput, normalizeTimeSlotLabel } from "@/lib/time-slots";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 
 export async function GET() {
@@ -39,14 +39,7 @@ export async function POST(request: Request) {
       const key = normalizeTimeSlotLabel(String(slot.label || ""));
       if (key) existingByLabel.set(key, slot);
     }
-    const existingTimes = new Set(
-      existingSlots
-        .map((slot) => timeSlotDuplicateKey({ start: String(slot.start || ""), end: String(slot.end || "") }))
-        .filter((key) => key !== "-"),
-    );
-
     const seenLabels = new Set<string>();
-    const seenTimes = new Set<string>();
     const toInsert: Array<Record<string, unknown>> = [];
     const toUpdate: Array<{ existingId: string; patch: Record<string, unknown> }> = [];
 
@@ -54,14 +47,11 @@ export async function POST(request: Request) {
       const item = rawSlots[index] as Record<string, unknown>;
       const normalized = normalizeTimeSlotInput(item);
       const labelKey = normalizeTimeSlotLabel(normalized.label);
-      const timeKey = timeSlotDuplicateKey(normalized);
 
-      // Within-file duplicate check (always reject)
+      // Within-file duplicate label check (always reject)
+      // NOTE: only check labels — different schools can share the same start/end times
       if (seenLabels.has(labelKey)) {
         throw validationError(`Dòng khung giờ ${index + 1} bị trùng tên trong file.`);
-      }
-      if (seenTimes.has(timeKey)) {
-        throw validationError(`Dòng khung giờ ${index + 1} bị trùng giờ bắt đầu/kết thúc trong file.`);
       }
 
       const existingSlot = existingByLabel.get(labelKey);
@@ -78,8 +68,6 @@ export async function POST(request: Request) {
             updatedAt: now,
           },
         });
-      } else if (!overwrite && existingTimes.has(timeKey)) {
-        throw validationError(`Dòng khung giờ ${index + 1} bị trùng giờ bắt đầu/kết thúc.`);
       } else {
         // New slot
         toInsert.push({
@@ -91,7 +79,6 @@ export async function POST(request: Request) {
       }
 
       seenLabels.add(labelKey);
-      seenTimes.add(timeKey);
     }
 
     // Perform updates for existing slots
