@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
-import { appendAuditLog } from "@/lib/audit";
+import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
 import { appendSheetRow, appendSheetRows, clearSheetData, readSheetRows } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 
@@ -81,9 +81,8 @@ export async function POST(request: Request) {
     }
 
     await appendSheetRows("Classes", classes);
-    await Promise.all(
-      classes.map((classRow: Record<string, unknown>) =>
-        appendAuditLog({
+    await appendAuditLogs(
+      classes.map((classRow: Record<string, unknown>) => ({
           requestId,
           actor: auth.user,
           action: "class.create",
@@ -96,8 +95,7 @@ export async function POST(request: Request) {
           reason: permission.reason,
           source: auth.source,
           after: classRow,
-        }),
-      ),
+        })),
     );
     return NextResponse.json({ classes });
   } catch (error) {
