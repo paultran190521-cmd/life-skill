@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
 import { validationError } from "@/lib/app-error";
-import { appendSheetRow, appendSheetRows, clearSheetData, readSheetRows } from "@/lib/google-sheets";
+import { appendSheetRow, appendSheetRows, clearSheetData, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
 import { normalizeTimeSlotInput, normalizeTimeSlotLabel, timeSlotDuplicateKey } from "@/lib/time-slots";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 
@@ -29,11 +29,16 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const now = new Date().toISOString();
+    const overwrite = body?.overwrite === true;
     const rawSlots = Array.isArray(body?.timeSlots) ? body.timeSlots : Array.isArray(body) ? body : [body];
     const existingSlots = await readSheetRows("TimeSlots");
-    const existingLabels = new Set(
-      existingSlots.map((slot) => normalizeTimeSlotLabel(String(slot.label || ""))).filter(Boolean),
-    );
+
+    // Build lookup maps for existing slots
+    const existingByLabel = new Map<string, Record<string, unknown>>();
+    for (const slot of existingSlots) {
+      const key = normalizeTimeSlotLabel(String(slot.label || ""));
+      if (key) existingByLabel.set(key, slot);
+    }
     const existingTimes = new Set(
       existingSlots
         .map((slot) => timeSlotDuplicateKey({ start: String(slot.start || ""), end: String(slot.end || "") }))
@@ -42,68 +47,102 @@ export async function POST(request: Request) {
 
     const seenLabels = new Set<string>();
     const seenTimes = new Set<string>();
-    const timeSlots: Array<Record<string, unknown>> = rawSlots.map((item: Record<string, unknown>, index: number) => {
+    const toInsert: Array<Record<string, unknown>> = [];
+    const toUpdate: Array<{ existingId: string; patch: Record<string, unknown> }> = [];
+
+    for (let index = 0; index < rawSlots.length; index++) {
+      const item = rawSlots[index] as Record<string, unknown>;
       const normalized = normalizeTimeSlotInput(item);
       const labelKey = normalizeTimeSlotLabel(normalized.label);
       const timeKey = timeSlotDuplicateKey(normalized);
 
-      if (existingLabels.has(labelKey) || seenLabels.has(labelKey)) {
-        throw validationError(`Dòng khung giờ ${index + 1} bị trùng tên.`);
+      // Within-file duplicate check (always reject)
+      if (seenLabels.has(labelKey)) {
+        throw validationError(`Dòng khung giờ ${index + 1} bị trùng tên trong file.`);
       }
-      if (existingTimes.has(timeKey) || seenTimes.has(timeKey)) {
+      if (seenTimes.has(timeKey)) {
+        throw validationError(`Dòng khung giờ ${index + 1} bị trùng giờ bắt đầu/kết thúc trong file.`);
+      }
+
+      const existingSlot = existingByLabel.get(labelKey);
+
+      if (existingSlot) {
+        if (!overwrite) {
+          throw validationError(`Dòng khung giờ ${index + 1} bị trùng tên.`);
+        }
+        // Overwrite mode: update existing slot
+        toUpdate.push({
+          existingId: String(existingSlot.id),
+          patch: {
+            ...normalized,
+            updatedAt: now,
+          },
+        });
+      } else if (!overwrite && existingTimes.has(timeKey)) {
         throw validationError(`Dòng khung giờ ${index + 1} bị trùng giờ bắt đầu/kết thúc.`);
+      } else {
+        // New slot
+        toInsert.push({
+          id: String(item.id || createId("ts")),
+          ...normalized,
+          createdAt: now,
+          updatedAt: now,
+        });
       }
 
       seenLabels.add(labelKey);
       seenTimes.add(timeKey);
+    }
 
-      return {
-        id: String(item.id || createId("ts")),
-        ...normalized,
-        createdAt: now,
-        updatedAt: now,
-      };
-    });
-
-    if (timeSlots.length === 1) {
-      await appendSheetRow("TimeSlots", timeSlots[0]);
+    // Perform updates for existing slots
+    const updatedSlots: Array<Record<string, unknown>> = [];
+    for (const { existingId, patch } of toUpdate) {
+      await updateSheetRowById("TimeSlots", existingId, patch);
+      updatedSlots.push({ id: existingId, ...patch });
       await appendAuditLog({
         requestId,
         actor: auth.user,
-        action: "time_slot.create",
+        action: "time_slot.update",
         entityType: "TimeSlot",
-        entityId: String(timeSlots[0].id),
+        entityId: existingId,
         route: "/api/time-slots",
         method: "POST",
         authMode: permission.authMode,
         decision: permission.decision,
         reason: permission.reason,
         source: auth.source,
-        after: timeSlots[0],
+        after: patch,
       });
-      return NextResponse.json(timeSlots[0]);
     }
 
-    await appendSheetRows("TimeSlots", timeSlots);
-    await Promise.all(
-      timeSlots.map((slot: Record<string, unknown>) =>
-        appendAuditLog({
-          requestId,
-          actor: auth.user,
-          action: "time_slot.create",
-          entityType: "TimeSlot",
-          entityId: String(slot.id),
-          route: "/api/time-slots",
-          method: "POST",
-          authMode: permission.authMode,
-          decision: permission.decision,
-          reason: permission.reason,
-          source: auth.source,
-          after: slot,
-        }),
-      ),
-    );
-    return NextResponse.json({ timeSlots });
+    // Perform inserts for new slots
+    if (toInsert.length === 1) {
+      await appendSheetRow("TimeSlots", toInsert[0]);
+    } else if (toInsert.length > 1) {
+      await appendSheetRows("TimeSlots", toInsert);
+    }
+    for (const slot of toInsert) {
+      await appendAuditLog({
+        requestId,
+        actor: auth.user,
+        action: "time_slot.create",
+        entityType: "TimeSlot",
+        entityId: String(slot.id),
+        route: "/api/time-slots",
+        method: "POST",
+        authMode: permission.authMode,
+        decision: permission.decision,
+        reason: permission.reason,
+        source: auth.source,
+        after: slot,
+      });
+    }
+
+    return NextResponse.json({
+      timeSlots: [...updatedSlots, ...toInsert],
+      inserted: toInsert.length,
+      updated: updatedSlots.length,
+    });
   } catch (error) {
     return apiError(error, requestId);
   }

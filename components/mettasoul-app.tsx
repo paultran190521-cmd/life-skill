@@ -2997,8 +2997,9 @@ export function MettasoulApp() {
       return;
     }
 
+    // Validate format only (skip duplicate-against-existing check)
     const errors = rows
-      .map((row, index) => validateTimeSlotDraft(row, timeSlots, `Dòng ${index + 2}`, undefined, row.durationMinutes))
+      .map((row, index) => validateTimeSlotDraft(row, [], `Dòng ${index + 2}`, undefined, row.durationMinutes))
       .filter(Boolean);
     if (errors.length > 0) {
       setSaveError(errors.slice(0, 3).join(" | "));
@@ -3006,6 +3007,7 @@ export function MettasoulApp() {
       return;
     }
 
+    // Check within-file duplicates (always reject)
     const duplicateLabels = findDuplicateValues(rows.map((row) => normalizeTimeSlotLabel(row.label)));
     const duplicateTimes = findDuplicateValues(rows.map((row) => timeSlotDuplicateKey(normalizeTimeSlotDraft(row))));
     if (duplicateLabels.length > 0 || duplicateTimes.length > 0) {
@@ -3013,18 +3015,60 @@ export function MettasoulApp() {
       return;
     }
 
-    try {
-      const response = await saveRequest<{ timeSlots: TimeSlot[] } | TimeSlot>("Đang import khung giờ...", "/api/time-slots", {
-        method: "POST",
-        body: JSON.stringify({ timeSlots: rows.map((row) => normalizeTimeSlotDraft({ ...row, id: createId("ts") })) }),
+    // Check duplicates against existing data
+    const conflictSlots = rows.filter((row) => {
+      const labelKey = normalizeTimeSlotLabel(row.label);
+      return timeSlots.some((existing) => normalizeTimeSlotLabel(existing.label) === labelKey);
+    });
+
+    let overwrite = false;
+    if (conflictSlots.length > 0) {
+      const conflictNames = conflictSlots.slice(0, 10).map((s) => s.label).join(", ");
+      const moreText = conflictSlots.length > 10 ? ` và ${conflictSlots.length - 10} khung giờ khác` : "";
+      const confirmed = await openConfirmDialog({
+        title: "Khung giờ bị trùng",
+        message: `Có ${conflictSlots.length} khung giờ trùng với dữ liệu hiện tại: ${conflictNames}${moreText}.\n\nBạn có muốn ghi đè các khung giờ trùng không? Khung giờ trùng sẽ được cập nhật theo dữ liệu mới, khung giờ mới sẽ được thêm vào.`,
+        confirmText: "Ghi đè",
+        cancelText: "Hủy",
+        tone: "danger",
       });
-      const savedSlots = Array.isArray((response as { timeSlots?: TimeSlot[] }).timeSlots)
-        ? ((response as { timeSlots: TimeSlot[] }).timeSlots ?? [])
-        : [response as TimeSlot];
-      setTimeSlots((items) => [...savedSlots, ...items]);
+      if (!confirmed) return;
+      overwrite = true;
+    }
+
+    try {
+      const response = await saveRequest<{ timeSlots: TimeSlot[]; inserted: number; updated: number }>(
+        overwrite ? "Đang ghi đè khung giờ..." : "Đang import khung giờ...",
+        "/api/time-slots",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            timeSlots: rows.map((row) => normalizeTimeSlotDraft({ ...row, id: createId("ts") })),
+            overwrite,
+          }),
+        },
+      );
+      const savedSlots = Array.isArray(response.timeSlots) ? response.timeSlots : [];
+      if (overwrite) {
+        // Merge: update existing + add new
+        setTimeSlots((items) => {
+          const updatedIds = new Set(savedSlots.filter((s) => items.some((e) => e.id === s.id)).map((s) => s.id));
+          const kept = items.map((item) => {
+            const updated = savedSlots.find((s) => s.id === item.id);
+            return updated ?? item;
+          });
+          const newSlots = savedSlots.filter((s) => !updatedIds.has(s.id));
+          return [...newSlots, ...kept];
+        });
+        const insertedCount = response.inserted ?? 0;
+        const updatedCount = response.updated ?? 0;
+        pushToast("Import thành công", `Đã cập nhật ${updatedCount} và thêm mới ${insertedCount} khung giờ.`, "success");
+      } else {
+        setTimeSlots((items) => [...savedSlots, ...items]);
+        pushToast("Import thành công", `Đã thêm ${savedSlots.length} khung giờ từ file.`, "success");
+      }
       setDataStatus("connected");
       setSaveError("");
-      pushToast("Import thành công", `Đã thêm ${savedSlots.length} khung giờ từ file.`, "success");
     } catch (error) {
       handleSaveError(error);
     }
@@ -4442,7 +4486,10 @@ export function MettasoulApp() {
   }
 
   function AssignmentSummaryPanel() {
-    const activeSchedules = schedules.filter((s) => s.status !== "cancelled");
+    const activeSchedules = useMemo(
+      () => schedules.filter((s) => s.status !== "cancelled"),
+      [schedules],
+    );
     const summaryByTeacher = useMemo(() => {
       const map = new Map<string, { total: number; envCounts: Record<string, number>; schools: Set<string> }>();
       for (const s of activeSchedules) {
