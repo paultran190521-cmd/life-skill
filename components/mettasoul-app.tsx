@@ -4275,9 +4275,13 @@ export function MettasoulApp() {
                 <div className="mt-3 grid gap-3">
                   {draftSchedule.items.map((item, index) => {
                     const rowSchool = schools.find((s) => s.id === item.schoolId);
-                    const rowTimeSlots = schedulingTimeSlotsForSchool(activeTimeSlots, rowSchool?.name ?? "");
-                    const rowClasses = classesForSchool(classes, item.schoolId);
                     const rowSelectedGrade = pickDefaultGradeForSchool(item.schoolId, item.classId, classes);
+                    const rowTimeSlots = schedulingTimeSlotsForSchoolGrade(
+                      activeTimeSlots,
+                      rowSchool?.name ?? "",
+                      rowSelectedGrade,
+                    );
+                    const rowClasses = classesForSchool(classes, item.schoolId);
                     const rowGradeClasses = classesForSchoolGrade(classes, item.schoolId, rowSelectedGrade);
                     const rowTopics = activeTopics.filter(
                       (t) => normalizeComparableText(t.grade) === normalizeComparableText(rowSelectedGrade),
@@ -4322,7 +4326,11 @@ export function MettasoulApp() {
                               const grade = pickDefaultGradeForSchool(schoolId, item.classId, classes);
                               const classId = pickClassIdForSchoolGrade(schoolId, grade, item.classId, classes);
                               const selectedSchool = schools.find((s) => s.id === schoolId);
-                              const schoolSlots = schedulingTimeSlotsForSchool(activeTimeSlots, selectedSchool?.name ?? "");
+                              const schoolSlots = schedulingTimeSlotsForSchoolGrade(
+                                activeTimeSlots,
+                                selectedSchool?.name ?? "",
+                                grade,
+                              );
                               const timeSlotId = schoolSlots.some((s) => s.id === item.timeSlotId)
                                 ? item.timeSlotId
                                 : schoolSlots[0]?.id ?? "";
@@ -4347,9 +4355,18 @@ export function MettasoulApp() {
                             onChange={(e) => {
                               const grade = e.target.value;
                               const classId = pickClassIdForSchoolGrade(item.schoolId, grade, item.classId, classes);
+                              const selectedSchool = schools.find((school) => school.id === item.schoolId);
+                              const schoolSlots = schedulingTimeSlotsForSchoolGrade(
+                                activeTimeSlots,
+                                selectedSchool?.name ?? "",
+                                grade,
+                              );
                               updateDraftItem(item.id, {
                                 classId,
                                 lessonId: pickLessonIdForGrade(grade, item.lessonId, activeLessons),
+                                timeSlotId: schoolSlots.some((slot) => slot.id === item.timeSlotId)
+                                  ? item.timeSlotId
+                                  : schoolSlots[0]?.id ?? "",
                                 topicId: "",
                               });
                             }}
@@ -9099,11 +9116,10 @@ function getCompositeTimeSlotInfo(slot: TimeSlot, slots: TimeSlot[]): CompositeT
     return null;
   }
 
-  const prefix = getTimeSlotSchoolPrefix(slot.label);
   const simplePeriods = slots
     .filter(
       (candidate) =>
-        getTimeSlotSchoolPrefix(candidate.label) === prefix &&
+        getTimeSlotGroupKey(candidate.label) === getTimeSlotGroupKey(slot.label) &&
         getTimeSlotDurationMinutes(candidate.start, candidate.end) === 45,
     )
     .sort((left, right) => left.start.localeCompare(right.start));
@@ -9135,6 +9151,19 @@ function schedulingTimeSlotsForSchool(slots: TimeSlot[], schoolName: string): Ti
     .sort((left, right) => left.start.localeCompare(right.start) || left.end.localeCompare(right.end));
 }
 
+function schedulingTimeSlotsForSchoolGrade(slots: TimeSlot[], schoolName: string, grade: string): TimeSlot[] {
+  const schoolSlots = schedulingTimeSlotsForSchool(slots, schoolName);
+  const normalizedSchool = normalizeComparableText(schoolName);
+  const gradeNumber = Number(String(grade).match(/\d+/)?.[0] ?? 0);
+  if (!normalizedSchool.includes("nam sai gon") || !gradeNumber) {
+    return schoolSlots;
+  }
+
+  const targetLevel = gradeNumber <= 5 ? "1" : "2";
+  const levelSlots = schoolSlots.filter((slot) => getTimeSlotEducationLevel(slot.label) === targetLevel);
+  return levelSlots.length > 0 ? levelSlots : schoolSlots;
+}
+
 function formatTimeSlotDisplay(slot: TimeSlot, slots: TimeSlot[]) {
   const composite = getCompositeTimeSlotInfo(slot, slots);
   if (!composite) {
@@ -9147,6 +9176,15 @@ function formatTimeSlotDisplay(slot: TimeSlot, slots: TimeSlot[]) {
 function getTimeSlotSchoolPrefix(label: string) {
   const dashIndex = label.indexOf(" - ");
   return normalizeComparableText(dashIndex === -1 ? "" : label.slice(0, dashIndex));
+}
+
+function getTimeSlotGroupKey(label: string) {
+  return `${getTimeSlotSchoolPrefix(label)}|${getTimeSlotEducationLevel(label)}`;
+}
+
+function getTimeSlotEducationLevel(label: string) {
+  const matched = normalizeComparableText(label).match(/cap\s*(1|2)\b/);
+  return matched?.[1] ?? "";
 }
 
 function formatPeriodPair(firstLabel: string, secondLabel: string) {
