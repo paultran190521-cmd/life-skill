@@ -9101,18 +9101,21 @@ function timeSlotsForSchool(slots: TimeSlot[], schoolName: string): TimeSlot[] {
 type CompositeTimeSlotInfo = {
   first: TimeSlot;
   second: TimeSlot;
-  duration: 90 | 95;
+  /** Thời lượng hiển thị cho giáo viên, có thể không bao gồm giờ giải lao. */
+  duration: number;
 };
 
 /**
- * Finds the two 45-minute periods represented by a 90/95-minute slot.
- * A continuous pair is 90 minutes; a five-minute break makes it 95 minutes.
+ * Finds the two periods represented by a double-period slot.
+ * A double elementary period may contain a five-minute break: it occupies
+ * 75 minutes in the timetable but remains a 70-minute teaching frame.
  * Slots that do not match a real adjacent pair are legacy/generated variants
  * and must not be offered when assigning a new schedule.
  */
 function getCompositeTimeSlotInfo(slot: TimeSlot, slots: TimeSlot[]): CompositeTimeSlotInfo | null {
-  const duration = getTimeSlotDurationMinutes(slot.start, slot.end);
-  if (duration !== 90 && duration !== 95) {
+  const elapsedDuration = getTimeSlotDurationMinutes(slot.start, slot.end);
+  const declaredDuration = getTimeSlotLabelDuration(slot.label);
+  if (!isCompositeTimeSlotCandidate(slot, elapsedDuration, declaredDuration)) {
     return null;
   }
 
@@ -9120,7 +9123,12 @@ function getCompositeTimeSlotInfo(slot: TimeSlot, slots: TimeSlot[]): CompositeT
     .filter(
       (candidate) =>
         getTimeSlotGroupKey(candidate.label) === getTimeSlotGroupKey(slot.label) &&
-        getTimeSlotDurationMinutes(candidate.start, candidate.end) === 45,
+        getTimeSlotDurationMinutes(candidate.start, candidate.end) > 0 &&
+        !isCompositeTimeSlotCandidate(
+          candidate,
+          getTimeSlotDurationMinutes(candidate.start, candidate.end),
+          getTimeSlotLabelDuration(candidate.label),
+        ),
     )
     .sort((left, right) => left.start.localeCompare(right.start));
 
@@ -9128,14 +9136,19 @@ function getCompositeTimeSlotInfo(slot: TimeSlot, slots: TimeSlot[]): CompositeT
     const first = simplePeriods[index];
     const second = simplePeriods[index + 1];
     const breakMinutes = getTimeSlotDurationMinutes(first.end, second.start);
-    const expectedDuration = breakMinutes === 0 ? 90 : breakMinutes === 5 ? 95 : 0;
+    const teachingDuration =
+      getTimeSlotDurationMinutes(first.start, first.end) + getTimeSlotDurationMinutes(second.start, second.end);
+    const expectedElapsedDuration = teachingDuration + breakMinutes;
+    const expectedDisplayDuration =
+      declaredDuration === teachingDuration && breakMinutes === 5 ? teachingDuration : expectedElapsedDuration;
 
     if (
-      expectedDuration === duration &&
+      (declaredDuration === undefined || declaredDuration === expectedDisplayDuration) &&
+      expectedElapsedDuration === elapsedDuration &&
       normalizeTimeValue(slot.start) === normalizeTimeValue(first.start) &&
       normalizeTimeValue(slot.end) === normalizeTimeValue(second.end)
     ) {
-      return { first, second, duration: expectedDuration as 90 | 95 };
+      return { first, second, duration: expectedDisplayDuration };
     }
   }
 
@@ -9146,7 +9159,7 @@ function schedulingTimeSlotsForSchool(slots: TimeSlot[], schoolName: string): Ti
   return timeSlotsForSchool(slots, schoolName)
     .filter((slot) => {
       const duration = getTimeSlotDurationMinutes(slot.start, slot.end);
-      return duration !== 90 && duration !== 95 || Boolean(getCompositeTimeSlotInfo(slot, slots));
+      return !isCompositeTimeSlotCandidate(slot, duration, getTimeSlotLabelDuration(slot.label)) || Boolean(getCompositeTimeSlotInfo(slot, slots));
     })
     .sort((left, right) => left.start.localeCompare(right.start) || left.end.localeCompare(right.end));
 }
@@ -9170,7 +9183,23 @@ function formatTimeSlotDisplay(slot: TimeSlot, slots: TimeSlot[]) {
     return slot.label;
   }
 
+  const explicitPair = shortenPeriodLabel(slot.label);
+  if (/^tiet\s*\d+\s*,\s*\d+\s*[sc]?$/i.test(normalizeComparableText(explicitPair))) {
+    return `${explicitPair} (${composite.duration}ph)`;
+  }
+
   return `${formatPeriodPair(composite.first.label, composite.second.label)} (${composite.duration}ph)`;
+}
+
+function getTimeSlotLabelDuration(label: string): number | undefined {
+  const matched = label.match(/\(\s*(\d+)\s*(?:p|phut|phút)\s*\)\s*$/i);
+  return matched ? Number(matched[1]) : undefined;
+}
+
+function isCompositeTimeSlotCandidate(slot: TimeSlot, elapsedDuration: number, declaredDuration?: number) {
+  const label = normalizeComparableText(shortenPeriodLabel(slot.label));
+  const hasPeriodPair = /^tiet\s*\d+\s*,\s*\d+\s*[sc]?$/.test(label);
+  return hasPeriodPair || (declaredDuration !== undefined && [70, 90, 95].includes(declaredDuration) && elapsedDuration >= 70);
 }
 
 function getTimeSlotSchoolPrefix(label: string) {
