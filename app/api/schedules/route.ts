@@ -63,17 +63,19 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     const fallbackTeacherIds = parseTeacherIds(body);
     const items = parseScheduleItems(body, fallbackTeacherIds);
-    const { teachers, schools, classes, lessons, slots } = await loadReferenceData();
+    const { teachers, users, schools, classes, lessons, slots } = await loadReferenceData();
     const normalizedItems = normalizeScheduleItems(items, { schools, classes, lessons, slots });
     const teacherIds = Array.from(new Set(normalizedItems.flatMap((item) => item.teacherIds)));
+    const assistantIds = Array.from(new Set(normalizedItems.flatMap((item) => item.assistantIds)));
 
     const validationMessage = validateScheduleInput(teacherIds, normalizedItems, {
       teachers,
+      users,
       schools,
       classes,
       lessons,
       slots,
-    });
+    }, assistantIds);
     if (validationMessage) {
       return apiFailure(400, validationMessage, undefined, requestId);
     }
@@ -180,19 +182,21 @@ export async function DELETE(request: Request) {
 async function loadReferenceData() {
   if (isFeatureEnabled("SCHEDULE_REFERENCE_CACHE_ENABLED", false)) {
     const ttlMs = readPositiveIntEnv("SCHEDULE_REFERENCE_CACHE_TTL_MS", 60_000);
-    const [teachers, schools, classes, lessons, slots] = await Promise.all([
+    const [teachers, users, schools, classes, lessons, slots] = await Promise.all([
       readSheetRowsCached("Teachers", { ttlMs }),
+      readSheetRowsCached("Users", { ttlMs }),
       readSheetRowsCached("Schools", { ttlMs }),
       readSheetRowsCached("Classes", { ttlMs }),
       readSheetRowsCached("Lessons", { ttlMs }),
       readSheetRowsCached("TimeSlots", { ttlMs }),
     ]);
-    return { teachers, schools, classes, lessons, slots };
+    return { teachers, users, schools, classes, lessons, slots };
   }
 
-  const dataRows = await readSheetRowsBatch(["Teachers", "Schools", "Classes", "Lessons", "TimeSlots"] as const);
+  const dataRows = await readSheetRowsBatch(["Teachers", "Users", "Schools", "Classes", "Lessons", "TimeSlots"] as const);
   return {
     teachers: dataRows.Teachers,
+    users: dataRows.Users,
     schools: dataRows.Schools,
     classes: dataRows.Classes,
     lessons: dataRows.Lessons,
@@ -508,11 +512,13 @@ function validateScheduleInput(
   items: ScheduleDraftItem[],
   data: {
     teachers: Array<Record<string, string>>;
+    users: Array<Record<string, string>>;
     schools: Array<Record<string, string>>;
     classes: Array<Record<string, string>>;
     lessons: Array<Record<string, string>>;
     slots: Array<Record<string, string>>;
   },
+  assistantIds: string[],
 ) {
   const teacherIdSet = new Set(teacherIds.map((teacherId) => normalizeId(teacherId)));
 
@@ -547,11 +553,20 @@ function validateScheduleInput(
     }
   }
 
+  const activeAssistantIds = new Set(
+    data.users
+      .filter((item) => isRowActive(item) && normalizeId(item.role) === "assistant")
+      .map((item) => normalizeId(item.teacherId))
+      .filter(Boolean),
+  );
   const activeTeacherIds = new Set(
     data.teachers.filter((item) => isRowActive(item)).map((item) => normalizeId(item.id)),
   );
-  if (!Array.from(teacherIdSet).every((teacherId) => activeTeacherIds.has(teacherId))) {
+  if (!Array.from(teacherIdSet).every((teacherId) => activeTeacherIds.has(teacherId) && !activeAssistantIds.has(teacherId))) {
     return "Một hoặc nhiều giáo viên đã chọn không tồn tại hoặc đang tắt.";
+  }
+  if (!assistantIds.every((assistantId) => activeAssistantIds.has(normalizeId(assistantId)))) {
+    return "Một hoặc nhiều trợ giảng đã chọn không tồn tại, đang tắt hoặc chưa được phân quyền trợ giảng.";
   }
 
   return "";

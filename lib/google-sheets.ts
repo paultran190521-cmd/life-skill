@@ -838,7 +838,7 @@ function toUsers(rows: SheetRow[]): User[] {
     id: row.id,
     name: row.name,
     email: row.email,
-    role: row.role === "teacher" ? "teacher" : "admin",
+    role: row.role === "teacher" || row.role === "assistant" ? row.role : "admin",
     teacherId: row.teacherId || undefined,
     avatarUrl: row.avatarUrl || getAvatarUrl(row.email, row.name),
     isActive: parseBoolean(row.isActive, true),

@@ -570,6 +570,14 @@ export function MettasoulApp() {
   const navigationTabs = role === "admin" ? adminTabs : teacherTabs;
   const activeTabMeta = navigationTabs.find((item) => item.id === activeTab) ?? navigationTabs[0];
   const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.active !== false), [teachers]);
+  const activeSchedulingTeachers = useMemo(
+    () => activeTeachers.filter((teacher) => activeUsers.find((user) => user.teacherId === teacher.id)?.role !== "assistant"),
+    [activeTeachers, activeUsers],
+  );
+  const activeAssistantTeachers = useMemo(
+    () => activeTeachers.filter((teacher) => activeUsers.find((user) => user.teacherId === teacher.id)?.role === "assistant"),
+    [activeTeachers, activeUsers],
+  );
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
   const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);
   const hasBlockingModal = Boolean(
@@ -882,18 +890,19 @@ export function MettasoulApp() {
   }, [schools, classes, activeLessons, activeTimeSlots]);
 
   useEffect(() => {
-    if (activeTeachers.length === 0) {
-      return;
-    }
-    const activeTeacherIds = new Set(activeTeachers.map((teacher) => teacher.id));
+    const activeTeacherIds = new Set(activeSchedulingTeachers.map((teacher) => teacher.id));
+    const activeAssistantIds = new Set(activeAssistantTeachers.map((teacher) => teacher.id));
     setDraftSchedule((current) => ({
       ...current,
       items: current.items.map((item) => {
-        const nextIds = item.teacherIds.filter((id) => activeTeacherIds.has(id));
-        return nextIds.length === item.teacherIds.length ? item : { ...item, teacherIds: nextIds };
+        const teacherIds = item.teacherIds.filter((id) => activeTeacherIds.has(id));
+        const assistantIds = item.assistantIds.filter((id) => activeAssistantIds.has(id));
+        return teacherIds.length === item.teacherIds.length && assistantIds.length === item.assistantIds.length
+          ? item
+          : { ...item, teacherIds, assistantIds };
       }),
     }));
-  }, [activeTeachers]);
+  }, [activeSchedulingTeachers, activeAssistantTeachers]);
 
   useEffect(() => {
     if (schools.length === 0) {
@@ -1080,12 +1089,7 @@ export function MettasoulApp() {
     const existingClassKeys = new Set(activeSchedules.map((schedule) => buildClassSlotKey(schedule)));
 
     // Assistants bypass teacher conflicts
-    const assistantTeacherIds = new Set(
-      teachers.filter((t) => {
-        const user = appUsers.find((u) => u.teacherId === t.id);
-        return user?.role === "assistant";
-      }).map((t) => t.id),
-    );
+    const assistantTeacherIds = new Set(activeAssistantTeachers.map((teacher) => teacher.id));
 
     // Draft tracking
     const draftTeacherSlots = new Map<string, SlotInfo[]>();
@@ -1438,12 +1442,12 @@ export function MettasoulApp() {
       return;
     }
 
-    if (activeTeachers.length === 0) {
+    if (activeSchedulingTeachers.length === 0) {
       pushToast("Thiếu giáo viên", "Chưa có giáo viên hoạt động. Vào mục Giáo viên để kích hoạt hoặc thêm mới.", "warning");
       return;
     }
 
-    const activeTeacherIds = new Set(activeTeachers.map((teacher) => teacher.id));
+    const activeTeacherIds = new Set(activeSchedulingTeachers.map((teacher) => teacher.id));
     const rowsMissingTeachers = validItems
       .map((item, index) => (item.teacherIds.length === 0 ? index + 1 : null))
       .filter((row): row is number => row !== null);
@@ -1846,7 +1850,7 @@ export function MettasoulApp() {
   }
 
   function reassignSchedule(schedule: Schedule) {
-    const replacement = activeTeachers.find((teacher) => teacher.id !== schedule.teacherId);
+    const replacement = activeSchedulingTeachers.find((teacher) => teacher.id !== schedule.teacherId);
     setReassignTarget(schedule);
     setReassignTeacherId(replacement?.id ?? "");
   }
@@ -3496,7 +3500,7 @@ export function MettasoulApp() {
                 >
                   {activeUsers.map((user) => (
                     <option key={user.id} value={user.id}>
-                      {user.name} - {user.role === "admin" ? "Quản trị" : "Giáo viên"}
+                      {user.name} - {user.role === "admin" ? "Quản trị" : user.role === "assistant" ? "Trợ giảng" : "Giáo viên"}
                     </option>
                   ))}
                 </select>
@@ -3507,7 +3511,7 @@ export function MettasoulApp() {
               )}
             </label>
             <div className="mt-3 rounded-xl bg-gradient-to-r from-emerald-50 to-cyan-50 px-3 py-2 text-xs font-black text-[var(--brand-dark)]">
-              {role === "admin" ? "Quyền quản trị" : "Quyền giáo viên"}
+              {role === "admin" ? "Quyền quản trị" : role === "assistant" ? "Quyền trợ giảng" : "Quyền giáo viên"}
             </div>
             <div className="mt-3">
               {authStatus === "signed-in" ? (
@@ -3954,7 +3958,7 @@ export function MettasoulApp() {
                     onChange={(event) => setReassignTeacherId(event.target.value)}
                     className={inputClass}
                   >
-                    {activeTeachers
+                    {activeSchedulingTeachers
                       .filter((teacher) => teacher.id !== reassignTarget.teacherId)
                       .map((teacher) => (
                         <option key={teacher.id} value={teacher.id}>
@@ -4547,7 +4551,7 @@ export function MettasoulApp() {
                         <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
                           <p className="mb-2 text-xs font-black uppercase text-[var(--brand-dark)]">Giáo viên</p>
                           <div className="grid grid-cols-1 gap-2 min-[440px]:grid-cols-2 lg:grid-cols-3">
-                            {activeTeachers.map((teacher) => (
+                            {activeSchedulingTeachers.map((teacher) => (
                               <label
                                 key={teacher.id}
                                 className="flex min-w-0 items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-semibold shadow-sm"
@@ -4561,11 +4565,11 @@ export function MettasoulApp() {
                               </label>
                             ))}
                           </div>
-                          {activeTeachers.length > 0 ? (
+                          {activeAssistantTeachers.length > 0 ? (
                             <div className="mt-2">
                               <p className="mb-1 text-xs font-bold text-violet-700">Trợ giảng (không tính xung đột)</p>
                               <div className="grid grid-cols-1 gap-2 min-[440px]:grid-cols-2 lg:grid-cols-3">
-                                {activeTeachers.map((teacher) => (
+                                {activeAssistantTeachers.map((teacher) => (
                                   <label
                                     key={teacher.id}
                                     className="flex min-w-0 items-center gap-2 rounded-lg bg-violet-50 px-2 py-1.5 text-xs font-semibold shadow-sm"
@@ -4729,7 +4733,7 @@ export function MettasoulApp() {
                 </tr>
               </thead>
               <tbody>
-                {activeTeachers.map((teacher) => {
+                {activeSchedulingTeachers.map((teacher) => {
                   const entry = summaryByTeacher.get(teacher.id);
                   return (
                     <tr key={teacher.id} className="border-b border-[var(--line)] hover:bg-cyan-50/40">
@@ -5060,7 +5064,7 @@ export function MettasoulApp() {
                   className="min-w-[220px] rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] outline-none"
                 >
                   <option value="">Chọn giáo viên chuyển</option>
-                  {activeTeachers.map((teacher) => (
+                  {activeSchedulingTeachers.map((teacher) => (
                     <option key={teacher.id} value={teacher.id}>
                       {teacher.name}
                     </option>
@@ -8350,6 +8354,7 @@ function TeacherTableRow({
           className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-black text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
         >
           <option value="teacher">Giáo viên</option>
+          <option value="assistant">Trợ giảng</option>
           <option value="admin">Quản trị</option>
         </select>
         <span
@@ -8394,9 +8399,10 @@ function TeacherTableRow({
         value={role}
         onChange={(event) => onRoleChange(teacher, event.target.value as Role)}
         className="w-full rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-sm font-black text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
-      >
-        <option value="teacher">Giáo viên</option>
-        <option value="admin">Quản trị</option>
+        >
+          <option value="teacher">Giáo viên</option>
+          <option value="assistant">Trợ giảng</option>
+          <option value="admin">Quản trị</option>
       </select>
       <span
         className={`inline-flex h-10 items-center justify-center rounded-xl px-3 text-xs font-black ${
