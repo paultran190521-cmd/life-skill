@@ -4,6 +4,7 @@ import { appendAuditLog } from "@/lib/audit";
 import { sendScheduleEmail } from "@/lib/email";
 import { appendSheetRows, deleteSheetRowById, readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
 import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
+import { invalidateScheduleConflictIndex } from "@/lib/schedule-conflict-index";
 import type { Notification, Schedule, ScheduleStatus, User } from "@/lib/types";
 
 type Params = {
@@ -76,6 +77,7 @@ export async function PATCH(request: Request, { params }: Params) {
     }
 
     await updateSheetRowById("Schedules", id, patch);
+    invalidateScheduleConflictIndex();
     if (scheduleForEmail) {
       emailResult = await sendReassignEmail(scheduleForEmail);
     }
@@ -134,6 +136,7 @@ export async function DELETE(request: Request, { params }: Params) {
     }
 
     await deleteSheetRowById("Schedules", id);
+    invalidateScheduleConflictIndex();
     await appendAuditLog({
       requestId,
       actor: auth.user,

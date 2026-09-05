@@ -425,6 +425,7 @@ export function MettasoulApp() {
   const [pendingAction, setPendingAction] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => currentMonthKey());
+  const [scheduleReportMonth, setScheduleReportMonth] = useState(() => currentMonthKey());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
   const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("week");
   const [calendarFilters, setCalendarFilters] = useState<CalendarFilters>(() => loadCalendarFilters());
@@ -1854,6 +1855,28 @@ export function MettasoulApp() {
     pushToast("Đã hủy lịch", "Lịch dạy đã được hủy và đồng bộ lên Google Sheet.", "warning");
   }
 
+  async function deleteSchedule(schedule: Schedule) {
+    const confirmed = await openConfirmDialog({
+      title: "Xóa lịch đã gửi",
+      message: `Xóa vĩnh viễn lịch ngày ${formatDate(schedule.date)} của ${teacherName(schedule.teacherId)}? Thao tác này không thể hoàn tác.`,
+      confirmText: "Xóa lịch",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+
+    try {
+      await saveRequest<{ id: string; deleted: boolean }>("Đang xóa lịch...", `/api/schedules/${schedule.id}`, { method: "DELETE" });
+      setSchedules((items) => items.filter((item) => item.id !== schedule.id));
+      setSelectedScheduleIds((ids) => ids.filter((id) => id !== schedule.id));
+      setSelectedScheduleDetail((current) => current?.id === schedule.id ? null : current);
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã xóa lịch", "Lịch đã được xóa khỏi danh sách và Google Sheet.", "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
   function reassignSchedule(schedule: Schedule) {
     const replacement = activeSchedulingTeachers.find((teacher) => teacher.id !== schedule.teacherId);
     setReassignTarget(schedule);
@@ -1968,6 +1991,43 @@ export function MettasoulApp() {
       setSaveError("");
       pushToast("Đã hủy lịch", `Đã hủy ${targets.length} lịch đã chọn.`, "warning");
     } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function bulkDeleteSchedules() {
+    const targets = selectedDaySchedules.filter((schedule) => selectedScheduleIds.includes(schedule.id));
+    if (targets.length === 0) return;
+    const confirmed = await openConfirmDialog({
+      title: "Xóa nhiều lịch",
+      message: `Xóa vĩnh viễn ${targets.length} lịch đã chọn? Thao tác này không thể hoàn tác.`,
+      confirmText: "Xóa lịch",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    const deletedIds = new Set<string>();
+    try {
+      for (const schedule of targets) {
+        await saveRequest<{ deleted: boolean }>(
+          `Đang xóa lịch ${deletedIds.size + 1}/${targets.length}...`,
+          `/api/schedules/${schedule.id}`,
+          { method: "DELETE" },
+        );
+        deletedIds.add(schedule.id);
+      }
+      setSchedules((items) => items.filter((item) => !deletedIds.has(item.id)));
+      setSelectedScheduleIds([]);
+      setSelectedScheduleDetail((current) => current && deletedIds.has(current.id) ? null : current);
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã xóa lịch", `Đã xóa ${targets.length} lịch khỏi hệ thống.`, "success");
+    } catch (error) {
+      if (deletedIds.size > 0) {
+        setSchedules((items) => items.filter((item) => !deletedIds.has(item.id)));
+        setSelectedScheduleIds((ids) => ids.filter((id) => !deletedIds.has(id)));
+        setSelectedScheduleDetail((current) => current && deletedIds.has(current.id) ? null : current);
+        pushToast("Đã xóa một phần", `${deletedIds.size}/${targets.length} lịch đã được xóa trước khi gặp lỗi.`, "warning");
+      }
       handleSaveError(error);
     }
   }
@@ -4777,6 +4837,15 @@ export function MettasoulApp() {
       () => schedules.filter((s) => s.status !== "cancelled"),
       [schedules],
     );
+    const reportSchedules = useMemo(
+      () => sortSchedules(
+        schedules.filter((schedule) => (
+          schedule.status !== "draft" && (!scheduleReportMonth || schedule.date.startsWith(`${scheduleReportMonth}-`))
+        )),
+        "date-asc",
+      ),
+      [schedules, scheduleReportMonth],
+    );
     const summaryByTeacher = useMemo(() => {
       const map = new Map<string, { total: number; envCounts: Record<string, number>; schools: Set<string> }>();
       for (const s of activeSchedules) {
@@ -4797,30 +4866,55 @@ export function MettasoulApp() {
       setPendingAction("Đang xuất Excel...");
       try {
         const XLSX = await import("xlsx");
-        const rows = activeSchedules.map((s) => {
+        const rows = reportSchedules.map((s) => {
           const teacher = teachers.find((t) => t.id === s.teacherId);
           const school = schools.find((sc) => sc.id === s.schoolId);
-          const cls = classes.find((c) => c.id === s.classId);
           const lesson = lessons.find((l) => l.id === s.lessonId);
           const slot = timeSlots.find((ts) => ts.id === s.timeSlotId);
           const envLabel = teachingEnvironmentOptions.find((o) => o.value === s.teachingEnvironment)?.label ?? s.teachingEnvironment ?? "";
+          const classNames = scheduleParticipantClassIds(s)
+            .map((classId) => classes.find((classRoom) => classRoom.id === classId)?.name ?? classId)
+            .join(", ");
+          const periodNames = String(s.lessonPeriods || "lesson1")
+            .split(",")
+            .map((period) => period.trim())
+            .filter(Boolean)
+            .map((period) => period === "lesson2"
+              ? `Tiết 2: ${lesson?.lesson2Title || lesson?.title || s.lessonId}`
+              : `Tiết 1: ${lesson?.lesson1Title || lesson?.title || s.lessonId}`)
+            .join(" | ");
           return {
             "Ngày": s.date,
             "Giáo viên": teacher?.name ?? s.teacherId,
             "Trường": school?.name ?? s.schoolId,
-            "Lớp": cls?.name ?? s.classId,
-            "Bài học": lesson?.title ?? s.lessonId,
+            "Lớp tham gia": classNames,
+            "Chuyên đề": lesson?.title ?? s.lessonId,
+            "Tên tiết": periodNames,
             "Khung giờ": slot ? `${slot.label} (${slot.start}-${slot.end})` : s.timeSlotId,
             "Môi trường": envLabel,
             "Trạng thái": statusLabels[s.status] ?? s.status,
-            "Trợ giảng": s.assistantIds ?? "",
+            "Giáo viên dạy cùng": scheduleCoTeacherNames(s).join(", "),
+            "Trợ giảng": scheduleAssistantNames(s).join(", "),
           };
         });
         const ws = XLSX.utils.json_to_sheet(rows);
+        ws["!cols"] = [
+          { wch: 12 },
+          { wch: 24 },
+          { wch: 28 },
+          { wch: 22 },
+          { wch: 36 },
+          { wch: 48 },
+          { wch: 24 },
+          { wch: 20 },
+          { wch: 20 },
+          { wch: 28 },
+          { wch: 28 },
+        ];
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Lịch dạy");
-        XLSX.writeFile(wb, `lich-day-${currentDateKey()}.xlsx`);
-        pushToast("Xuất Excel thành công", `Đã xuất ${rows.length} lịch dạy.`, "success");
+        XLSX.utils.book_append_sheet(wb, ws, "Lịch đã gửi");
+        XLSX.writeFile(wb, `lich-da-gui-${scheduleReportMonth || currentDateKey()}.xlsx`);
+        pushToast("Xuất Excel thành công", `Đã xuất ${rows.length} lịch trong tháng đã chọn.`, "success");
       } catch (error) {
         pushToast("Lỗi xuất Excel", String(error), "error");
       } finally {
@@ -4829,14 +4923,9 @@ export function MettasoulApp() {
     }
 
     return (
-      <Panel title="Bảng tổng hợp lịch" action={`${activeSchedules.length} lịch đang hoạt động`}>
-        <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <button onClick={exportScheduleExcel} disabled={isBusy} className={ghostButtonClass}>
-              <Download size={16} />
-              Xuất Excel
-            </button>
-          </div>
+      <div className="space-y-5">
+        <Panel title="Bảng tổng hợp lịch" action={`${activeSchedules.length} lịch đang hoạt động`}>
+          <div className="space-y-4">
           <div className="app-scrollbar overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
@@ -4866,8 +4955,28 @@ export function MettasoulApp() {
               </tbody>
             </table>
           </div>
-        </div>
-      </Panel>
+          </div>
+        </Panel>
+
+        <Panel title="Danh sách lịch đã gửi" action={`${reportSchedules.length} lịch trong ${formatMonthTitle(scheduleReportMonth)}`}>
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3">
+            <label className="grid gap-1 text-xs font-black text-[var(--brand-dark)]">
+              Tháng báo cáo
+              <input
+                type="month"
+                value={scheduleReportMonth}
+                onChange={(event) => event.target.value && setScheduleReportMonth(event.target.value)}
+                className="h-10 rounded-xl border border-cyan-100 bg-white px-3 text-sm font-semibold outline-none focus:border-cyan-400"
+              />
+            </label>
+            <button onClick={exportScheduleExcel} disabled={isBusy} className={ghostButtonClass}>
+              <FileSpreadsheet size={16} />
+              Xuất Excel tháng
+            </button>
+          </div>
+          <ScheduleList items={reportSchedules} onOpenDetail={setSelectedScheduleDetail} />
+        </Panel>
+      </div>
     );
   }
 
@@ -5165,6 +5274,15 @@ export function MettasoulApp() {
                 >
                   <Trash2 size={15} />
                   Hủy hàng loạt
+                </button>
+                <button
+                  type="button"
+                  onClick={bulkDeleteSchedules}
+                  disabled={bulkTargets.length === 0}
+                  className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+                >
+                  <Trash2 size={15} />
+                  Xóa đã chọn
                 </button>
                 <button
                   type="button"
@@ -7999,6 +8117,16 @@ export function MettasoulApp() {
                             cancelSchedule(schedule);
                           }}
                           className="grid h-9 w-9 place-items-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                        >
+                          <X size={16} />
+                        </button>
+                        <button
+                          title="Xóa lịch vĩnh viễn"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            deleteSchedule(schedule);
+                          }}
+                          className="grid h-9 w-9 place-items-center rounded-xl bg-red-600 text-white transition hover:bg-red-700"
                         >
                           <Trash2 size={16} />
                         </button>

@@ -8,6 +8,7 @@ import { hasTeacherTimeConflict } from "@/lib/schedule-conflict-policy";
 import {
   addSchedulesToConflictIndex,
   getScheduleConflictIndex,
+  invalidateScheduleConflictIndex,
   type TeacherSlotInfo,
 } from "@/lib/schedule-conflict-index";
 import type { LessonPeriod, Notification, Schedule, TeachingEnvironment } from "@/lib/types";
@@ -168,6 +169,7 @@ export async function DELETE(request: Request) {
     }
 
     const deletedCount = await clearSheetData("Schedules");
+    invalidateScheduleConflictIndex();
     await appendAuditLog({
       requestId,
       actor: auth.user,
