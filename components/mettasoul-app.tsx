@@ -4546,36 +4546,36 @@ export function MettasoulApp() {
                         {/* Per-item teacher selection */}
                         <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
                           <p className="mb-2 text-xs font-black uppercase text-[var(--brand-dark)]">Giáo viên</p>
-                          <div className="flex flex-wrap gap-2">
+                          <div className="grid grid-cols-1 gap-2 min-[440px]:grid-cols-2 lg:grid-cols-3">
                             {activeTeachers.map((teacher) => (
                               <label
                                 key={teacher.id}
-                                className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-semibold shadow-sm"
+                                className="flex min-w-0 items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-semibold shadow-sm"
                               >
                                 <input
                                   type="checkbox"
                                   checked={item.teacherIds.includes(teacher.id)}
                                   onChange={(e) => toggleDraftItemTeacher(item.id, teacher.id, e.target.checked)}
                                 />
-                                <span>{teacher.name}</span>
+                                <span className="truncate">{teacher.name}</span>
                               </label>
                             ))}
                           </div>
                           {activeTeachers.length > 0 ? (
                             <div className="mt-2">
                               <p className="mb-1 text-xs font-bold text-violet-700">Trợ giảng (không tính xung đột)</p>
-                              <div className="flex flex-wrap gap-2">
+                              <div className="grid grid-cols-1 gap-2 min-[440px]:grid-cols-2 lg:grid-cols-3">
                                 {activeTeachers.map((teacher) => (
                                   <label
                                     key={teacher.id}
-                                    className="flex items-center gap-2 rounded-lg bg-violet-50 px-2 py-1.5 text-xs font-semibold shadow-sm"
+                                    className="flex min-w-0 items-center gap-2 rounded-lg bg-violet-50 px-2 py-1.5 text-xs font-semibold shadow-sm"
                                   >
                                     <input
                                       type="checkbox"
                                       checked={item.assistantIds.includes(teacher.id)}
                                       onChange={(e) => toggleDraftItemAssistant(item.id, teacher.id, e.target.checked)}
                                     />
-                                    <span>{teacher.name}</span>
+                                    <span className="truncate">{teacher.name}</span>
                                   </label>
                                 ))}
                               </div>
