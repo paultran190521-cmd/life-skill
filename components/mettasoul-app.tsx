@@ -41,7 +41,12 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { statusLabels, statusStyles } from "@/lib/status";
-import { hasTeacherTimeConflict } from "@/lib/schedule-conflict-policy";
+import {
+  canShareClassTimeSlot,
+  hasTeacherTimeConflict,
+  type GroupClassTimeSlot,
+  type TeacherTimeSlot,
+} from "@/lib/schedule-conflict-policy";
 import {
   MIN_TIME_SLOT_MINUTES,
   MAX_TIME_SLOT_MINUTES,
@@ -1087,13 +1092,13 @@ export function MettasoulApp() {
     const dedupe = new Set<string>();
     const activeSchedules = schedules.filter((schedule) => schedule.status !== "cancelled");
 
-    // Build lookup: teacher-slot-key → list of {schoolId, env}
-    type SlotInfo = { schoolId: string; env: TeachingEnvironment };
-    const existingTeacherSlots = new Map<string, SlotInfo[]>();
+    // Reuse the shared type so the frontend cannot silently rename
+    // teachingEnvironment and make outdoor activities default to in_class.
+    const existingTeacherSlots = new Map<string, TeacherTimeSlot[]>();
     for (const s of activeSchedules) {
       const key = buildTeacherSlotKey(s);
       const list = existingTeacherSlots.get(key) ?? [];
-      list.push({ schoolId: s.schoolId, env: s.teachingEnvironment ?? "in_class" });
+      list.push({ schoolId: s.schoolId, teachingEnvironment: s.teachingEnvironment ?? "in_class" });
       existingTeacherSlots.set(key, list);
     }
     const existingClassKeys = new Set(activeSchedules.flatMap((schedule) => scheduleParticipantClassIds(schedule).map((classId) => buildClassSlotKey({ ...schedule, classId }))));
@@ -1102,8 +1107,8 @@ export function MettasoulApp() {
     const assistantTeacherIds = new Set(activeAssistantTeachers.map((teacher) => teacher.id));
 
     // Draft tracking
-    const draftTeacherSlots = new Map<string, SlotInfo[]>();
-    const draftClassSeen = new Set<string>();
+    const draftTeacherSlots = new Map<string, TeacherTimeSlot[]>();
+    const draftClassSlots = new Map<string, GroupClassTimeSlot[]>();
 
     for (const schedule of draftSchedulePreview) {
       // Rule 4: assistants bypass teacher conflicts
@@ -1173,15 +1178,23 @@ export function MettasoulApp() {
         }
 
         const draftList = draftTeacherSlots.get(teacherKey) ?? [];
-        draftList.push({ schoolId: draftSchoolId, env: draftEnv });
+        draftList.push({ schoolId: draftSchoolId, teachingEnvironment: draftEnv });
         draftTeacherSlots.set(teacherKey, draftList);
       }
 
       for (const classId of scheduleParticipantClassIds(schedule)) {
         const classKey = buildClassSlotKey({ ...schedule, classId });
         if (existingClassKeys.has(classKey)) pushDraftConflict(conflicts, dedupe, { source: "existing", scope: "class", date: schedule.date, timeSlotId: schedule.timeSlotId, teacherId: schedule.teacherId, classId });
-        if (draftClassSeen.has(classKey)) pushDraftConflict(conflicts, dedupe, { source: "draft", scope: "class", date: schedule.date, timeSlotId: schedule.timeSlotId, teacherId: schedule.teacherId, classId });
-        else draftClassSeen.add(classKey);
+        const candidateClassSlot: GroupClassTimeSlot = {
+          groupId: schedule.groupId,
+          teachingEnvironment: schedule.teachingEnvironment,
+        };
+        const seenClassSlots = draftClassSlots.get(classKey) ?? [];
+        if (seenClassSlots.some((slot) => !canShareClassTimeSlot(slot, candidateClassSlot))) {
+          pushDraftConflict(conflicts, dedupe, { source: "draft", scope: "class", date: schedule.date, timeSlotId: schedule.timeSlotId, teacherId: schedule.teacherId, classId });
+        }
+        seenClassSlots.push(candidateClassSlot);
+        draftClassSlots.set(classKey, seenClassSlots);
       }
     }
 

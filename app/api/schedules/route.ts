@@ -4,7 +4,7 @@ import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
 import { sendScheduleDigestEmail } from "@/lib/email";
 import { appendSheetRows, clearSheetData, readSheetRows, readSheetRowsBatch, readSheetRowsCached } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
-import { hasTeacherTimeConflict } from "@/lib/schedule-conflict-policy";
+import { canShareClassTimeSlot, hasTeacherTimeConflict, type GroupClassTimeSlot } from "@/lib/schedule-conflict-policy";
 import {
   addSchedulesToConflictIndex,
   getScheduleConflictIndex,
@@ -235,7 +235,7 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
   const existingClassKeySet = new Set(activeExistingRows.flatMap((row) => scheduleClassIds(row).map((classId) => buildClassSlotKey(row.date, row.timeSlotId, classId))));
 
   const draftTeacherSlots = new Map<string, TeacherSlotInfo[]>();
-  const draftClassSeen = new Set<string>();
+  const draftClassSlots = new Map<string, GroupClassTimeSlot[]>();
 
   for (const schedule of schedules) {
     const teacherKey = buildTeacherSlotKey(schedule.date, schedule.timeSlotId, schedule.teacherId);
@@ -286,7 +286,7 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
     }
     addTeacherSlot(draftTeacherSlots, teacherKey, schedule);
 
-    if (classIds.some((classId) => draftClassSeen.has(buildClassSlotKey(schedule.date, schedule.timeSlotId, classId)))) {
+    if (hasDraftClassConflict(draftClassSlots, schedule, classIds)) {
       addConflict(
         conflicts,
         dedupe,
@@ -299,9 +299,8 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
           classId: schedule.classId,
         },
       );
-    } else {
-      classIds.forEach((classId) => draftClassSeen.add(buildClassSlotKey(schedule.date, schedule.timeSlotId, classId)));
     }
+    addDraftClassSlots(draftClassSlots, schedule, classIds);
   }
 
   return conflicts;
@@ -325,7 +324,7 @@ function detectScheduleConflictsWithSets(
   const conflicts: ScheduleConflict[] = [];
   const dedupe = new Set<string>();
   const draftTeacherSlots = new Map<string, TeacherSlotInfo[]>();
-  const draftClassSeen = new Set<string>();
+  const draftClassSlots = new Map<string, GroupClassTimeSlot[]>();
 
   for (const schedule of schedules) {
     const teacherKey = buildTeacherSlotKey(schedule.date, schedule.timeSlotId, schedule.teacherId);
@@ -364,7 +363,7 @@ function detectScheduleConflictsWithSets(
     }
     addTeacherSlot(draftTeacherSlots, teacherKey, schedule);
 
-    if (classIds.some((classId) => draftClassSeen.has(buildClassSlotKey(schedule.date, schedule.timeSlotId, classId)))) {
+    if (hasDraftClassConflict(draftClassSlots, schedule, classIds)) {
       addConflict(conflicts, dedupe, {
         conflictType: "class",
         source: "draft",
@@ -373,9 +372,8 @@ function detectScheduleConflictsWithSets(
         teacherId: schedule.teacherId,
         classId: schedule.classId,
       });
-    } else {
-      classIds.forEach((classId) => draftClassSeen.add(buildClassSlotKey(schedule.date, schedule.timeSlotId, classId)));
     }
+    addDraftClassSlots(draftClassSlots, schedule, classIds);
   }
 
   return conflicts;
@@ -406,6 +404,39 @@ function addTeacherSlot(slotsByKey: Map<string, TeacherSlotInfo[]>, key: string,
     teachingEnvironment: schedule.teachingEnvironment ?? "in_class",
   });
   slotsByKey.set(key, slots);
+}
+
+function hasDraftClassConflict(
+  slotsByKey: Map<string, GroupClassTimeSlot[]>,
+  schedule: Schedule,
+  classIds: string[],
+) {
+  const candidate = toGroupClassTimeSlot(schedule);
+  return classIds.some((classId) => {
+    const key = buildClassSlotKey(schedule.date, schedule.timeSlotId, classId);
+    return (slotsByKey.get(key) ?? []).some((existing) => !canShareClassTimeSlot(existing, candidate));
+  });
+}
+
+function addDraftClassSlots(
+  slotsByKey: Map<string, GroupClassTimeSlot[]>,
+  schedule: Schedule,
+  classIds: string[],
+) {
+  const candidate = toGroupClassTimeSlot(schedule);
+  for (const classId of classIds) {
+    const key = buildClassSlotKey(schedule.date, schedule.timeSlotId, classId);
+    const slots = slotsByKey.get(key) ?? [];
+    slots.push(candidate);
+    slotsByKey.set(key, slots);
+  }
+}
+
+function toGroupClassTimeSlot(schedule: Schedule): GroupClassTimeSlot {
+  return {
+    groupId: schedule.groupId,
+    teachingEnvironment: schedule.teachingEnvironment,
+  };
 }
 
 function addConflict(

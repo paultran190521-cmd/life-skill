@@ -8,7 +8,7 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 const policyModule = { exports: {} };
 new Function("module", "exports", compiled)(policyModule, policyModule.exports);
-const { hasTeacherTimeConflict } = policyModule.exports;
+const { canShareClassTimeSlot, hasTeacherTimeConflict } = policyModule.exports;
 
 const sameSchoolOutdoor = [{ schoolId: "school-a", teachingEnvironment: "outdoor" }];
 assert.equal(
@@ -32,4 +32,29 @@ assert.equal(
   "missing environment is treated as in-class",
 );
 
-console.log("Schedule conflict policy tests passed (4 cases).");
+assert.equal(
+  canShareClassTimeSlot(
+    { groupId: "group-a", teachingEnvironment: "outdoor" },
+    { groupId: "group-a", teachingEnvironment: "hall" },
+  ),
+  true,
+  "co-teachers in the same non-classroom activity may repeat participant classes",
+);
+assert.equal(
+  canShareClassTimeSlot(
+    { groupId: "group-a", teachingEnvironment: "outdoor" },
+    { groupId: "group-b", teachingEnvironment: "outdoor" },
+  ),
+  false,
+  "separate activities do not share the same class booking",
+);
+assert.equal(
+  canShareClassTimeSlot(
+    { groupId: "group-a", teachingEnvironment: "in_class" },
+    { groupId: "group-a", teachingEnvironment: "in_class" },
+  ),
+  false,
+  "in-class assignments keep strict class conflict detection",
+);
+
+console.log("Schedule conflict policy tests passed (7 cases).");
