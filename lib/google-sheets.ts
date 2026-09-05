@@ -7,6 +7,7 @@ import type {
   AuditLog,
   ClassRoom,
   Lesson,
+  LessonPeriod,
   LessonPlan,
   Notification,
   Role,
@@ -610,6 +611,7 @@ export const scheduleHeaders = [
   "schoolId",
   "classId",
   "lessonId",
+  "lessonPeriods",
   "timeSlotId",
   "status",
   "sentAt",
@@ -907,6 +909,7 @@ function toSchedules(rows: SheetRow[]): Schedule[] {
     schoolId: row.schoolId,
     classId: row.classId,
     lessonId: row.lessonId,
+    lessonPeriods: normalizeLessonPeriods(row.lessonPeriods),
     timeSlotId: row.timeSlotId,
     teachingEnvironment: parseTeachingEnvironment(row.teachingEnvironment),
     status: (row.status || "sent") as ScheduleStatus,
@@ -916,6 +919,14 @@ function toSchedules(rows: SheetRow[]): Schedule[] {
     groupId: row.groupId || undefined,
     assistantIds: row.assistantIds || undefined,
   }));
+}
+
+function normalizeLessonPeriods(value: string | undefined) {
+  const periods = String(value || "")
+    .split(",")
+    .map((period) => period.trim())
+    .filter((period): period is LessonPeriod => period === "lesson1" || period === "lesson2");
+  return periods.length > 0 ? Array.from(new Set(periods)).join(",") : "lesson1";
 }
 
 function toLessonPlans(rows: SheetRow[]): LessonPlan[] {

@@ -58,6 +58,7 @@ import type {
   AuditLog,
   ClassRoom,
   Lesson,
+  LessonPeriod,
   LessonPlan,
   Notification,
   Role,
@@ -88,6 +89,7 @@ type DraftScheduleItem = {
   schoolId: string;
   classId: string;
   lessonId: string;
+  lessonPeriods: LessonPeriod[];
   timeSlotId: string;
   teachingEnvironment: NonNullable<Schedule["teachingEnvironment"]>;
   teacherIds: string[];
@@ -878,6 +880,7 @@ export function MettasoulApp() {
           item.schoolId !== currentItem.schoolId ||
           item.classId !== currentItem.classId ||
           item.lessonId !== currentItem.lessonId ||
+          item.lessonPeriods.join(",") !== currentItem.lessonPeriods.join(",") ||
           item.timeSlotId !== currentItem.timeSlotId ||
           item.teachingEnvironment !== currentItem.teachingEnvironment
         );
@@ -1046,6 +1049,7 @@ export function MettasoulApp() {
           schoolId: item.schoolId,
           classId: item.classId,
           lessonId: item.lessonId,
+          lessonPeriods: item.lessonPeriods.join(","),
           timeSlotId: item.timeSlotId,
           teachingEnvironment: item.teachingEnvironment,
           status: "sent" as const,
@@ -1433,8 +1437,20 @@ export function MettasoulApp() {
       return;
     }
 
+    const rowsMissingLessonPeriods = draftSchedule.items
+      .map((item, index) => (item.lessonId && item.lessonPeriods.length === 0 ? index + 1 : null))
+      .filter((row): row is number => row !== null);
+    if (rowsMissingLessonPeriods.length > 0) {
+      pushToast(
+        "Chưa chọn tiết học",
+        `Dòng ${rowsMissingLessonPeriods.join(", ")} chưa chọn Tiết 1 hoặc Tiết 2.`,
+        "warning",
+      );
+      return;
+    }
+
     const validItems = draftSchedule.items.filter(
-      (item) => item.date && item.schoolId && item.classId && item.lessonId && item.timeSlotId,
+      (item) => item.date && item.schoolId && item.classId && item.lessonId && item.lessonPeriods.length > 0 && item.timeSlotId,
     );
 
     if (validItems.length === 0) {
@@ -1520,6 +1536,7 @@ export function MettasoulApp() {
             schoolId: item.schoolId,
             classId: item.classId,
             lessonId: item.lessonId,
+            lessonPeriods: item.lessonPeriods,
             timeSlotId: item.timeSlotId,
             teachingEnvironment: item.teachingEnvironment,
             teacherIds: item.teacherIds,
@@ -4499,7 +4516,12 @@ export function MettasoulApp() {
                                   : rowLessonsAll;
                                 const lessonId =
                                   filtered.some((l) => l.id === item.lessonId) ? item.lessonId : filtered[0]?.id ?? "";
-                                updateDraftItem(item.id, { topicId, lessonId });
+                                const lesson = activeLessons.find((entry) => entry.id === lessonId);
+                                updateDraftItem(item.id, {
+                                  topicId,
+                                  lessonId,
+                                  lessonPeriods: defaultLessonPeriods(lesson),
+                                });
                               }}
                               className={inputClass}
                             >
@@ -4513,7 +4535,11 @@ export function MettasoulApp() {
                           ) : null}
                           <select
                             value={item.lessonId}
-                            onChange={(e) => updateDraftItem(item.id, { lessonId: e.target.value })}
+                            onChange={(e) => {
+                              const lessonId = e.target.value;
+                              const lesson = activeLessons.find((entry) => entry.id === lessonId);
+                              updateDraftItem(item.id, { lessonId, lessonPeriods: defaultLessonPeriods(lesson) });
+                            }}
                             className={inputClass}
                           >
                             {rowLessons.length === 0 ? (
@@ -4526,6 +4552,32 @@ export function MettasoulApp() {
                               ))
                             )}
                           </select>
+                          {(() => {
+                            const selectedLesson = activeLessons.find((lesson) => lesson.id === item.lessonId);
+                            const periodOptions = lessonPeriodOptions(selectedLesson);
+                            return periodOptions.length > 0 ? (
+                              <div className="rounded-2xl border border-cyan-200 bg-cyan-50/70 p-3 md:col-span-2">
+                                <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Chọn tiết cần giao</p>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {periodOptions.map((period) => (
+                                    <label key={period.value} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-bold text-[var(--brand-dark)] shadow-sm">
+                                      <input
+                                        type="checkbox"
+                                        checked={item.lessonPeriods.includes(period.value)}
+                                        onChange={(event) => {
+                                          const lessonPeriods = event.target.checked
+                                            ? Array.from(new Set([...item.lessonPeriods, period.value]))
+                                            : item.lessonPeriods.filter((value) => value !== period.value);
+                                          updateDraftItem(item.id, { lessonPeriods });
+                                        }}
+                                      />
+                                      {period.label}
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null;
+                          })()}
                           <select
                             value={item.teachingEnvironment}
                             onChange={(e) =>
@@ -9040,12 +9092,36 @@ function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftSchedu
     schoolId: seed?.schoolId || "",
     classId: seed?.classId || "",
     lessonId: seed?.lessonId || "",
+    lessonPeriods: seed?.lessonPeriods ?? ["lesson1"],
     timeSlotId: seed?.timeSlotId || "",
     teachingEnvironment: normalizeTeachingEnvironmentValue(seed?.teachingEnvironment),
     teacherIds: seed?.teacherIds ?? [],
     topicId: seed?.topicId ?? "",
     assistantIds: seed?.assistantIds ?? [],
   };
+}
+
+function lessonPeriodOptions(lesson: Lesson | undefined): Array<{ value: LessonPeriod; label: string }> {
+  if (!lesson) {
+    return [];
+  }
+  const options: Array<{ value: LessonPeriod; label: string }> = [
+    { value: "lesson1", label: `Tiết 1: ${lesson.lesson1Title?.trim() || lesson.title}` },
+  ];
+  if (lesson.lesson2Title?.trim()) {
+    options.push({ value: "lesson2", label: `Tiết 2: ${lesson.lesson2Title.trim()}` });
+  }
+  return options;
+}
+
+function defaultLessonPeriods(lesson: Lesson | undefined): LessonPeriod[] {
+  return lessonPeriodOptions(lesson).slice(0, 1).map((option) => option.value);
+}
+
+function normalizeLessonPeriods(periods: LessonPeriod[], lesson: Lesson | undefined): LessonPeriod[] {
+  const allowed = new Set(lessonPeriodOptions(lesson).map((option) => option.value));
+  const valid = periods.filter((period) => allowed.has(period));
+  return valid.length > 0 ? Array.from(new Set(valid)) : defaultLessonPeriods(lesson);
 }
 
 function buildTeacherSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "teacherId">) {
@@ -9101,6 +9177,7 @@ function normalizeDraftScheduleItem(
   const grade = pickDefaultGradeForSchool(schoolId, item.classId, context.classes);
   const classId = pickClassIdForSchoolGrade(schoolId, grade, item.classId, context.classes);
   const lessonId = pickLessonIdForClass(classId, item.lessonId, context.classes, context.activeLessons);
+  const lesson = context.activeLessons.find((entry) => entry.id === lessonId);
   const timeSlotId = context.activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
     ? item.timeSlotId
     : context.activeTimeSlots[0]?.id ?? "";
@@ -9111,6 +9188,7 @@ function normalizeDraftScheduleItem(
     schoolId,
     classId,
     lessonId,
+    lessonPeriods: normalizeLessonPeriods(item.lessonPeriods, lesson),
     timeSlotId,
     teachingEnvironment: normalizeTeachingEnvironmentValue(item.teachingEnvironment),
     teacherIds: item.teacherIds ?? [],

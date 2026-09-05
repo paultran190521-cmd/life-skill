@@ -10,13 +10,14 @@ import {
   getScheduleConflictIndex,
   type TeacherSlotInfo,
 } from "@/lib/schedule-conflict-index";
-import type { Notification, Schedule, TeachingEnvironment } from "@/lib/types";
+import type { LessonPeriod, Notification, Schedule, TeachingEnvironment } from "@/lib/types";
 
 type ScheduleDraftItem = {
   date: string;
   schoolId: string;
   classId: string;
   lessonId: string;
+  lessonPeriods: LessonPeriod[];
   timeSlotId: string;
   teachingEnvironment: TeachingEnvironment;
   teacherIds: string[];
@@ -88,6 +89,7 @@ export async function POST(request: Request) {
         schoolId: item.schoolId,
         classId: item.classId,
         lessonId: item.lessonId,
+        lessonPeriods: item.lessonPeriods.join(","),
         timeSlotId: item.timeSlotId,
         teachingEnvironment: item.teachingEnvironment,
         assistantIds: item.assistantIds.join(",") || undefined,
@@ -440,6 +442,17 @@ function parseIdList(value: unknown) {
   return Array.from(new Set(values.map((id) => normalizeId(id)).filter(Boolean)));
 }
 
+function parseLessonPeriods(value: unknown): LessonPeriod[] {
+  if (value === undefined || value === null) {
+    return ["lesson1"];
+  }
+  const values = Array.isArray(value) ? value : String(value).split(",");
+  const periods = values
+    .map((item) => normalizeId(item))
+    .filter((item): item is LessonPeriod => item === "lesson1" || item === "lesson2");
+  return Array.from(new Set(periods));
+}
+
 function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: string[]): ScheduleDraftItem[] {
   const rawItems = Array.isArray(body.items) ? body.items : [];
   if (rawItems.length > 0) {
@@ -451,6 +464,7 @@ function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: s
           schoolId: normalizeId(entry.schoolId),
           classId: normalizeId(entry.classId),
           lessonId: normalizeId(entry.lessonId),
+          lessonPeriods: parseLessonPeriods(entry.lessonPeriods),
           timeSlotId: normalizeId(entry.timeSlotId),
           teachingEnvironment: normalizeTeachingEnvironment(entry.teachingEnvironment),
           teacherIds: Object.hasOwn(entry, "teacherIds") ? parseIdList(entry.teacherIds) : fallbackTeacherIds,
@@ -465,6 +479,7 @@ function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: s
     schoolId: normalizeId(body.schoolId),
     classId: normalizeId(body.classId),
     lessonId: normalizeId(body.lessonId),
+    lessonPeriods: parseLessonPeriods(body.lessonPeriods),
     timeSlotId: normalizeId(body.timeSlotId),
     teachingEnvironment: normalizeTeachingEnvironment(body.teachingEnvironment),
     teacherIds: fallbackTeacherIds,
@@ -544,6 +559,12 @@ function validateScheduleInput(
     const lesson = findLesson(data.lessons, item.lessonId);
     if (!lesson) {
       return "Bài học đã chọn không tồn tại hoặc đang tắt.";
+    }
+    if (item.lessonPeriods.length === 0) {
+      return "Mỗi dòng lịch phải chọn ít nhất một tiết học.";
+    }
+    if (item.lessonPeriods.includes("lesson2") && !normalizeId(lesson.lesson2Title)) {
+      return "Bài học đã chọn không có Tiết 2 để giao.";
     }
     if (normalizeComparableText(classRoom.grade) !== normalizeComparableText(lesson.grade)) {
       return "Bài học đã chọn không đúng khối của lớp.";
