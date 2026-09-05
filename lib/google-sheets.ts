@@ -628,6 +628,7 @@ export const scheduleHeaders = [
   "teachingEnvironment",
   "groupId",
   "assistantIds",
+  "participantClassIds",
 ];
 
 export const topicHeaders = [
@@ -916,6 +917,7 @@ function toSchedules(rows: SheetRow[]): Schedule[] {
     teacherId: row.teacherId,
     schoolId: row.schoolId,
     classId: row.classId,
+    participantClassIds: row.participantClassIds || undefined,
     lessonId: row.lessonId,
     lessonPeriods: normalizeLessonPeriods(row.lessonPeriods),
     timeSlotId: row.timeSlotId,

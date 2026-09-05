@@ -88,6 +88,7 @@ type DraftScheduleItem = {
   date: string;
   schoolId: string;
   classId: string;
+  classIds: string[];
   lessonId: string;
   lessonPeriods: LessonPeriod[];
   timeSlotId: string;
@@ -863,6 +864,7 @@ export function MettasoulApp() {
               date: current.items[0]?.date ?? currentDateKey(),
               schoolId: defaultSchoolId,
               classId: defaultClassId,
+              classIds: defaultClassId ? [defaultClassId] : [],
               lessonId: pickLessonIdForGrade(defaultGrade, current.items[0]?.lessonId ?? "", activeLessons),
               timeSlotId: activeTimeSlots[0]?.id ?? "",
               teachingEnvironment: current.items[0]?.teachingEnvironment ?? defaultTeachingEnvironment,
@@ -879,6 +881,7 @@ export function MettasoulApp() {
         return (
           item.schoolId !== currentItem.schoolId ||
           item.classId !== currentItem.classId ||
+          item.classIds.join(",") !== currentItem.classIds.join(",") ||
           item.lessonId !== currentItem.lessonId ||
           item.lessonPeriods.join(",") !== currentItem.lessonPeriods.join(",") ||
           item.timeSlotId !== currentItem.timeSlotId ||
@@ -1048,10 +1051,12 @@ export function MettasoulApp() {
           teacherId,
           schoolId: item.schoolId,
           classId: item.classId,
+          participantClassIds: item.classIds.join(","),
           lessonId: item.lessonId,
           lessonPeriods: item.lessonPeriods.join(","),
           timeSlotId: item.timeSlotId,
           teachingEnvironment: item.teachingEnvironment,
+          groupId: item.teacherIds.length > 1 || item.classIds.length > 1 ? `preview-group-${item.id}` : undefined,
           status: "sent" as const,
           assistantIds: item.assistantIds.join(","),
         })),
@@ -1090,7 +1095,7 @@ export function MettasoulApp() {
       list.push({ schoolId: s.schoolId, env: s.teachingEnvironment ?? "in_class" });
       existingTeacherSlots.set(key, list);
     }
-    const existingClassKeys = new Set(activeSchedules.map((schedule) => buildClassSlotKey(schedule)));
+    const existingClassKeys = new Set(activeSchedules.flatMap((schedule) => scheduleParticipantClassIds(schedule).map((classId) => buildClassSlotKey({ ...schedule, classId }))));
 
     // Assistants bypass teacher conflicts
     const assistantTeacherIds = new Set(activeAssistantTeachers.map((teacher) => teacher.id));
@@ -1171,29 +1176,11 @@ export function MettasoulApp() {
         draftTeacherSlots.set(teacherKey, draftList);
       }
 
-      // Class conflicts (unchanged)
-      const classKey = buildClassSlotKey(schedule);
-      if (existingClassKeys.has(classKey)) {
-        pushDraftConflict(conflicts, dedupe, {
-          source: "existing",
-          scope: "class",
-          date: schedule.date,
-          timeSlotId: schedule.timeSlotId,
-          teacherId: schedule.teacherId,
-          classId: schedule.classId,
-        });
-      }
-      if (draftClassSeen.has(classKey)) {
-        pushDraftConflict(conflicts, dedupe, {
-          source: "draft",
-          scope: "class",
-          date: schedule.date,
-          timeSlotId: schedule.timeSlotId,
-          teacherId: schedule.teacherId,
-          classId: schedule.classId,
-        });
-      } else {
-        draftClassSeen.add(classKey);
+      for (const classId of scheduleParticipantClassIds(schedule)) {
+        const classKey = buildClassSlotKey({ ...schedule, classId });
+        if (existingClassKeys.has(classKey)) pushDraftConflict(conflicts, dedupe, { source: "existing", scope: "class", date: schedule.date, timeSlotId: schedule.timeSlotId, teacherId: schedule.teacherId, classId });
+        if (draftClassSeen.has(classKey)) pushDraftConflict(conflicts, dedupe, { source: "draft", scope: "class", date: schedule.date, timeSlotId: schedule.timeSlotId, teacherId: schedule.teacherId, classId });
+        else draftClassSeen.add(classKey);
       }
     }
 
@@ -1535,6 +1522,7 @@ export function MettasoulApp() {
             date: item.date,
             schoolId: item.schoolId,
             classId: item.classId,
+            classIds: item.classIds,
             lessonId: item.lessonId,
             lessonPeriods: item.lessonPeriods,
             timeSlotId: item.timeSlotId,
@@ -4476,6 +4464,7 @@ export function MettasoulApp() {
                               updateDraftItem(item.id, {
                                 schoolId,
                                 classId,
+                                classIds: classId ? [classId] : [],
                                 timeSlotId,
                                 lessonId: pickLessonIdForGrade(grade, item.lessonId, activeLessons),
                                 topicId: "",
@@ -4502,6 +4491,7 @@ export function MettasoulApp() {
                               );
                               updateDraftItem(item.id, {
                                 classId,
+                                classIds: classId ? [classId] : [],
                                 lessonId: pickLessonIdForGrade(grade, item.lessonId, activeLessons),
                                 timeSlotId: schoolSlots.some((slot) => slot.id === item.timeSlotId)
                                   ? item.timeSlotId
@@ -4527,6 +4517,7 @@ export function MettasoulApp() {
                               const classId = e.target.value;
                               updateDraftItem(item.id, {
                                 classId,
+                                classIds: classId ? [classId] : [],
                                 lessonId: pickLessonIdForClass(classId, item.lessonId, classes, activeLessons),
                               });
                             }}
@@ -4630,6 +4621,10 @@ export function MettasoulApp() {
                             onChange={(e) =>
                               updateDraftItem(item.id, {
                                 teachingEnvironment: normalizeTeachingEnvironmentValue(e.target.value),
+                                classIds:
+                                  normalizeTeachingEnvironmentValue(e.target.value) === "in_class"
+                                    ? (item.classId ? [item.classId] : [])
+                                    : item.classIds.length > 0 ? item.classIds : (item.classId ? [item.classId] : []),
                               })
                             }
                             className={inputClass}
@@ -4640,6 +4635,29 @@ export function MettasoulApp() {
                               </option>
                             ))}
                           </select>
+                          {item.teachingEnvironment !== "in_class" ? (
+                            <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-3 md:col-span-2">
+                              <p className="text-xs font-black uppercase text-violet-800">Lớp tham gia hoạt động chung</p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {rowClasses.map((classRoom) => (
+                                  <label key={classRoom.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-semibold text-violet-900 shadow-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={item.classIds.includes(classRoom.id)}
+                                      onChange={(event) => {
+                                        const classIds = event.target.checked
+                                          ? Array.from(new Set([...item.classIds, classRoom.id]))
+                                          : item.classIds.filter((id) => id !== classRoom.id);
+                                        updateDraftItem(item.id, { classIds, classId: classIds[0] ?? "" });
+                                      }}
+                                    />
+                                    {classRoom.name}
+                                  </label>
+                                ))}
+                              </div>
+                              <p className="mt-2 text-xs font-semibold text-violet-700">Đã chọn {item.classIds.length} lớp. Hoạt động chung cho phép các lớp và giáo viên đã chọn diễn ra đồng thời.</p>
+                            </div>
+                          ) : null}
                           {rowSelectedGrade && rowLessons.length === 0 ? (
                             <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 md:col-span-2">
                               Chưa có bài học đang hoạt động cho {rowSelectedGrade}. Vui lòng vào mục Bài học để thêm hoặc bật bài phù hợp.
@@ -9150,6 +9168,7 @@ function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftSchedu
     date: seed?.date || currentDateKey(),
     schoolId: seed?.schoolId || "",
     classId: seed?.classId || "",
+    classIds: seed?.classIds ?? (seed?.classId ? [seed.classId] : []),
     lessonId: seed?.lessonId || "",
     lessonPeriods: seed?.lessonPeriods ?? ["lesson1"],
     timeSlotId: seed?.timeSlotId || "",
@@ -9189,6 +9208,10 @@ function buildTeacherSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "t
 
 function buildClassSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "classId">) {
   return `${schedule.date}|${schedule.timeSlotId}|${schedule.classId}`;
+}
+
+function scheduleParticipantClassIds(schedule: Pick<Schedule, "classId" | "participantClassIds">) {
+  return Array.from(new Set(String(schedule.participantClassIds || schedule.classId || "").split(",").map((id) => id.trim()).filter(Boolean)));
 }
 
 function pushDraftConflict(
@@ -9235,6 +9258,13 @@ function normalizeDraftScheduleItem(
     : context.schools[0]?.id ?? "";
   const grade = pickDefaultGradeForSchool(schoolId, item.classId, context.classes);
   const classId = pickClassIdForSchoolGrade(schoolId, grade, item.classId, context.classes);
+  const classIds = Array.from(new Set((item.classIds.length > 0 ? item.classIds : [classId]).filter((selectedClassId) =>
+    context.classes.some((classRoom) => classRoom.id === selectedClassId && classRoom.schoolId === schoolId),
+  )));
+  if (classIds.length === 0 && classId) classIds.push(classId);
+  const normalizedClassIds = normalizeTeachingEnvironmentValue(item.teachingEnvironment) === "in_class"
+    ? classIds.slice(0, 1)
+    : classIds;
   const lessonId = pickLessonIdForClass(classId, item.lessonId, context.classes, context.activeLessons);
   const lesson = context.activeLessons.find((entry) => entry.id === lessonId);
   const timeSlotId = context.activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
@@ -9245,7 +9275,8 @@ function normalizeDraftScheduleItem(
     ...item,
     date,
     schoolId,
-    classId,
+    classId: normalizedClassIds[0] ?? classId,
+    classIds: normalizedClassIds,
     lessonId,
     lessonPeriods: normalizeLessonPeriods(item.lessonPeriods, lesson),
     timeSlotId,

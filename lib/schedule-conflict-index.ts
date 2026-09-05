@@ -5,6 +5,7 @@ type ScheduleLike = {
   timeSlotId?: string;
   teacherId?: string;
   classId?: string;
+  participantClassIds?: string;
   schoolId?: string;
   teachingEnvironment?: string;
   status?: string;
@@ -49,9 +50,7 @@ export async function getScheduleConflictIndex(): Promise<ScheduleConflictIndex 
     });
     const activeRows = rows.filter((row) => isScheduleActive(row.status));
     const teacherSlotsByKey = buildTeacherSlots(activeRows);
-    const classKeySet = new Set(
-      activeRows.map((row) => buildClassSlotKey(row.date, row.timeSlotId, row.classId)),
-    );
+    const classKeySet = new Set(activeRows.flatMap((row) => scheduleClassIds(row).map((classId) => buildClassSlotKey(row.date, row.timeSlotId, classId))));
 
     scheduleConflictCache = {
       teacherSlotsByKey,
@@ -86,7 +85,9 @@ export function addSchedulesToConflictIndex(schedules: ScheduleLike[]) {
       teachingEnvironment: normalizeId(schedule.teachingEnvironment) || "in_class",
     });
     scheduleConflictCache.teacherSlotsByKey.set(teacherKey, slots);
-    scheduleConflictCache.classKeySet.add(buildClassSlotKey(schedule.date, schedule.timeSlotId, schedule.classId));
+    for (const classId of scheduleClassIds(schedule)) {
+      scheduleConflictCache.classKeySet.add(buildClassSlotKey(schedule.date, schedule.timeSlotId, classId));
+    }
   }
 }
 
@@ -122,6 +123,11 @@ function buildTeacherSlotKey(date: string | undefined, timeSlotId: string | unde
 
 function buildClassSlotKey(date: string | undefined, timeSlotId: string | undefined, classId: string | undefined) {
   return `${normalizeId(date)}|${normalizeId(timeSlotId)}|${normalizeId(classId)}`;
+}
+
+function scheduleClassIds(schedule: Pick<ScheduleLike, "classId" | "participantClassIds">) {
+  const ids = String(schedule.participantClassIds || schedule.classId || "").split(",").map((id) => normalizeId(id)).filter(Boolean);
+  return Array.from(new Set(ids));
 }
 
 function normalizeId(value: unknown) {

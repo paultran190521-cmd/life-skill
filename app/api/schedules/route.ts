@@ -16,6 +16,7 @@ type ScheduleDraftItem = {
   date: string;
   schoolId: string;
   classId: string;
+  classIds: string[];
   lessonId: string;
   lessonPeriods: LessonPeriod[];
   timeSlotId: string;
@@ -85,13 +86,14 @@ export async function POST(request: Request) {
       // Những giáo viên cùng được chọn trên một dòng là một nhóm cùng giảng.
       // Lưu groupId để các luồng hiển thị/email nhận diện đúng, không suy đoán
       // từ các lịch trùng giờ độc lập.
-      const groupId = item.teacherIds.length > 1 ? createId("grp") : undefined;
+      const groupId = item.teacherIds.length > 1 || item.classIds.length > 1 ? createId("grp") : undefined;
       return item.teacherIds.map((teacherId) => ({
         id: createId("sch"),
         date: item.date,
         teacherId,
         schoolId: item.schoolId,
         classId: item.classId,
+        participantClassIds: item.classIds.join(","),
         lessonId: item.lessonId,
         lessonPeriods: item.lessonPeriods.join(","),
         timeSlotId: item.timeSlotId,
@@ -228,16 +230,14 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
     (row) => normalizeComparableText(row.status || "") !== "cancelled",
   );
   const existingTeacherSlots = buildTeacherSlots(activeExistingRows);
-  const existingClassKeySet = new Set(
-    activeExistingRows.map((row) => buildClassSlotKey(row.date, row.timeSlotId, row.classId)),
-  );
+  const existingClassKeySet = new Set(activeExistingRows.flatMap((row) => scheduleClassIds(row).map((classId) => buildClassSlotKey(row.date, row.timeSlotId, classId))));
 
   const draftTeacherSlots = new Map<string, TeacherSlotInfo[]>();
   const draftClassSeen = new Set<string>();
 
   for (const schedule of schedules) {
     const teacherKey = buildTeacherSlotKey(schedule.date, schedule.timeSlotId, schedule.teacherId);
-    const classKey = buildClassSlotKey(schedule.date, schedule.timeSlotId, schedule.classId);
+    const classIds = scheduleClassIds(schedule);
 
     if (hasTeacherConflict(existingTeacherSlots.get(teacherKey) ?? [], schedule)) {
       addConflict(
@@ -253,7 +253,7 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
         },
       );
     }
-    if (existingClassKeySet.has(classKey)) {
+    if (classIds.some((classId) => existingClassKeySet.has(buildClassSlotKey(schedule.date, schedule.timeSlotId, classId)))) {
       addConflict(
         conflicts,
         dedupe,
@@ -284,7 +284,7 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
     }
     addTeacherSlot(draftTeacherSlots, teacherKey, schedule);
 
-    if (draftClassSeen.has(classKey)) {
+    if (classIds.some((classId) => draftClassSeen.has(buildClassSlotKey(schedule.date, schedule.timeSlotId, classId)))) {
       addConflict(
         conflicts,
         dedupe,
@@ -298,7 +298,7 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
         },
       );
     } else {
-      draftClassSeen.add(classKey);
+      classIds.forEach((classId) => draftClassSeen.add(buildClassSlotKey(schedule.date, schedule.timeSlotId, classId)));
     }
   }
 
@@ -327,7 +327,7 @@ function detectScheduleConflictsWithSets(
 
   for (const schedule of schedules) {
     const teacherKey = buildTeacherSlotKey(schedule.date, schedule.timeSlotId, schedule.teacherId);
-    const classKey = buildClassSlotKey(schedule.date, schedule.timeSlotId, schedule.classId);
+    const classIds = scheduleClassIds(schedule);
 
     if (hasTeacherConflict(existingTeacherSlots.get(teacherKey) ?? [], schedule)) {
       addConflict(conflicts, dedupe, {
@@ -339,7 +339,7 @@ function detectScheduleConflictsWithSets(
         classId: schedule.classId,
       });
     }
-    if (existingClassKeySet.has(classKey)) {
+    if (classIds.some((classId) => existingClassKeySet.has(buildClassSlotKey(schedule.date, schedule.timeSlotId, classId)))) {
       addConflict(conflicts, dedupe, {
         conflictType: "class",
         source: "existing",
@@ -362,7 +362,7 @@ function detectScheduleConflictsWithSets(
     }
     addTeacherSlot(draftTeacherSlots, teacherKey, schedule);
 
-    if (draftClassSeen.has(classKey)) {
+    if (classIds.some((classId) => draftClassSeen.has(buildClassSlotKey(schedule.date, schedule.timeSlotId, classId)))) {
       addConflict(conflicts, dedupe, {
         conflictType: "class",
         source: "draft",
@@ -372,7 +372,7 @@ function detectScheduleConflictsWithSets(
         classId: schedule.classId,
       });
     } else {
-      draftClassSeen.add(classKey);
+      classIds.forEach((classId) => draftClassSeen.add(buildClassSlotKey(schedule.date, schedule.timeSlotId, classId)));
     }
   }
 
@@ -437,6 +437,10 @@ function buildClassSlotKey(date: string | undefined, timeSlotId: string | undefi
   return `${normalizeId(date)}|${normalizeId(timeSlotId)}|${normalizeId(classId)}`;
 }
 
+function scheduleClassIds(schedule: Pick<Schedule, "classId" | "participantClassIds"> | Record<string, string>) {
+  return Array.from(new Set(String(schedule.participantClassIds || schedule.classId || "").split(",").map((id) => normalizeId(id)).filter(Boolean)));
+}
+
 function parseTeacherIds(body: Record<string, unknown>) {
   const rawIds = Array.isArray(body.teacherIds) ? body.teacherIds : [body.teacherId];
   return Array.from(new Set(rawIds.map((id) => normalizeId(id)).filter(Boolean)));
@@ -464,10 +468,12 @@ function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: s
     return rawItems
       .map((item) => {
         const entry = item as Record<string, unknown>;
+        const classIds = parseIdList(entry.classIds ?? entry.classId);
         return {
           date: String(entry.date || entry.day || body.date || "").trim(),
           schoolId: normalizeId(entry.schoolId),
-          classId: normalizeId(entry.classId),
+          classId: classIds[0] || "",
+          classIds,
           lessonId: normalizeId(entry.lessonId),
           lessonPeriods: parseLessonPeriods(entry.lessonPeriods),
           timeSlotId: normalizeId(entry.timeSlotId),
@@ -482,7 +488,8 @@ function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: s
   const fallbackItem: ScheduleDraftItem = {
     date: String(body.date || "").trim(),
     schoolId: normalizeId(body.schoolId),
-    classId: normalizeId(body.classId),
+    classId: parseIdList(body.classIds ?? body.classId)[0] || "",
+    classIds: parseIdList(body.classIds ?? body.classId),
     lessonId: normalizeId(body.lessonId),
     lessonPeriods: parseLessonPeriods(body.lessonPeriods),
     timeSlotId: normalizeId(body.timeSlotId),
@@ -508,8 +515,8 @@ function normalizeScheduleItems(
     const school = findSchool(data.schools, item.schoolId);
     const schoolId = normalizeId(school?.id) || item.schoolId;
 
-    const classRoom = findClassRoom(data.classes, item.classId, school);
-    const classId = normalizeId(classRoom?.id) || item.classId;
+    const classIds = item.classIds.map((id) => findClassRoom(data.classes, id, school)).filter((row): row is Record<string, string> => Boolean(row)).map((row) => normalizeId(row.id));
+    const classId = classIds[0] || item.classId;
 
     const lesson = findLesson(data.lessons, item.lessonId);
     const lessonId = normalizeId(lesson?.id) || item.lessonId;
@@ -521,6 +528,7 @@ function normalizeScheduleItems(
       ...item,
       schoolId,
       classId,
+      classIds,
       lessonId,
       timeSlotId,
     };
@@ -557,8 +565,8 @@ function validateScheduleInput(
     if (!school) {
       return "Trường đã chọn không tồn tại.";
     }
-    const classRoom = findClassRoom(data.classes, item.classId, school);
-    if (!classRoom) {
+    const classRooms = item.classIds.map((id) => findClassRoom(data.classes, id, school));
+    if (classRooms.length === 0 || classRooms.some((classRoom) => !classRoom)) {
       return "Lớp đã chọn không thuộc trường đã chọn.";
     }
     const lesson = findLesson(data.lessons, item.lessonId);
@@ -571,7 +579,7 @@ function validateScheduleInput(
     if (item.lessonPeriods.includes("lesson2") && !normalizeId(lesson.lesson2Title)) {
       return "Bài học đã chọn không có Tiết 2 để giao.";
     }
-    if (normalizeComparableText(classRoom.grade) !== normalizeComparableText(lesson.grade)) {
+    if (item.teachingEnvironment === "in_class" && classRooms.some((classRoom) => normalizeComparableText(classRoom?.grade) !== normalizeComparableText(lesson.grade))) {
       return "Bài học đã chọn không đúng khối của lớp.";
     }
     if (!findTimeSlot(data.slots, item.timeSlotId)) {
