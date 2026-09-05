@@ -7984,7 +7984,7 @@ function SystemFeedbackLayer({
   return (
     <>
       {hasTopRightFeedback ? (
-        <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] right-3 z-[80] flex w-[min(430px,calc(100vw-1.5rem))] flex-col gap-3 sm:bottom-5 sm:right-5 sm:w-[min(430px,calc(100vw-2.5rem))]">
+        <div className="pointer-events-none fixed right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[80] flex w-[min(430px,calc(100vw-1.5rem))] flex-col gap-3 sm:right-5 sm:top-5 sm:w-[min(430px,calc(100vw-2.5rem))]">
           {pendingAction ? (
             <div className="pointer-events-auto inline-flex items-center gap-3 self-end rounded-2xl border border-cyan-200 bg-white/95 px-4 py-3 text-sm font-black text-[var(--brand-dark)] shadow-2xl shadow-cyan-950/12 backdrop-blur-xl">
               <LoaderCircle className="animate-spin text-cyan-600" size={18} />
