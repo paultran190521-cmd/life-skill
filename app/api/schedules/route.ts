@@ -81,8 +81,12 @@ export async function POST(request: Request) {
       return apiFailure(400, validationMessage, undefined, requestId);
     }
 
-    const schedules: Schedule[] = normalizedItems.flatMap((item) =>
-      item.teacherIds.map((teacherId) => ({
+    const schedules: Schedule[] = normalizedItems.flatMap((item) => {
+      // Những giáo viên cùng được chọn trên một dòng là một nhóm cùng giảng.
+      // Lưu groupId để các luồng hiển thị/email nhận diện đúng, không suy đoán
+      // từ các lịch trùng giờ độc lập.
+      const groupId = item.teacherIds.length > 1 ? createId("grp") : undefined;
+      return item.teacherIds.map((teacherId) => ({
         id: createId("sch"),
         date: item.date,
         teacherId,
@@ -92,11 +96,12 @@ export async function POST(request: Request) {
         lessonPeriods: item.lessonPeriods.join(","),
         timeSlotId: item.timeSlotId,
         teachingEnvironment: item.teachingEnvironment,
+        groupId,
         assistantIds: item.assistantIds.join(",") || undefined,
         status: "sent",
         sentAt: now,
-      })),
-    );
+      }));
+    });
 
     const conflicts = await detectScheduleConflictsSafe(schedules);
     if (conflicts.length > 0) {
@@ -758,6 +763,9 @@ async function sendScheduleEmailsByTeacher(
     slots: Array<Record<string, string>>;
   },
 ): Promise<EmailResult[]> {
+  const teacherNames = new Map(
+    data.teachers.map((teacher) => [normalizeId(teacher.id), String(teacher.name || "").trim()]),
+  );
   const grouped = new Map<string, Schedule[]>();
   for (const schedule of schedules) {
     const list = grouped.get(schedule.teacherId) || [];
@@ -777,6 +785,19 @@ async function sendScheduleEmailsByTeacher(
           classRoom: data.classes.find((item) => normalizeId(item.id) === normalizeId(schedule.classId)),
           lesson: data.lessons.find((item) => normalizeId(item.id) === normalizeId(schedule.lessonId)),
           slot: data.slots.find((item) => normalizeId(item.id) === normalizeId(schedule.timeSlotId)),
+          assistantNames: parseIdList(schedule.assistantIds)
+            .map((assistantId) => teacherNames.get(assistantId))
+            .filter((name): name is string => Boolean(name)),
+          coTeacherNames: schedule.groupId
+            ? Array.from(
+                new Set(
+                  schedules
+                    .filter((item) => item.groupId === schedule.groupId && normalizeId(item.teacherId) !== normalizeId(schedule.teacherId))
+                    .map((item) => teacherNames.get(normalizeId(item.teacherId)))
+                    .filter((name): name is string => Boolean(name)),
+                ),
+              )
+            : [],
         })),
       });
 

@@ -3432,6 +3432,41 @@ export function MettasoulApp() {
     return teachers.find((teacher) => teacher.id === teacherId)?.name ?? "Giáo viên";
   }
 
+  function scheduleAssistantNames(schedule: Schedule) {
+    return String(schedule.assistantIds || "")
+      .split(",")
+      .map((teacherId) => teacherId.trim())
+      .filter(Boolean)
+      .map((teacherId) => teachers.find((teacher) => teacher.id === teacherId)?.name)
+      .filter((name): name is string => Boolean(name));
+  }
+
+  function scheduleCoTeacherNames(schedule: Schedule) {
+    return Array.from(
+      new Set(
+        schedules
+          .filter((candidate) => {
+            if (candidate.id === schedule.id || candidate.status === "cancelled") {
+              return false;
+            }
+            if (schedule.groupId) {
+              return candidate.groupId === schedule.groupId;
+            }
+            return (
+              candidate.date === schedule.date &&
+              candidate.schoolId === schedule.schoolId &&
+              candidate.classId === schedule.classId &&
+              candidate.lessonId === schedule.lessonId &&
+              candidate.timeSlotId === schedule.timeSlotId &&
+              candidate.teachingEnvironment === schedule.teachingEnvironment
+            );
+          })
+          .map((candidate) => teachers.find((teacher) => teacher.id === candidate.teacherId)?.name)
+          .filter((name): name is string => Boolean(name)),
+      ),
+    );
+  }
+
   function renderMain() {
     if (activeTab === "dashboard") {
       return <Dashboard />;
@@ -4079,6 +4114,8 @@ export function MettasoulApp() {
               <div className="app-modal-panel w-full max-w-3xl rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
                 {(() => {
                   const meta = lookupSchedule(selectedScheduleDetail);
+                  const assistantNames = scheduleAssistantNames(selectedScheduleDetail);
+                  const coTeacherNames = scheduleCoTeacherNames(selectedScheduleDetail);
                   const detailCards = [
                     {
                       label: "Trạng thái",
@@ -4109,6 +4146,16 @@ export function MettasoulApp() {
                       label: "Giáo viên",
                       value: `${meta.teacher?.name || "Chưa rõ"} - ${meta.teacher?.phone || "Chưa cập nhật"}`,
                       tone: "slate",
+                    },
+                    {
+                      label: "Giáo viên dạy cùng",
+                      value: coTeacherNames.length > 0 ? coTeacherNames.join(", ") : "Không có",
+                      tone: coTeacherNames.length > 0 ? "violet" : "slate",
+                    },
+                    {
+                      label: "Trợ giảng",
+                      value: assistantNames.length > 0 ? `Có - ${assistantNames.join(", ")}` : "Không có",
+                      tone: assistantNames.length > 0 ? "violet" : "slate",
                     },
                   ] as const;
                   return (
@@ -7826,6 +7873,8 @@ export function MettasoulApp() {
           {items.map((schedule) => {
             const meta = lookupSchedule(schedule);
             const checkedIn = Boolean(meta.checkIn);
+            const assistantNames = scheduleAssistantNames(schedule);
+            const coTeacherNames = scheduleCoTeacherNames(schedule);
             const scheduleLogs = rowAuditLogs
               .filter((log) => log.entityType === "Schedule" && log.entityId === schedule.id)
               .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -7886,6 +7935,16 @@ export function MettasoulApp() {
                       <span className={`rounded-full px-2 py-1 ${checkedIn ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
                         {checkedIn ? "Đã điểm danh" : "Chưa điểm danh"}
                       </span>
+                      {coTeacherNames.length > 0 ? (
+                        <span className="rounded-full bg-violet-50 px-2 py-1 text-violet-800">
+                          Dạy cùng: {coTeacherNames.join(", ")}
+                        </span>
+                      ) : null}
+                      {assistantNames.length > 0 ? (
+                        <span className="rounded-full bg-fuchsia-50 px-2 py-1 text-fuchsia-800">
+                          Có trợ giảng: {assistantNames.join(", ")}
+                        </span>
+                      ) : null}
                     </p>
                   </div>
                   <TeacherHover teacher={meta.teacher} />
