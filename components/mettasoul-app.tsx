@@ -8919,14 +8919,16 @@ export function MettasoulApp() {
 }
 
 function ViewportPortal({ children }: { children: React.ReactNode }) {
-  if (typeof document === "undefined") {
+  const mounted = useClientMounted();
+  if (!mounted) {
     return null;
   }
   return createPortal(children, document.body);
 }
 
 function PageEdgeNavigation() {
-  if (typeof document === "undefined") {
+  const mounted = useClientMounted();
+  if (!mounted) {
     return null;
   }
 
@@ -8960,6 +8962,12 @@ function PageEdgeNavigation() {
     </div>,
     document.body,
   );
+}
+
+function useClientMounted() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return mounted;
 }
 
 function SystemFeedbackLayer({
