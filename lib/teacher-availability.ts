@@ -7,6 +7,26 @@ export const teacherAvailabilityScopeLabels: Record<TeacherAvailabilityScope, st
   time_slots: "Khung giờ cụ thể",
 };
 
+export const TEACHER_AVAILABILITY_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export function teacherAvailabilityLockDeadline(
+  entries: Array<Pick<TeacherAvailability, "createdAt">>,
+) {
+  if (entries.length === 0) return null;
+  const timestamps = entries.map((entry) => Date.parse(entry.createdAt));
+  if (timestamps.some((timestamp) => !Number.isFinite(timestamp))) return null;
+  return Math.min(...timestamps) + TEACHER_AVAILABILITY_EDIT_WINDOW_MS;
+}
+
+export function isTeacherAvailabilityLocked(
+  entries: Array<Pick<TeacherAvailability, "createdAt">>,
+  now = Date.now(),
+) {
+  if (entries.length === 0) return false;
+  const deadline = teacherAvailabilityLockDeadline(entries);
+  return deadline === null || now >= deadline;
+}
+
 export type TeacherAvailabilityDraft = {
   scope: TeacherAvailabilityScope;
   timeSlotIds: string[];

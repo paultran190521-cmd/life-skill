@@ -52,8 +52,10 @@ import {
   buildTeacherAvailabilityEntries,
   canRegisterTeacherAvailability,
   isMorningTimeSlot,
+  isTeacherAvailabilityLocked,
   isTeacherAvailableOnDate,
   isTeacherAvailableForSlot,
+  teacherAvailabilityLockDeadline,
   teacherAvailabilityScopeLabels,
   type TeacherAvailabilityDraft,
   uniqueAvailabilityTimeRanges,
@@ -452,6 +454,7 @@ export function MettasoulApp() {
   const [availabilityApplyMode, setAvailabilityApplyMode] = useState<"single" | "batch">("single");
   const [availabilityEditingDate, setAvailabilityEditingDate] = useState("");
   const [availabilityBatchDates, setAvailabilityBatchDates] = useState<string[]>([]);
+  const [availabilityClock, setAvailabilityClock] = useState(() => Date.now());
   const [assignmentAvailabilityMonth, setAssignmentAvailabilityMonth] = useState(() => currentMonthKey());
   const [assignmentAvailabilityDate, setAssignmentAvailabilityDate] = useState(() => currentDateKey());
   const [assignmentAvailabilityView, setAssignmentAvailabilityView] = useState<AvailabilityCalendarViewMode>("week");
@@ -798,6 +801,13 @@ export function MettasoulApp() {
       window.clearInterval(timer);
     };
   }, [activeTab, authStatus, role]);
+
+  useEffect(() => {
+    if (!canRegisterAvailability || activeTab !== "calendar") return;
+    setAvailabilityClock(Date.now());
+    const timer = window.setInterval(() => setAvailabilityClock(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [activeTab, canRegisterAvailability]);
 
   useEffect(() => {
     const updateViewport = () => {
@@ -1543,6 +1553,50 @@ export function MettasoulApp() {
     });
     setAvailabilityEditingDate((current) => current === dateKey ? "" : current);
     setAvailabilityBatchDates((dates) => dates.filter((date) => date !== dateKey));
+  }
+
+  function editConfirmedAvailability(dateKey: string) {
+    const entries = currentTeacherAvailability.filter((item) => item.date === dateKey);
+    if (isTeacherAvailabilityLocked(entries)) {
+      pushToast("Lịch đã khóa", "Đăng ký này đã quá 24 giờ nên không thể chỉnh sửa.", "warning");
+      return;
+    }
+    setAvailabilityRegistrationMode(true);
+    setAvailabilityApplyMode("single");
+    setAvailabilityBatchDates([]);
+    setAvailabilityEditingDate(dateKey);
+    setAvailabilityDrafts((drafts) => ({ ...drafts, [dateKey]: initialAvailabilityDraft(dateKey) }));
+    setCalendarMonth(dateKey.slice(0, 7));
+    window.requestAnimationFrame(() => {
+      document.getElementById("teacher-availability-registration")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  async function deleteConfirmedAvailability(dateKey: string) {
+    const entries = currentTeacherAvailability.filter((item) => item.date === dateKey);
+    if (isTeacherAvailabilityLocked(entries)) {
+      pushToast("Lịch đã khóa", "Đăng ký này đã quá 24 giờ nên không thể xóa.", "warning");
+      return;
+    }
+    const confirmed = await openConfirmDialog({
+      title: "Xóa lịch trống đã đăng ký?",
+      message: `Bạn muốn xóa đăng ký ngày ${formatDate(dateKey)}?`,
+      confirmText: "Xóa đăng ký",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    try {
+      const response = await saveRequest<{ availability: TeacherAvailability[] }>(
+        "Đang xóa đăng ký...",
+        "/api/teacher-availability",
+        { method: "POST", body: JSON.stringify({ dates: [dateKey], scope: "none" }) },
+      );
+      setTeacherAvailability(response.availability ?? []);
+      removeAvailabilityDate(dateKey);
+      pushToast("Đã xóa đăng ký", `Lịch trống ngày ${formatDate(dateKey)} đã được xóa.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
   }
 
   function updateAvailabilityScope(scope: TeacherAvailabilityScope) {
@@ -5366,6 +5420,15 @@ export function MettasoulApp() {
     const calendarGridClass = calendarViewMode === "day" ? "grid-cols-1" : "grid-cols-7";
     const showTeacherBadgesInCalendarCell = calendarViewMode === "day" || !isMobileViewport;
     const bulkTargets = selectedDaySchedules.filter((schedule) => selectedScheduleIds.includes(schedule.id));
+    const registeredAvailabilityByDate = new Map<string, TeacherAvailability[]>();
+    for (const entry of currentTeacherAvailability) {
+      if (entry.date < todayKey) continue;
+      const rows = registeredAvailabilityByDate.get(entry.date) ?? [];
+      rows.push(entry);
+      registeredAvailabilityByDate.set(entry.date, rows);
+    }
+    const registeredAvailabilityRows = Array.from(registeredAvailabilityByDate.entries())
+      .sort(([left], [right]) => left.localeCompare(right));
 
     return (
       <div className="space-y-5">
@@ -5422,7 +5485,7 @@ export function MettasoulApp() {
             </div>
           </div>
           {canRegisterAvailability ? (
-            <div className={`mb-4 rounded-2xl border p-4 ${availabilityRegistrationMode ? "border-emerald-300 bg-emerald-50/70" : "border-cyan-100 bg-cyan-50/45"}`}>
+            <div id="teacher-availability-registration" className={`mb-4 scroll-mt-4 rounded-2xl border p-4 ${availabilityRegistrationMode ? "border-emerald-300 bg-emerald-50/70" : "border-cyan-100 bg-cyan-50/45"}`}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-black text-[var(--brand-dark)]">Đăng ký lịch trống</p>
@@ -5480,24 +5543,37 @@ export function MettasoulApp() {
                       </div>
                     ) : null}
                     {availabilitySelectedDates.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {availabilitySelectedDates.map((date) => {
-                          const draft = availabilityDrafts[date];
-                          const summary = draft.scope === "time_slots"
-                            ? `${draft.timeSlotIds.length} khung giờ`
-                            : teacherAvailabilityScopeLabels[draft.scope];
-                          const isEditing = availabilityTargetDates.includes(date);
-                          return (
-                            <span key={date} className={`inline-flex items-center overflow-hidden rounded-full border ${isEditing ? "border-emerald-600 bg-emerald-600 text-white" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
-                              <button type="button" onClick={() => availabilityApplyMode === "batch" ? toggleAvailabilityDate(date) : setAvailabilityEditingDate(date)} className="px-3 py-1.5 text-xs font-black">
-                                {formatShortDateLabel(date)} · {summary}
-                              </button>
-                              <button type="button" onClick={() => removeAvailabilityDate(date)} title={`Bỏ ngày ${formatShortDateLabel(date)}`} className={`grid h-7 w-7 place-items-center border-l ${isEditing ? "border-white/30 hover:bg-white/15" : "border-emerald-200 hover:bg-emerald-100"}`}>
-                                <X size={13} />
-                              </button>
-                            </span>
-                          );
-                        })}
+                      <div className="app-scrollbar mt-3 overflow-x-auto rounded-xl border border-emerald-100">
+                        <table className="w-full min-w-[640px] text-left text-xs">
+                          <thead className="bg-emerald-50 text-[11px] font-black uppercase text-emerald-900">
+                            <tr>
+                              <th className="px-3 py-2">Ngày</th>
+                              <th className="px-3 py-2">Lựa chọn</th>
+                              <th className="px-3 py-2">Khung giờ</th>
+                              <th className="px-3 py-2 text-right">Thao tác</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {availabilitySelectedDates.map((date) => {
+                              const draft = availabilityDrafts[date];
+                              const isEditing = availabilityTargetDates.includes(date);
+                              const slotLabels = draft.timeSlotIds.map((id) => id.startsWith("time:") ? id.slice(5) : id).join(", ");
+                              return (
+                                <tr key={date} className={`border-t border-emerald-100 ${isEditing ? "bg-amber-50" : "bg-white"}`}>
+                                  <td className="px-3 py-2 font-black text-[var(--brand-dark)]">{formatDate(date)}</td>
+                                  <td className="px-3 py-2 font-semibold text-emerald-800">{teacherAvailabilityScopeLabels[draft.scope]}</td>
+                                  <td className="px-3 py-2 text-slate-600">{draft.scope === "time_slots" ? (slotLabels || "Chưa chọn giờ") : "—"}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex justify-end gap-2">
+                                      <button type="button" onClick={() => { setAvailabilityApplyMode("single"); setAvailabilityBatchDates([]); setAvailabilityEditingDate(date); }} className="rounded-lg bg-cyan-50 px-3 py-1.5 font-black text-cyan-800">Sửa</button>
+                                      <button type="button" onClick={() => removeAvailabilityDate(date)} className="rounded-lg bg-rose-50 px-3 py-1.5 font-black text-rose-700">Xóa</button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     ) : (
                       <p className="mt-2 text-xs font-semibold text-[var(--muted)]">Chưa có ngày nào được thiết lập.</p>
@@ -5549,15 +5625,69 @@ export function MettasoulApp() {
                       ))}
                     </div>
                   ) : null}
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+                    Lưu ý: lịch trống sẽ được khóa sau 24 giờ kể từ thời điểm xác nhận. Sau khi khóa, bạn không thể sửa hoặc xóa đăng ký đó.
+                  </p>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs font-black text-emerald-800">Đã chọn {availabilitySelectedDates.length} ngày</span>
+                    <span className="text-xs font-black text-emerald-800">Chờ xác nhận {availabilitySelectedDates.length} ngày</span>
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => submitTeacherAvailability("none")} disabled={availabilitySelectedDates.length === 0 || isBusy} className="rounded-xl bg-rose-50 px-4 py-2 text-xs font-black text-rose-700 disabled:opacity-50">Hủy đăng ký ngày chọn</button>
                       <button type="button" onClick={() => submitTeacherAvailability()} disabled={availabilitySelectedDates.length === 0 || isBusy} className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50">Xác nhận đăng ký</button>
                     </div>
                   </div>
                 </div>
               ) : null}
+            </div>
+          ) : null}
+          {canRegisterAvailability ? (
+            <div className="mb-4 rounded-2xl border border-cyan-100 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-black text-[var(--brand-dark)]">Lịch trống đã đăng ký</p>
+                  <p className="mt-1 text-xs font-semibold text-[var(--muted)]">Bạn vẫn có thể đăng ký thêm ngày mới. Lịch cũ chỉ sửa hoặc xóa được trong 24 giờ đầu.</p>
+                </div>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-800">{registeredAvailabilityRows.length} ngày</span>
+              </div>
+              {registeredAvailabilityRows.length > 0 ? (
+                <div className="app-scrollbar mt-3 overflow-x-auto rounded-xl border border-cyan-100">
+                  <table className="w-full min-w-[760px] text-left text-xs">
+                    <thead className="bg-cyan-50 text-[11px] font-black uppercase text-[var(--brand-dark)]">
+                      <tr>
+                        <th className="px-3 py-2">Ngày</th>
+                        <th className="px-3 py-2">Thời gian đã đăng ký</th>
+                        <th className="px-3 py-2">Xác nhận lúc</th>
+                        <th className="px-3 py-2">Trạng thái chỉnh sửa</th>
+                        <th className="px-3 py-2 text-right">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {registeredAvailabilityRows.map(([date, entries]) => {
+                        const locked = isTeacherAvailabilityLocked(entries, availabilityClock);
+                        const deadline = teacherAvailabilityLockDeadline(entries);
+                        return (
+                          <tr key={date} className="border-t border-cyan-100 bg-white">
+                            <td className="px-3 py-2 font-black text-[var(--brand-dark)]">{formatDate(date)}</td>
+                            <td className="px-3 py-2 font-semibold text-cyan-900">{summarizeAvailabilityEntries(entries, activeTimeSlots)}</td>
+                            <td className="px-3 py-2 text-slate-600">{formatDateTime(entries[0]?.createdAt || "")}</td>
+                            <td className="px-3 py-2">
+                              <span className={`rounded-full px-2 py-1 text-[10px] font-black ${locked ? "bg-slate-100 text-slate-600" : "bg-amber-100 text-amber-900"}`}>
+                                {locked ? "Đã khóa" : deadline ? `Sửa đến ${formatDateTime(new Date(deadline).toISOString())}` : "Đã khóa"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex justify-end gap-2">
+                                <button type="button" onClick={() => editConfirmedAvailability(date)} disabled={locked || isBusy} className="rounded-lg bg-cyan-50 px-3 py-1.5 font-black text-cyan-800 disabled:cursor-not-allowed disabled:opacity-45">Sửa</button>
+                                <button type="button" onClick={() => deleteConfirmedAvailability(date)} disabled={locked || isBusy} className="rounded-lg bg-rose-50 px-3 py-1.5 font-black text-rose-700 disabled:cursor-not-allowed disabled:opacity-45">Xóa</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="mt-3 rounded-xl border border-dashed border-cyan-200 bg-cyan-50/50 px-3 py-4 text-center text-xs font-semibold text-[var(--muted)]">Chưa có lịch trống nào được xác nhận.</p>
+              )}
             </div>
           ) : null}
           {role === "teacher" && quickScheduleDates.length > 0 ? (

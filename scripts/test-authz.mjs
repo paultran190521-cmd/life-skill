@@ -66,7 +66,12 @@ const rules = [
   },
   {
     file: "app/api/teacher-availability/route.ts",
-    checks: ['requireSessionUser(request, { allowHeaderFallback: false })', 'evaluateRolePermission(auth.user, ["teacher", "assistant"]'],
+    checks: [
+      'requireSessionUser(request, { allowHeaderFallback: false })',
+      'evaluateRolePermission(auth.user, ["teacher", "assistant"]',
+      "isTeacherAvailabilityLocked(",
+      "originalCreatedAtByDate.get(entry.date) || now",
+    ],
   },
   {
     file: "app/api/schedules/[id]/route.ts",

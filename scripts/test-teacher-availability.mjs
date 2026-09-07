@@ -13,8 +13,10 @@ const {
   availabilityTimeRangeKey,
   buildTeacherAvailabilityEntries,
   canRegisterTeacherAvailability,
+  isTeacherAvailabilityLocked,
   isTeacherAvailableOnDate,
   isTeacherAvailableForSlot,
+  teacherAvailabilityLockDeadline,
   uniqueAvailabilityTimeRanges,
 } = policyModule.exports;
 
@@ -113,5 +115,12 @@ assert.equal(
   filteringScenario.filter((entry) => isTeacherAvailableOnDate(filteringScenario, entry.teacherId, "2027-09-09")).length,
   4,
 );
+const confirmedAt = "2027-09-09T01:00:00.000Z";
+const confirmedAtMs = Date.parse(confirmedAt);
+assert.equal(isTeacherAvailabilityLocked([], confirmedAtMs + 48 * 60 * 60 * 1000), false);
+assert.equal(isTeacherAvailabilityLocked([{ createdAt: confirmedAt }], confirmedAtMs + 23 * 60 * 60 * 1000), false);
+assert.equal(isTeacherAvailabilityLocked([{ createdAt: confirmedAt }], confirmedAtMs + 24 * 60 * 60 * 1000), true);
+assert.equal(teacherAvailabilityLockDeadline([{ createdAt: confirmedAt }]), confirmedAtMs + 24 * 60 * 60 * 1000);
+assert.equal(isTeacherAvailabilityLocked([{ createdAt: "invalid" }], confirmedAtMs), true);
 
-console.log("Teacher availability policy tests passed (25 cases).");
+console.log("Teacher availability policy tests passed (30 cases).");

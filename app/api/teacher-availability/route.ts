@@ -9,7 +9,7 @@ import {
   updateSheetRowById,
 } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
-import { availabilityTimeRangeKey } from "@/lib/teacher-availability";
+import { availabilityTimeRangeKey, isTeacherAvailabilityLocked } from "@/lib/teacher-availability";
 import type { TeacherAvailability, TeacherAvailabilityScope } from "@/lib/types";
 
 const availabilityScopes: TeacherAvailabilityScope[] = ["all_day", "morning", "afternoon", "time_slots"];
@@ -113,7 +113,31 @@ export async function POST(request: Request) {
         selectedDates.has(String(row.date || "")) &&
         String(row.status || "available") === "available",
     );
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const lockedDates = dates.filter((date) => {
+      const dateRows = rowsToWithdraw
+        .filter((row) => String(row.date || "") === date)
+        .map((row) => ({ createdAt: String(row.createdAt || "") }));
+      return isTeacherAvailabilityLocked(dateRows, nowDate.getTime());
+    });
+    if (lockedDates.length > 0) {
+      return apiFailure(
+        409,
+        `Lịch trống ngày ${lockedDates.join(", ")} đã khóa sau 24 giờ và không thể sửa hoặc xóa.`,
+        "CONFLICT",
+        requestId,
+      );
+    }
+    const now = nowDate.toISOString();
+    const originalCreatedAtByDate = new Map<string, string>();
+    for (const row of rowsToWithdraw) {
+      const date = String(row.date || "");
+      const createdAt = String(row.createdAt || "");
+      const current = originalCreatedAtByDate.get(date);
+      if (!current || Date.parse(createdAt) < Date.parse(current)) {
+        originalCreatedAtByDate.set(date, createdAt);
+      }
+    }
     await Promise.all(
       rowsToWithdraw.map((row) => updateSheetRowById("TeacherAvailability", row.id, { status: "withdrawn", updatedAt: now })),
     );
@@ -131,7 +155,7 @@ export async function POST(request: Request) {
             status: "available" as const,
             note: String(body.note || "").trim() || undefined,
             createdBy: auth.user.id,
-            createdAt: now,
+            createdAt: originalCreatedAtByDate.get(entry.date) || now,
             updatedAt: now,
           }));
         });
