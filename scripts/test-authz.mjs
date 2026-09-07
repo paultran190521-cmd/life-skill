@@ -65,6 +65,10 @@ const rules = [
     checks: ['requireSessionUser(request)', 'evaluateRolePermission(auth.user, "admin"', "detectScheduleConflicts("],
   },
   {
+    file: "app/api/teacher-availability/route.ts",
+    checks: ['requireSessionUser(request, { allowHeaderFallback: false })', 'evaluateRolePermission(auth.user, ["teacher", "assistant"]'],
+  },
+  {
     file: "app/api/schedules/[id]/route.ts",
     checks: ['requireSessionUser(request)', "evaluatePermission({", "forbidden_schedule_operation"],
   },

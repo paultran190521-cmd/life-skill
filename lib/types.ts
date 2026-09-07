@@ -18,6 +18,21 @@ export type TeachingEnvironment =
 
 export type LessonPeriod = "lesson1" | "lesson2";
 
+export type TeacherAvailabilityScope = "all_day" | "morning" | "afternoon" | "time_slots";
+
+export type TeacherAvailability = {
+  id: string;
+  teacherId: string;
+  date: string;
+  scope: TeacherAvailabilityScope;
+  timeSlotId?: string;
+  status: "available" | "withdrawn";
+  note?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
 export type User = {
   id: string;
   name: string;

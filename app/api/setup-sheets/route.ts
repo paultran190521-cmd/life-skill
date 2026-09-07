@@ -8,6 +8,7 @@ import {
   scheduleHeaders,
   weeklyUpdateHeaders,
   appAnnouncementHeaders,
+  teacherAvailabilityHeaders,
 } from "@/lib/google-sheets";
 
 /**
@@ -74,6 +75,10 @@ const ALL_SHEETS: { name: Parameters<typeof ensureSheetHeaders>[0]; headers: str
   {
     name: "WeeklyUpdates",
     headers: weeklyUpdateHeaders,
+  },
+  {
+    name: "TeacherAvailability",
+    headers: teacherAvailabilityHeaders,
   },
 ];
 

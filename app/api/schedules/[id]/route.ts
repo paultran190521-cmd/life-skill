@@ -2,10 +2,19 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
 import { sendScheduleEmail } from "@/lib/email";
-import { appendSheetRows, deleteSheetRowById, readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
+import {
+  appendSheetRows,
+  deleteSheetRowById,
+  ensureSheetHeaders,
+  readSheetRowById,
+  readSheetRows,
+  teacherAvailabilityHeaders,
+  updateSheetRowById,
+} from "@/lib/google-sheets";
 import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 import { invalidateScheduleConflictIndex } from "@/lib/schedule-conflict-index";
-import type { Notification, Schedule, ScheduleStatus, User } from "@/lib/types";
+import { isTeacherAvailableForSlot } from "@/lib/teacher-availability";
+import type { Notification, Schedule, ScheduleStatus, TeacherAvailability, User } from "@/lib/types";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -56,7 +65,7 @@ export async function PATCH(request: Request, { params }: Params) {
       action = "schedule.cancel";
     } else if (status === "reassigned") {
       const nextTeacherId = String(body.teacherId || "").trim();
-      const teacherError = await validateReplacementTeacher(nextTeacherId, schedule.teacherId || "");
+      const teacherError = await validateReplacementTeacher(nextTeacherId, schedule);
       if (teacherError) {
         return apiFailure(400, teacherError, undefined, requestId);
       }
@@ -165,18 +174,40 @@ function isAuthorized(user: User, scheduleTeacherId: string, status: ScheduleSta
   return (status === "confirmed" || status === "attended") && user.teacherId === scheduleTeacherId;
 }
 
-async function validateReplacementTeacher(nextTeacherId: string, currentTeacherId: string) {
+async function validateReplacementTeacher(nextTeacherId: string, schedule: Record<string, string>) {
   if (!nextTeacherId) {
     return "Thiếu giáo viên thay thế.";
   }
-  if (nextTeacherId === currentTeacherId) {
+  if (nextTeacherId === schedule.teacherId) {
     return "Giáo viên thay thế phải khác giáo viên hiện tại.";
   }
 
-  const teachers = await readSheetRows("Teachers");
+  await ensureSheetHeaders("TeacherAvailability", teacherAvailabilityHeaders);
+  const [teachers, availabilityRows, slots] = await Promise.all([
+    readSheetRows("Teachers"),
+    readSheetRows("TeacherAvailability"),
+    readSheetRows("TimeSlots"),
+  ]);
   const teacher = teachers.find((item) => item.id === nextTeacherId);
   if (!teacher || teacher.active === "false") {
     return "Giáo viên thay thế không tồn tại hoặc đang tắt.";
+  }
+
+  const slot = slots.find((item) => item.id === schedule.timeSlotId);
+  const availability: TeacherAvailability[] = availabilityRows.map((row) => ({
+    id: row.id,
+    teacherId: row.teacherId,
+    date: row.date,
+    scope: ["morning", "afternoon", "time_slots"].includes(row.scope)
+      ? (row.scope as TeacherAvailability["scope"])
+      : "all_day",
+    timeSlotId: row.timeSlotId || undefined,
+    status: row.status === "withdrawn" ? "withdrawn" : "available",
+    createdBy: row.createdBy || "",
+    createdAt: row.createdAt || "",
+  }));
+  if (!slot || !isTeacherAvailableForSlot(availability, nextTeacherId, schedule.date, { id: slot.id, start: slot.start })) {
+    return "Giáo viên thay thế chưa đăng ký rảnh cho ngày và khung giờ này.";
   }
 
   return "";

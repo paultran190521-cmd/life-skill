@@ -48,6 +48,10 @@ import {
   type TeacherTimeSlot,
 } from "@/lib/schedule-conflict-policy";
 import {
+  isTeacherAvailableForSlot,
+  teacherAvailabilityScopeLabels,
+} from "@/lib/teacher-availability";
+import {
   MIN_TIME_SLOT_MINUTES,
   MAX_TIME_SLOT_MINUTES,
   TIME_SLOT_STEP_MINUTES,
@@ -70,6 +74,8 @@ import type {
   Schedule,
   School,
   Teacher,
+  TeacherAvailability,
+  TeacherAvailabilityScope,
   TeachingEnvironment,
   TimeSlot,
   Topic,
@@ -121,6 +127,7 @@ type AppData = {
   appAnnouncements: AppAnnouncement[];
   auditLogs: AuditLog[];
   weeklyUpdates: WeeklyUpdate[];
+  teacherAvailability: TeacherAvailability[];
 };
 
 type AuthSession = {
@@ -192,6 +199,7 @@ type AttendanceCreateResponse = {
 type ClassCreateResponse = ClassRoom | { classes: ClassRoom[] };
 
 type CalendarViewMode = "month" | "week" | "day";
+type AvailabilityCalendarViewMode = "month" | "week";
 type CalendarSortMode = "date-asc" | "date-desc" | "status";
 type LessonPlanAdminFocus = "uploaded" | "submitted" | "missing" | "upcoming-missing";
 type LessonPlanTeacherFocus = "uploaded" | "pending" | "submitted";
@@ -416,6 +424,7 @@ export function MettasoulApp() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [weeklyUpdates, setWeeklyUpdates] = useState<WeeklyUpdate[]>([]);
+  const [teacherAvailability, setTeacherAvailability] = useState<TeacherAvailability[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
@@ -431,6 +440,13 @@ export function MettasoulApp() {
   const [scheduleReportMonth, setScheduleReportMonth] = useState(() => currentMonthKey());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
   const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("week");
+  const [availabilityRegistrationMode, setAvailabilityRegistrationMode] = useState(false);
+  const [availabilitySelectedDates, setAvailabilitySelectedDates] = useState<string[]>([]);
+  const [availabilityScope, setAvailabilityScope] = useState<TeacherAvailabilityScope>("all_day");
+  const [availabilityTimeSlotIds, setAvailabilityTimeSlotIds] = useState<string[]>([]);
+  const [assignmentAvailabilityMonth, setAssignmentAvailabilityMonth] = useState(() => currentMonthKey());
+  const [assignmentAvailabilityDate, setAssignmentAvailabilityDate] = useState(() => currentDateKey());
+  const [assignmentAvailabilityView, setAssignmentAvailabilityView] = useState<AvailabilityCalendarViewMode>("week");
   const [calendarFilters, setCalendarFilters] = useState<CalendarFilters>(() => loadCalendarFilters());
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
   const [selectedScheduleDetail, setSelectedScheduleDetail] = useState<Schedule | null>(null);
@@ -587,6 +603,10 @@ export function MettasoulApp() {
   );
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
   const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);
+  const currentTeacherAvailability = useMemo(
+    () => teacherAvailability.filter((item) => item.teacherId === currentTeacherId && item.status === "available"),
+    [currentTeacherId, teacherAvailability],
+  );
   const hasBlockingModal = Boolean(
     feedbackModalOpen ||
       teacherModalOpen ||
@@ -712,6 +732,7 @@ export function MettasoulApp() {
         setNotifications(data.notifications);
         setAppAnnouncements(data.appAnnouncements ?? []);
         setWeeklyUpdates(data.weeklyUpdates ?? []);
+        setTeacherAvailability(data.teacherAvailability ?? []);
         setDataStatus("connected");
       } catch (error) {
         console.error(error);
@@ -741,6 +762,25 @@ export function MettasoulApp() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (authStatus !== "signed-in" || role !== "admin" || activeTab !== "assignment") return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const rows = await apiRequest<TeacherAvailability[]>("/api/teacher-availability");
+        if (!cancelled) setTeacherAvailability(rows);
+      } catch (error) {
+        console.error("Không thể làm mới lịch trống của giáo viên", error);
+      }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeTab, authStatus, role]);
 
   useEffect(() => {
     const updateViewport = () => {
@@ -913,6 +953,22 @@ export function MettasoulApp() {
       }),
     }));
   }, [activeSchedulingTeachers, activeAssistantTeachers]);
+
+  useEffect(() => {
+    setDraftSchedule((current) => {
+      let changed = false;
+      const items = current.items.map((item) => {
+        const slot = activeTimeSlots.find((candidate) => candidate.id === item.timeSlotId);
+        const teacherIds = item.teacherIds.filter((teacherId) =>
+          isTeacherAvailableForSlot(teacherAvailability, teacherId, item.date, slot),
+        );
+        if (teacherIds.length === item.teacherIds.length) return item;
+        changed = true;
+        return { ...item, teacherIds };
+      });
+      return changed ? { ...current, items } : current;
+    });
+  }, [activeTimeSlots, draftSchedule.items, teacherAvailability]);
 
   useEffect(() => {
     if (schools.length === 0) {
@@ -1285,6 +1341,11 @@ export function MettasoulApp() {
     return `${formatDate(schedule.date)} • ${timeText}`;
   }
 
+  function teacherIsAvailableForSchedule(teacherId: string, schedule: Pick<Schedule, "date" | "timeSlotId">) {
+    const slot = activeTimeSlots.find((item) => item.id === schedule.timeSlotId);
+    return isTeacherAvailableForSlot(teacherAvailability, teacherId, schedule.date, slot);
+  }
+
   function dismissToast(id: string) {
     setToastMessages((items) => items.map((item) => (item.id === id ? { ...item, leaving: true } : item)));
     setTimeout(() => {
@@ -1414,6 +1475,80 @@ export function MettasoulApp() {
       return await apiRequest<T>(url, { ...init, headers });
     } finally {
       setPendingAction("");
+    }
+  }
+
+  function toggleAvailabilityDate(dateKey: string) {
+    if (dateKey < currentDateKey()) {
+      pushToast("Không thể chọn", "Chỉ có thể đăng ký lịch trống từ hôm nay trở đi.", "warning");
+      return;
+    }
+    setAvailabilitySelectedDates((dates) =>
+      dates.includes(dateKey) ? dates.filter((date) => date !== dateKey) : [...dates, dateKey].sort(),
+    );
+  }
+
+  function toggleAvailabilityTimeSlot(timeSlotId: string) {
+    setAvailabilityTimeSlotIds((ids) =>
+      ids.includes(timeSlotId) ? ids.filter((id) => id !== timeSlotId) : [...ids, timeSlotId],
+    );
+  }
+
+  async function submitTeacherAvailability(scope: TeacherAvailabilityScope | "none" = availabilityScope) {
+    if (availabilitySelectedDates.length === 0) {
+      pushToast("Chưa chọn ngày", "Hãy chọn ít nhất một ngày trên lịch.", "warning");
+      return;
+    }
+    if (scope === "time_slots" && availabilityTimeSlotIds.length === 0) {
+      pushToast("Chưa chọn khung giờ", "Hãy chọn ít nhất một khung giờ cụ thể.", "warning");
+      return;
+    }
+
+    const actionLabel = scope === "none" ? "hủy đăng ký" : `đăng ký ${teacherAvailabilityScopeLabels[scope]}`;
+    const confirmed = await openConfirmDialog({
+      title: scope === "none" ? "Hủy lịch trống đã đăng ký?" : "Xác nhận lịch trống",
+      message: `Bạn muốn ${actionLabel} cho ${availabilitySelectedDates.length} ngày đã chọn?`,
+      confirmText: scope === "none" ? "Hủy đăng ký" : "Xác nhận đăng ký",
+      tone: scope === "none" ? "danger" : "brand",
+    });
+    if (!confirmed) return;
+
+    try {
+      const response = await saveRequest<{ availability: TeacherAvailability[] }>(
+        scope === "none" ? "Đang hủy đăng ký..." : "Đang lưu lịch trống...",
+        "/api/teacher-availability",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            dates: availabilitySelectedDates,
+            scope,
+            timeSlotIds: scope === "time_slots" ? availabilityTimeSlotIds : [],
+          }),
+        },
+      );
+      setTeacherAvailability(response.availability ?? []);
+      setAvailabilitySelectedDates([]);
+      setAvailabilityTimeSlotIds([]);
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast(
+        scope === "none" ? "Đã hủy đăng ký" : "Đã đăng ký lịch trống",
+        scope === "none" ? "Các ngày đã chọn đã được cập nhật." : `${actionLabel} thành công.`,
+        "success",
+      );
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function refreshTeacherAvailability() {
+    try {
+      const rows = await saveRequest<TeacherAvailability[]>("Đang làm mới lịch trống...", "/api/teacher-availability");
+      setTeacherAvailability(rows);
+      setDataStatus("connected");
+      setSaveError("");
+    } catch (error) {
+      handleSaveError(error);
     }
   }
 
@@ -1889,7 +2024,9 @@ export function MettasoulApp() {
   }
 
   function reassignSchedule(schedule: Schedule) {
-    const replacement = activeSchedulingTeachers.find((teacher) => teacher.id !== schedule.teacherId);
+    const replacement = activeSchedulingTeachers.find(
+      (teacher) => teacher.id !== schedule.teacherId && teacherIsAvailableForSchedule(teacher.id, schedule),
+    );
     setReassignTarget(schedule);
     setReassignTeacherId(replacement?.id ?? "");
   }
@@ -4067,7 +4204,10 @@ export function MettasoulApp() {
                     className={inputClass}
                   >
                     {activeSchedulingTeachers
-                      .filter((teacher) => teacher.id !== reassignTarget.teacherId)
+                      .filter(
+                        (teacher) =>
+                          teacher.id !== reassignTarget.teacherId && teacherIsAvailableForSchedule(teacher.id, reassignTarget),
+                      )
                       .map((teacher) => (
                         <option key={teacher.id} value={teacher.id}>
                           {teacher.name} - {teacher.specialty}
@@ -4430,6 +4570,7 @@ export function MettasoulApp() {
 
     return (
       <div className="space-y-5">
+        <AdminAvailabilityPanel />
         <div className="grid gap-5 xl:grid-cols-[0.9fr_1.35fr]">
           <Panel title="Tạo lịch dạy mới" action="Email xác nhận">
             <div className="grid gap-4">
@@ -4486,6 +4627,10 @@ export function MettasoulApp() {
                       ? rowLessonsAll.filter((l) => l.topicId === item.topicId)
                       : rowLessonsAll;
                     const rowGrades = gradesForClasses(rowClasses);
+                    const selectedSlot = activeTimeSlots.find((slot) => slot.id === item.timeSlotId);
+                    const rowAvailableTeachers = activeSchedulingTeachers.filter((teacher) =>
+                      isTeacherAvailableForSlot(teacherAvailability, teacher.id, item.date, selectedSlot),
+                    );
                     return (
                       <div key={item.id} className="rounded-2xl border border-cyan-100 bg-white p-3 shadow-sm">
                         <div className="mb-2 flex items-center justify-between">
@@ -4734,9 +4879,13 @@ export function MettasoulApp() {
                         </div>
                         {/* Per-item teacher selection */}
                         <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
-                          <p className="mb-2 text-xs font-black uppercase text-[var(--brand-dark)]">Giáo viên</p>
-                          <div className="grid grid-cols-1 gap-2 min-[440px]:grid-cols-2 lg:grid-cols-3">
-                            {activeSchedulingTeachers.map((teacher) => (
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Giáo viên đã đăng ký rảnh</p>
+                            <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700">{rowAvailableTeachers.length} người phù hợp</span>
+                          </div>
+                          {rowAvailableTeachers.length > 0 ? (
+                            <div className="grid grid-cols-1 gap-2 min-[440px]:grid-cols-2 lg:grid-cols-3">
+                            {rowAvailableTeachers.map((teacher) => (
                               <label
                                 key={teacher.id}
                                 className="flex min-w-0 items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-semibold shadow-sm"
@@ -4746,10 +4895,17 @@ export function MettasoulApp() {
                                   checked={item.teacherIds.includes(teacher.id)}
                                   onChange={(e) => toggleDraftItemTeacher(item.id, teacher.id, e.target.checked)}
                                 />
-                                <span className="truncate">{teacher.name}</span>
+                                <span className="min-w-0 truncate">{teacher.name}</span>
                               </label>
                             ))}
-                          </div>
+                            </div>
+                          ) : (
+                            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                              {item.date && item.timeSlotId
+                                ? "Chưa có giáo viên đăng ký rảnh cho ngày và khung giờ này."
+                                : "Chọn ngày và khung giờ để xem giáo viên đã đăng ký."}
+                            </p>
+                          )}
                           {activeAssistantTeachers.length > 0 ? (
                             <div className="mt-2">
                               <p className="mb-1 text-xs font-bold text-violet-700">Trợ giảng (không tính xung đột)</p>
@@ -4838,6 +4994,119 @@ export function MettasoulApp() {
         <WeeklyUpdatesPanel embedded />
         <AssignmentSummaryPanel />
       </div>
+    );
+  }
+
+  function AdminAvailabilityPanel() {
+    const days = buildCalendarDays(
+      assignmentAvailabilityMonth,
+      assignmentAvailabilityDate,
+      assignmentAvailabilityView,
+      [],
+    );
+    const availabilityByDate = new Map<string, TeacherAvailability[]>();
+    for (const item of teacherAvailability) {
+      if (item.status !== "available") continue;
+      const list = availabilityByDate.get(item.date) ?? [];
+      list.push(item);
+      availabilityByDate.set(item.date, list);
+    }
+
+    function moveAvailabilityWindow(offset: number) {
+      if (assignmentAvailabilityView === "month") {
+        const month = addMonths(assignmentAvailabilityMonth, offset);
+        setAssignmentAvailabilityMonth(month);
+        setAssignmentAvailabilityDate(`${month}-01`);
+        return;
+      }
+      const date = addDaysToDateKey(assignmentAvailabilityDate, offset * 7);
+      setAssignmentAvailabilityDate(date);
+      setAssignmentAvailabilityMonth(date.slice(0, 7));
+    }
+
+    return (
+      <Panel title="Giáo viên đăng ký lịch trống" action={`${teacherAvailability.filter((item) => item.status === "available").length} lượt`}>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => moveAvailabilityWindow(-1)} className="grid h-10 w-10 place-items-center rounded-xl border border-cyan-100 bg-white text-[var(--brand-dark)] hover:bg-cyan-50">
+              <ChevronLeft size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const today = currentDateKey();
+                setAssignmentAvailabilityDate(today);
+                setAssignmentAvailabilityMonth(today.slice(0, 7));
+              }}
+              className="h-10 rounded-xl bg-cyan-50 px-3 text-xs font-black text-[var(--brand-dark)] hover:bg-cyan-100"
+            >
+              Hôm nay
+            </button>
+            <button type="button" onClick={() => moveAvailabilityWindow(1)} className="grid h-10 w-10 place-items-center rounded-xl border border-cyan-100 bg-white text-[var(--brand-dark)] hover:bg-cyan-50">
+              <ChevronRight size={18} />
+            </button>
+            <button type="button" onClick={refreshTeacherAvailability} disabled={isBusy} className="inline-flex h-10 items-center gap-2 rounded-xl border border-cyan-100 bg-white px-3 text-xs font-black text-[var(--brand-dark)] hover:bg-cyan-50 disabled:opacity-50">
+              <RefreshCcw size={15} />
+              Làm mới
+            </button>
+          </div>
+          <div className="flex overflow-hidden rounded-xl border border-cyan-100 bg-white">
+            {(["month", "week"] as AvailabilityCalendarViewMode[]).map((view) => (
+              <button
+                key={view}
+                type="button"
+                onClick={() => setAssignmentAvailabilityView(view)}
+                className={`h-10 px-4 text-xs font-black ${assignmentAvailabilityView === view ? "bg-[var(--brand)] text-white" : "text-[var(--brand-dark)] hover:bg-cyan-50"}`}
+              >
+                {view === "month" ? "Tháng" : "Tuần"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="app-scrollbar overflow-x-auto pb-1">
+          <div className="grid min-w-[700px] grid-cols-7 gap-2 text-center text-[11px] font-black uppercase text-[var(--muted)] sm:min-w-0">
+            {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map((day) => <span key={day} className="rounded-xl bg-cyan-50/70 py-1.5">{day}</span>)}
+          </div>
+        </div>
+        <div className="app-scrollbar overflow-x-auto pb-1">
+          <div className="mt-2 grid min-w-[700px] grid-cols-7 gap-2 sm:min-w-0">
+            {days.map((day) => {
+              const entries = availabilityByDate.get(day.dateKey) ?? [];
+              const teacherIds = Array.from(new Set(entries.map((item) => item.teacherId)));
+              return (
+                <button
+                  key={day.dateKey}
+                  type="button"
+                  onClick={() => {
+                    setAssignmentAvailabilityDate(day.dateKey);
+                    setAssignmentAvailabilityMonth(day.dateKey.slice(0, 7));
+                  }}
+                  className={`min-h-[130px] rounded-2xl border p-2 text-left transition ${assignmentAvailabilityDate === day.dateKey ? "border-[var(--brand)] bg-cyan-50" : day.inMonth ? "border-[var(--line)] bg-white hover:border-cyan-300" : "border-slate-100 bg-slate-50/70"}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black ${day.isToday ? "bg-[var(--accent)] text-white" : "text-[var(--brand-dark)]"}`}>{day.dayNumber}</span>
+                    {teacherIds.length > 0 ? <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700">{teacherIds.length} GV</span> : null}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {teacherIds.slice(0, 6).map((teacherId) => {
+                      const teacher = teachers.find((item) => item.id === teacherId);
+                      const teacherEntries = entries.filter((item) => item.teacherId === teacherId);
+                      const labels = summarizeAvailabilityEntries(teacherEntries, timeSlots);
+                      return (
+                        <span key={teacherId} title={labels} className={`max-w-full truncate rounded-full px-2 py-1 text-[10px] font-black ${teacherAvailabilityTone(teacherId)}`}>
+                          {teacher?.name || teacherId} · {labels}
+                        </span>
+                      );
+                    })}
+                    {teacherIds.length > 6 ? <span className="px-1 text-[10px] font-black text-[var(--muted)]">+{teacherIds.length - 6} người</span> : null}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <p className="mt-3 text-xs font-semibold text-[var(--muted)]">Buổi sáng gồm khung bắt đầu trước 12:00; buổi chiều từ 12:00 trở đi.</p>
+      </Panel>
     );
   }
 
@@ -5049,6 +5318,65 @@ export function MettasoulApp() {
               <span className="rounded-full bg-rose-50 px-3 py-1 text-rose-800">{calendarStats.cancelled} hủy</span>
             </div>
           </div>
+          {role === "teacher" ? (
+            <div className={`mb-4 rounded-2xl border p-4 ${availabilityRegistrationMode ? "border-emerald-300 bg-emerald-50/70" : "border-cyan-100 bg-cyan-50/45"}`}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black text-[var(--brand-dark)]">Đăng ký lịch trống</p>
+                  <p className="mt-1 text-xs font-semibold text-[var(--muted)]">Bật chế độ đăng ký, sau đó bấm trực tiếp các ngày trên lịch.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAvailabilityRegistrationMode((value) => !value);
+                    setAvailabilitySelectedDates([]);
+                  }}
+                  className={`inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black transition ${availabilityRegistrationMode ? "bg-emerald-600 text-white" : "bg-[var(--brand)] text-white"}`}
+                >
+                  <CalendarDays size={16} />
+                  {availabilityRegistrationMode ? "Đang chọn ngày" : "Đăng ký lịch trống"}
+                </button>
+              </div>
+              {availabilityRegistrationMode ? (
+                <div className="mt-4 space-y-3">
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    {([
+                      ["all_day", "Cả ngày"],
+                      ["morning", "Buổi sáng"],
+                      ["afternoon", "Buổi chiều"],
+                      ["time_slots", "Khung giờ cụ thể"],
+                    ] as Array<[TeacherAvailabilityScope, string]>).map(([scope, label]) => (
+                      <button
+                        key={scope}
+                        type="button"
+                        onClick={() => setAvailabilityScope(scope)}
+                        className={`rounded-xl border px-3 py-2 text-xs font-black transition ${availabilityScope === scope ? "border-emerald-500 bg-emerald-600 text-white" : "border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50"}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {availabilityScope === "time_slots" ? (
+                    <div className="grid gap-2 rounded-xl border border-emerald-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {activeTimeSlots.map((slot) => (
+                        <label key={slot.id} className="flex items-center gap-2 rounded-lg bg-emerald-50/60 px-3 py-2 text-xs font-semibold text-emerald-900">
+                          <input type="checkbox" checked={availabilityTimeSlotIds.includes(slot.id)} onChange={() => toggleAvailabilityTimeSlot(slot.id)} />
+                          <span>{formatTimeSlotDisplay(slot, activeTimeSlots)} · {slot.start}-{slot.end}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-black text-emerald-800">Đã chọn {availabilitySelectedDates.length} ngày</span>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => submitTeacherAvailability("none")} disabled={availabilitySelectedDates.length === 0 || isBusy} className="rounded-xl bg-rose-50 px-4 py-2 text-xs font-black text-rose-700 disabled:opacity-50">Hủy đăng ký ngày chọn</button>
+                      <button type="button" onClick={() => submitTeacherAvailability()} disabled={availabilitySelectedDates.length === 0 || isBusy} className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50">Xác nhận đăng ký</button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {role === "teacher" && quickScheduleDates.length > 0 ? (
             <div className="mb-4 rounded-2xl border border-orange-200 bg-orange-50/70 p-3">
               <p className="text-center text-[11px] font-black uppercase tracking-wide text-orange-700">CÁC NGÀY CÓ LỊCH DẠY</p>
@@ -5206,6 +5534,9 @@ export function MettasoulApp() {
             <div className={`mt-2 grid ${calendarGridClass} gap-2 ${calendarViewMode === "day" ? "" : "min-w-[700px] sm:min-w-0"}`}>
               {calendarDays.map((day) => {
               const isSelected = selectedCalendarDate === day.dateKey;
+              const isAvailabilitySelected = availabilitySelectedDates.includes(day.dateKey);
+              const dayAvailability = currentTeacherAvailability.filter((item) => item.date === day.dateKey);
+              const availabilityLabel = summarizeAvailabilityEntries(dayAvailability, activeTimeSlots);
               const statusTone = day.schedules.some((schedule) => schedule.status === "sent")
                 ? "bg-amber-50 text-amber-800"
                 : day.schedules.some((schedule) => schedule.status === "cancelled")
@@ -5218,11 +5549,17 @@ export function MettasoulApp() {
                   ref={isSelected ? selectedCalendarDayRef : undefined}
                   type="button"
                   onClick={() => {
+                    if (role === "teacher" && availabilityRegistrationMode) {
+                      toggleAvailabilityDate(day.dateKey);
+                      return;
+                    }
                     selectCalendarDate(day.dateKey);
                     setSelectedScheduleIds([]);
                   }}
                   className={`flex min-h-[104px] flex-col items-center justify-center rounded-2xl border p-2.5 text-center transition sm:min-h-[112px] sm:p-3 ${
-                    isSelected
+                    isAvailabilitySelected
+                      ? "border-emerald-500 bg-emerald-100 shadow-lg shadow-emerald-900/10"
+                      : isSelected
                       ? "border-[var(--brand)] bg-cyan-50 shadow-lg shadow-cyan-900/10"
                         : day.isToday
                           ? "border-orange-400 bg-orange-50/80 shadow-md shadow-orange-500/10"
@@ -5238,6 +5575,11 @@ export function MettasoulApp() {
                   >
                     {day.dayNumber}
                   </span>
+                  {dayAvailability.length > 0 ? (
+                    <span className="mt-2 max-w-full truncate rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-800" title={availabilityLabel}>
+                      Rảnh · {availabilityLabel}
+                    </span>
+                  ) : null}
                   {day.schedules.length > 0 ? (
                     <div className="mt-2 flex flex-col items-center space-y-1.5 sm:mt-3 sm:space-y-2">
                       <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-black ${statusTone}`}>
@@ -5308,7 +5650,7 @@ export function MettasoulApp() {
                   className="min-w-[220px] rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] outline-none"
                 >
                   <option value="">Chọn giáo viên chuyển</option>
-                  {activeSchedulingTeachers.map((teacher) => (
+                  {activeSchedulingTeachers.filter((teacher) => bulkTargets.every((schedule) => teacherIsAvailableForSchedule(teacher.id, schedule))).map((teacher) => (
                     <option key={teacher.id} value={teacher.id}>
                       {teacher.name}
                     </option>
@@ -9941,6 +10283,41 @@ function addMonths(monthKey: string, offset: number) {
   const [year, month] = monthKey.split("-").map(Number);
   const date = new Date(year, month - 1 + offset, 1);
   return toDateKey(date).slice(0, 7);
+}
+
+function addDaysToDateKey(dateKey: string, offset: number) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  date.setDate(date.getDate() + offset);
+  return toDateKey(date);
+}
+
+function summarizeAvailabilityEntries(entries: TeacherAvailability[], slots: TimeSlot[]) {
+  if (entries.some((entry) => entry.scope === "all_day")) {
+    return teacherAvailabilityScopeLabels.all_day;
+  }
+  const labels: string[] = [];
+  if (entries.some((entry) => entry.scope === "morning")) labels.push(teacherAvailabilityScopeLabels.morning);
+  if (entries.some((entry) => entry.scope === "afternoon")) labels.push(teacherAvailabilityScopeLabels.afternoon);
+  const slotLabels = entries
+    .filter((entry) => entry.scope === "time_slots" && entry.timeSlotId)
+    .map((entry) => slots.find((slot) => slot.id === entry.timeSlotId))
+    .filter((slot): slot is TimeSlot => Boolean(slot))
+    .map((slot) => `${slot.start}-${slot.end}`);
+  if (slotLabels.length > 0) labels.push(Array.from(new Set(slotLabels)).join(", "));
+  return labels.join(" · ") || "Chưa đăng ký";
+}
+
+function teacherAvailabilityTone(teacherId: string) {
+  const tones = [
+    "bg-cyan-100 text-cyan-900",
+    "bg-emerald-100 text-emerald-900",
+    "bg-amber-100 text-amber-900",
+    "bg-violet-100 text-violet-900",
+    "bg-rose-100 text-rose-900",
+    "bg-blue-100 text-blue-900",
+  ];
+  const hash = Array.from(teacherId).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return tones[hash % tones.length];
 }
 
 function buildCalendarDays(monthKey: string, selectedDateKey: string, viewMode: CalendarViewMode, schedules: Schedule[]) {

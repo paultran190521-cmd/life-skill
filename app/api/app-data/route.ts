@@ -57,6 +57,9 @@ export async function GET(request: Request) {
         appAnnouncements: data.appAnnouncements.filter((announcement) => announcement.active),
         auditLogs: [],
         weeklyUpdates: [],
+        teacherAvailability: teacherId
+          ? data.teacherAvailability.filter((item) => item.teacherId === teacherId && item.status === "available")
+          : [],
       }, { headers: { "Cache-Control": "no-store, max-age=0" } });
     }
 
@@ -75,6 +78,7 @@ export async function GET(request: Request) {
       appAnnouncements: data.appAnnouncements,
       auditLogs: data.auditLogs,
       weeklyUpdates: data.weeklyUpdates,
+      teacherAvailability: data.teacherAvailability.filter((item) => item.status === "available"),
     }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error) {
     return apiError(error, requestId);

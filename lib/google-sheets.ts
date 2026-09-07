@@ -16,6 +16,8 @@ import type {
   School,
   Teacher,
   TeachingEnvironment,
+  TeacherAvailability,
+  TeacherAvailabilityScope,
   Topic,
   User,
   WeeklyUpdate,
@@ -36,6 +38,7 @@ type SheetName =
   | "AuditLogs"
   | "AppAnnouncements"
   | "WeeklyUpdates"
+  | "TeacherAvailability"
   | "MailDebug";
 
 export type { SheetName };
@@ -548,6 +551,7 @@ export async function getAppDataFromSheets() {
     appAnnouncements,
     auditLogs,
     weeklyUpdates,
+    teacherAvailability,
   ] = await Promise.all([
     readSheetRows("Teachers").then(toTeachers),
     readSheetRows("Users").then(toUsers),
@@ -569,6 +573,9 @@ export async function getAppDataFromSheets() {
     ensureSheetHeaders("WeeklyUpdates", weeklyUpdateHeaders)
       .then(() => readSheetRows("WeeklyUpdates").then(toWeeklyUpdates))
       .catch(() => [] as WeeklyUpdate[]),
+    ensureSheetHeaders("TeacherAvailability", teacherAvailabilityHeaders)
+      .then(() => readSheetRows("TeacherAvailability").then(toTeacherAvailability))
+      .catch(() => [] as TeacherAvailability[]),
   ]);
 
   return {
@@ -586,6 +593,7 @@ export async function getAppDataFromSheets() {
     appAnnouncements,
     auditLogs,
     weeklyUpdates,
+    teacherAvailability,
   };
 }
 
@@ -650,6 +658,19 @@ export const weeklyUpdateHeaders = [
   "teachingHours",
   "updatedBy",
   "note",
+  "createdAt",
+  "updatedAt",
+];
+
+export const teacherAvailabilityHeaders = [
+  "id",
+  "teacherId",
+  "date",
+  "scope",
+  "timeSlotId",
+  "status",
+  "note",
+  "createdBy",
   "createdAt",
   "updatedAt",
 ];
@@ -818,6 +839,7 @@ function normalizeSheetHeader(value: unknown) {
     description: "description",
     targetuserid: "targetUserId",
     cancelledat: "cancelledAt",
+    scope: "scope",
   };
 
   return headerAliases[normalizedKey] || raw;
@@ -1010,6 +1032,21 @@ function toWeeklyUpdates(rows: SheetRow[]): WeeklyUpdate[] {
   }));
 }
 
+function toTeacherAvailability(rows: SheetRow[]): TeacherAvailability[] {
+  return rows.map((row) => ({
+    id: row.id,
+    teacherId: row.teacherId,
+    date: row.date,
+    scope: parseTeacherAvailabilityScope(row.scope),
+    timeSlotId: row.timeSlotId || undefined,
+    status: row.status === "withdrawn" ? "withdrawn" : "available",
+    note: row.note || undefined,
+    createdBy: row.createdBy || "",
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt || undefined,
+  }));
+}
+
 function toAuditLogs(rows: SheetRow[]): AuditLog[] {
   return rows.map((row) => ({
     id: row.id,
@@ -1031,6 +1068,11 @@ function parseTeachingEnvironment(value: string | undefined): TeachingEnvironmen
   const normalized = String(value || "").trim() as TeachingEnvironment;
   const allowed: TeachingEnvironment[] = ["in_class", "outdoor", "gym", "schoolyard_report", "hall"];
   return allowed.includes(normalized) ? normalized : undefined;
+}
+
+function parseTeacherAvailabilityScope(value: string | undefined): TeacherAvailabilityScope {
+  const normalized = String(value || "").trim() as TeacherAvailabilityScope;
+  return ["all_day", "morning", "afternoon", "time_slots"].includes(normalized) ? normalized : "all_day";
 }
 
 function parseBoolean(value: string | undefined, fallback: boolean) {

@@ -2,7 +2,15 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
 import { sendScheduleDigestEmail } from "@/lib/email";
-import { appendSheetRows, clearSheetData, readSheetRows, readSheetRowsBatch, readSheetRowsCached } from "@/lib/google-sheets";
+import {
+  appendSheetRows,
+  clearSheetData,
+  ensureSheetHeaders,
+  readSheetRows,
+  readSheetRowsBatch,
+  readSheetRowsCached,
+  teacherAvailabilityHeaders,
+} from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 import { canShareClassTimeSlot, hasTeacherTimeConflict, type GroupClassTimeSlot } from "@/lib/schedule-conflict-policy";
 import {
@@ -11,7 +19,8 @@ import {
   invalidateScheduleConflictIndex,
   type TeacherSlotInfo,
 } from "@/lib/schedule-conflict-index";
-import type { LessonPeriod, Notification, Schedule, TeachingEnvironment } from "@/lib/types";
+import { isTeacherAvailableForSlot } from "@/lib/teacher-availability";
+import type { LessonPeriod, Notification, Schedule, TeacherAvailability, TeachingEnvironment } from "@/lib/types";
 
 type ScheduleDraftItem = {
   date: string;
@@ -66,7 +75,7 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     const fallbackTeacherIds = parseTeacherIds(body);
     const items = parseScheduleItems(body, fallbackTeacherIds);
-    const { teachers, users, schools, classes, lessons, slots } = await loadReferenceData();
+    const { teachers, users, schools, classes, lessons, slots, teacherAvailability } = await loadReferenceData();
     const normalizedItems = normalizeScheduleItems(items, { schools, classes, lessons, slots });
     const teacherIds = Array.from(new Set(normalizedItems.flatMap((item) => item.teacherIds)));
     const assistantIds = Array.from(new Set(normalizedItems.flatMap((item) => item.assistantIds)));
@@ -81,6 +90,11 @@ export async function POST(request: Request) {
     }, assistantIds);
     if (validationMessage) {
       return apiFailure(400, validationMessage, undefined, requestId);
+    }
+
+    const availabilityMessage = validateTeacherAvailability(normalizedItems, teacherAvailability, slots);
+    if (availabilityMessage) {
+      return apiFailure(409, availabilityMessage, undefined, requestId);
     }
 
     const schedules: Schedule[] = normalizedItems.flatMap((item) => {
@@ -191,20 +205,22 @@ export async function DELETE(request: Request) {
 }
 
 async function loadReferenceData() {
+  await ensureSheetHeaders("TeacherAvailability", teacherAvailabilityHeaders);
   if (isFeatureEnabled("SCHEDULE_REFERENCE_CACHE_ENABLED", false)) {
     const ttlMs = readPositiveIntEnv("SCHEDULE_REFERENCE_CACHE_TTL_MS", 60_000);
-    const [teachers, users, schools, classes, lessons, slots] = await Promise.all([
+    const [teachers, users, schools, classes, lessons, slots, teacherAvailability] = await Promise.all([
       readSheetRowsCached("Teachers", { ttlMs }),
       readSheetRowsCached("Users", { ttlMs }),
       readSheetRowsCached("Schools", { ttlMs }),
       readSheetRowsCached("Classes", { ttlMs }),
       readSheetRowsCached("Lessons", { ttlMs }),
       readSheetRowsCached("TimeSlots", { ttlMs }),
+      readSheetRowsCached("TeacherAvailability", { ttlMs }),
     ]);
-    return { teachers, users, schools, classes, lessons, slots };
+    return { teachers, users, schools, classes, lessons, slots, teacherAvailability };
   }
 
-  const dataRows = await readSheetRowsBatch(["Teachers", "Users", "Schools", "Classes", "Lessons", "TimeSlots"] as const);
+  const dataRows = await readSheetRowsBatch(["Teachers", "Users", "Schools", "Classes", "Lessons", "TimeSlots", "TeacherAvailability"] as const);
   return {
     teachers: dataRows.Teachers,
     users: dataRows.Users,
@@ -212,7 +228,44 @@ async function loadReferenceData() {
     classes: dataRows.Classes,
     lessons: dataRows.Lessons,
     slots: dataRows.TimeSlots,
+    teacherAvailability: dataRows.TeacherAvailability,
   };
+}
+
+function validateTeacherAvailability(
+  items: ScheduleDraftItem[],
+  rows: Array<Record<string, string>>,
+  slots: Array<Record<string, string>>,
+) {
+  const availability: TeacherAvailability[] = rows.map((row) => ({
+    id: row.id,
+    teacherId: row.teacherId,
+    date: row.date,
+    scope: ["morning", "afternoon", "time_slots"].includes(row.scope)
+      ? (row.scope as TeacherAvailability["scope"])
+      : "all_day",
+    timeSlotId: row.timeSlotId || undefined,
+    status: row.status === "withdrawn" ? "withdrawn" : "available",
+    note: row.note || undefined,
+    createdBy: row.createdBy || "",
+    createdAt: row.createdAt || "",
+    updatedAt: row.updatedAt || undefined,
+  }));
+  const slotsById = new Map(slots.map((slot) => [String(slot.id || "").trim(), {
+    id: String(slot.id || "").trim(),
+    start: String(slot.start || "").trim(),
+  }]));
+
+  for (const item of items) {
+    const slot = slotsById.get(item.timeSlotId);
+    const unavailableTeacherIds = item.teacherIds.filter(
+      (teacherId) => !isTeacherAvailableForSlot(availability, teacherId, item.date, slot),
+    );
+    if (unavailableTeacherIds.length > 0) {
+      return `Không thể giao lịch ngày ${item.date}: có giáo viên chưa đăng ký rảnh cho khung giờ đã chọn.`;
+    }
+  }
+  return "";
 }
 
 type ScheduleConflict = {
