@@ -1,4 +1,4 @@
-import type { TeacherAvailability, TeacherAvailabilityScope, TimeSlot } from "@/lib/types";
+import type { Role, TeacherAvailability, TeacherAvailabilityScope, TimeSlot } from "@/lib/types";
 
 export const teacherAvailabilityScopeLabels: Record<TeacherAvailabilityScope, string> = {
   all_day: "Cả ngày",
@@ -6,6 +6,10 @@ export const teacherAvailabilityScopeLabels: Record<TeacherAvailabilityScope, st
   afternoon: "Buổi chiều",
   time_slots: "Khung giờ cụ thể",
 };
+
+export function canRegisterTeacherAvailability(role: Role, teacherId: string) {
+  return (role === "teacher" || role === "assistant") && Boolean(teacherId.trim());
+}
 
 export function isMorningTimeSlot(slot: Pick<TimeSlot, "start">) {
   return timeToMinutes(slot.start) < 12 * 60;

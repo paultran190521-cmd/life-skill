@@ -48,6 +48,7 @@ import {
   type TeacherTimeSlot,
 } from "@/lib/schedule-conflict-policy";
 import {
+  canRegisterTeacherAvailability,
   isTeacherAvailableForSlot,
   teacherAvailabilityScopeLabels,
 } from "@/lib/teacher-availability";
@@ -590,6 +591,7 @@ export function MettasoulApp() {
   const role = currentUser.role;
   const hasAdminAccess = sessionUser?.role === "admin";
   const currentTeacherId = currentUser.teacherId ?? "";
+  const canRegisterAvailability = canRegisterTeacherAvailability(role, currentTeacherId);
   const navigationTabs = role === "admin" ? adminTabs : teacherTabs;
   const activeTabMeta = navigationTabs.find((item) => item.id === activeTab) ?? navigationTabs[0];
   const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.active !== false), [teachers]);
@@ -5318,7 +5320,7 @@ export function MettasoulApp() {
               <span className="rounded-full bg-rose-50 px-3 py-1 text-rose-800">{calendarStats.cancelled} hủy</span>
             </div>
           </div>
-          {role === "teacher" ? (
+          {canRegisterAvailability ? (
             <div className={`mb-4 rounded-2xl border p-4 ${availabilityRegistrationMode ? "border-emerald-300 bg-emerald-50/70" : "border-cyan-100 bg-cyan-50/45"}`}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -5549,7 +5551,7 @@ export function MettasoulApp() {
                   ref={isSelected ? selectedCalendarDayRef : undefined}
                   type="button"
                   onClick={() => {
-                    if (role === "teacher" && availabilityRegistrationMode) {
+                    if (canRegisterAvailability && availabilityRegistrationMode) {
                       toggleAvailabilityDate(day.dateKey);
                       return;
                     }

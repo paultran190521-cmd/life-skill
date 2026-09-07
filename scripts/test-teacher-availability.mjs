@@ -8,7 +8,7 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 const policyModule = { exports: {} };
 new Function("module", "exports", compiled)(policyModule, policyModule.exports);
-const { availabilityMatchesTimeSlot, isTeacherAvailableForSlot } = policyModule.exports;
+const { availabilityMatchesTimeSlot, canRegisterTeacherAvailability, isTeacherAvailableForSlot } = policyModule.exports;
 
 const morningSlot = { id: "slot-morning", start: "07:30" };
 const afternoonSlot = { id: "slot-afternoon", start: "13:30" };
@@ -41,5 +41,9 @@ assert.equal(
   ),
   false,
 );
+assert.equal(canRegisterTeacherAvailability("teacher", "teacher-1"), true);
+assert.equal(canRegisterTeacherAvailability("assistant", "teacher-1"), true);
+assert.equal(canRegisterTeacherAvailability("admin", "teacher-1"), false);
+assert.equal(canRegisterTeacherAvailability("assistant", ""), false);
 
-console.log("Teacher availability policy tests passed (11 cases).");
+console.log("Teacher availability policy tests passed (15 cases).");
