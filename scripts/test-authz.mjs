@@ -103,6 +103,10 @@ const rules = [
     checks: ['requireSessionUser(request, { allowHeaderFallback: false })'],
   },
   {
+    file: "app/api/school-guide/route.ts",
+    checks: ['requireSessionUser(request, { allowHeaderFallback: false })'],
+  },
+  {
     file: "app/api/admin/health/route.ts",
     checks: ['requireSessionUser(request)', 'evaluateRolePermission(auth.user, "admin"'],
   },

@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { SchoolGuidePanel } from "@/components/school-guide-panel";
 import { statusLabels, statusStyles } from "@/lib/status";
 import {
   canShareClassTimeSlot,
@@ -101,6 +102,7 @@ type TabId =
   | "dashboard"
   | "assignment"
   | "calendar"
+  | "school-guide"
   | "teachers"
   | "lessons"
   | "plans"
@@ -410,6 +412,7 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "assignment", label: "Giao lịch", icon: Send },
   { id: "calendar", label: "Lịch tổng", icon: CalendarDays },
+  { id: "school-guide", label: "Thông tin trường", icon: School2 },
   { id: "teachers", label: "Giáo viên", icon: Users },
   { id: "lessons", label: "Bài học", icon: BookOpen },
   { id: "plans", label: "Giáo án", icon: FileUp },
@@ -420,6 +423,7 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
 const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "calendar", label: "Lịch của tôi", icon: CalendarDays },
+  { id: "school-guide", label: "Thông tin trường", icon: School2 },
   { id: "plans", label: "Giáo án", icon: FileUp },
   { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
 ];
@@ -3848,6 +3852,9 @@ export function MettasoulApp() {
     }
     if (activeTab === "calendar") {
       return <CalendarPanel />;
+    }
+    if (activeTab === "school-guide") {
+      return <SchoolGuidePanel />;
     }
     if (activeTab === "teachers") {
       return <TeachersPanel />;
