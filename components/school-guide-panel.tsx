@@ -220,8 +220,15 @@ function SchoolGuideCard({ school, index }: { school: SchoolGuideEntry; index: n
 
               {deputyPrincipals.length > 0 ? (
                 <div className="mx-auto mt-7 grid max-w-2xl gap-x-5 gap-y-7 sm:grid-cols-2">
-                  {deputyPrincipals.map((leader) => (
-                    <LeaderPortrait key={`${leader.role}-${leader.name}`} leader={leader} />
+                  {deputyPrincipals.map((leader, leaderIndex) => (
+                    <div
+                      key={`${leader.role}-${leader.name}`}
+                      className={leaderIndex === deputyPrincipals.length - 1 && deputyPrincipals.length % 2 === 1
+                        ? "w-full sm:col-span-2 sm:w-[260px] sm:justify-self-center"
+                        : "w-full"}
+                    >
+                      <LeaderPortrait leader={leader} />
+                    </div>
                   ))}
                 </div>
               ) : null}

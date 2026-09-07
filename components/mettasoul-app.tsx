@@ -412,20 +412,20 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "assignment", label: "Giao lịch", icon: Send },
   { id: "calendar", label: "Lịch tổng", icon: CalendarDays },
-  { id: "school-guide", label: "Thông tin trường", icon: School2 },
   { id: "teachers", label: "Giáo viên", icon: Users },
   { id: "lessons", label: "Bài học", icon: BookOpen },
   { id: "plans", label: "Giáo án", icon: FileUp },
   { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
   { id: "settings", label: "Cấu hình", icon: Settings2 },
+  { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
 
 const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "calendar", label: "Lịch của tôi", icon: CalendarDays },
-  { id: "school-guide", label: "Thông tin trường", icon: School2 },
   { id: "plans", label: "Giáo án", icon: FileUp },
   { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
+  { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
 
 export function MettasoulApp() {
@@ -3938,9 +3938,6 @@ export function MettasoulApp() {
                 </div>
               )}
             </label>
-            <div className="mt-3 rounded-xl bg-gradient-to-r from-emerald-50 to-cyan-50 px-3 py-2 text-xs font-black text-[var(--brand-dark)]">
-              {role === "admin" ? "Quyền quản trị" : role === "assistant" ? "Quyền trợ giảng" : "Quyền giáo viên"}
-            </div>
             <div className="mt-3">
               {authStatus === "signed-in" ? (
                 <button
@@ -4117,7 +4114,7 @@ export function MettasoulApp() {
           <div className="px-3 pb-28 pt-4 sm:px-4 md:p-7">{renderMain()}</div>
           <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-cyan-100 bg-white/95 px-2 py-2 shadow-[0_-18px_42px_rgba(18,46,68,0.12)] backdrop-blur-xl lg:hidden">
             <div className="app-scrollbar flex gap-2 overflow-x-auto pb-[env(safe-area-inset-bottom)]">
-              {navigationTabs.map((item) => {
+              {navigationTabs.filter((item) => item.id !== "school-guide").map((item) => {
                 const Icon = item.icon;
                 const selected = activeTab === item.id;
                 return (
