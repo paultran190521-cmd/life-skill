@@ -83,6 +83,20 @@ export function isTeacherAvailableForSlot(
   );
 }
 
+export function isTeacherAvailableOnDate(
+  availabilities: Array<Pick<TeacherAvailability, "teacherId" | "date" | "status">>,
+  teacherId: string,
+  date: string,
+) {
+  if (!teacherId || !date) return false;
+  return availabilities.some(
+    (availability) =>
+      availability.teacherId === teacherId &&
+      availability.date === date &&
+      availability.status === "available",
+  );
+}
+
 function timeToMinutes(value: string) {
   const [hours, minutes] = String(value || "").split(":").map(Number);
   if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {

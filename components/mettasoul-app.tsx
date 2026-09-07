@@ -52,6 +52,7 @@ import {
   buildTeacherAvailabilityEntries,
   canRegisterTeacherAvailability,
   isMorningTimeSlot,
+  isTeacherAvailableOnDate,
   isTeacherAvailableForSlot,
   teacherAvailabilityScopeLabels,
   type TeacherAvailabilityDraft,
@@ -969,11 +970,18 @@ export function MettasoulApp() {
       const items = current.items.map((item) => {
         const slot = activeTimeSlots.find((candidate) => candidate.id === item.timeSlotId);
         const teacherIds = item.teacherIds.filter((teacherId) =>
-          isTeacherAvailableForSlot(teacherAvailability, teacherId, item.date, slot),
+          slot
+            ? isTeacherAvailableForSlot(teacherAvailability, teacherId, item.date, slot)
+            : isTeacherAvailableOnDate(teacherAvailability, teacherId, item.date),
         );
-        if (teacherIds.length === item.teacherIds.length) return item;
+        const assistantIds = item.assistantIds.filter((teacherId) =>
+          slot
+            ? isTeacherAvailableForSlot(teacherAvailability, teacherId, item.date, slot)
+            : isTeacherAvailableOnDate(teacherAvailability, teacherId, item.date),
+        );
+        if (teacherIds.length === item.teacherIds.length && assistantIds.length === item.assistantIds.length) return item;
         changed = true;
-        return { ...item, teacherIds };
+        return { ...item, teacherIds, assistantIds };
       });
       return changed ? { ...current, items } : current;
     });
@@ -4681,8 +4689,17 @@ export function MettasoulApp() {
                       : rowLessonsAll;
                     const rowGrades = gradesForClasses(rowClasses);
                     const selectedSlot = activeTimeSlots.find((slot) => slot.id === item.timeSlotId);
-                    const rowAvailableTeachers = activeSchedulingTeachers.filter((teacher) =>
-                      isTeacherAvailableForSlot(teacherAvailability, teacher.id, item.date, selectedSlot),
+                    const rowDateTeachers = activeSchedulingTeachers.filter((teacher) =>
+                      isTeacherAvailableOnDate(teacherAvailability, teacher.id, item.date),
+                    );
+                    const rowDateAssistants = activeAssistantTeachers.filter((teacher) =>
+                      isTeacherAvailableOnDate(teacherAvailability, teacher.id, item.date),
+                    );
+                    const rowAvailableTeachers = rowDateTeachers.filter((teacher) =>
+                      !selectedSlot || isTeacherAvailableForSlot(teacherAvailability, teacher.id, item.date, selectedSlot),
+                    );
+                    const rowAvailableAssistants = rowDateAssistants.filter((teacher) =>
+                      !selectedSlot || isTeacherAvailableForSlot(teacherAvailability, teacher.id, item.date, selectedSlot),
                     );
                     return (
                       <div key={item.id} className="rounded-2xl border border-cyan-100 bg-white p-3 shadow-sm">
@@ -4933,15 +4950,17 @@ export function MettasoulApp() {
                         {/* Per-item teacher selection */}
                         <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
                           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Giáo viên đã đăng ký rảnh</p>
-                            <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700">{rowAvailableTeachers.length} người phù hợp</span>
+                            <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Người đăng ký rảnh và khớp giờ</p>
+                            <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700">
+                              {rowAvailableTeachers.length + rowAvailableAssistants.length} khớp giờ / {rowDateTeachers.length + rowDateAssistants.length} đăng ký ngày
+                            </span>
                           </div>
                           {rowAvailableTeachers.length > 0 ? (
                             <div className="grid grid-cols-1 gap-2 min-[440px]:grid-cols-2 lg:grid-cols-3">
                             {rowAvailableTeachers.map((teacher) => (
                               <label
                                 key={teacher.id}
-                                className="flex min-w-0 items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-semibold shadow-sm"
+                                className="flex min-w-0 items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs font-semibold text-emerald-950 shadow-sm"
                               >
                                 <input
                                   type="checkbox"
@@ -4959,14 +4978,14 @@ export function MettasoulApp() {
                                 : "Chọn ngày và khung giờ để xem giáo viên đã đăng ký."}
                             </p>
                           )}
-                          {activeAssistantTeachers.length > 0 ? (
+                          {rowAvailableAssistants.length > 0 ? (
                             <div className="mt-2">
-                              <p className="mb-1 text-xs font-bold text-violet-700">Trợ giảng (không tính xung đột)</p>
+                              <p className="mb-1 text-xs font-bold text-violet-700">Trợ giảng đã đăng ký và khớp giờ</p>
                               <div className="grid grid-cols-1 gap-2 min-[440px]:grid-cols-2 lg:grid-cols-3">
-                                {activeAssistantTeachers.map((teacher) => (
+                                {rowAvailableAssistants.map((teacher) => (
                                   <label
                                     key={teacher.id}
-                                    className="flex min-w-0 items-center gap-2 rounded-lg bg-violet-50 px-2 py-1.5 text-xs font-semibold shadow-sm"
+                                    className="flex min-w-0 items-center gap-2 rounded-lg border border-violet-200 bg-violet-100 px-2 py-1.5 text-xs font-semibold text-violet-950 shadow-sm"
                                   >
                                     <input
                                       type="checkbox"
@@ -4978,6 +4997,8 @@ export function MettasoulApp() {
                                 ))}
                               </div>
                             </div>
+                          ) : rowDateAssistants.length > 0 && selectedSlot ? (
+                            <p className="mt-2 rounded-xl border border-violet-100 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700">Không có trợ giảng nào khớp khung giờ đã chọn.</p>
                           ) : null}
                         </div>
                       </div>

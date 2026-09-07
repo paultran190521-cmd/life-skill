@@ -259,11 +259,12 @@ function validateTeacherAvailability(
 
   for (const item of items) {
     const slot = slotsById.get(item.timeSlotId);
-    const unavailableTeacherIds = item.teacherIds.filter(
+    const participantIds = Array.from(new Set([...item.teacherIds, ...item.assistantIds]));
+    const unavailableTeacherIds = participantIds.filter(
       (teacherId) => !isTeacherAvailableForSlot(availability, teacherId, item.date, slot),
     );
     if (unavailableTeacherIds.length > 0) {
-      return `Không thể giao lịch ngày ${item.date}: có giáo viên chưa đăng ký rảnh cho khung giờ đã chọn.`;
+      return `Không thể giao lịch ngày ${item.date}: có giáo viên hoặc trợ giảng chưa đăng ký rảnh cho khung giờ đã chọn.`;
     }
   }
   return "";

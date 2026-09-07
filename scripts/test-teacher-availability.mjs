@@ -13,6 +13,7 @@ const {
   availabilityTimeRangeKey,
   buildTeacherAvailabilityEntries,
   canRegisterTeacherAvailability,
+  isTeacherAvailableOnDate,
   isTeacherAvailableForSlot,
   uniqueAvailabilityTimeRanges,
 } = policyModule.exports;
@@ -79,5 +80,38 @@ assert.deepEqual(
     { date: "2026-09-11", scope: "time_slots", timeSlotIds: ["time:07:30-08:15"] },
   ],
 );
+assert.equal(
+  isTeacherAvailableOnDate(
+    [{ teacherId: "assistant-1", date: "2026-09-09", status: "available" }],
+    "assistant-1",
+    "2026-09-09",
+  ),
+  true,
+);
+assert.equal(
+  isTeacherAvailableOnDate(
+    [{ teacherId: "assistant-1", date: "2026-09-09", status: "withdrawn" }],
+    "assistant-1",
+    "2026-09-09",
+  ),
+  false,
+);
+const filteringScenario = [
+  { teacherId: "teacher-all-day", date: "2027-09-09", scope: "all_day", status: "available" },
+  { teacherId: "teacher-exact", date: "2027-09-09", scope: "time_slots", timeSlotId: "time:08:00-08:45", status: "available" },
+  { teacherId: "teacher-afternoon", date: "2027-09-09", scope: "afternoon", status: "available" },
+  { teacherId: "assistant-other-time", date: "2027-09-09", scope: "time_slots", timeSlotId: "time:09:00-09:45", status: "available" },
+];
+const eightOClockSlot = { id: "school-slot-08", start: "08:00", end: "08:45" };
+assert.deepEqual(
+  filteringScenario
+    .filter((entry) => isTeacherAvailableForSlot(filteringScenario, entry.teacherId, "2027-09-09", eightOClockSlot))
+    .map((entry) => entry.teacherId),
+  ["teacher-all-day", "teacher-exact"],
+);
+assert.equal(
+  filteringScenario.filter((entry) => isTeacherAvailableOnDate(filteringScenario, entry.teacherId, "2027-09-09")).length,
+  4,
+);
 
-console.log("Teacher availability policy tests passed (21 cases).");
+console.log("Teacher availability policy tests passed (25 cases).");
