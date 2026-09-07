@@ -206,7 +206,7 @@ async function validateReplacementTeacher(nextTeacherId: string, schedule: Recor
     createdBy: row.createdBy || "",
     createdAt: row.createdAt || "",
   }));
-  if (!slot || !isTeacherAvailableForSlot(availability, nextTeacherId, schedule.date, { id: slot.id, start: slot.start })) {
+  if (!slot || !isTeacherAvailableForSlot(availability, nextTeacherId, schedule.date, { id: slot.id, start: slot.start, end: slot.end })) {
     return "Giáo viên thay thế chưa đăng ký rảnh cho ngày và khung giờ này.";
   }
 

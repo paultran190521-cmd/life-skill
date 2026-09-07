@@ -48,9 +48,14 @@ import {
   type TeacherTimeSlot,
 } from "@/lib/schedule-conflict-policy";
 import {
+  availabilityTimeRangeKey,
+  buildTeacherAvailabilityEntries,
   canRegisterTeacherAvailability,
+  isMorningTimeSlot,
   isTeacherAvailableForSlot,
   teacherAvailabilityScopeLabels,
+  type TeacherAvailabilityDraft,
+  uniqueAvailabilityTimeRanges,
 } from "@/lib/teacher-availability";
 import {
   MIN_TIME_SLOT_MINUTES,
@@ -442,9 +447,8 @@ export function MettasoulApp() {
   const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
   const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("week");
   const [availabilityRegistrationMode, setAvailabilityRegistrationMode] = useState(false);
-  const [availabilitySelectedDates, setAvailabilitySelectedDates] = useState<string[]>([]);
-  const [availabilityScope, setAvailabilityScope] = useState<TeacherAvailabilityScope>("all_day");
-  const [availabilityTimeSlotIds, setAvailabilityTimeSlotIds] = useState<string[]>([]);
+  const [availabilityDrafts, setAvailabilityDrafts] = useState<Record<string, TeacherAvailabilityDraft>>({});
+  const [availabilityEditingDate, setAvailabilityEditingDate] = useState("");
   const [assignmentAvailabilityMonth, setAssignmentAvailabilityMonth] = useState(() => currentMonthKey());
   const [assignmentAvailabilityDate, setAssignmentAvailabilityDate] = useState(() => currentDateKey());
   const [assignmentAvailabilityView, setAssignmentAvailabilityView] = useState<AvailabilityCalendarViewMode>("week");
@@ -605,6 +609,9 @@ export function MettasoulApp() {
   );
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
   const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);
+  const availabilityTimeRanges = useMemo(() => uniqueAvailabilityTimeRanges(activeTimeSlots), [activeTimeSlots]);
+  const availabilitySelectedDates = useMemo(() => Object.keys(availabilityDrafts).sort(), [availabilityDrafts]);
+  const availabilityEditingDraft = availabilityEditingDate ? availabilityDrafts[availabilityEditingDate] : undefined;
   const currentTeacherAvailability = useMemo(
     () => teacherAvailability.filter((item) => item.teacherId === currentTeacherId && item.status === "available"),
     [currentTeacherId, teacherAvailability],
@@ -1485,31 +1492,75 @@ export function MettasoulApp() {
       pushToast("Không thể chọn", "Chỉ có thể đăng ký lịch trống từ hôm nay trở đi.", "warning");
       return;
     }
-    setAvailabilitySelectedDates((dates) =>
-      dates.includes(dateKey) ? dates.filter((date) => date !== dateKey) : [...dates, dateKey].sort(),
-    );
+    setAvailabilityEditingDate(dateKey);
+    setAvailabilityDrafts((drafts) => {
+      if (drafts[dateKey]) return drafts;
+      const existing = currentTeacherAvailability.filter((item) => item.date === dateKey);
+      const scope = existing[0]?.scope ?? "all_day";
+      const timeSlotIds = scope === "time_slots"
+        ? Array.from(new Set(existing.flatMap((item) => {
+            if (!item.timeSlotId) return [];
+            if (item.timeSlotId.startsWith("time:")) return [item.timeSlotId];
+            const slot = activeTimeSlots.find((candidate) => candidate.id === item.timeSlotId);
+            return slot ? [availabilityTimeRangeKey(slot)] : [];
+          })))
+        : [];
+      return { ...drafts, [dateKey]: { scope, timeSlotIds } };
+    });
+  }
+
+  function removeAvailabilityDate(dateKey: string) {
+    setAvailabilityDrafts((drafts) => {
+      const next = { ...drafts };
+      delete next[dateKey];
+      return next;
+    });
+    setAvailabilityEditingDate((current) => current === dateKey ? "" : current);
+  }
+
+  function updateAvailabilityScope(scope: TeacherAvailabilityScope) {
+    if (!availabilityEditingDate) {
+      pushToast("Chưa chọn ngày", "Hãy bấm một ngày trên lịch trước khi chọn thời gian.", "warning");
+      return;
+    }
+    setAvailabilityDrafts((drafts) => ({
+      ...drafts,
+      [availabilityEditingDate]: {
+        scope,
+        timeSlotIds: scope === "time_slots" ? (drafts[availabilityEditingDate]?.timeSlotIds ?? []) : [],
+      },
+    }));
   }
 
   function toggleAvailabilityTimeSlot(timeSlotId: string) {
-    setAvailabilityTimeSlotIds((ids) =>
-      ids.includes(timeSlotId) ? ids.filter((id) => id !== timeSlotId) : [...ids, timeSlotId],
-    );
+    if (!availabilityEditingDate) return;
+    setAvailabilityDrafts((drafts) => {
+      const current = drafts[availabilityEditingDate] ?? { scope: "time_slots" as const, timeSlotIds: [] };
+      const timeSlotIds = current.timeSlotIds.includes(timeSlotId)
+        ? current.timeSlotIds.filter((id) => id !== timeSlotId)
+        : [...current.timeSlotIds, timeSlotId];
+      return { ...drafts, [availabilityEditingDate]: { scope: "time_slots", timeSlotIds } };
+    });
   }
 
-  async function submitTeacherAvailability(scope: TeacherAvailabilityScope | "none" = availabilityScope) {
+  async function submitTeacherAvailability(scope?: "none") {
     if (availabilitySelectedDates.length === 0) {
       pushToast("Chưa chọn ngày", "Hãy chọn ít nhất một ngày trên lịch.", "warning");
       return;
     }
-    if (scope === "time_slots" && availabilityTimeSlotIds.length === 0) {
-      pushToast("Chưa chọn khung giờ", "Hãy chọn ít nhất một khung giờ cụ thể.", "warning");
+    const incompleteDates = availabilitySelectedDates.filter((date) => {
+      const draft = availabilityDrafts[date];
+      return draft.scope === "time_slots" && draft.timeSlotIds.length === 0;
+    });
+    if (scope !== "none" && incompleteDates.length > 0) {
+      pushToast("Chưa chọn khung giờ", `Hãy chọn ít nhất một khung giờ cho ${formatShortDateLabel(incompleteDates[0])}.`, "warning");
       return;
     }
 
-    const actionLabel = scope === "none" ? "hủy đăng ký" : `đăng ký ${teacherAvailabilityScopeLabels[scope]}`;
+    const actionLabel = scope === "none" ? "hủy đăng ký" : "đăng ký lịch trống";
     const confirmed = await openConfirmDialog({
       title: scope === "none" ? "Hủy lịch trống đã đăng ký?" : "Xác nhận lịch trống",
-      message: `Bạn muốn ${actionLabel} cho ${availabilitySelectedDates.length} ngày đã chọn?`,
+      message: `Bạn muốn ${actionLabel} cho ${availabilitySelectedDates.length} ngày với thiết lập riêng từng ngày?`,
       confirmText: scope === "none" ? "Hủy đăng ký" : "Xác nhận đăng ký",
       tone: scope === "none" ? "danger" : "brand",
     });
@@ -1521,16 +1572,16 @@ export function MettasoulApp() {
         "/api/teacher-availability",
         {
           method: "POST",
-          body: JSON.stringify({
-            dates: availabilitySelectedDates,
-            scope,
-            timeSlotIds: scope === "time_slots" ? availabilityTimeSlotIds : [],
-          }),
+          body: JSON.stringify(scope === "none"
+            ? { dates: availabilitySelectedDates, scope: "none" }
+            : {
+                entries: buildTeacherAvailabilityEntries(availabilityDrafts),
+              }),
         },
       );
       setTeacherAvailability(response.availability ?? []);
-      setAvailabilitySelectedDates([]);
-      setAvailabilityTimeSlotIds([]);
+      setAvailabilityDrafts({});
+      setAvailabilityEditingDate("");
       setDataStatus("connected");
       setSaveError("");
       pushToast(
@@ -5331,7 +5382,8 @@ export function MettasoulApp() {
                   type="button"
                   onClick={() => {
                     setAvailabilityRegistrationMode((value) => !value);
-                    setAvailabilitySelectedDates([]);
+                    setAvailabilityDrafts({});
+                    setAvailabilityEditingDate("");
                   }}
                   className={`inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black transition ${availabilityRegistrationMode ? "bg-emerald-600 text-white" : "bg-[var(--brand)] text-white"}`}
                 >
@@ -5341,6 +5393,34 @@ export function MettasoulApp() {
               </div>
               {availabilityRegistrationMode ? (
                 <div className="mt-4 space-y-3">
+                  <div className="rounded-xl border border-emerald-200 bg-white p-3">
+                    <p className="text-xs font-black text-emerald-900">1. Bấm ngày trên lịch · 2. Chọn thời gian riêng cho ngày đó</p>
+                    {availabilitySelectedDates.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {availabilitySelectedDates.map((date) => {
+                          const draft = availabilityDrafts[date];
+                          const summary = draft.scope === "time_slots"
+                            ? `${draft.timeSlotIds.length} khung giờ`
+                            : teacherAvailabilityScopeLabels[draft.scope];
+                          return (
+                            <span key={date} className={`inline-flex items-center overflow-hidden rounded-full border ${availabilityEditingDate === date ? "border-emerald-600 bg-emerald-600 text-white" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
+                              <button type="button" onClick={() => setAvailabilityEditingDate(date)} className="px-3 py-1.5 text-xs font-black">
+                                {formatShortDateLabel(date)} · {summary}
+                              </button>
+                              <button type="button" onClick={() => removeAvailabilityDate(date)} title={`Bỏ ngày ${formatShortDateLabel(date)}`} className={`grid h-7 w-7 place-items-center border-l ${availabilityEditingDate === date ? "border-white/30 hover:bg-white/15" : "border-emerald-200 hover:bg-emerald-100"}`}>
+                                <X size={13} />
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs font-semibold text-[var(--muted)]">Chưa chọn ngày nào. Mỗi ngày có thể dùng một lựa chọn khác nhau.</p>
+                    )}
+                  </div>
+                  {availabilityEditingDate ? (
+                    <p className="text-xs font-black text-emerald-900">Đang thiết lập ngày {formatShortDateLabel(availabilityEditingDate)}</p>
+                  ) : null}
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                     {([
                       ["all_day", "Cả ngày"],
@@ -5351,20 +5431,32 @@ export function MettasoulApp() {
                       <button
                         key={scope}
                         type="button"
-                        onClick={() => setAvailabilityScope(scope)}
-                        className={`rounded-xl border px-3 py-2 text-xs font-black transition ${availabilityScope === scope ? "border-emerald-500 bg-emerald-600 text-white" : "border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50"}`}
+                        onClick={() => updateAvailabilityScope(scope)}
+                        disabled={!availabilityEditingDate}
+                        className={`rounded-xl border px-3 py-2 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${availabilityEditingDraft?.scope === scope ? "border-emerald-500 bg-emerald-600 text-white" : "border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50"}`}
                       >
                         {label}
                       </button>
                     ))}
                   </div>
-                  {availabilityScope === "time_slots" ? (
-                    <div className="grid gap-2 rounded-xl border border-emerald-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {activeTimeSlots.map((slot) => (
-                        <label key={slot.id} className="flex items-center gap-2 rounded-lg bg-emerald-50/60 px-3 py-2 text-xs font-semibold text-emerald-900">
-                          <input type="checkbox" checked={availabilityTimeSlotIds.includes(slot.id)} onChange={() => toggleAvailabilityTimeSlot(slot.id)} />
-                          <span>{formatTimeSlotDisplay(slot, activeTimeSlots)} · {slot.start}-{slot.end}</span>
-                        </label>
+                  {availabilityEditingDraft?.scope === "time_slots" ? (
+                    <div className="grid gap-3 rounded-xl border border-emerald-200 bg-white p-3 lg:grid-cols-2">
+                      {([
+                        ["Buổi sáng", availabilityTimeRanges.filter((slot) => isMorningTimeSlot(slot))],
+                        ["Buổi chiều", availabilityTimeRanges.filter((slot) => !isMorningTimeSlot(slot))],
+                      ] as const).map(([periodLabel, ranges]) => (
+                        <div key={periodLabel} className="rounded-xl bg-emerald-50/55 p-3">
+                          <p className="mb-2 text-xs font-black uppercase tracking-wide text-emerald-800">{periodLabel}</p>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {ranges.map((slot) => (
+                              <label key={slot.id} className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-emerald-900">
+                                <input type="checkbox" checked={availabilityEditingDraft.timeSlotIds.includes(slot.id)} onChange={() => toggleAvailabilityTimeSlot(slot.id)} />
+                                <span>{slot.start} - {slot.end}</span>
+                              </label>
+                            ))}
+                            {ranges.length === 0 ? <span className="text-xs font-semibold text-[var(--muted)]">Chưa có khung giờ.</span> : null}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   ) : null}
@@ -10302,9 +10394,11 @@ function summarizeAvailabilityEntries(entries: TeacherAvailability[], slots: Tim
   if (entries.some((entry) => entry.scope === "afternoon")) labels.push(teacherAvailabilityScopeLabels.afternoon);
   const slotLabels = entries
     .filter((entry) => entry.scope === "time_slots" && entry.timeSlotId)
-    .map((entry) => slots.find((slot) => slot.id === entry.timeSlotId))
-    .filter((slot): slot is TimeSlot => Boolean(slot))
-    .map((slot) => `${slot.start}-${slot.end}`);
+    .flatMap((entry) => {
+      if (entry.timeSlotId?.startsWith("time:")) return [entry.timeSlotId.slice(5)];
+      const slot = slots.find((candidate) => candidate.id === entry.timeSlotId);
+      return slot ? [`${slot.start}-${slot.end}`] : [];
+    });
   if (slotLabels.length > 0) labels.push(Array.from(new Set(slotLabels)).join(", "));
   return labels.join(" · ") || "Chưa đăng ký";
 }

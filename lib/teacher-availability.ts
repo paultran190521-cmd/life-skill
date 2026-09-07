@@ -7,8 +7,38 @@ export const teacherAvailabilityScopeLabels: Record<TeacherAvailabilityScope, st
   time_slots: "Khung giờ cụ thể",
 };
 
+export type TeacherAvailabilityDraft = {
+  scope: TeacherAvailabilityScope;
+  timeSlotIds: string[];
+};
+
+export function buildTeacherAvailabilityEntries(drafts: Record<string, TeacherAvailabilityDraft>) {
+  return Object.keys(drafts).sort().map((date) => ({
+    date,
+    scope: drafts[date].scope,
+    timeSlotIds: drafts[date].scope === "time_slots" ? drafts[date].timeSlotIds : [],
+  }));
+}
+
 export function canRegisterTeacherAvailability(role: Role, teacherId: string) {
   return (role === "teacher" || role === "assistant") && Boolean(teacherId.trim());
+}
+
+export function availabilityTimeRangeKey(slot: Pick<TimeSlot, "start" | "end">) {
+  return `time:${slot.start}-${slot.end}`;
+}
+
+export function uniqueAvailabilityTimeRanges(slots: TimeSlot[]) {
+  const ranges = new Map<string, Pick<TimeSlot, "id" | "label" | "start" | "end">>();
+  for (const slot of slots) {
+    const id = availabilityTimeRangeKey(slot);
+    if (!ranges.has(id)) {
+      ranges.set(id, { id, label: `${slot.start}-${slot.end}`, start: slot.start, end: slot.end });
+    }
+  }
+  return Array.from(ranges.values()).sort((left, right) =>
+    left.start.localeCompare(right.start) || left.end.localeCompare(right.end),
+  );
 }
 
 export function isMorningTimeSlot(slot: Pick<TimeSlot, "start">) {
@@ -17,7 +47,7 @@ export function isMorningTimeSlot(slot: Pick<TimeSlot, "start">) {
 
 export function availabilityMatchesTimeSlot(
   availability: Pick<TeacherAvailability, "scope" | "timeSlotId" | "status">,
-  slot: Pick<TimeSlot, "id" | "start">,
+  slot: Pick<TimeSlot, "id" | "start" | "end">,
 ) {
   if (availability.status !== "available") {
     return false;
@@ -31,14 +61,16 @@ export function availabilityMatchesTimeSlot(
   if (availability.scope === "afternoon") {
     return !isMorningTimeSlot(slot);
   }
-  return availability.scope === "time_slots" && availability.timeSlotId === slot.id;
+  return availability.scope === "time_slots" && (
+    availability.timeSlotId === slot.id || availability.timeSlotId === availabilityTimeRangeKey(slot)
+  );
 }
 
 export function isTeacherAvailableForSlot(
   availabilities: Array<Pick<TeacherAvailability, "teacherId" | "date" | "scope" | "timeSlotId" | "status">>,
   teacherId: string,
   date: string,
-  slot: Pick<TimeSlot, "id" | "start"> | undefined,
+  slot: Pick<TimeSlot, "id" | "start" | "end"> | undefined,
 ) {
   if (!teacherId || !date || !slot) {
     return false;

@@ -254,6 +254,7 @@ function validateTeacherAvailability(
   const slotsById = new Map(slots.map((slot) => [String(slot.id || "").trim(), {
     id: String(slot.id || "").trim(),
     start: String(slot.start || "").trim(),
+    end: String(slot.end || "").trim(),
   }]));
 
   for (const item of items) {

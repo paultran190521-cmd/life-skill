@@ -8,10 +8,17 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 const policyModule = { exports: {} };
 new Function("module", "exports", compiled)(policyModule, policyModule.exports);
-const { availabilityMatchesTimeSlot, canRegisterTeacherAvailability, isTeacherAvailableForSlot } = policyModule.exports;
+const {
+  availabilityMatchesTimeSlot,
+  availabilityTimeRangeKey,
+  buildTeacherAvailabilityEntries,
+  canRegisterTeacherAvailability,
+  isTeacherAvailableForSlot,
+  uniqueAvailabilityTimeRanges,
+} = policyModule.exports;
 
-const morningSlot = { id: "slot-morning", start: "07:30" };
-const afternoonSlot = { id: "slot-afternoon", start: "13:30" };
+const morningSlot = { id: "slot-morning", start: "07:30", end: "08:15" };
+const afternoonSlot = { id: "slot-afternoon", start: "13:30", end: "14:15" };
 const base = { status: "available" };
 
 assert.equal(availabilityMatchesTimeSlot({ ...base, scope: "all_day" }, morningSlot), true);
@@ -45,5 +52,32 @@ assert.equal(canRegisterTeacherAvailability("teacher", "teacher-1"), true);
 assert.equal(canRegisterTeacherAvailability("assistant", "teacher-1"), true);
 assert.equal(canRegisterTeacherAvailability("admin", "teacher-1"), false);
 assert.equal(canRegisterTeacherAvailability("assistant", ""), false);
+assert.equal(availabilityTimeRangeKey(morningSlot), "time:07:30-08:15");
+assert.equal(
+  availabilityMatchesTimeSlot({ ...base, scope: "time_slots", timeSlotId: "time:07:30-08:15" }, morningSlot),
+  true,
+);
+const ranges = uniqueAvailabilityTimeRanges([
+  { id: "school-a-slot", label: "Trường A - Tiết 1", start: "07:30", end: "08:15" },
+  { id: "school-b-slot", label: "Trường B - Tiết 1", start: "07:30", end: "08:15" },
+  { id: "school-a-afternoon", label: "Trường A - Tiết 1C", start: "13:30", end: "14:15" },
+]);
+assert.equal(ranges.length, 2);
+assert.deepEqual(ranges.map((range) => range.id), ["time:07:30-08:15", "time:13:30-14:15"]);
+assert.deepEqual(ranges.map((range) => range.label), ["07:30-08:15", "13:30-14:15"]);
+assert.deepEqual(
+  buildTeacherAvailabilityEntries({
+    "2026-09-10": { scope: "all_day", timeSlotIds: ["ignored"] },
+    "2026-09-08": { scope: "morning", timeSlotIds: [] },
+    "2026-09-11": { scope: "time_slots", timeSlotIds: ["time:07:30-08:15"] },
+    "2026-09-09": { scope: "afternoon", timeSlotIds: [] },
+  }),
+  [
+    { date: "2026-09-08", scope: "morning", timeSlotIds: [] },
+    { date: "2026-09-09", scope: "afternoon", timeSlotIds: [] },
+    { date: "2026-09-10", scope: "all_day", timeSlotIds: [] },
+    { date: "2026-09-11", scope: "time_slots", timeSlotIds: ["time:07:30-08:15"] },
+  ],
+);
 
-console.log("Teacher availability policy tests passed (15 cases).");
+console.log("Teacher availability policy tests passed (21 cases).");
