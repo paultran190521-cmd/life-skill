@@ -326,8 +326,6 @@ type ToastMessage = {
   leaving: boolean;
 };
 
-type CenterFeedback = ToastMessage;
-
 type AppDialogVariant = "confirm" | "prompt";
 
 type AppDialog = {
@@ -586,7 +584,6 @@ export function MettasoulApp() {
   });
   const [weeklyUpdateDeleteTarget, setWeeklyUpdateDeleteTarget] = useState<WeeklyUpdate | null>(null);
   const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
-  const [centerFeedback, setCenterFeedback] = useState<CenterFeedback | null>(null);
   const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -1425,13 +1422,6 @@ export function MettasoulApp() {
     const id = createId("toast");
     const toast = { id, title, body, tone, leaving: false };
     setToastMessages((items) => [toast, ...items].slice(0, 4));
-    setCenterFeedback(toast);
-    setTimeout(() => {
-      setCenterFeedback((current) => (current?.id === id ? { ...current, leaving: true } : current));
-    }, 1600);
-    setTimeout(() => {
-      setCenterFeedback((current) => (current?.id === id ? null : current));
-    }, 2050);
     setTimeout(() => dismissToast(id), 4200);
   }
 
@@ -4145,11 +4135,11 @@ export function MettasoulApp() {
           <SystemFeedbackLayer
             pendingAction={pendingAction}
             toastMessages={toastMessages}
-            centerFeedback={centerFeedback}
             onDismissToast={dismissToast}
           />
           {feedbackModalOpen ? (
-            <div className="app-modal-overlay z-[70] grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
+            <ViewportPortal>
+              <div className="app-modal-overlay z-[70] grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
               <div className="app-modal-panel w-full max-w-2xl rounded-3xl border border-violet-200 bg-white p-5 shadow-2xl">
                 <div className="flex shrink-0 items-start justify-between gap-3">
                   <div>
@@ -4234,10 +4224,12 @@ export function MettasoulApp() {
                   </button>
                 </div>
               </div>
-            </div>
+              </div>
+            </ViewportPortal>
           ) : null}
           {teacherModalOpen ? (
-            <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
+            <ViewportPortal>
+              <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
               <div
                 data-modal-scroll="true"
                 className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl"
@@ -4334,10 +4326,12 @@ export function MettasoulApp() {
                   </button>
                 </div>
               </div>
-            </div>
+              </div>
+            </ViewportPortal>
           ) : null}
           {lessonDeleteTarget ? (
-            <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
+            <ViewportPortal>
+              <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
               <div
                 data-modal-scroll="true"
                 className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border border-rose-100 bg-white p-5 shadow-2xl"
@@ -4367,10 +4361,12 @@ export function MettasoulApp() {
                   </button>
                 </div>
               </div>
-            </div>
+              </div>
+            </ViewportPortal>
           ) : null}
           {reassignTarget ? (
-            <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
+            <ViewportPortal>
+              <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
               <div
                 data-modal-scroll="true"
                 className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl"
@@ -4423,10 +4419,12 @@ export function MettasoulApp() {
                   </button>
                 </div>
               </div>
-            </div>
+              </div>
+            </ViewportPortal>
           ) : null}
           {selectedOperationalAlert ? (
-            <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
+            <ViewportPortal>
+              <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
               <div
                 data-modal-scroll="true"
                 className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-5xl overflow-y-auto overscroll-contain rounded-3xl border border-orange-100 bg-white p-5 shadow-2xl ring-1 ring-cyan-100"
@@ -4490,7 +4488,8 @@ export function MettasoulApp() {
                   )}
                 </div>
               </div>
-            </div>
+              </div>
+            </ViewportPortal>
           ) : null}
           {selectedScheduleDetail && typeof document !== "undefined" ? createPortal(
             <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
@@ -7324,7 +7323,8 @@ export function MettasoulApp() {
         </Panel>
 
         {teacherOverviewFocus ? (
-          <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
+          <ViewportPortal>
+            <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
             <div
               data-modal-scroll="true"
               className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-5xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100"
@@ -7347,7 +7347,8 @@ export function MettasoulApp() {
               </div>
               <ScheduleList items={selectedRows} compact />
             </div>
-          </div>
+            </div>
+          </ViewportPortal>
         ) : null}
       </div>
     );
@@ -7598,7 +7599,8 @@ export function MettasoulApp() {
           </Panel>
 
           {attendanceAdminFocus ? (
-            <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
+            <ViewportPortal>
+              <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
               <div
                 data-modal-scroll="true"
                 className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-4xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100"
@@ -7629,11 +7631,13 @@ export function MettasoulApp() {
                   )}
                 </div>
               </div>
-            </div>
+              </div>
+            </ViewportPortal>
           ) : null}
 
           {attendanceWarningFocus ? (
-            <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
+            <ViewportPortal>
+              <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
               <div
                 data-modal-scroll="true"
                 className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-4xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100"
@@ -7666,7 +7670,8 @@ export function MettasoulApp() {
                   )}
                 </div>
               </div>
-            </div>
+              </div>
+            </ViewportPortal>
           ) : null}
         </div>
       );
@@ -8144,7 +8149,8 @@ export function MettasoulApp() {
         </Panel>
 
         {weeklyUpdateDeleteTarget ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <ViewportPortal>
+            <div className="app-modal-overlay z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
             <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
               <h3 className="mb-2 text-base font-black text-slate-800">Xóa cập nhật tuần?</h3>
               <p className="mb-4 text-sm text-slate-600">
@@ -8169,7 +8175,8 @@ export function MettasoulApp() {
                 </button>
               </div>
             </div>
-          </div>
+            </div>
+          </ViewportPortal>
         ) : null}
       </div>
     );
@@ -8904,6 +8911,13 @@ export function MettasoulApp() {
   }
 }
 
+function ViewportPortal({ children }: { children: React.ReactNode }) {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  return createPortal(children, document.body);
+}
+
 function PageEdgeNavigation() {
   if (typeof document === "undefined") {
     return null;
@@ -8944,22 +8958,21 @@ function PageEdgeNavigation() {
 function SystemFeedbackLayer({
   pendingAction,
   toastMessages,
-  centerFeedback,
   onDismissToast,
 }: {
   pendingAction: string;
   toastMessages: ToastMessage[];
-  centerFeedback: CenterFeedback | null;
   onDismissToast: (id: string) => void;
 }) {
-  const hasTopRightFeedback = Boolean(pendingAction) || toastMessages.length > 0;
+  const hasFeedback = Boolean(pendingAction) || toastMessages.length > 0;
 
   return (
-    <>
-      {hasTopRightFeedback ? (
-        <div className="pointer-events-none fixed right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[80] flex w-[min(430px,calc(100vw-1.5rem))] flex-col gap-3 sm:right-5 sm:top-5 sm:w-[min(430px,calc(100vw-2.5rem))]">
+    <ViewportPortal>
+      {hasFeedback ? (
+        <div role="status" aria-live="polite" className="app-modal-overlay pointer-events-none z-[80] grid place-items-center p-4">
+          <div className="flex w-[min(460px,calc(100vw-2rem))] flex-col gap-3">
           {pendingAction ? (
-            <div className="pointer-events-auto inline-flex items-center gap-3 self-end rounded-2xl border border-cyan-200 bg-white/95 px-4 py-3 text-sm font-black text-[var(--brand-dark)] shadow-2xl shadow-cyan-950/12 backdrop-blur-xl">
+            <div className="pointer-events-auto inline-flex items-center justify-center gap-3 self-center rounded-2xl border border-cyan-200 bg-white/95 px-5 py-4 text-center text-sm font-black text-[var(--brand-dark)] shadow-2xl shadow-cyan-950/15 backdrop-blur-xl">
               <LoaderCircle className="animate-spin text-cyan-600" size={18} />
               <span className="min-w-0 truncate">{pendingAction}</span>
             </div>
@@ -8968,7 +8981,7 @@ function SystemFeedbackLayer({
             <div
               key={toast.id}
               className={`ui-toast pointer-events-auto rounded-2xl border px-4 py-3 shadow-2xl transition duration-200 ${
-                toast.leaving ? "translate-x-4 opacity-0" : "translate-x-0 opacity-100"
+                toast.leaving ? "translate-y-2 scale-[0.98] opacity-0" : "translate-y-0 scale-100 opacity-100"
               } ${toastToneClass(toast.tone)}`}
             >
               <div className="flex items-start gap-3">
@@ -8999,33 +9012,11 @@ function SystemFeedbackLayer({
               </div>
             </div>
           ))}
-        </div>
-      ) : null}
-
-      {centerFeedback ? (
-        <div className="pointer-events-none fixed inset-0 z-[85] grid place-items-center p-4">
-          <div
-            className={`ui-center-feedback max-w-[min(440px,calc(100vw-2rem))] rounded-3xl border px-5 py-4 text-center shadow-2xl transition duration-300 ${
-              centerFeedback.leaving ? "translate-y-2 scale-95 opacity-0 blur-sm" : "translate-y-0 scale-100 opacity-100 blur-0"
-            } ${centerFeedbackToneClass(centerFeedback.tone)}`}
-          >
-            <div className={`mx-auto grid h-12 w-12 place-items-center rounded-2xl ${centerFeedbackIconClass(centerFeedback.tone)}`}>
-              {centerFeedback.tone === "error" ? (
-                <X size={22} />
-              ) : centerFeedback.tone === "success" ? (
-                <CheckCircle2 size={22} />
-              ) : centerFeedback.tone === "warning" ? (
-                <AlertTriangle size={22} />
-              ) : (
-                <Bell size={22} />
-              )}
-            </div>
-            <p className="mt-3 text-base font-black">{centerFeedback.title}</p>
-            <p className="mt-1 text-sm font-semibold leading-6 opacity-85">{centerFeedback.body}</p>
           </div>
         </div>
       ) : null}
-    </>
+
+    </ViewportPortal>
   );
 }
 
@@ -9053,32 +9044,6 @@ function toastIconToneClass(tone: ToastTone) {
     return "bg-emerald-100 text-emerald-700";
   }
   return "bg-cyan-100 text-[var(--brand-dark)]";
-}
-
-function centerFeedbackToneClass(tone: ToastTone) {
-  if (tone === "error") {
-    return "border-rose-200 bg-rose-50/88 text-rose-950 shadow-rose-950/15";
-  }
-  if (tone === "warning") {
-    return "border-amber-200 bg-amber-50/88 text-amber-950 shadow-amber-950/15";
-  }
-  if (tone === "success") {
-    return "border-emerald-200 bg-emerald-50/88 text-emerald-950 shadow-emerald-950/15";
-  }
-  return "border-cyan-200 bg-white/88 text-[var(--brand-dark)] shadow-cyan-950/15";
-}
-
-function centerFeedbackIconClass(tone: ToastTone) {
-  if (tone === "error") {
-    return "bg-rose-100 text-rose-700";
-  }
-  if (tone === "warning") {
-    return "bg-amber-100 text-amber-700";
-  }
-  if (tone === "success") {
-    return "bg-emerald-100 text-emerald-700";
-  }
-  return "bg-cyan-100 text-cyan-700";
 }
 
 function AnnouncementTicker({ announcements }: { announcements: AppAnnouncement[] }) {
