@@ -449,7 +449,9 @@ export function MettasoulApp() {
   const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("week");
   const [availabilityRegistrationMode, setAvailabilityRegistrationMode] = useState(false);
   const [availabilityDrafts, setAvailabilityDrafts] = useState<Record<string, TeacherAvailabilityDraft>>({});
+  const [availabilityApplyMode, setAvailabilityApplyMode] = useState<"single" | "batch">("single");
   const [availabilityEditingDate, setAvailabilityEditingDate] = useState("");
+  const [availabilityBatchDates, setAvailabilityBatchDates] = useState<string[]>([]);
   const [assignmentAvailabilityMonth, setAssignmentAvailabilityMonth] = useState(() => currentMonthKey());
   const [assignmentAvailabilityDate, setAssignmentAvailabilityDate] = useState(() => currentDateKey());
   const [assignmentAvailabilityView, setAssignmentAvailabilityView] = useState<AvailabilityCalendarViewMode>("week");
@@ -612,7 +614,12 @@ export function MettasoulApp() {
   const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);
   const availabilityTimeRanges = useMemo(() => uniqueAvailabilityTimeRanges(activeTimeSlots), [activeTimeSlots]);
   const availabilitySelectedDates = useMemo(() => Object.keys(availabilityDrafts).sort(), [availabilityDrafts]);
-  const availabilityEditingDraft = availabilityEditingDate ? availabilityDrafts[availabilityEditingDate] : undefined;
+  const availabilityTargetDates = availabilityApplyMode === "batch"
+    ? availabilityBatchDates
+    : availabilityEditingDate ? [availabilityEditingDate] : [];
+  const availabilityTargetScope = availabilityTargetDates.length > 0 && availabilityTargetDates.every(
+    (date) => availabilityDrafts[date]?.scope === availabilityDrafts[availabilityTargetDates[0]]?.scope,
+  ) ? availabilityDrafts[availabilityTargetDates[0]]?.scope : undefined;
   const currentTeacherAvailability = useMemo(
     () => teacherAvailability.filter((item) => item.teacherId === currentTeacherId && item.status === "available"),
     [currentTeacherId, teacherAvailability],
@@ -1495,26 +1502,37 @@ export function MettasoulApp() {
     }
   }
 
+  function initialAvailabilityDraft(dateKey: string): TeacherAvailabilityDraft {
+    const existing = currentTeacherAvailability.filter((item) => item.date === dateKey);
+    const scope = existing[0]?.scope ?? "all_day";
+    const timeSlotIds = scope === "time_slots"
+      ? Array.from(new Set(existing.flatMap((item) => {
+          if (!item.timeSlotId) return [];
+          if (item.timeSlotId.startsWith("time:")) return [item.timeSlotId];
+          const slot = activeTimeSlots.find((candidate) => candidate.id === item.timeSlotId);
+          return slot ? [availabilityTimeRangeKey(slot)] : [];
+        })))
+      : [];
+    return { scope, timeSlotIds };
+  }
+
   function toggleAvailabilityDate(dateKey: string) {
     if (dateKey < currentDateKey()) {
       pushToast("Không thể chọn", "Chỉ có thể đăng ký lịch trống từ hôm nay trở đi.", "warning");
       return;
     }
+    if (availabilityApplyMode === "batch") {
+      setAvailabilityBatchDates((dates) =>
+        dates.includes(dateKey) ? dates.filter((date) => date !== dateKey) : [...dates, dateKey].sort(),
+      );
+      setAvailabilityEditingDate("");
+      return;
+    }
     setAvailabilityEditingDate(dateKey);
-    setAvailabilityDrafts((drafts) => {
-      if (drafts[dateKey]) return drafts;
-      const existing = currentTeacherAvailability.filter((item) => item.date === dateKey);
-      const scope = existing[0]?.scope ?? "all_day";
-      const timeSlotIds = scope === "time_slots"
-        ? Array.from(new Set(existing.flatMap((item) => {
-            if (!item.timeSlotId) return [];
-            if (item.timeSlotId.startsWith("time:")) return [item.timeSlotId];
-            const slot = activeTimeSlots.find((candidate) => candidate.id === item.timeSlotId);
-            return slot ? [availabilityTimeRangeKey(slot)] : [];
-          })))
-        : [];
-      return { ...drafts, [dateKey]: { scope, timeSlotIds } };
-    });
+    setAvailabilityBatchDates([]);
+    setAvailabilityDrafts((drafts) => drafts[dateKey]
+      ? drafts
+      : { ...drafts, [dateKey]: initialAvailabilityDraft(dateKey) });
   }
 
   function removeAvailabilityDate(dateKey: string) {
@@ -1524,30 +1542,40 @@ export function MettasoulApp() {
       return next;
     });
     setAvailabilityEditingDate((current) => current === dateKey ? "" : current);
+    setAvailabilityBatchDates((dates) => dates.filter((date) => date !== dateKey));
   }
 
   function updateAvailabilityScope(scope: TeacherAvailabilityScope) {
-    if (!availabilityEditingDate) {
-      pushToast("Chưa chọn ngày", "Hãy bấm một ngày trên lịch trước khi chọn thời gian.", "warning");
+    if (availabilityTargetDates.length === 0) {
+      pushToast("Chưa chọn ngày", "Hãy bấm một hoặc nhiều ngày trên lịch trước khi chọn thời gian.", "warning");
       return;
     }
-    setAvailabilityDrafts((drafts) => ({
-      ...drafts,
-      [availabilityEditingDate]: {
-        scope,
-        timeSlotIds: scope === "time_slots" ? (drafts[availabilityEditingDate]?.timeSlotIds ?? []) : [],
-      },
-    }));
+    setAvailabilityDrafts((drafts) => {
+      const next = { ...drafts };
+      for (const date of availabilityTargetDates) {
+        const current = drafts[date] ?? initialAvailabilityDraft(date);
+        next[date] = {
+          scope,
+          timeSlotIds: scope === "time_slots" && availabilityTargetScope === "time_slots" ? current.timeSlotIds : [],
+        };
+      }
+      return next;
+    });
   }
 
   function toggleAvailabilityTimeSlot(timeSlotId: string) {
-    if (!availabilityEditingDate) return;
+    if (availabilityTargetDates.length === 0) return;
     setAvailabilityDrafts((drafts) => {
-      const current = drafts[availabilityEditingDate] ?? { scope: "time_slots" as const, timeSlotIds: [] };
-      const timeSlotIds = current.timeSlotIds.includes(timeSlotId)
-        ? current.timeSlotIds.filter((id) => id !== timeSlotId)
-        : [...current.timeSlotIds, timeSlotId];
-      return { ...drafts, [availabilityEditingDate]: { scope: "time_slots", timeSlotIds } };
+      const next = { ...drafts };
+      const removeFromAll = availabilityTargetDates.every((date) => drafts[date]?.timeSlotIds.includes(timeSlotId));
+      for (const date of availabilityTargetDates) {
+        const current = drafts[date] ?? { scope: "time_slots" as const, timeSlotIds: [] };
+        const timeSlotIds = removeFromAll
+          ? current.timeSlotIds.filter((id) => id !== timeSlotId)
+          : Array.from(new Set([...current.timeSlotIds, timeSlotId]));
+        next[date] = { scope: "time_slots", timeSlotIds };
+      }
+      return next;
     });
   }
 
@@ -1590,6 +1618,7 @@ export function MettasoulApp() {
       setTeacherAvailability(response.availability ?? []);
       setAvailabilityDrafts({});
       setAvailabilityEditingDate("");
+      setAvailabilityBatchDates([]);
       setDataStatus("connected");
       setSaveError("");
       pushToast(
@@ -5405,6 +5434,8 @@ export function MettasoulApp() {
                     setAvailabilityRegistrationMode((value) => !value);
                     setAvailabilityDrafts({});
                     setAvailabilityEditingDate("");
+                    setAvailabilityBatchDates([]);
+                    setAvailabilityApplyMode("single");
                   }}
                   className={`inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black transition ${availabilityRegistrationMode ? "bg-emerald-600 text-white" : "bg-[var(--brand)] text-white"}`}
                 >
@@ -5414,21 +5445,54 @@ export function MettasoulApp() {
               </div>
               {availabilityRegistrationMode ? (
                 <div className="mt-4 space-y-3">
+                  <div className="grid gap-2 rounded-xl border border-emerald-200 bg-white p-2 sm:grid-cols-2">
+                    {([
+                      ["single", "Thiết lập từng ngày", "Mỗi lần bấm lịch sẽ chỉnh một ngày"],
+                      ["batch", "Nhiều ngày cùng giờ", "Chọn một nhóm ngày rồi áp dụng chung"],
+                    ] as const).map(([mode, label, description]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => {
+                          setAvailabilityApplyMode(mode);
+                          setAvailabilityEditingDate("");
+                          setAvailabilityBatchDates([]);
+                        }}
+                        className={`rounded-xl border px-3 py-2 text-left transition ${availabilityApplyMode === mode ? "border-emerald-500 bg-emerald-600 text-white" : "border-emerald-100 bg-emerald-50 text-emerald-900"}`}
+                      >
+                        <span className="block text-xs font-black">{label}</span>
+                        <span className={`mt-0.5 block text-[11px] font-semibold ${availabilityApplyMode === mode ? "text-emerald-50" : "text-emerald-700"}`}>{description}</span>
+                      </button>
+                    ))}
+                  </div>
                   <div className="rounded-xl border border-emerald-200 bg-white p-3">
-                    <p className="text-xs font-black text-emerald-900">1. Bấm ngày trên lịch · 2. Chọn thời gian riêng cho ngày đó</p>
+                    <p className="text-xs font-black text-emerald-900">
+                      {availabilityApplyMode === "batch"
+                        ? "1. Bấm chọn nhiều ngày trên lịch · 2. Chọn một mức thời gian áp dụng cho cả nhóm"
+                        : "1. Bấm một ngày trên lịch · 2. Chọn thời gian riêng cho ngày đó"}
+                    </p>
+                    {availabilityApplyMode === "batch" ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-900">Đang đánh dấu {availabilityBatchDates.length} ngày trong nhóm</span>
+                        {availabilityBatchDates.length > 0 ? (
+                          <button type="button" onClick={() => setAvailabilityBatchDates([])} className="rounded-full border border-emerald-200 px-3 py-1.5 text-xs font-black text-emerald-800">Kết thúc nhóm này</button>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {availabilitySelectedDates.length > 0 ? (
-                      <div className="mt-2 flex flex-wrap gap-2">
+                      <div className="mt-3 flex flex-wrap gap-2">
                         {availabilitySelectedDates.map((date) => {
                           const draft = availabilityDrafts[date];
                           const summary = draft.scope === "time_slots"
                             ? `${draft.timeSlotIds.length} khung giờ`
                             : teacherAvailabilityScopeLabels[draft.scope];
+                          const isEditing = availabilityTargetDates.includes(date);
                           return (
-                            <span key={date} className={`inline-flex items-center overflow-hidden rounded-full border ${availabilityEditingDate === date ? "border-emerald-600 bg-emerald-600 text-white" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
-                              <button type="button" onClick={() => setAvailabilityEditingDate(date)} className="px-3 py-1.5 text-xs font-black">
+                            <span key={date} className={`inline-flex items-center overflow-hidden rounded-full border ${isEditing ? "border-emerald-600 bg-emerald-600 text-white" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
+                              <button type="button" onClick={() => availabilityApplyMode === "batch" ? toggleAvailabilityDate(date) : setAvailabilityEditingDate(date)} className="px-3 py-1.5 text-xs font-black">
                                 {formatShortDateLabel(date)} · {summary}
                               </button>
-                              <button type="button" onClick={() => removeAvailabilityDate(date)} title={`Bỏ ngày ${formatShortDateLabel(date)}`} className={`grid h-7 w-7 place-items-center border-l ${availabilityEditingDate === date ? "border-white/30 hover:bg-white/15" : "border-emerald-200 hover:bg-emerald-100"}`}>
+                              <button type="button" onClick={() => removeAvailabilityDate(date)} title={`Bỏ ngày ${formatShortDateLabel(date)}`} className={`grid h-7 w-7 place-items-center border-l ${isEditing ? "border-white/30 hover:bg-white/15" : "border-emerald-200 hover:bg-emerald-100"}`}>
                                 <X size={13} />
                               </button>
                             </span>
@@ -5436,11 +5500,15 @@ export function MettasoulApp() {
                         })}
                       </div>
                     ) : (
-                      <p className="mt-2 text-xs font-semibold text-[var(--muted)]">Chưa chọn ngày nào. Mỗi ngày có thể dùng một lựa chọn khác nhau.</p>
+                      <p className="mt-2 text-xs font-semibold text-[var(--muted)]">Chưa có ngày nào được thiết lập.</p>
                     )}
                   </div>
-                  {availabilityEditingDate ? (
-                    <p className="text-xs font-black text-emerald-900">Đang thiết lập ngày {formatShortDateLabel(availabilityEditingDate)}</p>
+                  {availabilityTargetDates.length > 0 ? (
+                    <p className="text-xs font-black text-emerald-900">
+                      {availabilityApplyMode === "batch"
+                        ? `Đang áp dụng cho ${availabilityTargetDates.length} ngày trong nhóm`
+                        : `Đang thiết lập ngày ${formatShortDateLabel(availabilityTargetDates[0])}`}
+                    </p>
                   ) : null}
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                     {([
@@ -5453,14 +5521,14 @@ export function MettasoulApp() {
                         key={scope}
                         type="button"
                         onClick={() => updateAvailabilityScope(scope)}
-                        disabled={!availabilityEditingDate}
-                        className={`rounded-xl border px-3 py-2 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${availabilityEditingDraft?.scope === scope ? "border-emerald-500 bg-emerald-600 text-white" : "border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50"}`}
+                        disabled={availabilityTargetDates.length === 0}
+                        className={`rounded-xl border px-3 py-2 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${availabilityTargetScope === scope ? "border-emerald-500 bg-emerald-600 text-white" : "border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50"}`}
                       >
                         {label}
                       </button>
                     ))}
                   </div>
-                  {availabilityEditingDraft?.scope === "time_slots" ? (
+                  {availabilityTargetScope === "time_slots" ? (
                     <div className="grid gap-3 rounded-xl border border-emerald-200 bg-white p-3 lg:grid-cols-2">
                       {([
                         ["Buổi sáng", availabilityTimeRanges.filter((slot) => isMorningTimeSlot(slot))],
@@ -5471,7 +5539,7 @@ export function MettasoulApp() {
                           <div className="grid gap-2 sm:grid-cols-2">
                             {ranges.map((slot) => (
                               <label key={slot.id} className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-emerald-900">
-                                <input type="checkbox" checked={availabilityEditingDraft.timeSlotIds.includes(slot.id)} onChange={() => toggleAvailabilityTimeSlot(slot.id)} />
+                                <input type="checkbox" checked={availabilityTargetDates.every((date) => availabilityDrafts[date]?.timeSlotIds.includes(slot.id))} onChange={() => toggleAvailabilityTimeSlot(slot.id)} />
                                 <span>{slot.start} - {slot.end}</span>
                               </label>
                             ))}
@@ -5650,6 +5718,7 @@ export function MettasoulApp() {
               {calendarDays.map((day) => {
               const isSelected = selectedCalendarDate === day.dateKey;
               const isAvailabilitySelected = availabilitySelectedDates.includes(day.dateKey);
+              const isAvailabilityTargeted = availabilityTargetDates.includes(day.dateKey);
               const dayAvailability = currentTeacherAvailability.filter((item) => item.date === day.dateKey);
               const availabilityLabel = summarizeAvailabilityEntries(dayAvailability, activeTimeSlots);
               const statusTone = day.schedules.some((schedule) => schedule.status === "sent")
@@ -5672,7 +5741,9 @@ export function MettasoulApp() {
                     setSelectedScheduleIds([]);
                   }}
                   className={`flex min-h-[104px] flex-col items-center justify-center rounded-2xl border p-2.5 text-center transition sm:min-h-[112px] sm:p-3 ${
-                    isAvailabilitySelected
+                    isAvailabilityTargeted
+                      ? "border-amber-500 bg-amber-100 shadow-lg shadow-amber-900/10"
+                      : isAvailabilitySelected
                       ? "border-emerald-500 bg-emerald-100 shadow-lg shadow-emerald-900/10"
                       : isSelected
                       ? "border-[var(--brand)] bg-cyan-50 shadow-lg shadow-cyan-900/10"
