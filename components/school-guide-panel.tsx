@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import type { SchoolGuideEntry, SchoolGuideResponse } from "@/lib/school-guide-types";
+import type { SchoolGuideEntry, SchoolGuideLeader, SchoolGuideResponse } from "@/lib/school-guide-types";
 
 function normalizeSearch(value: string) {
   return value
@@ -158,6 +158,8 @@ function SchoolGuideCard({ school, index }: { school: SchoolGuideEntry; index: n
     "from-indigo-500 to-cyan-500",
     "from-amber-500 to-orange-500",
   ];
+  const principals = school.leaders.filter((leader) => leader.role.toLocaleLowerCase("vi") === "hiệu trưởng");
+  const deputyPrincipals = school.leaders.filter((leader) => leader.role.toLocaleLowerCase("vi") !== "hiệu trưởng");
 
   return (
     <article className="overflow-hidden rounded-[26px] border border-cyan-200 bg-white shadow-[0_14px_36px_rgba(15,73,92,0.08)]">
@@ -191,17 +193,6 @@ function SchoolGuideCard({ school, index }: { school: SchoolGuideEntry; index: n
           <InfoChip icon={Users} label="Hợp tác" value={`${school.partnershipYears.toString().padStart(2, "0")} năm`} />
         </div>
 
-        <div className="relative mt-5 aspect-[16/7] overflow-hidden rounded-2xl border border-cyan-100 bg-cyan-50">
-          <Image
-            src={school.imageUrl}
-            alt={`Hình ảnh học sinh tại ${school.schoolType} ${school.name}`}
-            fill
-            unoptimized
-            sizes="(min-width: 1280px) 44vw, 92vw"
-            className="object-cover"
-          />
-        </div>
-
         <details className="group mt-5 rounded-2xl border border-cyan-100 bg-cyan-50/60 open:bg-white">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 text-sm font-black text-[var(--brand-dark)] marker:content-none">
             <span className="inline-flex items-center gap-2">
@@ -213,31 +204,69 @@ function SchoolGuideCard({ school, index }: { school: SchoolGuideEntry; index: n
           <div className="space-y-4 border-t border-cyan-100 px-4 py-4 text-sm leading-6">
             <GuideSection title="Lưu ý phối hợp" body={school.coordinationNote} tone="amber" />
             <GuideSection title="Đặc điểm học sinh" body={school.studentProfile} tone="cyan" />
-            <div>
-              <p className="text-xs font-black uppercase tracking-wide text-slate-500">Ban Giám hiệu</p>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {school.leaders.map((leader) => (
-                  <div key={`${leader.role}-${leader.name}`} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                    <Image
-                      src={leader.imageUrl}
-                      alt={leader.name}
-                      width={52}
-                      height={52}
-                      unoptimized
-                      className="h-[52px] w-[52px] shrink-0 rounded-full border-2 border-white object-cover shadow-sm"
-                    />
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{leader.role}</p>
-                      <p className="mt-0.5 font-bold text-[var(--brand-dark)]">{leader.name}</p>
-                    </div>
-                  </div>
-                ))}
+            <div className="overflow-hidden rounded-[24px] border border-cyan-100 bg-gradient-to-b from-cyan-50 via-white to-amber-50/60 px-4 py-5 sm:px-6 sm:py-7">
+              <div className="text-center">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-700">Ban Giám hiệu</p>
+                <div className="mx-auto mt-2 h-1 w-12 rounded-full bg-gradient-to-r from-amber-400 to-cyan-500" />
               </div>
+
+              {principals.length > 0 ? (
+                <div className="mt-6 flex justify-center">
+                  {principals.map((leader) => (
+                    <LeaderPortrait key={`${leader.role}-${leader.name}`} leader={leader} prominent />
+                  ))}
+                </div>
+              ) : null}
+
+              {deputyPrincipals.length > 0 ? (
+                <div className="mx-auto mt-7 grid max-w-2xl gap-x-5 gap-y-7 sm:grid-cols-2">
+                  {deputyPrincipals.map((leader) => (
+                    <LeaderPortrait key={`${leader.role}-${leader.name}`} leader={leader} />
+                  ))}
+                </div>
+              ) : null}
+
+              {school.leaders.length === 0 ? (
+                <p className="mt-5 text-center text-sm font-semibold text-slate-500">Chưa cập nhật thông tin Ban Giám hiệu.</p>
+              ) : null}
             </div>
           </div>
         </details>
       </div>
     </article>
+  );
+}
+
+function LeaderPortrait({ leader, prominent = false }: { leader: SchoolGuideLeader; prominent?: boolean }) {
+  return (
+    <figure className={`group/leader flex min-w-0 flex-col items-center text-center ${prominent ? "max-w-sm" : "w-full"}`}>
+      <div
+        className={`relative overflow-hidden rounded-full bg-gradient-to-br from-amber-100 via-white to-cyan-100 p-1.5 shadow-[0_18px_38px_rgba(15,73,92,0.18)] ring-1 ring-amber-200 transition duration-300 group-hover/leader:-translate-y-1 group-hover/leader:shadow-[0_24px_48px_rgba(15,73,92,0.24)] ${
+          prominent
+            ? "h-[250px] w-[250px] sm:h-[300px] sm:w-[300px]"
+            : "h-[210px] w-[210px] sm:h-[260px] sm:w-[260px]"
+        }`}
+      >
+        <div className="relative h-full w-full overflow-hidden rounded-full bg-white">
+          <Image
+            src={leader.imageUrl}
+            alt={`${leader.role} ${leader.name}`}
+            fill
+            unoptimized
+            sizes={prominent ? "(min-width: 640px) 300px, 250px" : "(min-width: 640px) 260px, 210px"}
+            className="object-cover object-top"
+          />
+        </div>
+      </div>
+      <figcaption className={`relative -mt-5 rounded-2xl border border-white/80 bg-white/95 px-5 py-3 shadow-lg backdrop-blur ${prominent ? "min-w-[220px]" : "w-[90%] max-w-[260px]"}`}>
+        <p className={`font-black uppercase tracking-[0.12em] ${prominent ? "text-sm text-amber-600" : "text-xs text-cyan-700"}`}>
+          {leader.role}
+        </p>
+        <p className={`mt-1 font-black leading-snug text-[var(--brand-dark)] ${prominent ? "text-lg" : "text-base"}`}>
+          {leader.name}
+        </p>
+      </figcaption>
+    </figure>
   );
 }
 
