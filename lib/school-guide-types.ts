@@ -1,12 +1,14 @@
 export type SchoolGuideLeader = {
   role: string;
   name: string;
+  imageUrl: string;
 };
 
 export type SchoolGuideEntry = {
   id: string;
   name: string;
   schoolType: string;
+  imageUrl: string;
   address: string;
   mapUrl: string;
   distanceFromMettasoul: string;

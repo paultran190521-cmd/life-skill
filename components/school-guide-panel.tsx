@@ -13,6 +13,7 @@ import {
   School2,
   Users,
 } from "lucide-react";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import type { SchoolGuideEntry, SchoolGuideResponse } from "@/lib/school-guide-types";
 
@@ -190,6 +191,17 @@ function SchoolGuideCard({ school, index }: { school: SchoolGuideEntry; index: n
           <InfoChip icon={Users} label="Hợp tác" value={`${school.partnershipYears.toString().padStart(2, "0")} năm`} />
         </div>
 
+        <div className="relative mt-5 aspect-[16/7] overflow-hidden rounded-2xl border border-cyan-100 bg-cyan-50">
+          <Image
+            src={school.imageUrl}
+            alt={`Hình ảnh học sinh tại ${school.schoolType} ${school.name}`}
+            fill
+            unoptimized
+            sizes="(min-width: 1280px) 44vw, 92vw"
+            className="object-cover"
+          />
+        </div>
+
         <details className="group mt-5 rounded-2xl border border-cyan-100 bg-cyan-50/60 open:bg-white">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 text-sm font-black text-[var(--brand-dark)] marker:content-none">
             <span className="inline-flex items-center gap-2">
@@ -205,9 +217,19 @@ function SchoolGuideCard({ school, index }: { school: SchoolGuideEntry; index: n
               <p className="text-xs font-black uppercase tracking-wide text-slate-500">Ban Giám hiệu</p>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {school.leaders.map((leader) => (
-                  <div key={`${leader.role}-${leader.name}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                    <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{leader.role}</p>
-                    <p className="mt-0.5 font-bold text-[var(--brand-dark)]">{leader.name}</p>
+                  <div key={`${leader.role}-${leader.name}`} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                    <Image
+                      src={leader.imageUrl}
+                      alt={leader.name}
+                      width={52}
+                      height={52}
+                      unoptimized
+                      className="h-[52px] w-[52px] shrink-0 rounded-full border-2 border-white object-cover shadow-sm"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{leader.role}</p>
+                      <p className="mt-0.5 font-bold text-[var(--brand-dark)]">{leader.name}</p>
+                    </div>
                   </div>
                 ))}
               </div>

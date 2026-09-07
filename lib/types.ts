@@ -57,6 +57,7 @@ export type School = {
   id: string;
   name: string;
   district: string;
+  mapUrl?: string;
 };
 
 export type ClassRoom = {

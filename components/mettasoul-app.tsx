@@ -4528,7 +4528,26 @@ export function MettasoulApp() {
                     },
                     {
                       label: "Trường",
-                      value: meta.school?.name || "Chưa rõ",
+                      value: (
+                        <>
+                          {meta.school?.name || "Chưa rõ"}
+                          {meta.school?.mapUrl ? (
+                            <>
+                              {" ("}
+                              <a
+                                href={meta.school.mapUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-700 underline decoration-2 underline-offset-2 transition hover:text-blue-900"
+                                aria-label={`Mở bản đồ ${meta.school.name}`}
+                              >
+                                map
+                              </a>
+                              { ")"}
+                            </>
+                          ) : null}
+                        </>
+                      ),
                       tone: "cyan",
                     },
                     {
@@ -4579,7 +4598,14 @@ export function MettasoulApp() {
                           <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Mục tiêu bài học</p>
                           <div className="mt-3 space-y-2">
                             {splitObjectiveLines(meta.lesson?.objective || "").map((line, index) => (
-                              <div key={`${line}-${index}`} className="rounded-xl border border-orange-100 bg-white px-3 py-2 text-sm font-bold leading-6 text-[var(--brand-dark)] shadow-sm">
+                              <div
+                                key={`${line}-${index}`}
+                                className={`rounded-xl border px-3 py-2 text-sm font-bold leading-6 shadow-sm ${
+                                  isLessonPeriodTitle(line)
+                                    ? "border-orange-300 bg-orange-50 text-orange-800"
+                                    : "border-orange-100 bg-white text-[var(--brand-dark)]"
+                                }`}
+                              >
                                 {line}
                               </div>
                             ))}
@@ -9277,7 +9303,7 @@ function InfoBlock({
   tone = "cyan",
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   tone?: "cyan" | "orange" | "emerald" | "amber" | "rose" | "violet" | "indigo" | "slate";
 }) {
   const toneClass = {
@@ -11076,4 +11102,8 @@ function splitObjectiveLines(objective: string) {
     .filter(Boolean);
 
   return normalized.length > 0 ? normalized : [text];
+}
+
+function isLessonPeriodTitle(line: string) {
+  return /^Tiết\s*[12]\b/i.test(line.trim());
 }

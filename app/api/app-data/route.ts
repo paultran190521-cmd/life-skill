@@ -2,12 +2,17 @@ import { NextResponse } from "next/server";
 import { apiError, createRequestId } from "@/lib/api";
 import { getAppDataFromSheets } from "@/lib/google-sheets";
 import { requireSessionUser } from "@/lib/route-auth";
+import { schoolGuideMapUrlForName } from "@/lib/school-guide-data";
 
 export async function GET(request: Request) {
   const requestId = createRequestId("app-data");
   try {
     const auth = await requireSessionUser(request, { allowHeaderFallback: false });
     const data = await getAppDataFromSheets();
+    const schools = data.schools.map((school) => ({
+      ...school,
+      mapUrl: schoolGuideMapUrlForName(school.name),
+    }));
     const teacherId = String(auth.user.teacherId || "").trim();
 
     if (auth.user.role === "teacher" || auth.user.role === "assistant") {
@@ -37,7 +42,7 @@ export async function GET(request: Request) {
       return NextResponse.json({
         users: [auth.user],
         teachers: teacherId ? data.teachers.filter((teacher) => visibleTeacherIds.has(teacher.id)) : [],
-        schools: data.schools,
+        schools,
         classes: data.classes,
         topics: data.topics,
         lessons: data.lessons,
@@ -66,7 +71,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       users: data.users,
       teachers: data.teachers,
-      schools: data.schools,
+      schools,
       classes: data.classes,
       topics: data.topics,
       lessons: data.lessons,
