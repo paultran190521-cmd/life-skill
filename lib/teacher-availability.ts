@@ -8,6 +8,7 @@ export const teacherAvailabilityScopeLabels: Record<TeacherAvailabilityScope, st
 };
 
 export const TEACHER_AVAILABILITY_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const TEACHER_AVAILABILITY_DURATION_GROUPS = [35, 40, 45, 90, 95] as const;
 
 export function teacherAvailabilityLockDeadline(
   entries: Array<Pick<TeacherAvailability, "createdAt">>,
@@ -46,6 +47,10 @@ export function canRegisterTeacherAvailability(role: Role, teacherId: string) {
 
 export function availabilityTimeRangeKey(slot: Pick<TimeSlot, "start" | "end">) {
   return `time:${slot.start}-${slot.end}`;
+}
+
+export function availabilityTimeRangeDuration(slot: Pick<TimeSlot, "start" | "end">) {
+  return timeToMinutes(slot.end) - timeToMinutes(slot.start);
 }
 
 export function uniqueAvailabilityTimeRanges(slots: TimeSlot[]) {

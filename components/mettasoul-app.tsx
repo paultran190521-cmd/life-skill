@@ -49,6 +49,7 @@ import {
 } from "@/lib/schedule-conflict-policy";
 import {
   availabilityTimeRangeKey,
+  availabilityTimeRangeDuration,
   buildTeacherAvailabilityEntries,
   canRegisterTeacherAvailability,
   isMorningTimeSlot,
@@ -57,6 +58,7 @@ import {
   isTeacherAvailableForSlot,
   teacherAvailabilityLockDeadline,
   teacherAvailabilityScopeLabels,
+  TEACHER_AVAILABILITY_DURATION_GROUPS,
   type TeacherAvailabilityDraft,
   uniqueAvailabilityTimeRanges,
 } from "@/lib/teacher-availability";
@@ -454,6 +456,7 @@ export function MettasoulApp() {
   const [availabilityApplyMode, setAvailabilityApplyMode] = useState<"single" | "batch">("single");
   const [availabilityEditingDate, setAvailabilityEditingDate] = useState("");
   const [availabilityBatchDates, setAvailabilityBatchDates] = useState<string[]>([]);
+  const [expandedAvailabilityDurationGroups, setExpandedAvailabilityDurationGroups] = useState<string[]>(["45"]);
   const [availabilityClock, setAvailabilityClock] = useState(() => Date.now());
   const [assignmentAvailabilityMonth, setAssignmentAvailabilityMonth] = useState(() => currentMonthKey());
   const [assignmentAvailabilityDate, setAssignmentAvailabilityDate] = useState(() => currentDateKey());
@@ -616,6 +619,27 @@ export function MettasoulApp() {
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
   const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);
   const availabilityTimeRanges = useMemo(() => uniqueAvailabilityTimeRanges(activeTimeSlots), [activeTimeSlots]);
+  const availabilityTimeRangeGroups = useMemo(() => {
+    const rangesByDuration = new Map<number, typeof availabilityTimeRanges>();
+    for (const range of availabilityTimeRanges) {
+      const duration = availabilityTimeRangeDuration(range);
+      const group = rangesByDuration.get(duration) ?? [];
+      group.push(range);
+      rangesByDuration.set(duration, group);
+    }
+    const standardGroups = TEACHER_AVAILABILITY_DURATION_GROUPS.map((duration) => ({
+      key: String(duration),
+      label: `Khung ${duration} phút`,
+      ranges: rangesByDuration.get(duration) ?? [],
+    })).filter((group) => group.ranges.length > 0);
+    const otherRanges = Array.from(rangesByDuration.entries())
+      .filter(([duration]) => !TEACHER_AVAILABILITY_DURATION_GROUPS.includes(duration as (typeof TEACHER_AVAILABILITY_DURATION_GROUPS)[number]))
+      .sort(([left], [right]) => left - right)
+      .flatMap(([, ranges]) => ranges);
+    return otherRanges.length > 0
+      ? [...standardGroups, { key: "other", label: "Khung khác", ranges: otherRanges }]
+      : standardGroups;
+  }, [availabilityTimeRanges]);
   const availabilitySelectedDates = useMemo(() => Object.keys(availabilityDrafts).sort(), [availabilityDrafts]);
   const availabilityTargetDates = availabilityApplyMode === "batch"
     ? availabilityBatchDates
@@ -1631,6 +1655,14 @@ export function MettasoulApp() {
       }
       return next;
     });
+  }
+
+  function toggleAvailabilityDurationGroup(groupKey: string) {
+    setExpandedAvailabilityDurationGroups((expandedGroups) =>
+      expandedGroups.includes(groupKey)
+        ? expandedGroups.filter((key) => key !== groupKey)
+        : [...expandedGroups, groupKey],
+    );
   }
 
   async function submitTeacherAvailability(scope?: "none") {
@@ -5605,24 +5637,50 @@ export function MettasoulApp() {
                     ))}
                   </div>
                   {availabilityTargetScope === "time_slots" ? (
-                    <div className="grid gap-3 rounded-xl border border-emerald-200 bg-white p-3 lg:grid-cols-2">
-                      {([
-                        ["Buổi sáng", availabilityTimeRanges.filter((slot) => isMorningTimeSlot(slot))],
-                        ["Buổi chiều", availabilityTimeRanges.filter((slot) => !isMorningTimeSlot(slot))],
-                      ] as const).map(([periodLabel, ranges]) => (
-                        <div key={periodLabel} className="rounded-xl bg-emerald-50/55 p-3">
-                          <p className="mb-2 text-xs font-black uppercase tracking-wide text-emerald-800">{periodLabel}</p>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {ranges.map((slot) => (
-                              <label key={slot.id} className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-emerald-900">
-                                <input type="checkbox" checked={availabilityTargetDates.every((date) => availabilityDrafts[date]?.timeSlotIds.includes(slot.id))} onChange={() => toggleAvailabilityTimeSlot(slot.id)} />
-                                <span>{slot.start} - {slot.end}</span>
-                              </label>
-                            ))}
-                            {ranges.length === 0 ? <span className="text-xs font-semibold text-[var(--muted)]">Chưa có khung giờ.</span> : null}
+                    <div className="space-y-2 rounded-xl border border-emerald-200 bg-white p-3">
+                      <p className="text-xs font-bold text-[var(--muted)]">Mở nhóm thời lượng phù hợp, sau đó chọn giờ ở buổi sáng hoặc buổi chiều.</p>
+                      {availabilityTimeRangeGroups.map((durationGroup) => {
+                        const selectedCount = durationGroup.ranges.filter((slot) =>
+                          availabilityTargetDates.some((date) => availabilityDrafts[date]?.timeSlotIds.includes(slot.id)),
+                        ).length;
+                        const isExpanded = expandedAvailabilityDurationGroups.includes(durationGroup.key);
+                        return (
+                          <div key={durationGroup.key} className="rounded-xl border border-emerald-100 bg-emerald-50/40">
+                            <button
+                              type="button"
+                              aria-expanded={isExpanded}
+                              onClick={() => toggleAvailabilityDurationGroup(durationGroup.key)}
+                              className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left text-sm font-black text-emerald-900"
+                            >
+                              <span>{durationGroup.label}</span>
+                              <span className="flex items-center gap-2">
+                                {selectedCount > 0 ? <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] text-white">Đã chọn {selectedCount}</span> : null}
+                                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] text-emerald-700">{durationGroup.ranges.length} giờ</span>
+                                <ChevronRight className={`size-4 transition ${isExpanded ? "rotate-90" : ""}`} aria-hidden="true" />
+                              </span>
+                            </button>
+                            {isExpanded ? <div className="grid gap-3 border-t border-emerald-100 p-3 lg:grid-cols-2">
+                              {([
+                                ["Buổi sáng", durationGroup.ranges.filter((slot) => isMorningTimeSlot(slot))],
+                                ["Buổi chiều", durationGroup.ranges.filter((slot) => !isMorningTimeSlot(slot))],
+                              ] as const).map(([periodLabel, ranges]) => (
+                                <div key={periodLabel} className="rounded-xl bg-white p-3">
+                                  <p className="mb-2 text-xs font-black uppercase tracking-wide text-emerald-800">{periodLabel}</p>
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    {ranges.map((slot) => (
+                                      <label key={slot.id} className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-emerald-900">
+                                        <input type="checkbox" checked={availabilityTargetDates.every((date) => availabilityDrafts[date]?.timeSlotIds.includes(slot.id))} onChange={() => toggleAvailabilityTimeSlot(slot.id)} />
+                                        <span>{slot.start} - {slot.end}{durationGroup.key === "other" ? ` · ${availabilityTimeRangeDuration(slot)} phút` : ""}</span>
+                                      </label>
+                                    ))}
+                                    {ranges.length === 0 ? <span className="text-xs font-semibold text-[var(--muted)]">Không có khung giờ.</span> : null}
+                                  </div>
+                                </div>
+                              ))}
+                            </div> : null}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : null}
                   <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">

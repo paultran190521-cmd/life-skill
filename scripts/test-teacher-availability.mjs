@@ -11,6 +11,7 @@ new Function("module", "exports", compiled)(policyModule, policyModule.exports);
 const {
   availabilityMatchesTimeSlot,
   availabilityTimeRangeKey,
+  availabilityTimeRangeDuration,
   buildTeacherAvailabilityEntries,
   canRegisterTeacherAvailability,
   isTeacherAvailabilityLocked,
@@ -56,6 +57,9 @@ assert.equal(canRegisterTeacherAvailability("assistant", "teacher-1"), true);
 assert.equal(canRegisterTeacherAvailability("admin", "teacher-1"), false);
 assert.equal(canRegisterTeacherAvailability("assistant", ""), false);
 assert.equal(availabilityTimeRangeKey(morningSlot), "time:07:30-08:15");
+assert.equal(availabilityTimeRangeDuration(morningSlot), 45);
+assert.equal(availabilityTimeRangeDuration({ start: "07:30", end: "08:05" }), 35);
+assert.equal(availabilityTimeRangeDuration({ start: "13:00", end: "14:35" }), 95);
 assert.equal(
   availabilityMatchesTimeSlot({ ...base, scope: "time_slots", timeSlotId: "time:07:30-08:15" }, morningSlot),
   true,
@@ -123,4 +127,4 @@ assert.equal(isTeacherAvailabilityLocked([{ createdAt: confirmedAt }], confirmed
 assert.equal(teacherAvailabilityLockDeadline([{ createdAt: confirmedAt }]), confirmedAtMs + 24 * 60 * 60 * 1000);
 assert.equal(isTeacherAvailabilityLocked([{ createdAt: "invalid" }], confirmedAtMs), true);
 
-console.log("Teacher availability policy tests passed (30 cases).");
+console.log("Teacher availability policy tests passed (33 cases).");
