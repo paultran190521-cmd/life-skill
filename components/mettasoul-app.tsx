@@ -8905,6 +8905,10 @@ export function MettasoulApp() {
 }
 
 function PageEdgeNavigation() {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
   function scrollTo(top: number) {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     window.scrollTo({ top, behavior: reduceMotion ? "auto" : "smooth" });
@@ -8912,7 +8916,7 @@ function PageEdgeNavigation() {
 
   const buttonClass = "grid h-11 w-11 place-items-center rounded-full border border-cyan-200 bg-white/95 text-[var(--brand-dark)] shadow-lg shadow-cyan-950/15 backdrop-blur transition hover:-translate-y-0.5 hover:border-cyan-400 hover:bg-cyan-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-200";
 
-  return (
+  return createPortal(
     <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] right-3 z-40 flex flex-col gap-2 sm:right-5 lg:bottom-6">
       <button
         type="button"
@@ -8932,7 +8936,8 @@ function PageEdgeNavigation() {
       >
         <ChevronDown size={22} aria-hidden="true" />
       </button>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
