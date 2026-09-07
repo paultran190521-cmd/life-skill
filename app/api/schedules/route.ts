@@ -13,6 +13,7 @@ import {
 } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 import { canShareClassTimeSlot, hasTeacherTimeConflict, type GroupClassTimeSlot } from "@/lib/schedule-conflict-policy";
+import { classifySchedulingParticipantIds } from "@/lib/scheduling-participants";
 import {
   addSchedulesToConflictIndex,
   getScheduleConflictIndex,
@@ -675,15 +676,14 @@ function validateScheduleInput(
     }
   }
 
-  const activeAssistantIds = new Set(
-    data.users
-      .filter((item) => isRowActive(item) && normalizeId(item.role) === "assistant")
-      .map((item) => normalizeId(item.teacherId))
-      .filter(Boolean),
-  );
-  const activeTeacherIds = new Set(
+  const participantRoleIds = classifySchedulingParticipantIds(
     data.teachers.filter((item) => isRowActive(item)).map((item) => normalizeId(item.id)),
+    data.users
+      .filter((item) => isRowActive(item))
+      .map((item) => ({ teacherId: normalizeId(item.teacherId), role: normalizeId(item.role) })),
   );
+  const activeTeacherIds = participantRoleIds.teacherIds;
+  const activeAssistantIds = participantRoleIds.assistantIds;
   if (!Array.from(teacherIdSet).every((teacherId) => activeTeacherIds.has(teacherId) && !activeAssistantIds.has(teacherId))) {
     return "Một hoặc nhiều giáo viên đã chọn không tồn tại hoặc đang tắt.";
   }

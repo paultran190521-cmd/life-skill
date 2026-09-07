@@ -47,6 +47,7 @@ import {
   type GroupClassTimeSlot,
   type TeacherTimeSlot,
 } from "@/lib/schedule-conflict-policy";
+import { classifySchedulingParticipantIds } from "@/lib/scheduling-participants";
 import {
   availabilityTimeRangeKey,
   availabilityTimeRangeDuration,
@@ -608,13 +609,20 @@ export function MettasoulApp() {
   const navigationTabs = role === "admin" ? adminTabs : teacherTabs;
   const activeTabMeta = navigationTabs.find((item) => item.id === activeTab) ?? navigationTabs[0];
   const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.active !== false), [teachers]);
-  const activeSchedulingTeachers = useMemo(
-    () => activeTeachers.filter((teacher) => activeUsers.find((user) => user.teacherId === teacher.id)?.role !== "assistant"),
+  const schedulingParticipantIds = useMemo(
+    () => classifySchedulingParticipantIds(
+      activeTeachers.map((teacher) => teacher.id),
+      activeUsers.map((user) => ({ teacherId: user.teacherId, role: user.role })),
+    ),
     [activeTeachers, activeUsers],
   );
+  const activeSchedulingTeachers = useMemo(
+    () => activeTeachers.filter((teacher) => schedulingParticipantIds.teacherIds.has(teacher.id)),
+    [activeTeachers, schedulingParticipantIds],
+  );
   const activeAssistantTeachers = useMemo(
-    () => activeTeachers.filter((teacher) => activeUsers.find((user) => user.teacherId === teacher.id)?.role === "assistant"),
-    [activeTeachers, activeUsers],
+    () => activeTeachers.filter((teacher) => schedulingParticipantIds.assistantIds.has(teacher.id)),
+    [activeTeachers, schedulingParticipantIds],
   );
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
   const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);

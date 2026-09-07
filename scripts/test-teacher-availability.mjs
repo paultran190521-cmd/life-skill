@@ -28,6 +28,10 @@ const base = { status: "available" };
 assert.equal(availabilityMatchesTimeSlot({ ...base, scope: "all_day" }, morningSlot), true);
 assert.equal(availabilityMatchesTimeSlot({ ...base, scope: "all_day" }, afternoonSlot), true);
 assert.equal(availabilityMatchesTimeSlot({ ...base, scope: "morning" }, morningSlot), true);
+assert.equal(
+  availabilityMatchesTimeSlot({ ...base, scope: "morning" }, { id: "slot-morning-90", start: "07:25", end: "08:55" }),
+  true,
+);
 assert.equal(availabilityMatchesTimeSlot({ ...base, scope: "morning" }, afternoonSlot), false);
 assert.equal(availabilityMatchesTimeSlot({ ...base, scope: "afternoon" }, morningSlot), false);
 assert.equal(availabilityMatchesTimeSlot({ ...base, scope: "afternoon" }, afternoonSlot), true);
@@ -127,4 +131,4 @@ assert.equal(isTeacherAvailabilityLocked([{ createdAt: confirmedAt }], confirmed
 assert.equal(teacherAvailabilityLockDeadline([{ createdAt: confirmedAt }]), confirmedAtMs + 24 * 60 * 60 * 1000);
 assert.equal(isTeacherAvailabilityLocked([{ createdAt: "invalid" }], confirmedAtMs), true);
 
-console.log("Teacher availability policy tests passed (33 cases).");
+console.log("Teacher availability policy tests passed (34 cases).");

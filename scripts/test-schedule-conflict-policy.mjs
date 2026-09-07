@@ -10,6 +10,14 @@ const policyModule = { exports: {} };
 new Function("module", "exports", compiled)(policyModule, policyModule.exports);
 const { canShareClassTimeSlot, hasTeacherTimeConflict } = policyModule.exports;
 
+const participantSource = fs.readFileSync(new URL("../lib/scheduling-participants.ts", import.meta.url), "utf8");
+const participantCompiled = ts.transpileModule(participantSource, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const participantModule = { exports: {} };
+new Function("module", "exports", participantCompiled)(participantModule, participantModule.exports);
+const { classifySchedulingParticipantIds } = participantModule.exports;
+
 const sameSchoolOutdoor = [{ schoolId: "school-a", teachingEnvironment: "outdoor" }];
 assert.equal(
   hasTeacherTimeConflict(sameSchoolOutdoor, { schoolId: "school-a", teachingEnvironment: "gym" }),
@@ -57,4 +65,24 @@ assert.equal(
   "in-class assignments keep strict class conflict detection",
 );
 
-console.log("Schedule conflict policy tests passed (7 cases).");
+const ordinaryParticipants = classifySchedulingParticipantIds(
+  ["teacher-1", "assistant-1", "teacher-without-user"],
+  [
+    { teacherId: "teacher-1", role: "teacher" },
+    { teacherId: "assistant-1", role: "assistant" },
+  ],
+);
+assert.deepEqual([...ordinaryParticipants.teacherIds], ["teacher-1", "teacher-without-user"]);
+assert.deepEqual([...ordinaryParticipants.assistantIds], ["assistant-1"]);
+
+const duplicateRoleParticipants = classifySchedulingParticipantIds(
+  ["teacher-duplicate"],
+  [
+    { teacherId: "teacher-duplicate", role: "assistant" },
+    { teacherId: "teacher-duplicate", role: "teacher" },
+  ],
+);
+assert.deepEqual([...duplicateRoleParticipants.teacherIds], ["teacher-duplicate"]);
+assert.deepEqual([...duplicateRoleParticipants.assistantIds], []);
+
+console.log("Schedule conflict and participant policy tests passed (11 cases).");
