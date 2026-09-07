@@ -6,8 +6,10 @@ import {
   BookOpen,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Clock3,
   Download,
   ExternalLink,
@@ -4139,6 +4141,7 @@ export function MettasoulApp() {
               })}
             </div>
           </nav>
+          <PageEdgeNavigation />
           <SystemFeedbackLayer
             pendingAction={pendingAction}
             toastMessages={toastMessages}
@@ -8899,6 +8902,38 @@ export function MettasoulApp() {
       </div>
     );
   }
+}
+
+function PageEdgeNavigation() {
+  function scrollTo(top: number) {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top, behavior: reduceMotion ? "auto" : "smooth" });
+  }
+
+  const buttonClass = "grid h-11 w-11 place-items-center rounded-full border border-cyan-200 bg-white/95 text-[var(--brand-dark)] shadow-lg shadow-cyan-950/15 backdrop-blur transition hover:-translate-y-0.5 hover:border-cyan-400 hover:bg-cyan-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-cyan-200";
+
+  return (
+    <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] right-3 z-40 flex flex-col gap-2 sm:right-5 lg:bottom-6">
+      <button
+        type="button"
+        title="Về đầu trang"
+        aria-label="Về đầu trang"
+        onClick={() => scrollTo(0)}
+        className={buttonClass}
+      >
+        <ChevronUp size={22} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        title="Xuống cuối trang"
+        aria-label="Xuống cuối trang"
+        onClick={() => scrollTo(document.documentElement.scrollHeight)}
+        className={buttonClass}
+      >
+        <ChevronDown size={22} aria-hidden="true" />
+      </button>
+    </div>
+  );
 }
 
 function SystemFeedbackLayer({
