@@ -85,7 +85,6 @@ type TabId =
   | "lessons"
   | "plans"
   | "attendance"
-  | "weekly-updates"
   | "settings";
 
 type DraftScheduleItem = {
@@ -395,7 +394,6 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
   { id: "lessons", label: "Bài học", icon: BookOpen },
   { id: "plans", label: "Giáo án", icon: FileUp },
   { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
-  { id: "weekly-updates", label: "Cập nhật tuần", icon: ListChecks },
   { id: "settings", label: "Cấu hình", icon: Settings2 },
 ];
 
@@ -1225,7 +1223,7 @@ export function MettasoulApp() {
   const feedbackMenuSuggestions = useMemo(
     () =>
       role === "admin"
-        ? ["Tổng quan", "Giao lịch", "Lịch tổng", "Giáo viên", "Bài học", "Giáo án", "Điểm danh", "Cập nhật tuần", "Cấu hình"]
+        ? ["Tổng quan", "Giao lịch", "Lịch tổng", "Giáo viên", "Bài học", "Giáo án", "Điểm danh", "Cấu hình"]
         : ["Tổng quan", "Lịch của tôi", "Giáo án", "Điểm danh"],
     [role],
   );
@@ -3550,9 +3548,6 @@ export function MettasoulApp() {
     if (activeTab === "attendance") {
       return <AttendancePanel />;
     }
-    if (activeTab === "weekly-updates") {
-      return <WeeklyUpdatesPanel />;
-    }
     return <SettingsPanel />;
   }
 
@@ -4840,6 +4835,7 @@ export function MettasoulApp() {
             </div>
           </Panel>
         </div>
+        <WeeklyUpdatesPanel embedded />
         <AssignmentSummaryPanel />
       </div>
     );
@@ -7037,7 +7033,7 @@ export function MettasoulApp() {
     );
   }
 
-  function WeeklyUpdatesPanel() {
+  function WeeklyUpdatesPanel({ embedded = false }: { embedded?: boolean }) {
     const sortedUpdates = [...weeklyUpdates].sort((a, b) => {
       if (b.weekNumber !== a.weekNumber) return b.weekNumber - a.weekNumber;
       return (b.updateDate || "").localeCompare(a.updateDate || "");
@@ -7156,18 +7152,13 @@ export function MettasoulApp() {
       }
     }
 
-    const totalHours = weeklyUpdates.reduce((sum, u) => sum + (u.teachingHours ?? 0), 0);
-    const uniqueWeeks = new Set(weeklyUpdates.map((u) => u.weekNumber)).size;
-
     return (
-      <div className="space-y-5">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <Stat icon={ListChecks} label="Tổng cập nhật" value={weeklyUpdates.length} tone="cyan" />
-          <Stat icon={CalendarDays} label="Số tuần" value={uniqueWeeks} tone="emerald" />
-          <Stat icon={Clock3} label="Tổng giờ dạy" value={totalHours} tone="blue" />
-        </div>
-
-        <Panel title="Thêm cập nhật tuần" action="Nhập mới">
+      <div className={embedded ? "border-t border-cyan-100 pt-5" : "space-y-5"}>
+        <Panel
+          title="Thêm cập nhật tuần"
+          action="Nhập mới"
+          className="border-2 border-rose-400 bg-rose-50/20 shadow-[0_20px_52px_rgba(244,63,94,0.14),inset_0_1px_0_rgba(255,255,255,0.9)]"
+        >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="block">
               <span className="mb-1 block text-xs font-bold text-slate-600">Tuần số *</span>
@@ -8366,16 +8357,18 @@ function Panel({
   action,
   collapsed = false,
   onToggleCollapse,
+  className = "",
   children,
 }: {
   title: string;
   action?: string;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-white/75 bg-white/90 p-4 shadow-[0_20px_52px_rgba(18,46,68,0.09),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur sm:rounded-3xl sm:p-5">
+    <section className={`rounded-2xl border border-white/75 bg-white/90 p-4 shadow-[0_20px_52px_rgba(18,46,68,0.09),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur sm:rounded-3xl sm:p-5 ${className}`}>
       <div className={`${collapsed ? "" : "mb-4 sm:mb-5"} flex items-start justify-between gap-3`}>
         <h2 className="text-base font-black tracking-tight text-[var(--brand-dark)] sm:text-lg">{title}</h2>
         <div className="flex items-center gap-2">
