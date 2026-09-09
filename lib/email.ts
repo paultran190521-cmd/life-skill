@@ -460,7 +460,8 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
         <p style="margin:0 0 12px;font-size:14px;color:#1992b0;font-weight:700;text-align:center;text-transform:uppercase">HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL</p>
         <h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;color:#0b6f89;text-align:center;text-transform:uppercase">BẠN CÓ LỊCH DẠY MỚI</h1>
         <p style="margin:0 0 8px;font-size:15px">Chào ${escapeHtml(input.teacher.name || "Thầy/Cô")}, giáo vụ vừa giao lịch dạy cho ${escapeHtml(weekText)}.</p>
-        <p style="margin:0 0 20px;font-size:13px;color:#667985">Thầy/Cô có thể xác nhận từng tiết ngay trong bảng hoặc xác nhận toàn bộ lịch ở cuối email.</p>
+        <p style="margin:0 0 8px;font-size:13px;color:#667985">Thầy/Cô có thể xác nhận từng tiết ngay trong bảng hoặc xác nhận toàn bộ lịch ở cuối email.</p>
+        <p style="margin:0 0 20px;font-size:13px;color:#667985">Thầy/Cô vui lòng <a href="${appUrl}" style="color:#0b6f89;font-weight:700">truy cập webapp</a> để xem chi tiết lịch dạy.</p>
 
         <!-- ${scheduleEmailTemplateVersion} -->
         <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 20px;font-size:13px;border:2px solid #ff9500">
