@@ -499,10 +499,10 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
         </table>
 
         <div style="text-align:center">
-          <a href="${confirmAllUrl}" style="display:inline-block;background:#0b6f89;color:#ffffff;text-decoration:none;border-radius:12px;padding:12px 18px;font-weight:700;text-align:center">XÁC NHẬN TẤT CẢ LỊCH CỦA TÔI</a>
+          <a href="${confirmAllUrl}" style="display:inline-block;margin:0 4px 8px;background:#0b6f89;color:#ffffff;text-decoration:none;border-radius:12px;padding:12px 18px;font-weight:700;text-align:center">XÁC NHẬN TẤT CẢ</a>
+          <a href="${appUrl}" style="display:inline-block;margin:0 4px 8px;background:#e7f6fa;color:#0b6f89;text-decoration:none;border:1px solid #0b6f89;border-radius:12px;padding:12px 18px;font-weight:700;text-align:center">TRUY CẬP APP</a>
         </div>
-        <p style="margin:12px 0 0;font-size:12px;color:#667985;text-align:center">Nút này sẽ xác nhận tất cả lịch đang chờ xác nhận của bạn và ghi nhận vào hệ thống.</p>
-        <p style="margin:18px 0 0;font-size:13px;color:#16313a;text-align:center">Để xem đầy đủ mục tiêu, thông tin buổi dạy và lịch chi tiết, mời Thầy/Cô truy cập <a href="${appUrl}" style="color:#0b6f89;font-weight:700">ứng dụng METTASOUL</a>.</p>
+        <p style="margin:12px 0 0;font-size:12px;color:#667985;text-align:center">Mỗi nút “Xác nhận tiết này” sẽ tự động cập nhật lịch tương ứng trên hệ thống. Nút “Xác nhận tất cả” áp dụng cho toàn bộ lịch đang chờ xác nhận.</p>
       </div>
     </div>
   `;
