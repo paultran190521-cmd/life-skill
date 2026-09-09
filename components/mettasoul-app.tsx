@@ -5482,10 +5482,6 @@ export function MettasoulApp() {
   }
 
   function AssignmentSummaryPanel() {
-    const activeSchedules = useMemo(
-      () => schedules.filter((s) => s.status !== "cancelled"),
-      [schedules],
-    );
     const reportSchedules = useMemo(
       () => sortSchedules(
         schedules.filter((schedule) => (
@@ -5495,22 +5491,6 @@ export function MettasoulApp() {
       ),
       [schedules, scheduleReportMonth],
     );
-    const summaryByTeacher = useMemo(() => {
-      const map = new Map<string, { total: number; envCounts: Record<string, number>; schools: Set<string> }>();
-      for (const s of activeSchedules) {
-        let entry = map.get(s.teacherId);
-        if (!entry) {
-          entry = { total: 0, envCounts: {}, schools: new Set() };
-          map.set(s.teacherId, entry);
-        }
-        entry.total++;
-        const env = s.teachingEnvironment ?? "in_class";
-        entry.envCounts[env] = (entry.envCounts[env] || 0) + 1;
-        entry.schools.add(s.schoolId);
-      }
-      return map;
-    }, [activeSchedules]);
-
     async function exportScheduleExcel() {
       setPendingAction("Đang xuất Excel...");
       try {
@@ -5626,40 +5606,6 @@ export function MettasoulApp() {
 
     return (
       <div className="space-y-5">
-        <Panel title="Bảng tổng hợp lịch" action={`${activeSchedules.length} lịch đang hoạt động`}>
-          <div className="space-y-4">
-          <div className="app-scrollbar overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-[var(--line)] text-xs font-black uppercase text-[var(--brand-dark)]">
-                  <th className="px-3 py-2">Giáo viên</th>
-                  <th className="px-3 py-2">Tổng lịch</th>
-                  <th className="px-3 py-2">Trường</th>
-                  {teachingEnvironmentOptions.map((o) => (
-                    <th key={o.value} className="px-3 py-2">{o.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {activeSchedulingTeachers.map((teacher) => {
-                  const entry = summaryByTeacher.get(teacher.id);
-                  return (
-                    <tr key={teacher.id} className="border-b border-[var(--line)] hover:bg-cyan-50/40">
-                      <td className="px-3 py-2 font-semibold">{teacher.name}</td>
-                      <td className="px-3 py-2">{entry?.total ?? 0}</td>
-                      <td className="px-3 py-2">{entry ? entry.schools.size : 0}</td>
-                      {teachingEnvironmentOptions.map((o) => (
-                        <td key={o.value} className="px-3 py-2">{entry?.envCounts[o.value] ?? 0}</td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          </div>
-        </Panel>
-
         <Panel title="Danh sách lịch đã gửi" action={`${reportSchedules.length} lịch trong ${formatMonthTitle(scheduleReportMonth)}`}>
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3">
             <label className="grid gap-1 text-xs font-black text-[var(--brand-dark)]">
