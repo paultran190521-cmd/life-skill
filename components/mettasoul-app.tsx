@@ -218,6 +218,63 @@ type CalendarViewMode = "month" | "week" | "day";
 type AvailabilityCalendarViewMode = "month" | "week";
 type CalendarSortMode = "date-asc" | "date-desc" | "status";
 type LessonPlanAdminFocus = "uploaded" | "submitted" | "missing" | "upcoming-missing";
+
+type BrandedExcelOptions = {
+  headerRow: number;
+  titleRow?: number;
+  summaryRow?: number;
+  dataStartRow?: number;
+};
+
+function applyMettasoulExcelBrand(
+  XLSX: typeof import("xlsx-js-style"),
+  worksheet: import("xlsx-js-style").WorkSheet,
+  { headerRow, titleRow, summaryRow, dataStartRow = headerRow + 1 }: BrandedExcelOptions,
+) {
+  const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1:A1");
+  const brandTeal = "007C91";
+  const brandTealDark = "005C6E";
+  const brandTealPale = "E8F8FA";
+  const brandGoldPale = "FFF4D8";
+  const border = { style: "thin", color: { rgb: "BDE7EC" } };
+  const allBorders = { top: border, bottom: border, left: border, right: border };
+
+  for (let row = range.s.r; row <= range.e.r; row += 1) {
+    for (let column = range.s.c; column <= range.e.c; column += 1) {
+      const address = XLSX.utils.encode_cell({ r: row, c: column });
+      const cell = worksheet[address] || { t: "s", v: "" };
+      const isHeader = row === headerRow;
+      const isTitle = row === titleRow;
+      const isSummary = row === summaryRow;
+      const isAlternatingDataRow = row >= dataStartRow && (row - dataStartRow) % 2 === 1;
+      cell.s = {
+        font: {
+          name: "Aptos",
+          sz: isTitle ? 15 : isHeader ? 11 : 10,
+          bold: isTitle || isHeader || isSummary,
+          color: { rgb: isTitle || isHeader ? "FFFFFF" : brandTealDark },
+        },
+        fill: {
+          patternType: "solid",
+          fgColor: { rgb: isTitle || isHeader ? brandTeal : isSummary ? brandGoldPale : isAlternatingDataRow ? brandTealPale : "FFFFFF" },
+        },
+        alignment: {
+          horizontal: isTitle ? "center" : isHeader ? "center" : "left",
+          vertical: "center",
+          wrapText: true,
+        },
+        border: allBorders,
+      };
+      worksheet[address] = cell;
+    }
+  }
+
+  const rows = worksheet["!rows"] || [];
+  rows[headerRow] = { ...(rows[headerRow] || {}), hpt: 26 };
+  if (titleRow !== undefined) rows[titleRow] = { ...(rows[titleRow] || {}), hpt: 30 };
+  if (summaryRow !== undefined) rows[summaryRow] = { ...(rows[summaryRow] || {}), hpt: 22 };
+  worksheet["!rows"] = rows;
+}
 type LessonPlanTeacherFocus = "uploaded" | "pending" | "submitted";
 type AttendanceAdminFocus = "all-today" | "checked-today" | "missing-today" | "late-today";
 type AttendanceWarningFocus = {
@@ -2661,13 +2718,16 @@ export function MettasoulApp() {
   }
 
   async function downloadTeacherSpreadsheetTemplate() {
-    const XLSX = await import("xlsx");
+    const XLSX = await import("xlsx-js-style");
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.aoa_to_sheet([
       ["Họ tên", "Email Google", "Số điện thoại", "Chuyên môn", "Quyền"],
       ["Nguyễn Văn Admin", "admin@example.com", "0900000001", "Điều phối giáo vụ", "admin"],
       ["Trần Thị Giáo Viên", "giaovien@example.com", "0900000002", "Kỹ năng sống", "giáo viên"],
     ]);
+    worksheet["!cols"] = [{ wch: 24 }, { wch: 30 }, { wch: 18 }, { wch: 24 }, { wch: 16 }];
+    worksheet["!autofilter"] = { ref: "A1:E3" };
+    applyMettasoulExcelBrand(XLSX, worksheet, { headerRow: 0 });
     XLSX.utils.book_append_sheet(workbook, worksheet, "Giao vien");
     const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
     const blob = new Blob([fileData], {
@@ -3036,9 +3096,12 @@ export function MettasoulApp() {
   }
 
   async function downloadLessonSpreadsheetTemplate() {
-    const XLSX = await import("xlsx");
+    const XLSX = await import("xlsx-js-style");
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.aoa_to_sheet([["Khối", "Tên chuyên đề", "Tên tiết 1", "Mục tiêu tiết 1", "Tên tiết 2", "Mục tiêu tiết 2", "Giáo án mẫu", "Số phút"]]);
+    worksheet["!cols"] = [{ wch: 12 }, { wch: 32 }, { wch: 30 }, { wch: 42 }, { wch: 30 }, { wch: 42 }, { wch: 36 }, { wch: 14 }];
+    worksheet["!autofilter"] = { ref: "A1:H1" };
+    applyMettasoulExcelBrand(XLSX, worksheet, { headerRow: 0 });
     XLSX.utils.book_append_sheet(workbook, worksheet, "Bai hoc");
     const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
     const blob = new Blob([fileData], {
@@ -3477,13 +3540,16 @@ export function MettasoulApp() {
   }
 
   async function downloadTimeSlotSpreadsheetTemplate() {
-    const XLSX = await import("xlsx");
+    const XLSX = await import("xlsx-js-style");
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.aoa_to_sheet([
       ["Tên khung giờ", "Giờ bắt đầu", "Giờ kết thúc", "Số phút", "Trạng thái"],
       ["Tiết 1", "07:30", "08:15", 45, "Bật"],
       ["Ca chuyên đề", "13:30", "15:00", 90, "Bật"],
     ]);
+    worksheet["!cols"] = [{ wch: 26 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 16 }];
+    worksheet["!autofilter"] = { ref: "A1:E3" };
+    applyMettasoulExcelBrand(XLSX, worksheet, { headerRow: 0 });
     XLSX.utils.book_append_sheet(workbook, worksheet, "Khung gio");
     const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
     const blob = new Blob([fileData], {
@@ -5448,7 +5514,7 @@ export function MettasoulApp() {
     async function exportScheduleExcel() {
       setPendingAction("Đang xuất Excel...");
       try {
-        const XLSX = await import("xlsx");
+        const XLSX = await import("xlsx-js-style");
         const rows = reportSchedules.map((s) => {
           const teacher = teachers.find((t) => t.id === s.teacherId);
           const school = schools.find((sc) => sc.id === s.schoolId);
@@ -5494,6 +5560,8 @@ export function MettasoulApp() {
           { wch: 28 },
           { wch: 28 },
         ];
+        ws["!autofilter"] = { ref: `A1:K${Math.max(2, rows.length + 1)}` };
+        applyMettasoulExcelBrand(XLSX, ws, { headerRow: 0 });
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Lịch đã gửi");
 
@@ -5545,6 +5613,7 @@ export function MettasoulApp() {
           { wch: 20 },
           { wch: 36 },
         ];
+        applyMettasoulExcelBrand(XLSX, kpiSheet, { titleRow: 0, summaryRow: 1, headerRow: 3, dataStartRow: firstDataRow - 1 });
         XLSX.utils.book_append_sheet(wb, kpiSheet, "Tổng hợp KPI");
         XLSX.writeFile(wb, `lich-da-gui-${scheduleReportMonth || currentDateKey()}.xlsx`);
         pushToast("Xuất Excel thành công", `Đã xuất ${rows.length} lịch trong tháng đã chọn.`, "success");
