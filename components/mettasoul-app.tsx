@@ -5473,7 +5473,7 @@ export function MettasoulApp() {
             "Lớp tham gia": classNames,
             "Chuyên đề": lesson?.title ?? s.lessonId,
             "Tên tiết": periodNames,
-            "Khung giờ": slot ? `${slot.label} (${slot.start}-${slot.end})` : s.timeSlotId,
+            "Khung giờ": slot ? `${slot.start}-${slot.end}` : "Chưa khôi phục khung giờ",
             "Môi trường": envLabel,
             "Trạng thái": statusLabels[s.status] ?? s.status,
             "Giáo viên dạy cùng": scheduleCoTeacherNames(s).join(", "),
