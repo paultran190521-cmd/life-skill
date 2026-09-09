@@ -13,6 +13,9 @@ export async function GET(request: Request) {
       ...school,
       mapUrl: schoolGuideMapUrlForName(school.name),
     }));
+    const persistedUser = data.users.find(
+      (user) => user.id === auth.user.id || user.email.trim().toLowerCase() === auth.user.email.trim().toLowerCase(),
+    ) ?? auth.user;
     const teacherId = String(auth.user.teacherId || "").trim();
 
     if (auth.user.role === "teacher" || auth.user.role === "assistant") {
@@ -40,7 +43,7 @@ export async function GET(request: Request) {
       }
 
       return NextResponse.json({
-        users: [auth.user],
+        users: [persistedUser],
         teachers: teacherId ? data.teachers.filter((teacher) => visibleTeacherIds.has(teacher.id)) : [],
         schools,
         classes: data.classes,

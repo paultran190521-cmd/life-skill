@@ -96,6 +96,8 @@ async function readUsers() {
     teacherId: row.teacherId || undefined,
     avatarUrl: row.avatarUrl || getAvatarUrl(row.email, row.name),
     isActive: parseBoolean(row.isActive, true),
+    readNotificationIds: row.readNotificationIds || undefined,
+    scheduleViewedAt: row.scheduleViewedAt || undefined,
   }));
   usersCache = {
     expiresAt: Date.now() + authCacheTtlMs,

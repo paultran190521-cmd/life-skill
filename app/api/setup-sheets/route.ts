@@ -10,6 +10,7 @@ import {
   weeklyUpdateHeaders,
   appAnnouncementHeaders,
   teacherAvailabilityHeaders,
+  userHeaders,
 } from "@/lib/google-sheets";
 
 /**
@@ -20,7 +21,7 @@ import {
 const ALL_SHEETS: { name: Parameters<typeof ensureSheetHeaders>[0]; headers: string[] }[] = [
   {
     name: "Users",
-    headers: ["id", "name", "email", "role", "teacherId", "avatarUrl", "isActive", "createdAt", "updatedAt"],
+    headers: userHeaders,
   },
   {
     name: "Teachers",

@@ -41,6 +41,8 @@ export type User = {
   teacherId?: string;
   avatarUrl?: string;
   isActive?: boolean;
+  readNotificationIds?: string;
+  scheduleViewedAt?: string;
 };
 
 export type Teacher = {

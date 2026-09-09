@@ -14,6 +14,8 @@ const SHEETS = [
       "teacherId",
       "avatarUrl",
       "isActive",
+      "readNotificationIds",
+      "scheduleViewedAt",
       "createdAt",
       "updatedAt",
     ],

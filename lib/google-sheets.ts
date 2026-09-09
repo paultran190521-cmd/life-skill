@@ -554,7 +554,7 @@ export async function getAppDataFromSheets() {
     teacherAvailability,
   ] = await Promise.all([
     readSheetRows("Teachers").then(toTeachers),
-    readSheetRows("Users").then(toUsers),
+    ensureSheetHeaders("Users", userHeaders).then(() => readSheetRows("Users").then(toUsers)),
     readSheetRows("Schools").then(toSchools),
     readSheetRows("Classes").then(toClasses),
     ensureSheetHeaders("Topics", topicHeaders)
@@ -650,6 +650,10 @@ export const notificationHeaders = [
   "read",
   "createdAt",
   "updatedAt",
+];
+
+export const userHeaders = [
+  "id", "name", "email", "role", "teacherId", "avatarUrl", "isActive", "readNotificationIds", "scheduleViewedAt", "createdAt", "updatedAt",
 ];
 
 export const topicHeaders = [
@@ -884,6 +888,8 @@ function toUsers(rows: SheetRow[]): User[] {
     teacherId: row.teacherId || undefined,
     avatarUrl: row.avatarUrl || getAvatarUrl(row.email, row.name),
     isActive: parseBoolean(row.isActive, true),
+    readNotificationIds: row.readNotificationIds || undefined,
+    scheduleViewedAt: row.scheduleViewedAt || undefined,
   }));
 }
 

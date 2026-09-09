@@ -1398,6 +1398,21 @@ export function MettasoulApp() {
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [notifications, role],
   );
+  const readNotificationIds = useMemo(
+    () => new Set(String(currentUser.readNotificationIds || "").split(",").map((id) => id.trim()).filter(Boolean)),
+    [currentUser.readNotificationIds],
+  );
+  const isNotificationRead = (notification: Notification) => notification.read || readNotificationIds.has(notification.id);
+  const unseenScheduleCount = useMemo(() => {
+    if (role !== "teacher" || !currentTeacherId) return 0;
+    const viewedAt = currentUser.scheduleViewedAt || "";
+    return schedules.filter((schedule) =>
+      schedule.teacherId === currentTeacherId &&
+      schedule.status !== "cancelled" &&
+      Boolean(schedule.sentAt) &&
+      (!viewedAt || String(schedule.sentAt) > viewedAt),
+    ).length;
+  }, [currentTeacherId, currentUser.scheduleViewedAt, role, schedules]);
   const activeAppAnnouncements = useMemo(
     () =>
       appAnnouncements
@@ -1424,7 +1439,7 @@ export function MettasoulApp() {
     "Bấm Giáo án -> chọn tiết dạy -> tải file -> hiển thị Đã gửi giáo án.",
     "Bấm Điểm danh -> chọn tiết -> bấm Điểm danh -> chuyển trạng thái Đã điểm danh.",
   ];
-  const unreadNotifications = roleNotifications.filter((item) => !item.read).length;
+  const unreadNotifications = roleNotifications.filter((item) => !isNotificationRead(item)).length;
   const searchPlaceholder =
     activeTab === "teachers" ? "Tìm nhanh giáo viên theo tên, SĐT, email..." : "Tìm lịch, giáo viên, lớp...";
 
@@ -3069,21 +3084,43 @@ export function MettasoulApp() {
     setCurrentUserId(activeUsers.find((user) => user.role === "admin")?.id ?? activeUsers[0]?.id ?? "");
   }
 
+  async function persistUserActivity(body: Record<string, unknown>) {
+    const response = await apiRequest<{ id: string; readNotificationIds: string; scheduleViewedAt: string }>("/api/user-activity", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    setAppUsers((items) => items.map((user) => user.id === response.id || user.id === currentUser.id ? {
+      ...user,
+      readNotificationIds: response.readNotificationIds,
+      scheduleViewedAt: response.scheduleViewedAt || undefined,
+    } : user));
+  }
+
   function markNotificationAsRead(notificationId: string) {
-    setNotifications((items) =>
-      items.map((item) => (item.id === notificationId ? { ...item, read: true } : item)),
-    );
+    const notification = notifications.find((item) => item.id === notificationId);
+    if (!notification || isNotificationRead(notification)) return;
+    setAppUsers((items) => items.map((user) => user.id === currentUser.id ? {
+      ...user,
+      readNotificationIds: Array.from(new Set([...readNotificationIds, notificationId])).join(","),
+    } : user));
+    void persistUserActivity({ notificationIds: [notificationId] }).catch(console.error);
   }
 
   function markAllRoleNotificationsAsRead() {
-    const readableIds = new Set(roleNotifications.filter((item) => !item.read).map((item) => item.id));
-    if (readableIds.size === 0) {
-      return;
-    }
+    const notificationIds = roleNotifications.filter((item) => !isNotificationRead(item)).map((item) => item.id);
+    if (notificationIds.length === 0) return;
+    setAppUsers((items) => items.map((user) => user.id === currentUser.id ? {
+      ...user,
+      readNotificationIds: Array.from(new Set([...readNotificationIds, ...notificationIds])).join(","),
+    } : user));
+    void persistUserActivity({ notificationIds }).catch(console.error);
+  }
 
-    setNotifications((items) =>
-      items.map((item) => (readableIds.has(item.id) ? { ...item, read: true } : item)),
-    );
+  function markSchedulesViewed() {
+    if (role !== "teacher" || !currentTeacherId || unseenScheduleCount === 0) return;
+    const scheduleViewedAt = new Date().toISOString();
+    setAppUsers((items) => items.map((user) => user.id === currentUser.id ? { ...user, scheduleViewedAt } : user));
+    void persistUserActivity({ markSchedulesViewed: true }).catch(console.error);
   }
 
   function updateBulkLessonRow(id: string, patch: Partial<LessonDraft>) {
@@ -3996,6 +4033,9 @@ export function MettasoulApp() {
   }
 
   function changeTab(tabId: TabId) {
+    if (tabId === "calendar") {
+      markSchedulesViewed();
+    }
     setActiveTab(tabId);
     setMobileSidebarOpen(false);
   }
@@ -4096,6 +4136,11 @@ export function MettasoulApp() {
                 >
                   <Icon size={18} />
                   <span>{item.label}</span>
+                  {item.id === "calendar" && role === "teacher" && unseenScheduleCount > 0 ? (
+                    <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-rose-600 px-1 text-[11px] font-black text-white">
+                      {unseenScheduleCount}
+                    </span>
+                  ) : null}
                   {activeTab === item.id ? <ChevronRight className="ml-auto" size={16} /> : null}
                 </button>
               );
@@ -4212,14 +4257,14 @@ export function MettasoulApp() {
                               type="button"
                               onClick={() => markNotificationAsRead(item.id)}
                               className={`w-full rounded-xl border px-3 py-3 text-left transition ${
-                                item.read
+                                isNotificationRead(item)
                                   ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
                                   : "border-cyan-200 bg-cyan-50/80 text-[var(--brand-dark)] hover:bg-cyan-100/80"
                               }`}
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <p className="text-sm font-extrabold">{item.title}</p>
-                                {!item.read ? <span className="mt-0.5 h-2.5 w-2.5 rounded-full bg-rose-500" /> : null}
+                                {!isNotificationRead(item) ? <span className="mt-0.5 h-2.5 w-2.5 rounded-full bg-rose-500" /> : null}
                               </div>
                               <p className="mt-1 text-xs font-semibold text-[var(--muted)]">{item.body}</p>
                               <p className="mt-2 text-[11px] font-bold text-slate-500">{formatDateTime(item.createdAt)}</p>
@@ -4253,6 +4298,11 @@ export function MettasoulApp() {
                     }`}
                   >
                     <Icon size={17} />
+                    {item.id === "calendar" && role === "teacher" && unseenScheduleCount > 0 ? (
+                      <span className="grid h-4 min-w-4 place-items-center rounded-full bg-rose-600 px-1 text-[9px] font-black text-white">
+                        {unseenScheduleCount}
+                      </span>
+                    ) : null}
                     <span className="whitespace-nowrap">{item.label}</span>
                   </button>
                 );
