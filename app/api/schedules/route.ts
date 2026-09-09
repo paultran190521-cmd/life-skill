@@ -4,13 +4,13 @@ import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
 import { sendScheduleDigestEmail } from "@/lib/email";
 import {
   appendSheetRows,
-  clearSheetData,
   ensureSheetHeaders,
   readSheetRows,
   readSheetRowsBatch,
   readSheetRowsCached,
   teacherAvailabilityHeaders,
 } from "@/lib/google-sheets";
+import { deleteSchedulesCascade } from "@/lib/schedule-cascade-delete";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 import { canShareClassTimeSlot, hasTeacherTimeConflict, type GroupClassTimeSlot } from "@/lib/schedule-conflict-policy";
 import { classifySchedulingParticipantIds } from "@/lib/scheduling-participants";
@@ -175,7 +175,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const requestId = createRequestId("schedules-clear");
+  const requestId = createRequestId("schedules-bulk-delete");
   try {
     const auth = await requireSessionUser(request);
     const permission = evaluateRolePermission(auth.user, "admin", "admin_only_schedules_create");
@@ -183,23 +183,35 @@ export async function DELETE(request: Request) {
       return apiFailure(403, "Chỉ quản trị viên được xóa lịch.", undefined, requestId);
     }
 
-    const deletedCount = await clearSheetData("Schedules");
+    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    const requestedIds = Array.isArray(body.ids)
+      ? Array.from(new Set(body.ids.map((id) => String(id || "").trim()).filter(Boolean)))
+      : [];
+    const allSchedules = requestedIds.length === 0 ? await readSheetRows("Schedules") : [];
+    const result = await deleteSchedulesCascade(
+      requestedIds.length > 0 ? requestedIds : allSchedules.map((schedule) => String(schedule.id || "").trim()),
+    );
     invalidateScheduleConflictIndex();
     await appendAuditLog({
       requestId,
       actor: auth.user,
-      action: "schedule.clear_all",
+      action: requestedIds.length > 0 ? "schedule.bulk_delete" : "schedule.clear_all",
       entityType: "Schedule",
-      entityId: "*",
+      entityId: result.deletedScheduleIds.join(",") || "*",
       route: "/api/schedules",
       method: "DELETE",
       authMode: permission.authMode,
       decision: permission.decision,
       reason: permission.reason,
       source: auth.source,
-      after: { deletedCount },
+      after: {
+        deletedCount: result.deletedScheduleIds.length,
+        deletedAttendanceCount: result.deletedAttendanceIds.length,
+        deletedLessonPlanCount: result.deletedLessonPlanIds.length,
+        trashedDriveFileCount: result.trashedDriveFileIds.length,
+      },
     });
-    return NextResponse.json({ success: true, deletedCount });
+    return NextResponse.json({ success: true, ...result });
   } catch (error) {
     return apiError(error, requestId);
   }

@@ -207,6 +207,13 @@ type ScheduleUpdateResponse = Partial<Schedule> & {
   emailResult?: EmailResult | null;
 };
 
+type ScheduleCascadeDeleteResponse = {
+  deletedScheduleIds: string[];
+  deletedAttendanceIds: string[];
+  deletedLessonPlanIds: string[];
+  trashedDriveFileIds: string[];
+};
+
 type AttendanceCreateResponse = {
   attendance: Attendance;
   schedule: Partial<Schedule> & { id: string };
@@ -526,6 +533,7 @@ export function MettasoulApp() {
   const [assignmentAvailabilityView, setAssignmentAvailabilityView] = useState<AvailabilityCalendarViewMode>("week");
   const [calendarFilters, setCalendarFilters] = useState<CalendarFilters>(() => loadCalendarFilters());
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
+  const [selectedReportScheduleIds, setSelectedReportScheduleIds] = useState<string[]>([]);
   const [selectedScheduleDetail, setSelectedScheduleDetail] = useState<Schedule | null>(null);
   const [selectedOperationalAlert, setSelectedOperationalAlert] = useState<OperationalAlert | null>(null);
   const [bulkReassignTeacherId, setBulkReassignTeacherId] = useState("");
@@ -2270,23 +2278,38 @@ export function MettasoulApp() {
     pushToast("Đã hủy lịch", "Lịch dạy đã được hủy và đồng bộ lên Google Sheet.", "warning");
   }
 
+  async function deleteSchedulesWithRelations(targets: Schedule[], pendingLabel: string) {
+    const scheduleIds = Array.from(new Set(targets.map((schedule) => schedule.id)));
+    const response = await saveRequest<ScheduleCascadeDeleteResponse>(pendingLabel, "/api/schedules", {
+      method: "DELETE",
+      body: JSON.stringify({ ids: scheduleIds }),
+    });
+    const deletedScheduleIds = new Set(response.deletedScheduleIds);
+    const deletedAttendanceIds = new Set(response.deletedAttendanceIds);
+    const deletedLessonPlanIds = new Set(response.deletedLessonPlanIds);
+    setSchedules((items) => items.filter((item) => !deletedScheduleIds.has(item.id)));
+    setAttendance((items) => items.filter((item) => !deletedAttendanceIds.has(item.id)));
+    setLessonPlans((items) => items.filter((item) => !deletedLessonPlanIds.has(item.id)));
+    setSelectedScheduleIds((ids) => ids.filter((id) => !deletedScheduleIds.has(id)));
+    setSelectedReportScheduleIds((ids) => ids.filter((id) => !deletedScheduleIds.has(id)));
+    setSelectedScheduleDetail((current) => current && deletedScheduleIds.has(current.id) ? null : current);
+    setDataStatus("connected");
+    setSaveError("");
+    return response;
+  }
+
   async function deleteSchedule(schedule: Schedule) {
     const confirmed = await openConfirmDialog({
       title: "Xóa lịch đã gửi",
-      message: `Xóa vĩnh viễn lịch ngày ${formatDate(schedule.date)} của ${teacherName(schedule.teacherId)}? Thao tác này không thể hoàn tác.`,
+      message: `Xóa vĩnh viễn lịch ngày ${formatDate(schedule.date)} của ${teacherName(schedule.teacherId)} cùng xác nhận, điểm danh và giáo án liên quan? Thao tác này không thể hoàn tác.`,
       confirmText: "Xóa lịch",
       tone: "danger",
     });
     if (!confirmed) return;
 
     try {
-      await saveRequest<{ id: string; deleted: boolean }>("Đang xóa lịch...", `/api/schedules/${schedule.id}`, { method: "DELETE" });
-      setSchedules((items) => items.filter((item) => item.id !== schedule.id));
-      setSelectedScheduleIds((ids) => ids.filter((id) => id !== schedule.id));
-      setSelectedScheduleDetail((current) => current?.id === schedule.id ? null : current);
-      setDataStatus("connected");
-      setSaveError("");
-      pushToast("Đã xóa lịch", "Lịch đã được xóa khỏi danh sách và Google Sheet.", "success");
+      const result = await deleteSchedulesWithRelations([schedule], "Đang xóa lịch và dữ liệu liên quan...");
+      pushToast("Đã xóa lịch", `Đã xóa lịch, ${result.deletedAttendanceIds.length} điểm danh và ${result.deletedLessonPlanIds.length} giáo án liên quan.`, "success");
     } catch (error) {
       handleSaveError(error);
     }
@@ -2427,34 +2450,15 @@ export function MettasoulApp() {
     if (targets.length === 0) return;
     const confirmed = await openConfirmDialog({
       title: "Xóa nhiều lịch",
-      message: `Xóa vĩnh viễn ${targets.length} lịch đã chọn? Thao tác này không thể hoàn tác.`,
+      message: `Xóa vĩnh viễn ${targets.length} lịch đã chọn cùng xác nhận, điểm danh và giáo án liên quan? Thao tác này không thể hoàn tác.`,
       confirmText: "Xóa lịch",
       tone: "danger",
     });
     if (!confirmed) return;
-    const deletedIds = new Set<string>();
     try {
-      for (const schedule of targets) {
-        await saveRequest<{ deleted: boolean }>(
-          `Đang xóa lịch ${deletedIds.size + 1}/${targets.length}...`,
-          `/api/schedules/${schedule.id}`,
-          { method: "DELETE" },
-        );
-        deletedIds.add(schedule.id);
-      }
-      setSchedules((items) => items.filter((item) => !deletedIds.has(item.id)));
-      setSelectedScheduleIds([]);
-      setSelectedScheduleDetail((current) => current && deletedIds.has(current.id) ? null : current);
-      setDataStatus("connected");
-      setSaveError("");
-      pushToast("Đã xóa lịch", `Đã xóa ${targets.length} lịch khỏi hệ thống.`, "success");
+      const result = await deleteSchedulesWithRelations(targets, `Đang xóa ${targets.length} lịch và dữ liệu liên quan...`);
+      pushToast("Đã xóa lịch", `Đã xóa ${result.deletedScheduleIds.length} lịch, ${result.deletedAttendanceIds.length} điểm danh và ${result.deletedLessonPlanIds.length} giáo án liên quan.`, "success");
     } catch (error) {
-      if (deletedIds.size > 0) {
-        setSchedules((items) => items.filter((item) => !deletedIds.has(item.id)));
-        setSelectedScheduleIds((ids) => ids.filter((id) => !deletedIds.has(id)));
-        setSelectedScheduleDetail((current) => current && deletedIds.has(current.id) ? null : current);
-        pushToast("Đã xóa một phần", `${deletedIds.size}/${targets.length} lịch đã được xóa trước khi gặp lỗi.`, "warning");
-      }
       handleSaveError(error);
     }
   }
@@ -5491,6 +5495,41 @@ export function MettasoulApp() {
       ),
       [schedules, scheduleReportMonth],
     );
+    const selectedReportSchedules = reportSchedules.filter((schedule) => selectedReportScheduleIds.includes(schedule.id));
+
+    function toggleReportScheduleSelection(scheduleId: string) {
+      setSelectedReportScheduleIds((ids) =>
+        ids.includes(scheduleId) ? ids.filter((id) => id !== scheduleId) : [...ids, scheduleId],
+      );
+    }
+
+    function toggleAllReportSchedules() {
+      const reportIds = reportSchedules.map((schedule) => schedule.id);
+      setSelectedReportScheduleIds((ids) =>
+        reportIds.length > 0 && reportIds.every((id) => ids.includes(id)) ? ids.filter((id) => !reportIds.includes(id)) : reportIds,
+      );
+    }
+
+    async function bulkDeleteReportSchedules() {
+      if (selectedReportSchedules.length === 0) return;
+      const confirmed = await openConfirmDialog({
+        title: "Xóa lịch đã chọn",
+        message: `Xóa vĩnh viễn ${selectedReportSchedules.length} lịch cùng xác nhận, điểm danh và giáo án liên quan? Thao tác này không thể hoàn tác.`,
+        confirmText: "Xóa lịch",
+        tone: "danger",
+      });
+      if (!confirmed) return;
+      try {
+        const result = await deleteSchedulesWithRelations(
+          selectedReportSchedules,
+          `Đang xóa ${selectedReportSchedules.length} lịch và dữ liệu liên quan...`,
+        );
+        pushToast("Đã xóa lịch", `Đã xóa ${result.deletedScheduleIds.length} lịch, ${result.deletedAttendanceIds.length} điểm danh và ${result.deletedLessonPlanIds.length} giáo án liên quan.`, "success");
+      } catch (error) {
+        handleSaveError(error);
+      }
+    }
+
     async function exportScheduleExcel() {
       setPendingAction("Đang xuất Excel...");
       try {
@@ -5617,12 +5656,37 @@ export function MettasoulApp() {
                 className="h-10 rounded-xl border border-cyan-100 bg-white px-3 text-sm font-semibold outline-none focus:border-cyan-400"
               />
             </label>
-            <button onClick={exportScheduleExcel} disabled={isBusy} className={ghostButtonClass}>
-              <FileSpreadsheet size={16} />
-              Xuất Excel tháng
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleAllReportSchedules}
+                disabled={reportSchedules.length === 0 || isBusy}
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] ring-1 ring-cyan-100 transition hover:bg-cyan-50 disabled:opacity-50"
+              >
+                <ListChecks size={15} />
+                {reportSchedules.length > 0 && reportSchedules.every((schedule) => selectedReportScheduleIds.includes(schedule.id)) ? "Bỏ chọn" : "Chọn nhiều"}
+              </button>
+              <button
+                type="button"
+                onClick={bulkDeleteReportSchedules}
+                disabled={selectedReportSchedules.length === 0 || isBusy}
+                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-xs font-black text-white transition hover:bg-red-700 disabled:opacity-50"
+              >
+                <Trash2 size={15} />
+                Xóa {selectedReportSchedules.length > 0 ? `(${selectedReportSchedules.length})` : "đã chọn"}
+              </button>
+              <button onClick={exportScheduleExcel} disabled={isBusy} className={ghostButtonClass}>
+                <FileSpreadsheet size={16} />
+                Xuất Excel tháng
+              </button>
+            </div>
           </div>
-          <ScheduleList items={reportSchedules} onOpenDetail={setSelectedScheduleDetail} />
+          <ScheduleList
+            items={reportSchedules}
+            selectedIds={selectedReportScheduleIds}
+            onToggleSelect={toggleReportScheduleSelection}
+            onOpenDetail={setSelectedScheduleDetail}
+          />
         </Panel>
       </div>
     );

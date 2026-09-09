@@ -4,11 +4,11 @@ import { appendAuditLog } from "@/lib/audit";
 import { sendScheduleEmail } from "@/lib/email";
 import {
   appendSheetRows,
-  deleteSheetRowById,
   readSheetRowById,
   readSheetRows,
   updateSheetRowById,
 } from "@/lib/google-sheets";
+import { deleteSchedulesCascade } from "@/lib/schedule-cascade-delete";
 import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 import { invalidateScheduleConflictIndex } from "@/lib/schedule-conflict-index";
 import { hasTeacherTimeConflict } from "@/lib/schedule-conflict-policy";
@@ -145,7 +145,7 @@ export async function DELETE(request: Request, { params }: Params) {
       return apiFailure(403, "Bạn không có quyền xóa lịch.", undefined, requestId);
     }
 
-    await deleteSheetRowById("Schedules", id);
+    const result = await deleteSchedulesCascade([id]);
     invalidateScheduleConflictIndex();
     await appendAuditLog({
       requestId,
@@ -160,8 +160,13 @@ export async function DELETE(request: Request, { params }: Params) {
       reason: permission.reason,
       source: auth.source,
       before: schedule,
+      after: {
+        deletedAttendanceCount: result.deletedAttendanceIds.length,
+        deletedLessonPlanCount: result.deletedLessonPlanIds.length,
+        trashedDriveFileCount: result.trashedDriveFileIds.length,
+      },
     });
-    return NextResponse.json({ id, deleted: true });
+    return NextResponse.json({ id, deleted: true, ...result });
   } catch (error) {
     return apiError(error, requestId);
   }
