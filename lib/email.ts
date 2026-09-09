@@ -453,35 +453,31 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
 
   const weekText = buildWeekLabel(input.schedules);
   const confirmAllUrl = buildConfirmAllUrl(rows.map((row) => row.schedule));
+  const appUrl = buildAppUrl();
   return `
     <div style="font-family:Arial,sans-serif;background:#f6fafb;padding:24px;color:#16313a">
       <div style="max-width:920px;margin:0 auto;background:#ffffff;border:1px solid #dce8eb;border-radius:16px;padding:24px">
         <p style="margin:0 0 12px;font-size:14px;color:#1992b0;font-weight:700;text-align:center;text-transform:uppercase">HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL</p>
         <h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;color:#0b6f89;text-align:center;text-transform:uppercase">BẠN CÓ LỊCH DẠY MỚI</h1>
         <p style="margin:0 0 8px;font-size:15px">Chào ${escapeHtml(input.teacher.name || "Thầy/Cô")}, giáo vụ vừa giao lịch dạy cho ${escapeHtml(weekText)}.</p>
-        <p style="margin:0 0 20px;font-size:13px;color:#667985">Kiểm tra lịch bên dưới, sau đó dùng nút xác nhận tất cả ở cuối email.</p>
+        <p style="margin:0 0 20px;font-size:13px;color:#667985">Thầy/Cô có thể xác nhận từng tiết ngay trong bảng hoặc xác nhận toàn bộ lịch ở cuối email.</p>
 
         <!-- ${scheduleEmailTemplateVersion} -->
         <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 20px;font-size:13px;border:2px solid #ff9500">
           <colgroup>
-            <col style="width:8%">
-            <col style="width:9%">
-            <col style="width:13%">
-            <col style="width:13%">
-            <col style="width:12%">
+            <col style="width:15%">
+            <col style="width:21%">
+            <col style="width:20%">
+            <col style="width:27%">
             <col style="width:17%">
-            <col style="width:18%">
-            <col style="width:10%">
           </colgroup>
           <thead>
             <tr>
-              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">NGÀY</th>
-              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">KHUNG GIỜ</th>
-              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TRƯỜNG</th>
-              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">LỚP/PHẠM VI</th>
-              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TÊN BÀI</th>
-              <th colspan="2" style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TÊN TIẾT VÀ MỤC TIÊU</th>
-              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:left">THÔNG TIN BUỔI DẠY</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">NGÀY &amp; GIỜ</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TRƯỜNG / LỚP</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">BÀI HỌC</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TIẾT DẠY</th>
+              <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">XÁC NHẬN</th>
             </tr>
           </thead>
           <tbody>
@@ -490,13 +486,11 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
                 const slotTime = [row.slot?.start, row.slot?.end].filter(Boolean).join(" - ");
                 return `
                   <tr style="border-top:3px solid #ff9500">
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;word-break:break-word;overflow-wrap:anywhere">${escapeHtml(formatDate(row.schedule.date))}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;white-space:normal;word-break:break-word;overflow-wrap:anywhere">${escapeHtml(slotTime || "Chưa cập nhật")}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(row.school?.name || "Chưa cập nhật")}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(formatParticipantClasses(row))}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;line-height:1.5">${escapeHtml(formatDate(row.schedule.date))}<br><span style="color:#667985">${escapeHtml(slotTime || "Chưa cập nhật")}</span></td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;line-height:1.5"><strong>${escapeHtml(row.school?.name || "Chưa cập nhật")}</strong><br>${escapeHtml(formatParticipantClasses(row))}</td>
                     <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(normalizeKnownLessonTitle(row.lesson?.title))}</td>
-                    <td colspan="2" style="padding:0;border:1px solid #ff9500;vertical-align:top">${renderScheduledPeriodMatrix(row.lesson, row.schedule)}</td>
-                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;line-height:1.55">${renderScheduleLogistics(row)}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;line-height:1.6">${renderScheduledPeriodTitles(row.lesson, row.schedule)}</td>
+                    <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center"><a href="${buildConfirmUrl(row.schedule)}" style="display:inline-block;background:#0b6f89;color:#ffffff;text-decoration:none;border-radius:8px;padding:9px 10px;font-size:12px;font-weight:700">XÁC NHẬN TIẾT NÀY</a></td>
                   </tr>
                 `;
               })
@@ -507,7 +501,8 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
         <div style="text-align:center">
           <a href="${confirmAllUrl}" style="display:inline-block;background:#0b6f89;color:#ffffff;text-decoration:none;border-radius:12px;padding:12px 18px;font-weight:700;text-align:center">XÁC NHẬN TẤT CẢ LỊCH CỦA TÔI</a>
         </div>
-        <p style="margin:20px 0 0;font-size:12px;color:#667985">Nút này sẽ xác nhận tất cả lịch đang chờ xác nhận của bạn, ghi nhận vào hệ thống và mở ứng dụng web ngay sau khi hoàn tất.</p>
+        <p style="margin:12px 0 0;font-size:12px;color:#667985;text-align:center">Nút này sẽ xác nhận tất cả lịch đang chờ xác nhận của bạn và ghi nhận vào hệ thống.</p>
+        <p style="margin:18px 0 0;font-size:13px;color:#16313a;text-align:center">Để xem đầy đủ mục tiêu, thông tin buổi dạy và lịch chi tiết, mời Thầy/Cô truy cập <a href="${appUrl}" style="color:#0b6f89;font-weight:700">ứng dụng METTASOUL</a>.</p>
       </div>
     </div>
   `;
@@ -521,22 +516,16 @@ function formatParticipantClasses(row: ScheduleDigestRow) {
   return names.join(", ");
 }
 
-function renderScheduleLogistics(row: ScheduleDigestRow) {
-  const assistants = row.assistantNames?.filter(Boolean) ?? [];
-  const coTeachers = row.coTeacherNames?.filter(Boolean) ?? [];
-  const assistantText = assistants.length > 0 ? `Có - ${assistants.join(", ")}` : "Không có";
-  const coTeacherLine = coTeachers.length > 0
-    ? `<div><strong>Thầy/Cô sẽ dạy cùng:</strong> ${escapeHtml(coTeachers.join(", "))}</div>`
-    : "";
-  return `${coTeacherLine}<div style="margin-top:${coTeacherLine ? "8px" : "0"}"><strong>Trợ giảng:</strong> ${escapeHtml(assistantText)}</div>`;
-}
-
 function buildConfirmUrl(schedule: Schedule) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const token = createScheduleConfirmationToken(schedule.id, schedule.teacherId);
   const url = new URL(`/api/schedules/${schedule.id}/confirm`, baseUrl);
   url.searchParams.set("token", token);
   return url.toString();
+}
+
+function buildAppUrl() {
+  return new URL("/", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").toString();
 }
 
 function createEmailRequestId() {
@@ -561,32 +550,6 @@ function buildWeekLabel(schedules: Schedule[]) {
   return formatAcademicWeekLabel(schedules.map((schedule) => schedule.date));
 }
 
-function formatObjectives(rawObjective: string) {
-  const normalized = String(rawObjective || "").trim();
-  if (!normalized) {
-    return "<div>- Mục tiêu 1: Chưa cập nhật.</div>";
-  }
-
-  const matches = [...normalized.matchAll(/mục tiêu\s*(\d+)\s*:/gi)];
-  if (matches.length === 0) {
-    return `<div>- Mục tiêu 1: ${escapeHtml(normalized)}</div>`;
-  }
-
-  const lines: string[] = [];
-  for (let index = 0; index < matches.length; index += 1) {
-    const current = matches[index];
-    const next = matches[index + 1];
-    const start = current.index ?? 0;
-    const end = next?.index ?? normalized.length;
-    const block = normalized.slice(start, end).trim();
-    const label = `Mục tiêu ${current[1]}:`;
-    const content = block.replace(/mục tiêu\s*\d+\s*:/i, "").trim();
-    lines.push(`<div>- ${escapeHtml(label)} ${escapeHtml(content)}</div>`);
-  }
-
-  return lines.join("");
-}
-
 function normalizeKnownLessonTitle(value: string | undefined) {
   const normalized = String(value || "").trim();
   if (!normalized) {
@@ -609,37 +572,14 @@ function scheduledPeriods(schedule: Schedule) {
   return periods.length > 0 ? Array.from(new Set(periods)) : ["lesson1"];
 }
 
-function formatScheduledLessonTitle(lesson: ScheduleEmailLesson | undefined, schedule: Schedule) {
-  const titles = scheduledPeriods(schedule).map((period) => {
-    const number = period === "lesson1" ? "Tiết 1" : "Tiết 2";
-    const title = period === "lesson1" ? lesson?.lesson1Title : lesson?.lesson2Title;
-    return `${number}: ${title?.trim() || lesson?.title?.trim() || "Chưa cập nhật"}`;
-  });
-  return titles.join(" · ");
-}
-
-function formatScheduledLessonObjectives(lesson: ScheduleEmailLesson | undefined, schedule: Schedule) {
-  const objectives = scheduledPeriods(schedule)
-    .map((period) => (period === "lesson1" ? lesson?.lesson1Objective : lesson?.lesson2Objective)?.trim())
-    .filter(Boolean);
-  return objectives.join("\n") || lesson?.objective || "";
-}
-
-function renderScheduledPeriodMatrix(lesson: ScheduleEmailLesson | undefined, schedule: Schedule) {
+function renderScheduledPeriodTitles(lesson: ScheduleEmailLesson | undefined, schedule: Schedule) {
   return scheduledPeriods(schedule)
-    .map((period, index) => {
+    .map((period) => {
       const number = period === "lesson1" ? "Tiết 1" : "Tiết 2";
       const title = period === "lesson1" ? lesson?.lesson1Title : lesson?.lesson2Title;
-      const objective = period === "lesson1" ? lesson?.lesson1Objective : lesson?.lesson2Objective;
-      const divider = index > 0 ? "border-top:2px solid #149ac2;" : "";
-      return `<tr>
-        <td style="width:46%;padding:12px 10px;${divider}font-weight:800;color:#e67e00;text-align:center;vertical-align:middle">${escapeHtml(`${number}: ${title?.trim() || lesson?.title?.trim() || "Chưa cập nhật"}`)}</td>
-        <td style="padding:12px 10px;${divider}border-left:1px solid #149ac2;vertical-align:top">${formatObjectives(objective?.trim() || lesson?.objective || "")}</td>
-      </tr>`;
+      return `<div style="margin:0 0 6px"><strong>${escapeHtml(number)}:</strong> ${escapeHtml(title?.trim() || lesson?.title?.trim() || "Chưa cập nhật")}</div>`;
     })
-    .join("")
-    .replace(/^/, '<table role="presentation" style="width:100%;border-collapse:collapse;table-layout:fixed">')
-    .concat("</table>");
+    .join("");
 }
 
 function normalizeComparableText(value: string) {
