@@ -516,13 +516,9 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
   const weekText = buildWeekLabel(input.schedules);
   const confirmAllUrl = buildConfirmAllUrl(rows.map((row) => row.schedule));
   const appUrl = buildAppUrl();
-  const logoUrl = new URL("/mettasoul-email-logo.png", appUrl).toString();
   return `
     <div style="font-family:Arial,sans-serif;background:#f6fafb;padding:24px;color:#16313a">
       <div style="max-width:920px;margin:0 auto;background:#ffffff;border:1px solid #dce8eb;border-radius:16px;padding:24px">
-        <div style="margin:0 0 12px;text-align:center">
-          <a href="${appUrl}" style="display:inline-block;text-decoration:none"><img src="${logoUrl}" width="72" height="72" alt="HỌC VIỆN METTASOUL" style="display:block;width:72px;height:72px;border:0;border-radius:50%" /></a>
-        </div>
         <p style="margin:0 0 12px;font-size:14px;color:#1992b0;font-weight:700;text-align:center;text-transform:uppercase">HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL</p>
         <h1 style="margin:0 0 16px;font-size:24px;line-height:1.25;color:#0b6f89;text-align:center;text-transform:uppercase">BẠN CÓ LỊCH DẠY MỚI</h1>
         <p style="margin:0 0 8px;font-size:15px">Chào ${escapeHtml(input.teacher.name || "Thầy/Cô")}, giáo vụ vừa giao lịch dạy cho ${escapeHtml(weekText)}.</p>
