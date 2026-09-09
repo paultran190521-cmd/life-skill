@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
 import { readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
-import { normalizeTimeSlotInput, normalizeTimeSlotLabel, timeSlotDuplicateKey } from "@/lib/time-slots";
+import { normalizeTimeSlotInput, normalizeTimeSlotLabel } from "@/lib/time-slots";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 import type { TimeSlot } from "@/lib/types";
 
@@ -66,21 +66,19 @@ export async function PATCH(request: Request, { params }: Params) {
 
     const normalized = normalizeTimeSlotInput(body, fallback);
     const labelKey = normalizeTimeSlotLabel(normalized.label);
-    const timeKey = timeSlotDuplicateKey(normalized);
-
     const duplicated = slots.some((slot) => {
       const slotId = String(slot.id || "").trim();
       if (slotId === id) {
         return false;
       }
       const sameLabel = normalizeTimeSlotLabel(String(slot.label || "")) === labelKey;
-      const sameTime =
-        timeSlotDuplicateKey({ start: String(slot.start || ""), end: String(slot.end || "") }) === timeKey;
-      return sameLabel || sameTime;
+      // Time ranges are shared across schools. Slot labels remain the identity
+      // so a school can use the same bell times as another school.
+      return sameLabel;
     });
 
     if (duplicated) {
-      return apiFailure(400, "Khung giờ bị trùng tên hoặc trùng giờ bắt đầu/kết thúc.", undefined, requestId);
+      return apiFailure(400, "Khung giờ bị trùng tên.", undefined, requestId);
     }
 
     const patch = {
