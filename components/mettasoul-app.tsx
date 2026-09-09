@@ -462,6 +462,7 @@ export function MettasoulApp() {
   const [availabilityEditingDate, setAvailabilityEditingDate] = useState("");
   const [availabilityBatchDates, setAvailabilityBatchDates] = useState<string[]>([]);
   const [expandedAvailabilityDurationGroups, setExpandedAvailabilityDurationGroups] = useState<string[]>(["45"]);
+  const [isRegisteredAvailabilityExpanded, setIsRegisteredAvailabilityExpanded] = useState(false);
   const [availabilityClock, setAvailabilityClock] = useState(() => Date.now());
   const [assignmentAvailabilityMonth, setAssignmentAvailabilityMonth] = useState(() => currentMonthKey());
   const [assignmentAvailabilityDate, setAssignmentAvailabilityDate] = useState(() => currentDateKey());
@@ -5747,10 +5748,24 @@ export function MettasoulApp() {
                   <p className="text-sm font-black text-[var(--brand-dark)]">Lịch trống đã đăng ký</p>
                   <p className="mt-1 text-xs font-semibold text-[var(--muted)]">Bạn vẫn có thể đăng ký thêm ngày mới. Lịch cũ chỉ sửa hoặc xóa được trong 24 giờ đầu.</p>
                 </div>
-                <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-800">{registeredAvailabilityRows.length} ngày</span>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-800">{registeredAvailabilityRows.length} ngày</span>
+                  <button
+                    type="button"
+                    aria-expanded={isRegisteredAvailabilityExpanded}
+                    aria-controls="registered-availability-list"
+                    onClick={() => setIsRegisteredAvailabilityExpanded((expanded) => !expanded)}
+                    className="inline-flex items-center gap-1 rounded-full border border-cyan-200 bg-white px-3 py-1 text-xs font-black text-cyan-800 transition hover:bg-cyan-50"
+                  >
+                    {isRegisteredAvailabilityExpanded ? "Thu lại" : "Sổ ra"}
+                    <ChevronDown className={`size-3.5 transition-transform ${isRegisteredAvailabilityExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
-              {registeredAvailabilityRows.length > 0 ? (
-                <div className="app-scrollbar mt-3 overflow-x-auto rounded-xl border border-cyan-100">
+              {isRegisteredAvailabilityExpanded ? (
+                <div id="registered-availability-list">
+                  {registeredAvailabilityRows.length > 0 ? (
+                    <div className="app-scrollbar mt-3 overflow-x-auto rounded-xl border border-cyan-100">
                   <table className="w-full min-w-[760px] text-left text-xs">
                     <thead className="bg-cyan-50 text-[11px] font-black uppercase text-[var(--brand-dark)]">
                       <tr>
@@ -5786,10 +5801,12 @@ export function MettasoulApp() {
                       })}
                     </tbody>
                   </table>
+                    </div>
+                  ) : (
+                    <p className="mt-3 rounded-xl border border-dashed border-cyan-200 bg-cyan-50/50 px-3 py-4 text-center text-xs font-semibold text-[var(--muted)]">Chưa có lịch trống nào được xác nhận.</p>
+                  )}
                 </div>
-              ) : (
-                <p className="mt-3 rounded-xl border border-dashed border-cyan-200 bg-cyan-50/50 px-3 py-4 text-center text-xs font-semibold text-[var(--muted)]">Chưa có lịch trống nào được xác nhận.</p>
-              )}
+              ) : null}
             </div>
           ) : null}
           {role === "teacher" && quickScheduleDates.length > 0 ? (
