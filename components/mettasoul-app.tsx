@@ -3170,10 +3170,14 @@ export function MettasoulApp() {
     const timeSlot = normalizeTimeSlotDraft({ id: createId("ts"), ...slotDraft });
 
     try {
-      const savedTimeSlot = await saveRequest<TimeSlot>("Đang lưu khung giờ...", "/api/time-slots", {
+      const result = await saveRequest<{ timeSlots: TimeSlot[] }>("Đang lưu khung giờ...", "/api/time-slots", {
         method: "POST",
         body: JSON.stringify(timeSlot),
       });
+      const savedTimeSlot = result.timeSlots[0];
+      if (!savedTimeSlot) {
+        throw new Error("Hệ thống không nhận được khung giờ sau khi lưu.");
+      }
       setTimeSlots((items) => [savedTimeSlot, ...items]);
       setDataStatus("connected");
       setSaveError("");
