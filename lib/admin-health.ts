@@ -42,7 +42,7 @@ export async function checkGasMailHealth(): Promise<ServiceStatus> {
 }
 
 export async function checkEmailProviderHealth(): Promise<ServiceStatus> {
-  const provider = process.env.EMAIL_PROVIDER === "gas" ? "gas" : "resend";
+  const provider = process.env.EMAIL_PROVIDER === "gas" ? "gas" : process.env.EMAIL_PROVIDER === "smtp" ? "smtp" : "resend";
   if (provider === "gas") {
     const hasConfig = Boolean(
       (process.env.GAS_MAIL_WEBHOOK_URL || process.env.GAS_UPLOAD_WEBHOOK_URL) &&
@@ -51,6 +51,17 @@ export async function checkEmailProviderHealth(): Promise<ServiceStatus> {
     return hasConfig
       ? { status: "ok", reason: "Provider email GAS đã đủ cấu hình." }
       : { status: "degraded", reason: "Provider GAS thiếu webhook URL hoặc secret." };
+  }
+
+  if (provider === "smtp") {
+    const port = Number(process.env.SMTP_PORT || 465);
+    const hasSmtpConfig = Boolean(
+      process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.EMAIL_FROM &&
+      Number.isInteger(port) && port > 0 && port < 65536,
+    );
+    return hasSmtpConfig
+      ? { status: "ok", reason: "Provider SMTP đã đủ cấu hình." }
+      : { status: "degraded", reason: "Provider SMTP thiếu SMTP_HOST, SMTP_USER, SMTP_PASS hoặc EMAIL_FROM." };
   }
 
   const hasResendConfig = Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);

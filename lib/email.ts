@@ -1,6 +1,7 @@
 ﻿import { createScheduleConfirmationBatchToken, createScheduleConfirmationToken } from "@/lib/schedule-confirmation";
 import { appendSheetRowWithHeaders } from "@/lib/google-sheets";
 import { formatAcademicWeekLabel } from "@/lib/academic-week";
+import nodemailer from "nodemailer";
 import type { Schedule } from "@/lib/types";
 
 type ScheduleEmailLesson = {
@@ -140,7 +141,68 @@ export async function sendScheduleDigestEmail(input: ScheduleDigestInput) {
     return sendViaGas({ to, subject, html, from, requestId, scheduleIds, teacherId });
   }
 
+  if (process.env.EMAIL_PROVIDER === "smtp") {
+    return sendViaSmtp({ to, subject, html, from, requestId, scheduleIds, teacherId });
+  }
+
   return sendViaResend({ to, subject, html, from, requestId, scheduleIds, teacherId });
+}
+
+async function sendViaSmtp({
+  to,
+  subject,
+  html,
+  from,
+  requestId,
+  scheduleIds,
+  teacherId,
+}: {
+  to: string;
+  subject: string;
+  html: string;
+  from?: string;
+  requestId: string;
+  scheduleIds: string[];
+  teacherId: string;
+}) {
+  const host = String(process.env.SMTP_HOST || "").trim();
+  const user = normalizeEmailAddress(process.env.SMTP_USER);
+  const pass = String(process.env.SMTP_PASS || "").replace(/\s/g, "");
+  const port = Number(process.env.SMTP_PORT || 465);
+  const secure = String(process.env.SMTP_SECURE || "").toLowerCase() === "true" || (!process.env.SMTP_SECURE && port === 465);
+  const sender = from || user;
+
+  if (!host || !user || !pass || !sender || !Number.isInteger(port) || port < 1 || port > 65535) {
+    const reason = "Missing or invalid SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, or EMAIL_FROM.";
+    await logMailDebug({
+      requestId, source: "next", provider: "smtp", event: "next.smtp_config_missing", to, subject, sent: false, reason, scheduleIds, teacherId,
+    });
+    return { sent: false, reason };
+  }
+
+  try {
+    const transport = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+      connectionTimeout: 15_000,
+      greetingTimeout: 15_000,
+      socketTimeout: 30_000,
+    });
+    const result = await transport.sendMail({ from: sender, to, subject, html });
+    await logMailDebug({
+      requestId, source: "next", provider: "smtp", event: "next.smtp_success", to, subject, sent: true,
+      reason: result.response || "SMTP accepted schedule email.", scheduleIds, teacherId,
+    });
+    return { sent: true, id: result.messageId };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "Cannot reach SMTP server.";
+    await logMailDebug({
+      requestId, source: "next", provider: "smtp", event: "next.smtp_send_error", to, subject, sent: false, reason, scheduleIds, teacherId,
+    });
+    return { sent: false, reason };
+  }
 }
 
 async function sendViaGas({
