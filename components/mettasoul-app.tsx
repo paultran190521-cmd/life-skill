@@ -1430,6 +1430,23 @@ export function MettasoulApp() {
     return timeSlotsForSchool(activeTimeSlots, school?.name || "");
   }
 
+  function teacherCanReceiveReassignedSchedule(teacherId: string, schedule: Schedule) {
+    if (!teacherId || teacherId === schedule.teacherId) {
+      return false;
+    }
+    return !schedules.some((existing) =>
+      existing.id !== schedule.id &&
+      existing.status !== "cancelled" &&
+      existing.teacherId === teacherId &&
+      existing.date === schedule.date &&
+      existing.timeSlotId === schedule.timeSlotId &&
+      hasTeacherTimeConflict(
+        [{ schoolId: existing.schoolId, teachingEnvironment: existing.teachingEnvironment }],
+        { schoolId: schedule.schoolId, teachingEnvironment: schedule.teachingEnvironment },
+      ),
+    );
+  }
+
   function dismissToast(id: string) {
     setToastMessages((items) => items.map((item) => (item.id === id ? { ...item, leaving: true } : item)));
     setTimeout(() => {
@@ -2222,7 +2239,7 @@ export function MettasoulApp() {
     const resolvedTimeSlotId = isActiveTimeSlotId(schedule.timeSlotId) ? schedule.timeSlotId : "";
     const scheduleForAvailability = { ...schedule, timeSlotId: resolvedTimeSlotId };
     const replacement = activeSchedulingTeachers.find(
-      (teacher) => teacher.id !== schedule.teacherId && teacherIsAvailableForSchedule(teacher.id, scheduleForAvailability),
+      (teacher) => teacherCanReceiveReassignedSchedule(teacher.id, scheduleForAvailability),
     );
     setReassignTarget(schedule);
     setReassignTimeSlotId(resolvedTimeSlotId);
@@ -4451,7 +4468,7 @@ export function MettasoulApp() {
                     {activeSchedulingTeachers
                       .filter(
                         (teacher) =>
-                          teacher.id !== reassignTarget.teacherId && teacherIsAvailableForSchedule(teacher.id, scheduleWithReassignTimeSlot(reassignTarget)),
+                          teacherCanReceiveReassignedSchedule(teacher.id, scheduleWithReassignTimeSlot(reassignTarget)),
                       )
                       .map((teacher) => (
                         <option key={teacher.id} value={teacher.id}>

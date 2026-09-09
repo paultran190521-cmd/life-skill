@@ -5,16 +5,14 @@ import { sendScheduleEmail } from "@/lib/email";
 import {
   appendSheetRows,
   deleteSheetRowById,
-  ensureSheetHeaders,
   readSheetRowById,
   readSheetRows,
-  teacherAvailabilityHeaders,
   updateSheetRowById,
 } from "@/lib/google-sheets";
 import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 import { invalidateScheduleConflictIndex } from "@/lib/schedule-conflict-index";
-import { isTeacherAvailableForSlot } from "@/lib/teacher-availability";
-import type { Notification, Schedule, ScheduleStatus, TeacherAvailability, User } from "@/lib/types";
+import { hasTeacherTimeConflict } from "@/lib/schedule-conflict-policy";
+import type { Notification, Schedule, ScheduleStatus, User } from "@/lib/types";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -185,10 +183,9 @@ async function validateReplacementTeacher(nextTeacherId: string, schedule: Recor
     return "Giáo viên thay thế phải khác giáo viên hiện tại.";
   }
 
-  await ensureSheetHeaders("TeacherAvailability", teacherAvailabilityHeaders);
-  const [teachers, availabilityRows, slots] = await Promise.all([
+  const [teachers, schedules, slots] = await Promise.all([
     readSheetRows("Teachers"),
-    readSheetRows("TeacherAvailability"),
+    readSheetRows("Schedules"),
     readSheetRows("TimeSlots"),
   ]);
   const teacher = teachers.find((item) => item.id === nextTeacherId);
@@ -197,20 +194,23 @@ async function validateReplacementTeacher(nextTeacherId: string, schedule: Recor
   }
 
   const slot = slots.find((item) => item.id === schedule.timeSlotId);
-  const availability: TeacherAvailability[] = availabilityRows.map((row) => ({
-    id: row.id,
-    teacherId: row.teacherId,
-    date: row.date,
-    scope: ["morning", "afternoon", "time_slots"].includes(row.scope)
-      ? (row.scope as TeacherAvailability["scope"])
-      : "all_day",
-    timeSlotId: row.timeSlotId || undefined,
-    status: row.status === "withdrawn" ? "withdrawn" : "available",
-    createdBy: row.createdBy || "",
-    createdAt: row.createdAt || "",
-  }));
-  if (!slot || !isTeacherAvailableForSlot(availability, nextTeacherId, schedule.date, { id: slot.id, start: slot.start, end: slot.end })) {
-    return "Giáo viên thay thế chưa đăng ký rảnh cho ngày và khung giờ này.";
+  if (!slot) {
+    return "Khung giờ của lịch không còn tồn tại. Hãy chọn khung giờ cần khôi phục trước khi chuyển lịch.";
+  }
+
+  const conflictingSchedule = schedules.find((item) =>
+    item.id !== schedule.id &&
+    item.status !== "cancelled" &&
+    item.teacherId === nextTeacherId &&
+    item.date === schedule.date &&
+    item.timeSlotId === schedule.timeSlotId &&
+    hasTeacherTimeConflict(
+      [{ schoolId: item.schoolId || "", teachingEnvironment: item.teachingEnvironment }],
+      { schoolId: schedule.schoolId || "", teachingEnvironment: schedule.teachingEnvironment },
+    ),
+  );
+  if (conflictingSchedule) {
+    return "Giáo viên thay thế đã có lịch trùng trong khung giờ này.";
   }
 
   return "";
