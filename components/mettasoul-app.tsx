@@ -519,6 +519,7 @@ export function MettasoulApp() {
   const [lessonDeleteTarget, setLessonDeleteTarget] = useState<Lesson | null>(null);
   const [reassignTarget, setReassignTarget] = useState<Schedule | null>(null);
   const [reassignTeacherId, setReassignTeacherId] = useState("");
+  const [reassignTimeSlotId, setReassignTimeSlotId] = useState("");
   const [slotDraft, setSlotDraft] = useState<TimeSlotDraft>({
     label: "",
     start: "07:30",
@@ -1416,6 +1417,19 @@ export function MettasoulApp() {
     return isTeacherAvailableForSlot(teacherAvailability, teacherId, schedule.date, slot);
   }
 
+  function isActiveTimeSlotId(timeSlotId: string) {
+    return activeTimeSlots.some((slot) => slot.id === timeSlotId);
+  }
+
+  function scheduleWithReassignTimeSlot(schedule: Schedule) {
+    return { ...schedule, timeSlotId: reassignTimeSlotId || schedule.timeSlotId };
+  }
+
+  function reassignableTimeSlots(schedule: Schedule) {
+    const school = schools.find((item) => item.id === schedule.schoolId);
+    return timeSlotsForSchool(activeTimeSlots, school?.name || "");
+  }
+
   function dismissToast(id: string) {
     setToastMessages((items) => items.map((item) => (item.id === id ? { ...item, leaving: true } : item)));
     setTimeout(() => {
@@ -2205,15 +2219,22 @@ export function MettasoulApp() {
   }
 
   function reassignSchedule(schedule: Schedule) {
+    const resolvedTimeSlotId = isActiveTimeSlotId(schedule.timeSlotId) ? schedule.timeSlotId : "";
+    const scheduleForAvailability = { ...schedule, timeSlotId: resolvedTimeSlotId };
     const replacement = activeSchedulingTeachers.find(
-      (teacher) => teacher.id !== schedule.teacherId && teacherIsAvailableForSchedule(teacher.id, schedule),
+      (teacher) => teacher.id !== schedule.teacherId && teacherIsAvailableForSchedule(teacher.id, scheduleForAvailability),
     );
     setReassignTarget(schedule);
+    setReassignTimeSlotId(resolvedTimeSlotId);
     setReassignTeacherId(replacement?.id ?? "");
   }
 
   async function submitReassignSchedule() {
-    if (!reassignTarget || !reassignTeacherId) {
+    const targetTimeSlotId = reassignTimeSlotId || reassignTarget?.timeSlotId || "";
+    if (!reassignTarget || !reassignTeacherId || !isActiveTimeSlotId(targetTimeSlotId)) {
+      if (reassignTarget && !isActiveTimeSlotId(targetTimeSlotId)) {
+        pushToast("Chưa có khung giờ", "Chọn khung giờ hiện tại trước khi chuyển lịch để hệ thống kiểm tra giáo viên rảnh.", "warning");
+      }
       return;
     }
 
@@ -2231,6 +2252,7 @@ export function MettasoulApp() {
           status: "reassigned",
           teacherId: replacement.id,
           reassignedFrom: reassignTarget.teacherId,
+          timeSlotId: targetTimeSlotId,
         }),
       });
       if (response.notifications?.length) {
@@ -2249,6 +2271,7 @@ export function MettasoulApp() {
           ? {
               ...item,
               teacherId: replacement.id,
+              timeSlotId: targetTimeSlotId,
               status: "reassigned",
               reassignedFrom: reassignTarget.teacherId,
               sentAt: new Date().toISOString(),
@@ -2264,6 +2287,7 @@ export function MettasoulApp() {
     pushToast("Đã chuyển lịch", `Lịch đã chuyển sang giáo viên ${replacement.name}.`, "success");
     setReassignTarget(null);
     setReassignTeacherId("");
+    setReassignTimeSlotId("");
   }
 
   function toggleScheduleSelection(scheduleId: string) {
@@ -3364,6 +3388,10 @@ export function MettasoulApp() {
     const selectedIdSet = new Set(selectedSlotIds);
     const selectedSlots = timeSlots.filter((slot) => selectedIdSet.has(slot.id));
     const linkedScheduleCount = schedules.filter((schedule) => selectedIdSet.has(schedule.timeSlotId)).length;
+    if (linkedScheduleCount > 0) {
+      pushToast("Không thể xóa khung giờ đang dùng", `Có ${linkedScheduleCount} lịch đang liên kết. Dùng Import và chọn “Ghi đè” để cập nhật khung giờ mà vẫn giữ lịch cũ.`, "warning");
+      return;
+    }
     const confirmed = await openConfirmDialog({
       title: `Xóa ${selectedSlots.length} khung giờ`,
       message:
@@ -3399,6 +3427,10 @@ export function MettasoulApp() {
     }
 
     const linkedScheduleCount = schedules.filter((schedule) => timeSlots.some((slot) => slot.id === schedule.timeSlotId)).length;
+    if (linkedScheduleCount > 0) {
+      pushToast("Không thể xóa tất cả khung giờ", `Có ${linkedScheduleCount} lịch đang liên kết. Dùng Import và chọn “Ghi đè” để cập nhật khung giờ mà không làm lịch cũ mất giờ.`, "warning");
+      return;
+    }
     const confirmed = await openConfirmDialog({
       title: "Xóa tất cả khung giờ",
       message:
@@ -4385,20 +4417,41 @@ export function MettasoulApp() {
                 </div>
                 <h2 className="mt-4 text-xl font-black text-[var(--brand-dark)]">Chuyển lịch dạy</h2>
                 <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-                  Chọn giáo viên mới cho lịch {formatScheduleDateTime(reassignTarget)}. Hệ thống sẽ cập nhật Google Sheet
+                  Chọn giáo viên mới cho lịch {formatScheduleDateTime(scheduleWithReassignTimeSlot(reassignTarget))}. Hệ thống sẽ cập nhật Google Sheet
                   và gửi email xác nhận cho giáo viên mới.
                 </p>
+                {!isActiveTimeSlotId(reassignTarget.timeSlotId) ? (
+                  <div className="mt-4 grid gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                    <span className="text-xs font-black uppercase text-amber-900">Khung giờ cần khôi phục</span>
+                    <p className="text-xs font-semibold leading-5 text-amber-900">Khung giờ gốc của lịch này không còn trong cấu hình. Chọn đúng khung giờ để khôi phục lịch và lọc giáo viên đang rảnh.</p>
+                    <select
+                      value={reassignTimeSlotId}
+                      onChange={(event) => {
+                        setReassignTimeSlotId(event.target.value);
+                        setReassignTeacherId("");
+                      }}
+                      className={inputClass}
+                    >
+                      <option value="">-- Chọn khung giờ hiện tại --</option>
+                      {reassignableTimeSlots(reassignTarget).map((slot) => (
+                        <option key={slot.id} value={slot.id}>{formatTimeSlotDisplay(slot, activeTimeSlots)} · {slot.start}-{slot.end}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
                 <div className="mt-5 grid gap-2">
                   <span className="text-xs font-black uppercase text-[var(--brand-dark)]">Giáo viên thay thế</span>
                   <select
                     value={reassignTeacherId}
                     onChange={(event) => setReassignTeacherId(event.target.value)}
                     className={inputClass}
+                    disabled={!isActiveTimeSlotId(scheduleWithReassignTimeSlot(reassignTarget).timeSlotId)}
                   >
+                    <option value="">{isActiveTimeSlotId(scheduleWithReassignTimeSlot(reassignTarget).timeSlotId) ? "-- Chọn giáo viên thay thế --" : "Chọn khung giờ trước"}</option>
                     {activeSchedulingTeachers
                       .filter(
                         (teacher) =>
-                          teacher.id !== reassignTarget.teacherId && teacherIsAvailableForSchedule(teacher.id, reassignTarget),
+                          teacher.id !== reassignTarget.teacherId && teacherIsAvailableForSchedule(teacher.id, scheduleWithReassignTimeSlot(reassignTarget)),
                       )
                       .map((teacher) => (
                         <option key={teacher.id} value={teacher.id}>
@@ -4412,6 +4465,7 @@ export function MettasoulApp() {
                     onClick={() => {
                       setReassignTarget(null);
                       setReassignTeacherId("");
+                      setReassignTimeSlotId("");
                     }}
                     disabled={isBusy}
                     className="inline-flex h-11 items-center rounded-xl border border-[var(--line)] bg-white px-4 text-sm font-black text-[var(--brand-dark)] transition hover:bg-cyan-50 disabled:opacity-60"

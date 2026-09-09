@@ -65,12 +65,15 @@ export async function PATCH(request: Request, { params }: Params) {
       action = "schedule.cancel";
     } else if (status === "reassigned") {
       const nextTeacherId = String(body.teacherId || "").trim();
-      const teacherError = await validateReplacementTeacher(nextTeacherId, schedule);
+      const nextTimeSlotId = String(body.timeSlotId || schedule.timeSlotId || "").trim();
+      const scheduleWithRestoredSlot = { ...schedule, timeSlotId: nextTimeSlotId };
+      const teacherError = await validateReplacementTeacher(nextTeacherId, scheduleWithRestoredSlot);
       if (teacherError) {
         return apiFailure(400, teacherError, undefined, requestId);
       }
 
       patch.teacherId = nextTeacherId;
+      patch.timeSlotId = nextTimeSlotId;
       patch.reassignedFrom = schedule.teacherId;
       patch.sentAt = now;
       notifications = [

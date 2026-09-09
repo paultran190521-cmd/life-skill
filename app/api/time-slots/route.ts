@@ -144,6 +144,12 @@ export async function DELETE(request: Request) {
 
     const body = await request.json().catch(() => null);
     const ids = Array.isArray(body?.ids) ? body.ids.map((id: unknown) => String(id || "").trim()).filter(Boolean) : [];
+    const slots = await readSheetRows("TimeSlots");
+    const targetIds = ids.length > 0 ? new Set(ids) : new Set(slots.map((slot) => String(slot.id || "").trim()).filter(Boolean));
+    const linkedSchedules = (await readSheetRows("Schedules")).filter((schedule) => targetIds.has(String(schedule.timeSlotId || "").trim()));
+    if (linkedSchedules.length > 0) {
+      return apiFailure(409, `Không thể xóa khung giờ đang được ${linkedSchedules.length} lịch sử dụng. Dùng Import và chọn Ghi đè để giữ liên kết lịch cũ.`, "CONFLICT", requestId);
+    }
     const deletedCount = ids.length > 0 ? await deleteSheetRowsByIds("TimeSlots", ids) : await clearSheetData("TimeSlots");
     const action = ids.length > 0 ? "time_slot.delete_selected" : "time_slot.clear_all";
     await appendAuditLog({
