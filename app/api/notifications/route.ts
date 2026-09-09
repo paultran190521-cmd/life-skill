@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
-import { appendSheetRows, readSheetRows } from "@/lib/google-sheets";
+import { appendSheetRows, ensureSheetHeaders, notificationHeaders, readSheetRows } from "@/lib/google-sheets";
 import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 import type { Notification } from "@/lib/types";
 
@@ -26,15 +26,23 @@ export async function POST(request: Request) {
         ? body
         : [body];
 
-    const notifications: Notification[] = rawNotifications.map((item: Record<string, unknown>) => ({
-      id: String(item.id || createId("n")),
-      title: String(item.title || "Thông báo").trim(),
-      body: String(item.body || "").trim(),
-      role: normalizeRole(item.role),
-      createdAt: String(item.createdAt || now),
-      read: item.read ?? false,
-      updatedAt: now,
-    }));
+    const notifications: Notification[] = rawNotifications.map((item: Record<string, unknown>) => {
+      const title = String(item.title || "Thông báo").trim();
+      const role = normalizeRole(item.role);
+      const isFeedback = role === "admin" && title.toLowerCase().startsWith("feedback |");
+      return {
+        id: String(item.id || createId("n")),
+        title,
+        body: String(item.body || "").trim(),
+        role,
+        // Lấy danh tính từ phiên đăng nhập thay vì payload để người gửi không thể giả mạo.
+        senderName: isFeedback ? auth.user.name : String(item.senderName || "").trim() || undefined,
+        senderEmail: isFeedback ? auth.user.email : String(item.senderEmail || "").trim() || undefined,
+        createdAt: String(item.createdAt || now),
+        read: item.read ?? false,
+        updatedAt: now,
+      };
+    });
 
     const teacherFeedbackOnly = notifications.every(
       (item: Notification) => item.role === "admin" && item.title.toLowerCase().startsWith("feedback |"),
@@ -55,6 +63,7 @@ export async function POST(request: Request) {
       );
     }
 
+    await ensureSheetHeaders("Notifications", notificationHeaders);
     await appendSheetRows("Notifications", notifications);
     await appendAuditLog({
       requestId,

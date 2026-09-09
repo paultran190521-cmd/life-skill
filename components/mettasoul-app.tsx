@@ -8509,6 +8509,10 @@ export function MettasoulApp() {
             <div className="space-y-2">
               {feedbackNotifications.slice(0, 8).map((item) => (
                 <div key={item.id} className="rounded-xl border border-violet-200 bg-violet-50/40 px-3 py-3">
+                  <div className="mb-2 border-b border-violet-200 pb-2">
+                    <p className="text-sm font-black text-violet-950">{item.senderName || "Người gửi chưa xác định"}</p>
+                    <p className="text-xs font-semibold text-violet-700">{item.senderEmail || "Email chưa được lưu"}</p>
+                  </div>
                   <p className="text-sm font-black text-violet-900">{item.title.replace("Feedback | ", "")}</p>
                   <p className="mt-1 whitespace-pre-line text-xs font-semibold text-violet-800">{item.body}</p>
                   <p className="mt-2 text-[11px] font-bold text-violet-700">{formatDateTime(item.createdAt)}</p>

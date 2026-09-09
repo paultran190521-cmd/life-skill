@@ -6,6 +6,7 @@ import {
   topicHeaders,
   lessonHeaders,
   scheduleHeaders,
+  notificationHeaders,
   weeklyUpdateHeaders,
   appAnnouncementHeaders,
   teacherAvailabilityHeaders,
@@ -62,7 +63,7 @@ const ALL_SHEETS: { name: Parameters<typeof ensureSheetHeaders>[0]; headers: str
   },
   {
     name: "Notifications",
-    headers: ["id", "title", "body", "role", "targetUserId", "read", "createdAt", "updatedAt"],
+    headers: notificationHeaders,
   },
   {
     name: "AppAnnouncements",

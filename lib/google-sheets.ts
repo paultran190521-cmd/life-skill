@@ -639,6 +639,19 @@ export const scheduleHeaders = [
   "participantClassIds",
 ];
 
+export const notificationHeaders = [
+  "id",
+  "title",
+  "body",
+  "role",
+  "targetUserId",
+  "senderName",
+  "senderEmail",
+  "read",
+  "createdAt",
+  "updatedAt",
+];
+
 export const topicHeaders = [
   "id",
   "grade",
@@ -990,6 +1003,8 @@ function toNotifications(rows: SheetRow[]): Notification[] {
     title: row.title,
     body: row.body,
     role: (row.role || "all") as Role | "all",
+    senderName: row.senderName || undefined,
+    senderEmail: row.senderEmail || undefined,
     createdAt: row.createdAt,
     read: parseBoolean(row.read, false),
   }));

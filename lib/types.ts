@@ -147,6 +147,8 @@ export type Notification = {
   title: string;
   body: string;
   role: Role | "all";
+  senderName?: string;
+  senderEmail?: string;
   createdAt: string;
   read: boolean;
 };
