@@ -5496,6 +5496,56 @@ export function MettasoulApp() {
         ];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Lịch đã gửi");
+
+        const kpiHeaders = ["Giáo viên", "Ngày", "Khung giờ", "Trường", "Lớp", "Số tiết KPI", "Trạng thái", "Chuyên đề"];
+        const kpiRows = reportSchedules.map((schedule) => {
+          const teacher = teachers.find((item) => item.id === schedule.teacherId);
+          const school = schools.find((item) => item.id === schedule.schoolId);
+          const lesson = lessons.find((item) => item.id === schedule.lessonId);
+          const slot = timeSlots.find((item) => item.id === schedule.timeSlotId);
+          const classNames = scheduleParticipantClassIds(schedule)
+            .map((classId) => classes.find((classRoom) => classRoom.id === classId)?.name ?? classId)
+            .join(", ");
+          const lessonCount = new Set(
+            String(schedule.lessonPeriods || "lesson1")
+              .split(",")
+              .map((period) => period.trim())
+              .filter((period) => period === "lesson1" || period === "lesson2"),
+          ).size || 1;
+          return [
+            teacher?.name ?? schedule.teacherId,
+            schedule.date,
+            slot ? `${slot.start}-${slot.end}` : "Chưa khôi phục khung giờ",
+            school?.name ?? schedule.schoolId,
+            classNames,
+            schedule.status === "cancelled" ? 0 : lessonCount,
+            statusLabels[schedule.status] ?? schedule.status,
+            lesson?.title ?? schedule.lessonId,
+          ];
+        });
+        const kpiSheet = XLSX.utils.aoa_to_sheet([
+          ["TỔNG HỢP KPI GIẢNG DẠY"],
+          ["Tổng số tiết KPI đang hiển thị"],
+          [],
+          kpiHeaders,
+          ...kpiRows,
+        ]);
+        const firstDataRow = 5;
+        const lastDataRow = Math.max(firstDataRow, firstDataRow + kpiRows.length - 1);
+        kpiSheet["B2"] = { t: "n", f: `SUBTOTAL(109,F${firstDataRow}:F${lastDataRow})` };
+        kpiSheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: kpiHeaders.length - 1 } }];
+        kpiSheet["!autofilter"] = { ref: `A4:H${lastDataRow}` };
+        kpiSheet["!cols"] = [
+          { wch: 24 },
+          { wch: 14 },
+          { wch: 18 },
+          { wch: 28 },
+          { wch: 20 },
+          { wch: 14 },
+          { wch: 20 },
+          { wch: 36 },
+        ];
+        XLSX.utils.book_append_sheet(wb, kpiSheet, "Tổng hợp KPI");
         XLSX.writeFile(wb, `lich-da-gui-${scheduleReportMonth || currentDateKey()}.xlsx`);
         pushToast("Xuất Excel thành công", `Đã xuất ${rows.length} lịch trong tháng đã chọn.`, "success");
       } catch (error) {
