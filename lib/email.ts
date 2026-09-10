@@ -528,10 +528,15 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
           :root { color-scheme: light only; }
           body, table, td, a { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
           table, td { mso-table-lspace:0pt; mso-table-rspace:0pt; }
+          .desktop-schedule-table { display:table; }
+          .desktop-email-actions { display:block; }
+          .mobile-schedule-cards, .mobile-email-actions { display:none; max-height:0; overflow:hidden; mso-hide:all; }
           @media only screen and (max-width:600px) {
             .email-page { padding:10px !important; }
             .email-shell { padding:18px 14px !important; border-radius:12px !important; }
             .email-title { font-size:22px !important; }
+            .desktop-schedule-table, .desktop-email-actions { display:none !important; max-height:0 !important; overflow:hidden !important; }
+            .mobile-schedule-cards, .mobile-email-actions { display:block !important; max-height:none !important; overflow:visible !important; }
             .schedule-card { margin-bottom:14px !important; }
             .schedule-card-body { padding:16px 14px !important; }
             .email-button { display:block !important; box-sizing:border-box !important; width:100% !important; margin:0 0 10px !important; }
@@ -542,7 +547,7 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#f3f8fa" style="width:100%;border-collapse:collapse;background:#f3f8fa">
           <tr>
             <td class="email-page" align="center" style="padding:24px 12px">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="width:100%;max-width:640px;border-collapse:separate;background:#ffffff;border:1px solid #d6e7eb;border-radius:16px">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="width:100%;max-width:920px;border-collapse:separate;background:#ffffff;border:1px solid #d6e7eb;border-radius:16px">
                 <tr>
                   <td class="email-shell" style="padding:28px 24px;color:#16313a">
                     <p style="margin:0 0 10px;font-size:12px;line-height:1.5;color:#147f99;font-weight:700;text-align:center;text-transform:uppercase;letter-spacing:.3px">HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL</p>
@@ -552,50 +557,30 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
                     <p style="margin:0 0 22px;font-size:14px;line-height:1.55;color:#526b77">Xem đầy đủ thông tin tại <a href="${appUrl}" style="color:#075f73;font-weight:700;text-decoration:underline">ứng dụng METTASOUL</a>.</p>
 
                     <!-- ${scheduleEmailTemplateVersion} -->
-                    ${rows
-                      .map((row) => {
-                        const slotTime = [row.slot?.start, row.slot?.end].filter(Boolean).join(" - ");
-                        return `
-                          <table class="schedule-card" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="width:100%;margin:0 0 16px;border-collapse:separate;background:#ffffff;border:1px solid #b9dce4;border-radius:14px;overflow:hidden">
-                            <tr>
-                              <td bgcolor="#e8f7fa" style="padding:13px 14px;background:#e8f7fa;border-bottom:1px solid #b9dce4;color:#075f73">
-                                <div style="font-size:17px;line-height:1.35;font-weight:700;word-break:normal;overflow-wrap:break-word">${escapeHtml(formatDate(row.schedule.date))}</div>
-                                <div style="margin-top:3px;font-size:14px;line-height:1.4;color:#385965;word-break:normal;overflow-wrap:break-word">${escapeHtml(slotTime || "Chưa cập nhật")}</div>
-                              </td>
-                            </tr>
-                            <tr>
-                              <td class="schedule-card-body" style="padding:18px 16px;color:#16313a">
-                                ${renderScheduleEmailField("Trường / Lớp", `<strong>${escapeHtml(row.school?.name || "Chưa cập nhật")}</strong><br>${escapeHtml(formatParticipantClasses(row))}`)}
-                                ${renderScheduleEmailField("Bài học", escapeHtml(normalizeKnownLessonTitle(row.lesson?.title)))}
-                                ${renderScheduleEmailField("Tiết dạy", renderScheduledPeriodTitles(row.lesson, row.schedule), true)}
-                                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-collapse:collapse">
-                                  <tr>
-                                    <td align="center" bgcolor="#08788e" style="background:#08788e;border-radius:10px">
-                                      <a class="email-button" href="${buildConfirmUrl(row.schedule)}" style="display:block;padding:13px 16px;color:#ffffff;text-decoration:none;font-size:15px;line-height:1.3;font-weight:700;text-align:center;border-radius:10px">XÁC NHẬN TIẾT NÀY</a>
-                                    </td>
-                                  </tr>
-                                </table>
-                              </td>
-                            </tr>
-                          </table>
-                        `;
-                      })
-                      .join("")}
-
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:22px;border-collapse:collapse">
-                      <tr>
-                        <td align="center" bgcolor="#08788e" style="background:#08788e;border-radius:12px">
-                          <a class="email-button" href="${confirmAllUrl}" style="display:block;padding:15px 18px;color:#ffffff;text-decoration:none;font-size:16px;line-height:1.3;font-weight:700;text-align:center;border-radius:12px">XÁC NHẬN TẤT CẢ</a>
-                        </td>
-                      </tr>
-                    </table>
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:10px;border-collapse:collapse">
-                      <tr>
-                        <td align="center" bgcolor="#e7f6fa" style="background:#e7f6fa;border:1px solid #08788e;border-radius:12px">
-                          <a class="email-button" href="${appUrl}" style="display:block;padding:14px 18px;color:#075f73;text-decoration:none;font-size:15px;line-height:1.3;font-weight:700;text-align:center;border-radius:12px">TRUY CẬP ỨNG DỤNG</a>
-                        </td>
-                      </tr>
-                    </table>
+                    ${renderDesktopScheduleTable(rows)}
+                    <div class="mobile-schedule-cards">
+                      ${renderMobileScheduleCards(rows)}
+                    </div>
+                    <div class="desktop-email-actions" style="margin-top:22px;text-align:center">
+                      <a href="${confirmAllUrl}" style="display:inline-block;margin:0 4px 8px;background:#08788e;color:#ffffff;text-decoration:none;border-radius:12px;padding:12px 18px;font-size:14px;font-weight:700;text-align:center">XÁC NHẬN TẤT CẢ</a>
+                      <a href="${appUrl}" style="display:inline-block;margin:0 4px 8px;background:#e7f6fa;color:#075f73;text-decoration:none;border:1px solid #08788e;border-radius:12px;padding:12px 18px;font-size:14px;font-weight:700;text-align:center">TRUY CẬP APP</a>
+                    </div>
+                    <div class="mobile-email-actions" style="margin-top:22px">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-collapse:collapse">
+                        <tr>
+                          <td align="center" bgcolor="#08788e" style="background:#08788e;border-radius:12px">
+                            <a class="email-button" href="${confirmAllUrl}" style="display:block;padding:15px 18px;color:#ffffff;text-decoration:none;font-size:16px;line-height:1.3;font-weight:700;text-align:center;border-radius:12px">XÁC NHẬN TẤT CẢ</a>
+                          </td>
+                        </tr>
+                      </table>
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin-top:10px;border-collapse:collapse">
+                        <tr>
+                          <td align="center" bgcolor="#e7f6fa" style="background:#e7f6fa;border:1px solid #08788e;border-radius:12px">
+                            <a class="email-button" href="${appUrl}" style="display:block;padding:14px 18px;color:#075f73;text-decoration:none;font-size:15px;line-height:1.3;font-weight:700;text-align:center;border-radius:12px">TRUY CẬP ỨNG DỤNG</a>
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
                     <p style="margin:16px 0 0;font-size:12px;line-height:1.55;color:#526b77;text-align:center">“Xác nhận tiết này” chỉ cập nhật lịch tương ứng. “Xác nhận tất cả” áp dụng cho toàn bộ lịch đang chờ xác nhận trong email này.</p>
                   </td>
                 </tr>
@@ -606,6 +591,73 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
       </body>
     </html>
   `;
+}
+
+function renderDesktopScheduleTable(rows: ScheduleDigestRow[]) {
+  return `
+    <table class="desktop-schedule-table" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 20px;font-size:13px;border:2px solid #ff9500">
+      <colgroup>
+        <col style="width:15%">
+        <col style="width:21%">
+        <col style="width:20%">
+        <col style="width:27%">
+        <col style="width:17%">
+      </colgroup>
+      <thead>
+        <tr>
+          <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">NGÀY &amp; GIỜ</th>
+          <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TRƯỜNG / LỚP</th>
+          <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">BÀI HỌC</th>
+          <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">TIẾT DẠY</th>
+          <th style="padding:10px;border:1px solid #ff9500;background:#fff3df;text-align:center">XÁC NHẬN</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => {
+          const slotTime = [row.slot?.start, row.slot?.end].filter(Boolean).join(" - ");
+          return `
+            <tr style="border-top:3px solid #ff9500">
+              <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;line-height:1.5">${escapeHtml(formatDate(row.schedule.date))}<br><span style="color:#667985">${escapeHtml(slotTime || "Chưa cập nhật")}</span></td>
+              <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center;line-height:1.5"><strong>${escapeHtml(row.school?.name || "Chưa cập nhật")}</strong><br>${escapeHtml(formatParticipantClasses(row))}</td>
+              <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center">${escapeHtml(normalizeKnownLessonTitle(row.lesson?.title))}</td>
+              <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;line-height:1.6">${renderScheduledPeriodTitles(row.lesson, row.schedule)}</td>
+              <td style="padding:10px;border:1px solid #ff9500;vertical-align:middle;text-align:center"><a href="${buildConfirmUrl(row.schedule)}" style="display:inline-block;background:#08788e;color:#ffffff;text-decoration:none;border-radius:8px;padding:9px 10px;font-size:12px;font-weight:700">XÁC NHẬN TIẾT NÀY</a></td>
+            </tr>
+          `;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderMobileScheduleCards(rows: ScheduleDigestRow[]) {
+  return rows.map((row) => {
+    const slotTime = [row.slot?.start, row.slot?.end].filter(Boolean).join(" - ");
+    return `
+      <table class="schedule-card" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="width:100%;margin:0 0 16px;border-collapse:separate;background:#ffffff;border:1px solid #b9dce4;border-radius:14px;overflow:hidden">
+        <tr>
+          <td bgcolor="#e8f7fa" style="padding:13px 14px;background:#e8f7fa;border-bottom:1px solid #b9dce4;color:#075f73">
+            <div style="font-size:17px;line-height:1.35;font-weight:700;word-break:normal;overflow-wrap:break-word">${escapeHtml(formatDate(row.schedule.date))}</div>
+            <div style="margin-top:3px;font-size:14px;line-height:1.4;color:#385965;word-break:normal;overflow-wrap:break-word">${escapeHtml(slotTime || "Chưa cập nhật")}</div>
+          </td>
+        </tr>
+        <tr>
+          <td class="schedule-card-body" style="padding:18px 16px;color:#16313a">
+            ${renderScheduleEmailField("Trường / Lớp", `<strong>${escapeHtml(row.school?.name || "Chưa cập nhật")}</strong><br>${escapeHtml(formatParticipantClasses(row))}`)}
+            ${renderScheduleEmailField("Bài học", escapeHtml(normalizeKnownLessonTitle(row.lesson?.title)))}
+            ${renderScheduleEmailField("Tiết dạy", renderScheduledPeriodTitles(row.lesson, row.schedule), true)}
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-collapse:collapse">
+              <tr>
+                <td align="center" bgcolor="#08788e" style="background:#08788e;border-radius:10px">
+                  <a class="email-button" href="${buildConfirmUrl(row.schedule)}" style="display:block;padding:13px 16px;color:#ffffff;text-decoration:none;font-size:15px;line-height:1.3;font-weight:700;text-align:center;border-radius:10px">XÁC NHẬN TIẾT NÀY</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    `;
+  }).join("");
 }
 
 function renderScheduleEmailField(label: string, valueHtml: string, isLast = false) {

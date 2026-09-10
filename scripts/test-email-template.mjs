@@ -10,7 +10,12 @@ const requiredPatterns = [
   ['mobile viewport', 'meta name="viewport"'],
   ['light color scheme', 'meta name="color-scheme" content="light only"'],
   ['responsive breakpoint', '@media only screen and (max-width:600px)'],
+  ['desktop schedule table', 'class="desktop-schedule-table"'],
+  ['desktop five-column layout', '<colgroup>'],
   ['single-column schedule cards', 'class="schedule-card"'],
+  ['mobile-only schedule wrapper', 'class="mobile-schedule-cards"'],
+  ['desktop action wrapper', 'class="desktop-email-actions"'],
+  ['mobile action wrapper', 'class="mobile-email-actions"'],
   ['full-width mobile actions', 'class="email-button"'],
   ['presentation tables', 'role="presentation"'],
   ['safe Vietnamese word wrapping', 'word-break:normal;overflow-wrap:break-word'],
@@ -22,9 +27,14 @@ for (const [label, pattern] of requiredPatterns) {
   }
 }
 
-for (const legacyPattern of ['<colgroup>', 'table-layout:fixed', 'XÁC NHẬN</th>']) {
-  if (emailSource.includes(legacyPattern)) {
-    throw new Error(`Legacy narrow-table markup is still present: ${legacyPattern}`);
+for (const responsiveRule of [
+  '.desktop-schedule-table { display:table; }',
+  '.mobile-schedule-cards, .mobile-email-actions { display:none;',
+  '.desktop-schedule-table, .desktop-email-actions { display:none !important;',
+  '.mobile-schedule-cards, .mobile-email-actions { display:block !important;',
+]) {
+  if (!emailSource.includes(responsiveRule)) {
+    throw new Error(`Desktop/mobile email switch is incomplete: ${responsiveRule}`);
   }
 }
 
@@ -97,8 +107,12 @@ for (const expectedText of [
   }
 }
 
-if (renderedHtml.includes("undefined") || renderedHtml.includes("table-layout:fixed") || renderedHtml.includes("<colgroup>")) {
-  throw new Error("Rendered schedule email contains an invalid value or legacy fixed table markup.");
+if (renderedHtml.includes("undefined")) {
+  throw new Error("Rendered schedule email contains an invalid value.");
+}
+
+if (!renderedHtml.includes('class="desktop-schedule-table"') || !renderedHtml.includes('class="mobile-schedule-cards"')) {
+  throw new Error("Rendered schedule email does not contain both desktop and mobile layouts.");
 }
 
 const previewPath = process.argv[2] || process.env.EMAIL_PREVIEW_PATH;
