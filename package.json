@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "test:authz": "node scripts/test-authz.mjs",
+    "test:email-template": "node scripts/test-email-template.mjs",
     "test:schedule-conflicts": "node scripts/test-schedule-conflict-policy.mjs",
     "test:teacher-availability": "node scripts/test-teacher-availability.mjs",
     "benchmark:schedules": "node scripts/benchmark-schedules.mjs",
