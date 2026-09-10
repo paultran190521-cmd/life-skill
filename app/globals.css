@@ -288,6 +288,11 @@ button:disabled {
   animation-play-state: paused;
 }
 
+html[data-app-background="true"] .app-announcement-track,
+html[data-app-background="true"] .ui-notification-dot {
+  animation-play-state: paused;
+}
+
 @media (max-width: 767px) {
   html,
   body {

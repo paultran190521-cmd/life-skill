@@ -40,7 +40,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SchoolGuidePanel } from "@/components/school-guide-panel";
 import { statusLabels, statusStyles } from "@/lib/status";
@@ -494,6 +494,7 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
 
 export function MettasoulApp() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
+  const deferredActiveTab = useDeferredValue(activeTab);
   const [appUsers, setAppUsers] = useState<User[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
   const [sessionUserId, setSessionUserId] = useState("");
@@ -888,28 +889,98 @@ export function MettasoulApp() {
   useEffect(() => {
     if (authStatus !== "signed-in" || role !== "admin" || activeTab !== "assignment") return;
     let cancelled = false;
+    let refreshInFlight = false;
+    let lastRefreshAt = 0;
+    let resumeTimer: number | undefined;
+
+    const pageIsActive = () => document.visibilityState === "visible" && document.hasFocus();
     const refresh = async () => {
+      if (cancelled || refreshInFlight || !pageIsActive()) return;
+      refreshInFlight = true;
       try {
         const rows = await apiRequest<TeacherAvailability[]>("/api/teacher-availability");
-        if (!cancelled) setTeacherAvailability(rows);
+        if (!cancelled) {
+          lastRefreshAt = Date.now();
+          startTransition(() => {
+            setTeacherAvailability((current) => sameTeacherAvailability(current, rows) ? current : rows);
+          });
+        }
       } catch (error) {
         console.error("Không thể làm mới lịch trống của giáo viên", error);
+      } finally {
+        refreshInFlight = false;
       }
     };
-    refresh();
+
+    const refreshAfterResume = () => {
+      window.clearTimeout(resumeTimer);
+      if (!pageIsActive() || Date.now() - lastRefreshAt < 30_000) return;
+      // Give the browser one short paint window before reconciling fresh Sheets data.
+      resumeTimer = window.setTimeout(() => void refresh(), 500);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshAfterResume();
+    };
+
+    void refresh();
     const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener("focus", refreshAfterResume);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      window.clearTimeout(resumeTimer);
+      window.removeEventListener("focus", refreshAfterResume);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [activeTab, authStatus, role]);
 
   useEffect(() => {
     if (!canRegisterAvailability || activeTab !== "calendar") return;
-    setAvailabilityClock(Date.now());
-    const timer = window.setInterval(() => setAvailabilityClock(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
+    let resumeTimer: number | undefined;
+    const tick = () => {
+      if (document.visibilityState !== "visible" || !document.hasFocus()) return;
+      const now = Date.now();
+      setAvailabilityClock((current) => now - current >= 59_000 ? now : current);
+    };
+    const tickAfterResume = () => {
+      window.clearTimeout(resumeTimer);
+      if (document.visibilityState !== "visible" || !document.hasFocus()) return;
+      resumeTimer = window.setTimeout(tick, 250);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") tickAfterResume();
+    };
+
+    tick();
+    const timer = window.setInterval(tick, 60_000);
+    window.addEventListener("focus", tickAfterResume);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(resumeTimer);
+      window.removeEventListener("focus", tickAfterResume);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [activeTab, canRegisterAvailability]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const syncPageActivity = () => {
+      root.dataset.appBackground = document.visibilityState !== "visible" || !document.hasFocus() ? "true" : "false";
+    };
+    syncPageActivity();
+    window.addEventListener("focus", syncPageActivity);
+    window.addEventListener("blur", syncPageActivity);
+    document.addEventListener("visibilitychange", syncPageActivity);
+    return () => {
+      window.removeEventListener("focus", syncPageActivity);
+      window.removeEventListener("blur", syncPageActivity);
+      document.removeEventListener("visibilitychange", syncPageActivity);
+      delete root.dataset.appBackground;
+    };
+  }, []);
 
   useEffect(() => {
     const updateViewport = () => {
@@ -4004,32 +4075,32 @@ export function MettasoulApp() {
     );
   }
 
-  function renderMain() {
-    if (activeTab === "dashboard") {
-      return <Dashboard />;
+  function renderMain(tabId: TabId) {
+    if (tabId === "dashboard") {
+      return Dashboard();
     }
-    if (activeTab === "assignment") {
-      return <AssignmentPanel />;
+    if (tabId === "assignment") {
+      return AssignmentPanel();
     }
-    if (activeTab === "calendar") {
-      return <CalendarPanel />;
+    if (tabId === "calendar") {
+      return CalendarPanel();
     }
-    if (activeTab === "school-guide") {
+    if (tabId === "school-guide") {
       return <SchoolGuidePanel />;
     }
-    if (activeTab === "teachers") {
-      return <TeachersPanel />;
+    if (tabId === "teachers") {
+      return TeachersPanel();
     }
-    if (activeTab === "lessons") {
-      return <LessonsPanel />;
+    if (tabId === "lessons") {
+      return LessonsPanel();
     }
-    if (activeTab === "plans") {
-      return <LessonPlansPanel />;
+    if (tabId === "plans") {
+      return LessonPlansPanel();
     }
-    if (activeTab === "attendance") {
-      return <AttendancePanel />;
+    if (tabId === "attendance") {
+      return AttendancePanel();
     }
-    return <SettingsPanel />;
+    return SettingsPanel();
   }
 
   function changeTab(tabId: TabId) {
@@ -4280,7 +4351,14 @@ export function MettasoulApp() {
           </header>
 
           <AnnouncementTicker announcements={activeAppAnnouncements} />
-          <div className="px-3 pb-28 pt-4 sm:px-4 md:p-7">{renderMain()}</div>
+          <div
+            aria-busy={deferredActiveTab !== activeTab}
+            className={`px-3 pb-28 pt-4 transition-opacity duration-150 sm:px-4 md:p-7 ${
+              deferredActiveTab !== activeTab ? "opacity-80" : "opacity-100"
+            }`}
+          >
+            {renderMain(deferredActiveTab)}
+          </div>
           <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-cyan-100 bg-white/95 px-2 py-2 shadow-[0_-18px_42px_rgba(18,46,68,0.12)] backdrop-blur-xl lg:hidden">
             <div className="app-scrollbar flex gap-2 overflow-x-auto pb-[env(safe-area-inset-bottom)]">
               {navigationTabs.filter((item) => item.id !== "school-guide").map((item) => {
@@ -10858,6 +10936,24 @@ const ghostButtonClass =
 
 function createId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function sameTeacherAvailability(current: TeacherAvailability[], next: TeacherAvailability[]) {
+  if (current.length !== next.length) return false;
+  return current.every((item, index) => {
+    const candidate = next[index];
+    return candidate !== undefined &&
+      item.id === candidate.id &&
+      item.teacherId === candidate.teacherId &&
+      item.date === candidate.date &&
+      item.scope === candidate.scope &&
+      item.timeSlotId === candidate.timeSlotId &&
+      item.status === candidate.status &&
+      item.note === candidate.note &&
+      item.createdBy === candidate.createdBy &&
+      item.createdAt === candidate.createdAt &&
+      item.updatedAt === candidate.updatedAt;
+  });
 }
 
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
