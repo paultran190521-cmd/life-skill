@@ -41,7 +41,7 @@ export async function GET(request: Request, { params }: Params) {
         return {
         id: row.id, messageId: row.messageId, lessonPlanId: row.lessonPlanId, fileName: row.fileName, mimeType: row.mimeType,
         sizeBytes: Number(row.sizeBytes || 0), kind: row.kind, driveFileId: row.driveFileId || undefined,
-        url: shared?.driveUrl || (row.driveFileId ? driveContentUrl(row.driveFileId) : row.url),
+        url: shared?.dataUrl || shared?.driveUrl || (row.driveFileId ? driveContentUrl(row.driveFileId) : row.url),
         width: row.width ? Number(row.width) : undefined, height: row.height ? Number(row.height) : undefined, createdAt: row.createdAt,
         };
       }));
@@ -68,7 +68,7 @@ async function shareChatAttachmentViaGas(fileId: string, requestId: string) {
     });
     const result = await response.json().catch(() => null);
     return response.ok && result?.ok && result.attachment?.driveUrl
-      ? result.attachment as { driveUrl: string }
+      ? result.attachment as { driveUrl: string; dataUrl?: string }
       : null;
   } catch {
     return null;

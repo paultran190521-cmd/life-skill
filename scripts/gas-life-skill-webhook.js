@@ -417,8 +417,20 @@ function shareLessonPlanChatAttachment(payload) {
   var fileId = asText(payload.fileId);
   if (!fileId) throw appError("UPLOAD_FIELDS_MISSING", "Missing chat attachment file ID.");
   var file = DriveApp.getFileById(fileId);
+  var mimeType = file.getMimeType();
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  return { driveFileId: fileId, driveUrl: "https://drive.google.com/uc?export=view&id=" + encodeURIComponent(fileId), mimeType: file.getMimeType() };
+  var attachment = {
+    driveFileId: fileId,
+    driveUrl: "https://drive.google.com/uc?export=view&id=" + encodeURIComponent(fileId),
+    mimeType: mimeType
+  };
+  // Google Drive can return an HTML interstitial to image elements even when
+  // the file has link-viewer access. Return image bytes through this authenticated
+  // webhook so old chat screenshots render consistently for both participants.
+  if (mimeType && mimeType.indexOf("image/") === 0) {
+    attachment.dataUrl = "data:" + mimeType + ";base64," + Utilities.base64Encode(file.getBlob().getBytes());
+  }
+  return attachment;
 }
 
 function validateChatAttachmentPayload(payload) {
