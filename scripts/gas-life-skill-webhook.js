@@ -66,6 +66,11 @@ function doPost(e) {
       return json({ ok: true, requestId: requestId, version: GAS_WEBHOOK_VERSION, attachment: attachment });
     }
 
+    if (payload.action === "shareLessonPlanChatAttachment") {
+      var sharedAttachment = shareLessonPlanChatAttachment(payload);
+      return json({ ok: true, requestId: requestId, version: GAS_WEBHOOK_VERSION, attachment: sharedAttachment });
+    }
+
     if (payload.action === "deleteLessonPlan") {
       var deleteResult = deleteLessonPlan(payload, requestId);
       logInfo("deleteLessonPlan.success", requestId, {
@@ -406,6 +411,14 @@ function uploadLessonPlanChatAttachment(payload) {
   var file = targetFolder.createFile(Utilities.newBlob(bytes, asText(payload.mimeType) || "application/octet-stream", asText(payload.fileName)));
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   return { driveFileId: file.getId(), driveUrl: "https://drive.google.com/uc?export=view&id=" + encodeURIComponent(file.getId()), sizeBytes: bytes.length, mimeType: file.getMimeType() };
+}
+
+function shareLessonPlanChatAttachment(payload) {
+  var fileId = asText(payload.fileId);
+  if (!fileId) throw appError("UPLOAD_FIELDS_MISSING", "Missing chat attachment file ID.");
+  var file = DriveApp.getFileById(fileId);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return { driveFileId: fileId, driveUrl: "https://drive.google.com/uc?export=view&id=" + encodeURIComponent(fileId), mimeType: file.getMimeType() };
 }
 
 function validateChatAttachmentPayload(payload) {

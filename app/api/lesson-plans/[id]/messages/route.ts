@@ -34,13 +34,16 @@ export async function GET(request: Request, { params }: Params) {
         senderEmail: row.senderEmail, senderRole: row.senderRole, content: row.content || "", createdAt: row.createdAt, updatedAt: row.updatedAt || undefined,
       }))
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-    const attachments = attachmentRows
+    const attachments = await Promise.all(attachmentRows
       .filter((row) => row.lessonPlanId === lessonPlanId)
-      .map((row) => ({
+      .map(async (row) => {
+        const shared = row.driveFileId ? await shareChatAttachmentViaGas(row.driveFileId, requestId) : null;
+        return {
         id: row.id, messageId: row.messageId, lessonPlanId: row.lessonPlanId, fileName: row.fileName, mimeType: row.mimeType,
         sizeBytes: Number(row.sizeBytes || 0), kind: row.kind, driveFileId: row.driveFileId || undefined,
-        url: row.driveFileId ? driveContentUrl(row.driveFileId) : row.url,
+        url: shared?.driveUrl || (row.driveFileId ? driveContentUrl(row.driveFileId) : row.url),
         width: row.width ? Number(row.width) : undefined, height: row.height ? Number(row.height) : undefined, createdAt: row.createdAt,
+        };
       }));
     return NextResponse.json({ messages, attachments });
   } catch (error) {
@@ -50,6 +53,26 @@ export async function GET(request: Request, { params }: Params) {
 
 function driveContentUrl(fileId: string) {
   return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(fileId)}`;
+}
+
+async function shareChatAttachmentViaGas(fileId: string, requestId: string) {
+  const webhookUrl = process.env.GAS_UPLOAD_WEBHOOK_URL || process.env.GAS_MAIL_WEBHOOK_URL;
+  const secret = process.env.GAS_UPLOAD_WEBHOOK_SECRET || process.env.GAS_MAIL_WEBHOOK_SECRET;
+  if (!webhookUrl || !secret) return null;
+  try {
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json;charset=utf-8" },
+      body: JSON.stringify({ action: "shareLessonPlanChatAttachment", secret, fileId, requestId }),
+      cache: "no-store",
+    });
+    const result = await response.json().catch(() => null);
+    return response.ok && result?.ok && result.attachment?.driveUrl
+      ? result.attachment as { driveUrl: string }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(request: Request, { params }: Params) {
