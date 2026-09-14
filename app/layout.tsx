@@ -36,7 +36,7 @@ export const metadata: Metadata = {
     images: ["/mettasoul-cover.png"],
   },
   icons: {
-    icon: "/mettasoul-logo.png",
+    icon: "/icon.svg",
     apple: "/mettasoul-logo.png",
   },
 };
