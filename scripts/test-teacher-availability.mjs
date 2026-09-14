@@ -17,6 +17,8 @@ const {
   isTeacherAvailabilityLocked,
   isTeacherAvailableOnDate,
   isTeacherAvailableForSlot,
+  selectTeacherAvailabilityRowsForChange,
+  teacherAvailabilityRegistrationKey,
   teacherAvailabilityLockDeadline,
   uniqueAvailabilityTimeRanges,
 } = policyModule.exports;
@@ -131,4 +133,18 @@ assert.equal(isTeacherAvailabilityLocked([{ createdAt: confirmedAt }], confirmed
 assert.equal(teacherAvailabilityLockDeadline([{ createdAt: confirmedAt }]), confirmedAtMs + 24 * 60 * 60 * 1000);
 assert.equal(isTeacherAvailabilityLocked([{ createdAt: "invalid" }], confirmedAtMs), true);
 
-console.log("Teacher availability policy tests passed (34 cases).");
+const sameDayRegistrations = [
+  { id: "old", teacherId: "teacher-1", date: "2027-09-09", registrationId: "old-group", status: "available", createdAt: confirmedAt },
+  { id: "new-a", teacherId: "teacher-1", date: "2027-09-09", registrationId: "new-group", status: "available", createdAt: "2027-09-10T01:00:00.000Z" },
+  { id: "new-b", teacherId: "teacher-1", date: "2027-09-09", registrationId: "new-group", status: "available", createdAt: "2027-09-10T01:00:00.000Z" },
+  { id: "legacy", teacherId: "teacher-1", date: "2027-09-09", status: "available", createdAt: confirmedAt },
+  { id: "other-teacher", teacherId: "teacher-2", date: "2027-09-09", registrationId: "new-group", status: "available", createdAt: confirmedAt },
+];
+assert.equal(teacherAvailabilityRegistrationKey(sameDayRegistrations[3]), "legacy:2027-09-09");
+assert.deepEqual(selectTeacherAvailabilityRowsForChange(sameDayRegistrations, "teacher-1", ["2027-09-09"], "create", "").map((row) => row.id), []);
+assert.deepEqual(selectTeacherAvailabilityRowsForChange(sameDayRegistrations, "teacher-1", ["2027-09-09"], "update", "new-group").map((row) => row.id), ["new-a", "new-b"]);
+assert.deepEqual(selectTeacherAvailabilityRowsForChange(sameDayRegistrations, "teacher-1", ["2027-09-09"], "delete", "legacy:2027-09-09").map((row) => row.id), ["legacy"]);
+assert.equal(isTeacherAvailabilityLocked(selectTeacherAvailabilityRowsForChange(sameDayRegistrations, "teacher-1", ["2027-09-09"], "update", "old-group"), confirmedAtMs + 25 * 60 * 60 * 1000), true);
+assert.equal(isTeacherAvailabilityLocked(selectTeacherAvailabilityRowsForChange(sameDayRegistrations, "teacher-1", ["2027-09-09"], "update", "new-group"), confirmedAtMs + 25 * 60 * 60 * 1000), false);
+
+console.log("Teacher availability policy tests passed, including independent registrations on the same day.");

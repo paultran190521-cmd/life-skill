@@ -33,6 +33,27 @@ export type TeacherAvailabilityDraft = {
   timeSlotIds: string[];
 };
 
+export function teacherAvailabilityRegistrationKey(entry: Pick<TeacherAvailability, "date" | "registrationId">) {
+  return entry.registrationId || `legacy:${entry.date}`;
+}
+
+export function selectTeacherAvailabilityRowsForChange<T extends Pick<TeacherAvailability, "teacherId" | "date" | "registrationId" | "status">>(
+  rows: T[],
+  teacherId: string,
+  dates: readonly string[],
+  operation: string,
+  targetRegistrationId: string,
+) {
+  if (operation === "create") return [];
+  const selectedDates = new Set(dates);
+  return rows.filter((row) =>
+    row.teacherId === teacherId &&
+    selectedDates.has(row.date) &&
+    row.status === "available" &&
+    (!["update", "delete"].includes(operation) || teacherAvailabilityRegistrationKey(row) === targetRegistrationId),
+  );
+}
+
 export function buildTeacherAvailabilityEntries(drafts: Record<string, TeacherAvailabilityDraft>) {
   return Object.keys(drafts).sort().map((date) => ({
     date,

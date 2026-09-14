@@ -724,6 +724,7 @@ export const weeklyUpdateHeaders = [
 
 export const teacherAvailabilityHeaders = [
   "id",
+  "registrationId",
   "teacherId",
   "date",
   "scope",
@@ -1099,6 +1100,7 @@ function toWeeklyUpdates(rows: SheetRow[]): WeeklyUpdate[] {
 function toTeacherAvailability(rows: SheetRow[]): TeacherAvailability[] {
   return rows.map((row) => ({
     id: row.id,
+    registrationId: row.registrationId || undefined,
     teacherId: row.teacherId,
     date: row.date,
     scope: parseTeacherAvailabilityScope(row.scope),

@@ -9,7 +9,7 @@ import {
   updateSheetRowById,
 } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
-import { availabilityTimeRangeKey, isTeacherAvailabilityLocked } from "@/lib/teacher-availability";
+import { availabilityTimeRangeKey, isTeacherAvailabilityLocked, selectTeacherAvailabilityRowsForChange } from "@/lib/teacher-availability";
 import type { TeacherAvailability, TeacherAvailabilityScope } from "@/lib/types";
 
 const availabilityScopes: TeacherAvailabilityScope[] = ["all_day", "morning", "afternoon", "time_slots"];
@@ -62,9 +62,14 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json()) as Record<string, unknown>;
+    const operation = String(body.operation || "").trim();
+    if (operation && !["create", "update", "delete"].includes(operation)) {
+      return apiFailure(400, "Thao tác đăng ký không hợp lệ.", undefined, requestId);
+    }
+    const targetRegistrationId = String(body.registrationId || "").trim();
     const rawEntries = Array.isArray(body.entries) ? body.entries : null;
     const rawScope = String(body.scope || "").trim();
-    const isWithdraw = rawEntries === null && rawScope === "none";
+    const isWithdraw = operation === "delete" || (rawEntries === null && rawScope === "none");
     const parsedEntries = rawEntries?.map(parseAvailabilityInput) ?? null;
     if (parsedEntries?.some((entry) => entry === null)) {
       return apiFailure(400, "Có ngày hoặc lựa chọn thời gian không hợp lệ.", undefined, requestId);
@@ -74,12 +79,15 @@ export async function POST(request: Request) {
       : isWithdraw
         ? []
         : parseLegacyAvailabilityInputs(body);
-    const dates = rawEntries === null ? parseDates(body.dates) : entries.map((entry) => entry.date);
+    const dates = isWithdraw ? parseDates(body.dates) : rawEntries === null ? parseDates(body.dates) : entries.map((entry) => entry.date);
     if (dates.length === 0 || dates.length > 62) {
       return apiFailure(400, "Hãy chọn từ 1 đến 62 ngày để đăng ký.", undefined, requestId);
     }
     if (new Set(dates).size !== dates.length) {
       return apiFailure(400, "Mỗi ngày chỉ được thiết lập một lựa chọn thời gian.", undefined, requestId);
+    }
+    if (["update", "delete"].includes(operation) && (dates.length !== 1 || !targetRegistrationId)) {
+      return apiFailure(400, "Hãy chọn đúng một lượt đăng ký để sửa hoặc xóa.", undefined, requestId);
     }
     const today = currentVietnamDateKey();
     if (dates.some((date) => date < today)) {
@@ -106,13 +114,24 @@ export async function POST(request: Request) {
       return apiFailure(400, "Có khung giờ không còn hoạt động. Vui lòng tải lại và chọn lại.", undefined, requestId);
     }
 
-    const selectedDates = new Set(dates);
-    const rowsToWithdraw = existingRows.filter(
-      (row) =>
-        String(row.teacherId || "") === teacherId &&
-        selectedDates.has(String(row.date || "")) &&
-        String(row.status || "available") === "available",
+    const rowsToWithdraw = selectTeacherAvailabilityRowsForChange(
+      existingRows.map((row) => ({
+        ...row,
+        id: String(row.id || ""),
+        teacherId: String(row.teacherId || ""),
+        date: String(row.date || ""),
+        registrationId: String(row.registrationId || "") || undefined,
+        createdAt: String(row.createdAt || ""),
+        status: String(row.status || "available") === "withdrawn" ? "withdrawn" as const : "available" as const,
+      })),
+      teacherId,
+      dates,
+      operation,
+      targetRegistrationId,
     );
+    if (["update", "delete"].includes(operation) && rowsToWithdraw.length === 0) {
+      return apiFailure(404, "Lượt đăng ký không còn tồn tại. Vui lòng tải lại danh sách.", undefined, requestId);
+    }
     const nowDate = new Date();
     const lockedDates = dates.filter((date) => {
       const dateRows = rowsToWithdraw
@@ -129,6 +148,7 @@ export async function POST(request: Request) {
       );
     }
     const now = nowDate.toISOString();
+    const newRegistrationIds = new Map(dates.map((date) => [date, createId("availability-registration")]));
     const originalCreatedAtByDate = new Map<string, string>();
     for (const row of rowsToWithdraw) {
       const date = String(row.date || "");
@@ -148,6 +168,9 @@ export async function POST(request: Request) {
           const selectedSlots = entry.scope === "time_slots" ? entry.timeSlotIds : [""];
           return selectedSlots.map((timeSlotId) => ({
             id: createId("availability"),
+            registrationId: operation === "update" && !targetRegistrationId.startsWith("legacy:")
+              ? targetRegistrationId
+              : newRegistrationIds.get(entry.date),
             teacherId,
             date: entry.date,
             scope: entry.scope,
@@ -164,7 +187,7 @@ export async function POST(request: Request) {
     await appendAuditLog({
       requestId,
       actor: auth.user,
-      action: isWithdraw ? "teacherAvailability.withdraw" : "teacherAvailability.replace",
+      action: isWithdraw ? "teacherAvailability.withdraw" : operation === "create" ? "teacherAvailability.create" : "teacherAvailability.replace",
       entityType: "TeacherAvailability",
       entityId: teacherId,
       route: "/api/teacher-availability",
@@ -174,13 +197,14 @@ export async function POST(request: Request) {
       reason: permission.reason,
       source: auth.source,
       before: { activeRows: rowsToWithdraw.length },
-      after: { dates, scope: isWithdraw ? "none" : "per_date", entries, createdRows: rowsToCreate.length },
+      after: { dates, registrationId: targetRegistrationId || undefined, scope: isWithdraw ? "none" : "per_date", entries, createdRows: rowsToCreate.length },
     });
 
+    const withdrawnIds = new Set(rowsToWithdraw.map((row) => String(row.id || "")));
     const untouched = existingRows.filter(
       (row) =>
         String(row.teacherId || "") === teacherId &&
-        !selectedDates.has(String(row.date || "")) &&
+        !withdrawnIds.has(String(row.id || "")) &&
         String(row.status || "available") === "available",
     );
     return NextResponse.json({ availability: [...untouched, ...rowsToCreate] });

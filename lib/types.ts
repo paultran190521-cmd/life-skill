@@ -22,6 +22,7 @@ export type TeacherAvailabilityScope = "all_day" | "morning" | "afternoon" | "ti
 
 export type TeacherAvailability = {
   id: string;
+  registrationId?: string;
   teacherId: string;
   date: string;
   scope: TeacherAvailabilityScope;
