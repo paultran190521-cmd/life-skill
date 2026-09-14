@@ -45,7 +45,6 @@ import {
 } from "lucide-react";
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import Image from "next/image";
 import { SchoolGuidePanel } from "@/components/school-guide-panel";
 import { statusLabels, statusStyles } from "@/lib/status";
 import {
@@ -4602,7 +4601,7 @@ export function MettasoulApp() {
                           {message.content ? <ChatMessageContent content={message.content} inverse={mine} /> : null}
                           {attachments.length ? <div className="mt-2 flex flex-wrap gap-2">{attachments.map((attachment) => attachment.kind === "image" ? (
                             <button key={attachment.id} type="button" onClick={() => setLessonPlanChatImage(attachment)} className="group relative h-28 w-40 overflow-hidden rounded-xl border border-white/30 bg-slate-100">
-                              <Image src={attachment.url} alt={attachment.fileName} fill unoptimized sizes="160px" className="object-cover" />
+                              <img src={attachment.url} alt={attachment.fileName} className="h-full w-full object-cover" />
                               <span className="absolute inset-0 grid place-items-center bg-slate-950/0 text-white opacity-0 transition group-hover:bg-slate-950/35 group-hover:opacity-100"><Maximize2 size={20} /></span>
                             </button>
                           ) : (
@@ -4629,7 +4628,7 @@ export function MettasoulApp() {
           {lessonPlanChatImage ? (
             <ViewportPortal>
               <div className="app-modal-overlay z-[90] grid place-items-center bg-slate-950/90 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setLessonPlanChatImage(null); }}>
-                <div className="relative h-[88dvh] w-full max-w-6xl"><Image src={lessonPlanChatImage.url} alt={lessonPlanChatImage.fileName} fill unoptimized sizes="100vw" className="object-contain" /><button type="button" title="Đóng ảnh" onClick={() => setLessonPlanChatImage(null)} className="absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-xl bg-white/90 text-slate-800"><X size={18} /></button></div>
+                <div className="relative h-[88dvh] w-full max-w-6xl"><img src={lessonPlanChatImage.url} alt={lessonPlanChatImage.fileName} className="h-full w-full object-contain" /><button type="button" title="Đóng ảnh" onClick={() => setLessonPlanChatImage(null)} className="absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-xl bg-white/90 text-slate-800"><X size={18} /></button></div>
               </div>
             </ViewportPortal>
           ) : null}

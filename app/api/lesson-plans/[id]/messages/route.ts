@@ -38,13 +38,18 @@ export async function GET(request: Request, { params }: Params) {
       .filter((row) => row.lessonPlanId === lessonPlanId)
       .map((row) => ({
         id: row.id, messageId: row.messageId, lessonPlanId: row.lessonPlanId, fileName: row.fileName, mimeType: row.mimeType,
-        sizeBytes: Number(row.sizeBytes || 0), kind: row.kind, driveFileId: row.driveFileId || undefined, url: row.url,
+        sizeBytes: Number(row.sizeBytes || 0), kind: row.kind, driveFileId: row.driveFileId || undefined,
+        url: row.driveFileId ? driveContentUrl(row.driveFileId) : row.url,
         width: row.width ? Number(row.width) : undefined, height: row.height ? Number(row.height) : undefined, createdAt: row.createdAt,
       }));
     return NextResponse.json({ messages, attachments });
   } catch (error) {
     return apiError(error, requestId);
   }
+}
+
+function driveContentUrl(fileId: string) {
+  return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(fileId)}`;
 }
 
 export async function POST(request: Request, { params }: Params) {

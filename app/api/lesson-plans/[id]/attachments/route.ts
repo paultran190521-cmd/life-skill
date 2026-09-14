@@ -28,7 +28,13 @@ export async function POST(request: Request, { params }: Params) {
     const now = new Date().toISOString();
     const message = { id: createId("lpm"), lessonPlanId, senderUserId: auth.user.id, senderName: auth.user.name, senderEmail: auth.user.email, senderRole: auth.user.role, content: String(body.content || "").trim().slice(0, 5_000), createdAt: now, updatedAt: now };
     const uploaded = await uploadChatAttachmentViaGas({ lessonPlanId, fileName, mimeType, fileData, fileSize: bytes.byteLength, requestId });
-    const attachment = { id: createId("lpa"), messageId: message.id, lessonPlanId, fileName, mimeType: uploaded.mimeType, sizeBytes: uploaded.sizeBytes, kind: mimeType.startsWith("image/") ? "image" : "file", driveFileId: uploaded.driveFileId, url: uploaded.driveUrl, width: Number(body.width) || "", height: Number(body.height) || "", createdAt: now };
+    const attachment = {
+      id: createId("lpa"), messageId: message.id, lessonPlanId, fileName, mimeType: uploaded.mimeType,
+      sizeBytes: uploaded.sizeBytes, kind: mimeType.startsWith("image/") ? "image" : "file",
+      driveFileId: uploaded.driveFileId,
+      url: uploaded.driveUrl,
+      width: Number(body.width) || "", height: Number(body.height) || "", createdAt: now,
+    };
     await Promise.all([
       appendSheetRowWithHeaders("LessonPlanMessages", lessonPlanMessageHeaders, message),
       appendSheetRowWithHeaders("LessonPlanAttachments", lessonPlanAttachmentHeaders, attachment),

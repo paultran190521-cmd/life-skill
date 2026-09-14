@@ -404,7 +404,8 @@ function uploadLessonPlanChatAttachment(payload) {
   var targetFolder = folders.hasNext() ? folders.next() : root.createFolder(folderName);
   var bytes = Utilities.base64Decode(asText(payload.fileData));
   var file = targetFolder.createFile(Utilities.newBlob(bytes, asText(payload.mimeType) || "application/octet-stream", asText(payload.fileName)));
-  return { driveFileId: file.getId(), driveUrl: file.getUrl(), sizeBytes: bytes.length, mimeType: file.getMimeType() };
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return { driveFileId: file.getId(), driveUrl: "https://drive.google.com/uc?export=view&id=" + encodeURIComponent(file.getId()), sizeBytes: bytes.length, mimeType: file.getMimeType() };
 }
 
 function validateChatAttachmentPayload(payload) {
