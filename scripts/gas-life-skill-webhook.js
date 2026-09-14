@@ -1,5 +1,6 @@
 const WEBHOOK_SECRET = "ls_gas_8409e821_f67f_40f0_8a3b_64dbcc1eb42b";
 const LESSON_PLAN_FOLDER_ID = "1Tn0cqAsXjbrLlV8G2MTewMd8TL6P44tD";
+const LESSON_PLAN_CHAT_FOLDER_ID = "1je9scthVhG6im9cv3AGhs5WobMi4wZCg";
 const SPREADSHEET_ID = "1wTbm61GHwmvza94UmNeptTAmhSlLEPHQaoCLC7uMni0";
 
 const APP_NAME = "HỌC VIỆN METTASOUL";
@@ -58,6 +59,11 @@ function doPost(e) {
         message: "Lesson plan uploaded successfully.",
         lessonPlan: uploadResult.lessonPlan,
       });
+    }
+
+    if (payload.action === "uploadLessonPlanChatAttachment") {
+      var attachment = uploadLessonPlanChatAttachment(payload);
+      return json({ ok: true, requestId: requestId, version: GAS_WEBHOOK_VERSION, attachment: attachment });
     }
 
     if (payload.action === "deleteLessonPlan") {
@@ -387,6 +393,27 @@ function uploadLessonPlan(payload, requestId) {
   }
 
   return { lessonPlan: lessonPlan };
+}
+
+function uploadLessonPlanChatAttachment(payload) {
+  validateChatAttachmentPayload(payload);
+  var lessonPlanId = asText(payload.lessonPlanId);
+  var root = DriveApp.getFolderById(LESSON_PLAN_CHAT_FOLDER_ID);
+  var folderName = "lesson-plan-" + lessonPlanId;
+  var folders = root.getFoldersByName(folderName);
+  var targetFolder = folders.hasNext() ? folders.next() : root.createFolder(folderName);
+  var bytes = Utilities.base64Decode(asText(payload.fileData));
+  var file = targetFolder.createFile(Utilities.newBlob(bytes, asText(payload.mimeType) || "application/octet-stream", asText(payload.fileName)));
+  return { driveFileId: file.getId(), driveUrl: file.getUrl(), sizeBytes: bytes.length, mimeType: file.getMimeType() };
+}
+
+function validateChatAttachmentPayload(payload) {
+  if (!asText(payload.lessonPlanId) || !asText(payload.fileName) || !asText(payload.fileData)) {
+    throw appError("UPLOAD_FIELDS_MISSING", "Missing chat attachment fields.");
+  }
+  if (Number(payload.fileSize || 0) > MAX_FILE_SIZE_BYTES) {
+    throw appError("PAYLOAD_TOO_LARGE", "Chat attachment exceeds 10 MB limit.");
+  }
 }
 
 function validateUploadPayload(payload) {

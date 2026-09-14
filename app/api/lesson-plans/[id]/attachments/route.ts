@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
-import { uploadLessonPlanChatFile } from "@/lib/google-drive";
 import { appendSheetRowWithHeaders, lessonPlanAttachmentHeaders, lessonPlanMessageHeaders, readSheetRowById } from "@/lib/google-sheets";
 import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 
@@ -28,8 +27,8 @@ export async function POST(request: Request, { params }: Params) {
 
     const now = new Date().toISOString();
     const message = { id: createId("lpm"), lessonPlanId, senderUserId: auth.user.id, senderName: auth.user.name, senderEmail: auth.user.email, senderRole: auth.user.role, content: String(body.content || "").trim().slice(0, 5_000), createdAt: now, updatedAt: now };
-    const uploaded = await uploadLessonPlanChatFile({ lessonPlanId, fileName, mimeType, bytes });
-    const attachment = { id: createId("lpa"), messageId: message.id, lessonPlanId, fileName, mimeType: uploaded.mimeType, sizeBytes: uploaded.sizeBytes, kind: mimeType.startsWith("image/") ? "image" : "file", driveFileId: uploaded.id, url: uploaded.url, width: Number(body.width) || "", height: Number(body.height) || "", createdAt: now };
+    const uploaded = await uploadChatAttachmentViaGas({ lessonPlanId, fileName, mimeType, fileData, fileSize: bytes.byteLength, requestId });
+    const attachment = { id: createId("lpa"), messageId: message.id, lessonPlanId, fileName, mimeType: uploaded.mimeType, sizeBytes: uploaded.sizeBytes, kind: mimeType.startsWith("image/") ? "image" : "file", driveFileId: uploaded.driveFileId, url: uploaded.driveUrl, width: Number(body.width) || "", height: Number(body.height) || "", createdAt: now };
     await Promise.all([
       appendSheetRowWithHeaders("LessonPlanMessages", lessonPlanMessageHeaders, message),
       appendSheetRowWithHeaders("LessonPlanAttachments", lessonPlanAttachmentHeaders, attachment),
@@ -39,6 +38,18 @@ export async function POST(request: Request, { params }: Params) {
   } catch (error) {
     return apiError(error, requestId);
   }
+}
+
+async function uploadChatAttachmentViaGas(input: { lessonPlanId: string; fileName: string; mimeType: string; fileData: string; fileSize: number; requestId: string }) {
+  const webhookUrl = process.env.GAS_UPLOAD_WEBHOOK_URL || process.env.GAS_MAIL_WEBHOOK_URL;
+  const secret = process.env.GAS_UPLOAD_WEBHOOK_SECRET || process.env.GAS_MAIL_WEBHOOK_SECRET;
+  if (!webhookUrl || !secret) throw new Error("Thiếu cấu hình GAS upload cho tệp chat.");
+  const response = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json;charset=utf-8" }, body: JSON.stringify({ action: "uploadLessonPlanChatAttachment", secret, ...input }) });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result?.ok || !result.attachment?.driveFileId) {
+    throw new Error(result?.error || `Không thể lưu tệp chat vào Drive. HTTP ${response.status}.`);
+  }
+  return result.attachment as { driveFileId: string; driveUrl: string; sizeBytes: number; mimeType: string };
 }
 
 function isSafeMimeType(mimeType: string, fileName: string) {

@@ -561,6 +561,7 @@ export function MettasoulApp() {
   const [lessonPlanChatAttachments, setLessonPlanChatAttachments] = useState<LessonPlanAttachment[]>([]);
   const [lessonPlanChatDraft, setLessonPlanChatDraft] = useState("");
   const [lessonPlanChatImage, setLessonPlanChatImage] = useState<LessonPlanAttachment | null>(null);
+  const [lessonPlanChatSummary, setLessonPlanChatSummary] = useState<Record<string, { total: number; unread: number; latestAt: string }>>({});
   const [teacherOverviewDateFrom, setTeacherOverviewDateFrom] = useState("");
   const [teacherOverviewDateTo, setTeacherOverviewDateTo] = useState("");
   const [teacherOverviewFocus, setTeacherOverviewFocus] = useState<TeacherOverviewFocus | null>(null);
@@ -1076,6 +1077,13 @@ export function MettasoulApp() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (authStatus !== "signed-in") return;
+    void refreshLessonPlanChatSummary();
+    const intervalId = window.setInterval(() => void refreshLessonPlanChatSummary(), 5 * 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [authStatus, currentUser.id]);
+
+  useEffect(() => {
     if (!hasBlockingModal) {
       return;
     }
@@ -1543,6 +1551,10 @@ export function MettasoulApp() {
     "Bấm Điểm danh -> chọn tiết -> bấm Điểm danh -> chuyển trạng thái Đã điểm danh.",
   ];
   const unreadNotifications = roleNotifications.filter((item) => !isNotificationRead(item)).length;
+  const unreadLessonPlanChatCount = useMemo(
+    () => Object.values(lessonPlanChatSummary).reduce((total, summary) => total + summary.unread, 0),
+    [lessonPlanChatSummary],
+  );
   const searchPlaceholder =
     activeTab === "teachers" ? "Tìm nhanh giáo viên theo tên, SĐT, email..." : "Tìm lịch, giáo viên, lớp...";
 
@@ -1767,8 +1779,20 @@ export function MettasoulApp() {
       );
       setLessonPlanChatMessages(response.messages);
       setLessonPlanChatAttachments(response.attachments);
+      const receivedIds = response.messages.filter((message) => message.senderUserId !== currentUser.id).map((message) => message.id);
+      if (receivedIds.length) void persistUserActivity({ notificationIds: receivedIds });
+      void refreshLessonPlanChatSummary();
     } catch (error) {
       handleSaveError(error);
+    }
+  }
+
+  async function refreshLessonPlanChatSummary() {
+    try {
+      const response = await apiRequest<{ byPlan: Record<string, { total: number; unread: number; latestAt: string }> }>("/api/lesson-plans/chat-summary");
+      setLessonPlanChatSummary(response.byPlan);
+    } catch (error) {
+      console.warn("Không tải được tóm tắt chat giáo án.", error);
     }
   }
 
@@ -4313,6 +4337,9 @@ export function MettasoulApp() {
                       {unseenScheduleCount}
                     </span>
                   ) : null}
+                  {item.id === "plans" && unreadLessonPlanChatCount > 0 ? (
+                    <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-violet-600 px-1 text-[11px] font-black text-white">{unreadLessonPlanChatCount}</span>
+                  ) : null}
                   {activeTab === item.id ? <ChevronRight className="ml-auto" size={16} /> : null}
                 </button>
               );
@@ -4482,6 +4509,7 @@ export function MettasoulApp() {
                         {unseenScheduleCount}
                       </span>
                     ) : null}
+                    {item.id === "plans" && unreadLessonPlanChatCount > 0 ? <span className="grid h-4 min-w-4 place-items-center rounded-full bg-violet-600 px-1 text-[9px] font-black text-white">{unreadLessonPlanChatCount}</span> : null}
                     <span className="whitespace-nowrap">{item.label}</span>
                   </button>
                 );
@@ -4570,7 +4598,7 @@ export function MettasoulApp() {
                       const mine = message.senderUserId === currentUser.id;
                       return <div key={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                         <article className={`max-w-[92%] rounded-2xl px-3 py-2.5 ${mine ? "bg-cyan-700 text-white" : "border border-white bg-white text-[var(--brand-dark)] shadow-sm"}`}>
-                          <p className={`text-xs font-black ${mine ? "text-cyan-50" : "text-cyan-800"}`}>{message.senderName} <span className="font-semibold">• {message.senderEmail}</span></p>
+                          <p className={`text-xs font-black ${mine ? "text-cyan-50" : "text-cyan-800"}`}>{message.senderName}</p>
                           {message.content ? <ChatMessageContent content={message.content} inverse={mine} /> : null}
                           {attachments.length ? <div className="mt-2 flex flex-wrap gap-2">{attachments.map((attachment) => attachment.kind === "image" ? (
                             <button key={attachment.id} type="button" onClick={() => setLessonPlanChatImage(attachment)} className="group relative h-28 w-40 overflow-hidden rounded-xl border border-white/30 bg-slate-100">
@@ -4589,7 +4617,7 @@ export function MettasoulApp() {
                   <div className="mt-4 grid gap-2">
                     <textarea value={lessonPlanChatDraft} onChange={(event) => setLessonPlanChatDraft(event.target.value)} onPaste={handleLessonPlanChatPaste} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void sendLessonPlanChatMessage(); } }} rows={3} placeholder="Nhập phản hồi, dán ảnh màn hình, hoặc dán link Drive cho tệp trên 10 MB..." className={`${inputClass} resize-none`} />
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 text-xs font-black text-cyan-800 hover:bg-cyan-100"><Paperclip size={15} />Đính kèm (≤ 10 MB)<input type="file" className="hidden" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void uploadLessonPlanChatAttachment(file, lessonPlanChatDraft); }} /></label>
+                      <label title="Tải ảnh hoặc tệp dưới 10 MB" className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 text-xs font-black text-cyan-800 hover:bg-cyan-100"><UploadCloud size={16} />Tải ảnh/tệp (≤ 10 MB)<input type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv" className="hidden" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void uploadLessonPlanChatAttachment(file, lessonPlanChatDraft); }} /></label>
                       <button type="button" disabled={!lessonPlanChatDraft.trim() || isBusy} onClick={() => void sendLessonPlanChatMessage()} className={primaryButtonClass}><Send size={16} />Gửi phản hồi</button>
                     </div>
                     <p className="text-[11px] font-semibold text-[var(--muted)]">Ảnh dán vào khung sẽ được nén khi cần. Tệp trên 10 MB: upload Drive rồi dán link vào tin nhắn.</p>
@@ -8012,6 +8040,7 @@ export function MettasoulApp() {
   }
 
   function LessonPlanActions({ plan }: { plan: LessonPlan }) {
+    const chat = lessonPlanChatSummary[plan.id];
     return (
       <div className="flex items-center gap-2">
         <button
@@ -8023,6 +8052,7 @@ export function MettasoulApp() {
           <MessageCircle size={14} />
           Phản hồi
         </button>
+        {chat?.total ? <span className={`rounded-full px-2 py-1 text-[10px] font-black ${chat.unread ? "bg-violet-100 text-violet-800" : "bg-slate-100 text-slate-600"}`}>{chat.unread ? `${chat.unread} tin mới` : `${chat.total} tin · đã đọc`}</span> : <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-500">Chưa trao đổi</span>}
         {canManageLessonPlan(plan) ? <>
         <button
           type="button"

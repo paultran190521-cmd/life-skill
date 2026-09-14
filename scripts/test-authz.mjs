@@ -103,6 +103,10 @@ const rules = [
     checks: ['requireSessionUser(request)', "evaluatePermission({", "lesson_plan_chat_not_owner"],
   },
   {
+    file: "app/api/lesson-plans/chat-summary/route.ts",
+    checks: ['requireSessionUser(request, { allowHeaderFallback: false })'],
+  },
+  {
     file: "app/api/notifications/route.ts",
     checks: ['requireSessionUser(request)', "evaluatePermission({", "teacher_feedback_only"],
   },
