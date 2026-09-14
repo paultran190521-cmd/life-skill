@@ -532,6 +532,7 @@ export function MettasoulApp() {
   const [assignmentAvailabilityMonth, setAssignmentAvailabilityMonth] = useState(() => currentMonthKey());
   const [assignmentAvailabilityDate, setAssignmentAvailabilityDate] = useState(() => currentDateKey());
   const [assignmentAvailabilityView, setAssignmentAvailabilityView] = useState<AvailabilityCalendarViewMode>("week");
+  const [availabilityOverviewDate, setAvailabilityOverviewDate] = useState("");
   const [calendarFilters, setCalendarFilters] = useState<CalendarFilters>(() => loadCalendarFilters());
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
   const [selectedReportScheduleIds, setSelectedReportScheduleIds] = useState<string[]>([]);
@@ -737,6 +738,7 @@ export function MettasoulApp() {
       reassignTarget ||
       selectedOperationalAlert ||
       selectedScheduleDetail ||
+      availabilityOverviewDate ||
       teacherOverviewFocus ||
       attendanceAdminFocus ||
       attendanceWarningFocus ||
@@ -771,6 +773,23 @@ export function MettasoulApp() {
     });
   }, [activeLessons, lessonGradeFilter, lessonSearchTerm]);
   const isBusy = Boolean(pendingAction);
+  const availabilityOverviewTeachers = useMemo(() => {
+    if (!availabilityOverviewDate) return [];
+
+    const entriesByTeacher = new Map<string, TeacherAvailability[]>();
+    for (const entry of teacherAvailability) {
+      if (entry.status !== "available" || entry.date !== availabilityOverviewDate) continue;
+      const entries = entriesByTeacher.get(entry.teacherId) ?? [];
+      entries.push(entry);
+      entriesByTeacher.set(entry.teacherId, entries);
+    }
+
+    return Array.from(entriesByTeacher, ([teacherId, entries]) => ({
+      teacherId,
+      teacher: teachers.find((item) => item.id === teacherId),
+      entries: [...entries].sort((left, right) => availabilityEntryLabel(left, timeSlots).localeCompare(availabilityEntryLabel(right, timeSlots), "vi")),
+    })).sort((left, right) => (left.teacher?.name || left.teacherId).localeCompare(right.teacher?.name || right.teacherId, "vi"));
+  }, [availabilityOverviewDate, teacherAvailability, teachers, timeSlots]);
 
   function selectCalendarDate(dateKey: string, { scrollDetail = true }: { scrollDetail?: boolean } = {}) {
     shouldScrollCalendarDetailRef.current = scrollDetail;
@@ -4393,6 +4412,64 @@ export function MettasoulApp() {
             toastMessages={toastMessages}
             onDismissToast={dismissToast}
           />
+          {availabilityOverviewDate ? (
+            <ViewportPortal>
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="availability-overview-title"
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget) setAvailabilityOverviewDate("");
+                }}
+                className="app-modal-overlay z-[70] grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm"
+              >
+                <div data-modal-scroll="true" className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="grid h-12 w-12 place-items-center rounded-2xl bg-cyan-100 text-[var(--brand-dark)]"><Users size={22} /></div>
+                      <h2 id="availability-overview-title" className="mt-4 text-xl font-black text-[var(--brand-dark)]">Giáo viên đã đăng ký lịch trống</h2>
+                      <p className="mt-1 text-sm font-semibold text-[var(--muted)]">{formatDate(availabilityOverviewDate)} · {availabilityOverviewTeachers.length} giáo viên đăng ký</p>
+                    </div>
+                    <button type="button" title="Đóng" aria-label="Đóng danh sách giáo viên đăng ký" onClick={() => setAvailabilityOverviewDate("")} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--brand-dark)] transition hover:bg-cyan-50">
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  {availabilityOverviewTeachers.length > 0 ? (
+                    <div className="mt-5 grid gap-3">
+                      {availabilityOverviewTeachers.map(({ teacherId, teacher, entries }) => (
+                        <article key={teacherId} className="rounded-2xl border border-cyan-100 bg-cyan-50/50 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h3 className="text-sm font-black text-[var(--brand-dark)]">{teacher?.name || teacherId}</h3>
+                              {teacher?.specialty ? <p className="mt-0.5 text-xs font-semibold text-[var(--muted)]">{teacher.specialty}</p> : null}
+                            </div>
+                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${teacherAvailabilityTone(teacherId)}`}>{entries.length} đăng ký</span>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {entries.map((entry) => (
+                              <span key={entry.id} className="rounded-xl border border-white bg-white px-3 py-2 text-xs font-bold text-[var(--brand-dark)] shadow-sm">
+                                {availabilityEntryLabel(entry, timeSlots)}
+                                {entry.note ? <span className="font-semibold text-[var(--muted)]"> · {entry.note}</span> : null}
+                              </span>
+                            ))}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-5 rounded-2xl border border-dashed border-cyan-200 bg-cyan-50/60 px-5 py-10 text-center">
+                      <Users className="mx-auto text-cyan-700" size={28} />
+                      <p className="mt-3 text-sm font-black text-[var(--brand-dark)]">Chưa có giáo viên đăng ký lịch trống</p>
+                      <p className="mt-1 text-xs font-semibold text-[var(--muted)]">Hãy chọn ngày khác hoặc làm mới dữ liệu để kiểm tra lại.</p>
+                    </div>
+                  )}
+
+                  <div className="mt-5 flex justify-end"><button type="button" onClick={() => setAvailabilityOverviewDate("")} className="inline-flex h-11 items-center rounded-xl border border-[var(--line)] bg-white px-4 text-sm font-black text-[var(--brand-dark)] transition hover:bg-cyan-50">Đóng</button></div>
+                </div>
+              </div>
+            </ViewportPortal>
+          ) : null}
           {feedbackModalOpen ? (
             <ViewportPortal>
               <div className="app-modal-overlay z-[70] grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
@@ -5583,6 +5660,7 @@ export function MettasoulApp() {
                   onClick={() => {
                     setAssignmentAvailabilityDate(day.dateKey);
                     setAssignmentAvailabilityMonth(day.dateKey.slice(0, 7));
+                    setAvailabilityOverviewDate(day.dateKey);
                   }}
                   className={`min-h-[130px] rounded-2xl border p-2 text-left transition ${assignmentAvailabilityDate === day.dateKey ? "border-[var(--brand)] bg-cyan-50" : day.inMonth ? "border-[var(--line)] bg-white hover:border-cyan-300" : "border-slate-100 bg-slate-50/70"}`}
                 >
@@ -11103,6 +11181,14 @@ function summarizeAvailabilityEntries(entries: TeacherAvailability[], slots: Tim
     });
   if (slotLabels.length > 0) labels.push(Array.from(new Set(slotLabels)).join(", "));
   return labels.join(" · ") || "Chưa đăng ký";
+}
+
+function availabilityEntryLabel(entry: TeacherAvailability, slots: TimeSlot[]) {
+  if (entry.scope !== "time_slots") {
+    return teacherAvailabilityScopeLabels[entry.scope];
+  }
+  const slot = slots.find((item) => item.id === entry.timeSlotId || availabilityTimeRangeKey(item) === entry.timeSlotId);
+  return slot ? `Khung giờ ${slot.start}–${slot.end}` : "Khung giờ cụ thể";
 }
 
 function teacherAvailabilityTone(teacherId: string) {
