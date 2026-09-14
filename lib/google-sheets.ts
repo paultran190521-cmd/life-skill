@@ -106,13 +106,40 @@ function spreadsheetId() {
   return id;
 }
 
-export async function readSheetRows(sheetName: SheetName) {
-  const response = await getSheetsClient().spreadsheets.values.get({
-    spreadsheetId: spreadsheetId(),
-    range: quoteSheetName(sheetName),
-  });
+// Coalesce concurrent reads (app-data, chat and auth) into one quota request.
+// No stale row cache: writes followed by reads still observe fresh data.
+const pendingReads = new Map<SheetName, Promise<SheetRow[]>>();
+let queuedReads = new Map<SheetName, { resolve: (rows: SheetRow[]) => void; reject: (error: unknown) => void }>();
+export function readSheetRows(sheetName: SheetName): Promise<SheetRow[]> {
+  const pending = pendingReads.get(sheetName);
+  if (pending) return pending;
+  const promise = new Promise<SheetRow[]>((resolve, reject) => {
+    queuedReads.set(sheetName, { resolve, reject });
+    if (queuedReads.size === 1) setTimeout(() => void flushSheetReads(), 0);
+  }).finally(() => { pendingReads.delete(sheetName); });
+  pendingReads.set(sheetName, promise);
+  return promise;
+}
 
-  return toRows(response.data.values || []);
+async function flushSheetReads() {
+  const batch = queuedReads;
+  queuedReads = new Map();
+  try {
+    const rows = await readSheetRowsBatch([...batch.keys()]);
+    for (const [name, waiter] of batch) waiter.resolve(rows[name]);
+  } catch (error) {
+    // An optional sheet may not yet exist. Isolate that failure from core data.
+    if (error instanceof Error && /Unable to parse range/i.test(error.message)) {
+      await Promise.all([...batch].map(async ([name, waiter]) => {
+        try {
+          const result = await getSheetsClient().spreadsheets.values.get({ spreadsheetId: spreadsheetId(), range: quoteSheetName(name) });
+          waiter.resolve(toRows(result.data.values || []));
+        } catch (failure) { waiter.reject(failure); }
+      }));
+    } else {
+      for (const waiter of batch.values()) waiter.reject(error);
+    }
+  }
 }
 
 export async function readSheetRowsCached(
@@ -218,6 +245,10 @@ export async function appendSheetRowWithHeaders(
 }
 
 export async function ensureSheetHeaders(sheetName: SheetName, requiredHeaders: string[]) {
+  const cached = headerCache.get(sheetName);
+  if (cached && cached.expiresAt > Date.now() && requiredHeaders.every((header) => cached.headers.includes(header))) {
+    return cached.headers;
+  }
   await ensureSheetExists(sheetName, requiredHeaders.length);
 
   const client = getSheetsClient();

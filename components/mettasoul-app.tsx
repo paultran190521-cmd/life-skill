@@ -559,6 +559,7 @@ export function MettasoulApp() {
   const [lessonPlanChatMessages, setLessonPlanChatMessages] = useState<LessonPlanMessage[]>([]);
   const [lessonPlanChatAttachments, setLessonPlanChatAttachments] = useState<LessonPlanAttachment[]>([]);
   const [lessonPlanChatDraft, setLessonPlanChatDraft] = useState("");
+  const [lessonPlanChatLoadError, setLessonPlanChatLoadError] = useState("");
   const [lessonPlanChatImage, setLessonPlanChatImage] = useState<LessonPlanAttachment | null>(null);
   const [lessonPlanChatSummary, setLessonPlanChatSummary] = useState<Record<string, { total: number; unread: number; latestAt: string }>>({});
   const [teacherOverviewDateFrom, setTeacherOverviewDateFrom] = useState("");
@@ -1767,6 +1768,7 @@ export function MettasoulApp() {
   }
 
   async function openLessonPlanChat(plan: LessonPlan) {
+    setLessonPlanChatLoadError("");
     setLessonPlanChatPlan(plan);
     setLessonPlanChatMessages([]);
     setLessonPlanChatAttachments([]);
@@ -1782,7 +1784,7 @@ export function MettasoulApp() {
       if (receivedIds.length) void persistUserActivity({ notificationIds: receivedIds });
       void refreshLessonPlanChatSummary();
     } catch (error) {
-      handleSaveError(error);
+      setLessonPlanChatLoadError(error instanceof Error ? error.message : "Không tải được cuộc trò chuyện.");
     }
   }
 
@@ -4611,7 +4613,7 @@ export function MettasoulApp() {
                         </article>
                       </div>;
                     })}
-                    {!lessonPlanChatMessages.length && !isBusy ? <p className="px-3 py-12 text-center text-sm font-semibold text-[var(--muted)]">Chưa có phản hồi. Hãy bắt đầu trao đổi về giáo án này.</p> : null}
+                    {lessonPlanChatLoadError ? <div role="alert" className="p-4 text-center text-sm text-rose-700"><p>{lessonPlanChatLoadError}</p><button type="button" className="mt-3 rounded-xl border px-4 py-2 font-bold" onClick={() => void openLessonPlanChat(lessonPlanChatPlan)}>Tải lại cuộc trò chuyện</button></div> : !lessonPlanChatMessages.length && !isBusy ? <p className="px-3 py-12 text-center text-sm font-semibold text-[var(--muted)]">Chưa có phản hồi. Hãy bắt đầu trao đổi về giáo án này.</p> : null}
                   </div>
                   <div className="mt-4 grid gap-2">
                     <textarea value={lessonPlanChatDraft} onChange={(event) => setLessonPlanChatDraft(event.target.value)} onPaste={handleLessonPlanChatPaste} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void sendLessonPlanChatMessage(); } }} rows={3} placeholder="Nhập phản hồi, dán ảnh màn hình, hoặc dán link Drive cho tệp trên 10 MB..." className={`${inputClass} resize-none`} />

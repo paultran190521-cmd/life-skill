@@ -34,44 +34,19 @@ export async function GET(request: Request, { params }: Params) {
         senderEmail: row.senderEmail, senderRole: row.senderRole, content: row.content || "", createdAt: row.createdAt, updatedAt: row.updatedAt || undefined,
       }))
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-    const attachments = await Promise.all(attachmentRows
+    const attachments = attachmentRows
       .filter((row) => row.lessonPlanId === lessonPlanId)
-      .map(async (row) => {
-        const shared = row.driveFileId ? await shareChatAttachmentViaGas(row.driveFileId, requestId) : null;
+      .map((row) => {
         return {
         id: row.id, messageId: row.messageId, lessonPlanId: row.lessonPlanId, fileName: row.fileName, mimeType: row.mimeType,
         sizeBytes: Number(row.sizeBytes || 0), kind: row.kind, driveFileId: row.driveFileId || undefined,
-        url: shared?.dataUrl || shared?.driveUrl || (row.driveFileId ? driveContentUrl(row.driveFileId) : row.url),
+        url: row.driveFileId && row.kind === "image" ? `/api/lesson-plans/${encodeURIComponent(lessonPlanId)}/attachments/${encodeURIComponent(row.id)}` : row.url,
         width: row.width ? Number(row.width) : undefined, height: row.height ? Number(row.height) : undefined, createdAt: row.createdAt,
         };
-      }));
+      });
     return NextResponse.json({ messages, attachments });
   } catch (error) {
     return apiError(error, requestId);
-  }
-}
-
-function driveContentUrl(fileId: string) {
-  return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(fileId)}`;
-}
-
-async function shareChatAttachmentViaGas(fileId: string, requestId: string) {
-  const webhookUrl = process.env.GAS_UPLOAD_WEBHOOK_URL || process.env.GAS_MAIL_WEBHOOK_URL;
-  const secret = process.env.GAS_UPLOAD_WEBHOOK_SECRET || process.env.GAS_MAIL_WEBHOOK_SECRET;
-  if (!webhookUrl || !secret) return null;
-  try {
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json;charset=utf-8" },
-      body: JSON.stringify({ action: "shareLessonPlanChatAttachment", secret, fileId, requestId }),
-      cache: "no-store",
-    });
-    const result = await response.json().catch(() => null);
-    return response.ok && result?.ok && result.attachment?.driveUrl
-      ? result.attachment as { driveUrl: string; dataUrl?: string }
-      : null;
-  } catch {
-    return null;
   }
 }
 

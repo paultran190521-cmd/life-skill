@@ -40,7 +40,7 @@ export async function POST(request: Request, { params }: Params) {
       appendSheetRowWithHeaders("LessonPlanAttachments", lessonPlanAttachmentHeaders, attachment),
     ]);
     await appendAuditLog({ requestId, actor: auth.user, action: "lesson_plan_chat.attachment.create", entityType: "LessonPlan", entityId: lessonPlanId, route: `/api/lesson-plans/${lessonPlanId}/attachments`, method: "POST", authMode: permission.authMode, decision: permission.decision, reason: permission.reason, source: auth.source, after: { messageId: message.id, attachmentId: attachment.id, sizeBytes: uploaded.sizeBytes } });
-    return NextResponse.json({ message, attachment });
+    return NextResponse.json({ message, attachment: { ...attachment, url: attachment.kind === "image" ? `/api/lesson-plans/${encodeURIComponent(lessonPlanId)}/attachments/${encodeURIComponent(attachment.id)}` : attachment.url } });
   } catch (error) {
     return apiError(error, requestId);
   }
