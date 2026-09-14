@@ -23,6 +23,9 @@ import {
   Menu,
   Megaphone,
   MessageSquare,
+  MessageCircle,
+  Paperclip,
+  Maximize2,
   Pencil,
   Phone,
   Plus,
@@ -42,6 +45,7 @@ import {
 } from "lucide-react";
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import { SchoolGuidePanel } from "@/components/school-guide-panel";
 import { statusLabels, statusStyles } from "@/lib/status";
 import {
@@ -84,6 +88,8 @@ import type {
   Lesson,
   LessonPeriod,
   LessonPlan,
+  LessonPlanAttachment,
+  LessonPlanMessage,
   Notification,
   Role,
   Schedule,
@@ -550,6 +556,11 @@ export function MettasoulApp() {
   const [lessonPlanAdminFocus, setLessonPlanAdminFocus] = useState<LessonPlanAdminFocus>("uploaded");
   const [lessonPlanTeacherFocus, setLessonPlanTeacherFocus] = useState<LessonPlanTeacherFocus>("uploaded");
   const [lessonPlanLinkDrafts, setLessonPlanLinkDrafts] = useState<Record<string, string>>({});
+  const [lessonPlanChatPlan, setLessonPlanChatPlan] = useState<LessonPlan | null>(null);
+  const [lessonPlanChatMessages, setLessonPlanChatMessages] = useState<LessonPlanMessage[]>([]);
+  const [lessonPlanChatAttachments, setLessonPlanChatAttachments] = useState<LessonPlanAttachment[]>([]);
+  const [lessonPlanChatDraft, setLessonPlanChatDraft] = useState("");
+  const [lessonPlanChatImage, setLessonPlanChatImage] = useState<LessonPlanAttachment | null>(null);
   const [teacherOverviewDateFrom, setTeacherOverviewDateFrom] = useState("");
   const [teacherOverviewDateTo, setTeacherOverviewDateTo] = useState("");
   const [teacherOverviewFocus, setTeacherOverviewFocus] = useState<TeacherOverviewFocus | null>(null);
@@ -739,6 +750,8 @@ export function MettasoulApp() {
       selectedOperationalAlert ||
       selectedScheduleDetail ||
       availabilityOverviewDate ||
+      lessonPlanChatPlan ||
+      lessonPlanChatImage ||
       teacherOverviewFocus ||
       attendanceAdminFocus ||
       attendanceWarningFocus ||
@@ -1740,6 +1753,75 @@ export function MettasoulApp() {
     } finally {
       setPendingAction("");
     }
+  }
+
+  async function openLessonPlanChat(plan: LessonPlan) {
+    setLessonPlanChatPlan(plan);
+    setLessonPlanChatMessages([]);
+    setLessonPlanChatAttachments([]);
+    setLessonPlanChatDraft("");
+    try {
+      const response = await saveRequest<{ messages: LessonPlanMessage[]; attachments: LessonPlanAttachment[] }>(
+        "Đang tải trao đổi giáo án...",
+        `/api/lesson-plans/${plan.id}/messages`,
+      );
+      setLessonPlanChatMessages(response.messages);
+      setLessonPlanChatAttachments(response.attachments);
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function sendLessonPlanChatMessage() {
+    if (!lessonPlanChatPlan || !lessonPlanChatDraft.trim()) return;
+    try {
+      const message = await saveRequest<LessonPlanMessage>("Đang gửi phản hồi...", `/api/lesson-plans/${lessonPlanChatPlan.id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ content: lessonPlanChatDraft }),
+      });
+      setLessonPlanChatMessages((items) => [...items, message]);
+      setLessonPlanChatDraft("");
+      setDataStatus("connected");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function uploadLessonPlanChatAttachment(file: File, content = "") {
+    if (!lessonPlanChatPlan) return;
+    if (file.size > maxLessonPlanFileBytes) {
+      pushToast("Tệp vượt quá 10 MB", "Hãy tải tệp lên Google Drive rồi dán link vào khung chat.", "warning");
+      return;
+    }
+    try {
+      const uploadFile = file.type.startsWith("image/") ? await compressChatImage(file) : file;
+      const response = await saveRequest<{ message: LessonPlanMessage; attachment: LessonPlanAttachment }>(
+        uploadFile !== file ? "Đang nén và gửi ảnh..." : "Đang gửi tệp...",
+        `/api/lesson-plans/${lessonPlanChatPlan.id}/attachments`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            fileName: uploadFile.name,
+            mimeType: uploadFile.type || "application/octet-stream",
+            fileData: await fileToBase64(uploadFile),
+            content,
+          }),
+        },
+      );
+      setLessonPlanChatMessages((items) => [...items, response.message]);
+      setLessonPlanChatAttachments((items) => [...items, response.attachment]);
+      setLessonPlanChatDraft("");
+      setDataStatus("connected");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  function handleLessonPlanChatPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const image = Array.from(event.clipboardData.files).find((file) => file.type.startsWith("image/"));
+    if (!image) return;
+    event.preventDefault();
+    void uploadLessonPlanChatAttachment(image, lessonPlanChatDraft);
   }
 
   function initialAvailabilityDraft(dateKey: string): TeacherAvailabilityDraft {
@@ -4467,6 +4549,59 @@ export function MettasoulApp() {
 
                   <div className="mt-5 flex justify-end"><button type="button" onClick={() => setAvailabilityOverviewDate("")} className="inline-flex h-11 items-center rounded-xl border border-[var(--line)] bg-white px-4 text-sm font-black text-[var(--brand-dark)] transition hover:bg-cyan-50">Đóng</button></div>
                 </div>
+              </div>
+            </ViewportPortal>
+          ) : null}
+          {lessonPlanChatPlan ? (
+            <ViewportPortal>
+              <div className="app-modal-overlay z-[80] grid place-items-center overflow-hidden bg-slate-950/45 p-4 backdrop-blur-sm">
+                <div data-modal-scroll="true" className="app-scrollbar flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-cyan-800"><MessageCircle size={20} /><span className="text-xs font-black uppercase">Trao đổi theo giáo án</span></div>
+                      <h2 className="mt-2 truncate text-xl font-black text-[var(--brand-dark)]">{lessonPlanChatPlan.fileName}</h2>
+                      <p className="mt-1 text-xs font-semibold text-[var(--muted)]">Mỗi giáo án có một luồng trao đổi riêng. Người gửi luôn hiển thị theo tài khoản đăng nhập.</p>
+                    </div>
+                    <button type="button" title="Đóng" onClick={() => setLessonPlanChatPlan(null)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--brand-dark)] hover:bg-cyan-50"><X size={18} /></button>
+                  </div>
+                  <div className="mt-4 min-h-52 space-y-3 rounded-2xl border border-cyan-100 bg-slate-50/80 p-3">
+                    {lessonPlanChatMessages.map((message) => {
+                      const attachments = lessonPlanChatAttachments.filter((attachment) => attachment.messageId === message.id);
+                      const mine = message.senderUserId === currentUser.id;
+                      return <div key={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                        <article className={`max-w-[92%] rounded-2xl px-3 py-2.5 ${mine ? "bg-cyan-700 text-white" : "border border-white bg-white text-[var(--brand-dark)] shadow-sm"}`}>
+                          <p className={`text-xs font-black ${mine ? "text-cyan-50" : "text-cyan-800"}`}>{message.senderName} <span className="font-semibold">• {message.senderEmail}</span></p>
+                          {message.content ? <ChatMessageContent content={message.content} inverse={mine} /> : null}
+                          {attachments.length ? <div className="mt-2 flex flex-wrap gap-2">{attachments.map((attachment) => attachment.kind === "image" ? (
+                            <button key={attachment.id} type="button" onClick={() => setLessonPlanChatImage(attachment)} className="group relative h-28 w-40 overflow-hidden rounded-xl border border-white/30 bg-slate-100">
+                              <Image src={attachment.url} alt={attachment.fileName} fill unoptimized sizes="160px" className="object-cover" />
+                              <span className="absolute inset-0 grid place-items-center bg-slate-950/0 text-white opacity-0 transition group-hover:bg-slate-950/35 group-hover:opacity-100"><Maximize2 size={20} /></span>
+                            </button>
+                          ) : (
+                            <a key={attachment.id} href={attachment.url} target="_blank" rel="noreferrer" className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black ${mine ? "bg-white/15 text-white" : "bg-cyan-50 text-cyan-800"}`}><Paperclip size={14} />{attachment.fileName}</a>
+                          ))}</div> : null}
+                          <p className={`mt-2 text-[10px] font-semibold ${mine ? "text-cyan-100" : "text-[var(--muted)]"}`}>{formatDateTime(message.createdAt)}</p>
+                        </article>
+                      </div>;
+                    })}
+                    {!lessonPlanChatMessages.length && !isBusy ? <p className="px-3 py-12 text-center text-sm font-semibold text-[var(--muted)]">Chưa có phản hồi. Hãy bắt đầu trao đổi về giáo án này.</p> : null}
+                  </div>
+                  <div className="mt-4 grid gap-2">
+                    <textarea value={lessonPlanChatDraft} onChange={(event) => setLessonPlanChatDraft(event.target.value)} onPaste={handleLessonPlanChatPaste} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void sendLessonPlanChatMessage(); } }} rows={3} placeholder="Nhập phản hồi, dán ảnh màn hình, hoặc dán link Drive cho tệp trên 10 MB..." className={`${inputClass} resize-none`} />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 text-xs font-black text-cyan-800 hover:bg-cyan-100"><Paperclip size={15} />Đính kèm (≤ 10 MB)<input type="file" className="hidden" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void uploadLessonPlanChatAttachment(file, lessonPlanChatDraft); }} /></label>
+                      <button type="button" disabled={!lessonPlanChatDraft.trim() || isBusy} onClick={() => void sendLessonPlanChatMessage()} className={primaryButtonClass}><Send size={16} />Gửi phản hồi</button>
+                    </div>
+                    <p className="text-[11px] font-semibold text-[var(--muted)]">Ảnh dán vào khung sẽ được nén khi cần. Tệp trên 10 MB: upload Drive rồi dán link vào tin nhắn.</p>
+                  </div>
+                </div>
+              </div>
+            </ViewportPortal>
+          ) : null}
+          {lessonPlanChatImage ? (
+            <ViewportPortal>
+              <div className="app-modal-overlay z-[90] grid place-items-center bg-slate-950/90 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setLessonPlanChatImage(null); }}>
+                <div className="relative h-[88dvh] w-full max-w-6xl"><Image src={lessonPlanChatImage.url} alt={lessonPlanChatImage.fileName} fill unoptimized sizes="100vw" className="object-contain" /><button type="button" title="Đóng ảnh" onClick={() => setLessonPlanChatImage(null)} className="absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-xl bg-white/90 text-slate-800"><X size={18} /></button></div>
               </div>
             </ViewportPortal>
           ) : null}
@@ -7877,8 +8012,18 @@ export function MettasoulApp() {
   }
 
   function LessonPlanActions({ plan }: { plan: LessonPlan }) {
-    return canManageLessonPlan(plan) ? (
+    return (
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          title="Phản hồi giáo án"
+          onClick={() => void openLessonPlanChat(plan)}
+          className="inline-flex h-8 items-center gap-1 rounded-lg bg-violet-50 px-2 text-xs font-black text-violet-800 transition hover:bg-violet-100"
+        >
+          <MessageCircle size={14} />
+          Phản hồi
+        </button>
+        {canManageLessonPlan(plan) ? <>
         <button
           type="button"
           title="Sửa tên giáo án"
@@ -7895,8 +8040,9 @@ export function MettasoulApp() {
         >
           <Trash2 size={14} />
         </button>
+        </> : null}
       </div>
-    ) : null;
+    );
   }
 
   function LessonPlanUploadButton({ schedule, compact = false }: { schedule: Schedule; compact?: boolean }) {
@@ -11063,6 +11209,28 @@ async function fileToBase64(file: File) {
   });
 
   return dataUrl.split(",")[1] || "";
+}
+
+async function compressChatImage(file: File) {
+  if (file.size <= 2 * 1024 * 1024 || !file.type.startsWith("image/")) return file;
+  const source = await createImageBitmap(file);
+  const longestEdge = Math.max(source.width, source.height);
+  const scale = Math.min(1, 2560 / longestEdge);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(source.width * scale));
+  canvas.height = Math.max(1, Math.round(source.height * scale));
+  canvas.getContext("2d")?.drawImage(source, 0, 0, canvas.width, canvas.height);
+  source.close();
+  const compressed = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.9));
+  if (!compressed || compressed.size >= file.size) return file;
+  return new File([compressed], `${file.name.replace(/\.[^.]+$/, "") || "anh-chup-man-hinh"}.webp`, { type: "image/webp" });
+}
+
+function ChatMessageContent({ content, inverse = false }: { content: string; inverse?: boolean }) {
+  const parts = content.split(/(https?:\/\/[^\s]+)/g);
+  return <p className={`mt-1 whitespace-pre-wrap break-words text-sm leading-6 ${inverse ? "text-white" : "text-[var(--brand-dark)]"}`}>
+    {parts.map((part, index) => /^https?:\/\//.test(part) ? <a key={`${part}-${index}`} href={part} target="_blank" rel="noreferrer" className="font-black underline underline-offset-2">{part}</a> : part)}
+  </p>;
 }
 
 function isSupportedLessonPlanFile(file: File) {

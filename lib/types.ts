@@ -136,6 +136,35 @@ export type LessonPlan = {
   source?: "upload" | "external_link";
 };
 
+export type LessonPlanMessage = {
+  id: string;
+  lessonPlanId: string;
+  senderUserId: string;
+  senderName: string;
+  senderEmail: string;
+  senderRole: Role;
+  content: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type LessonPlanAttachmentKind = "image" | "file" | "drive_link";
+
+export type LessonPlanAttachment = {
+  id: string;
+  messageId: string;
+  lessonPlanId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  kind: LessonPlanAttachmentKind;
+  driveFileId?: string;
+  url: string;
+  width?: number;
+  height?: number;
+  createdAt: string;
+};
+
 export type Attendance = {
   id: string;
   scheduleId: string;

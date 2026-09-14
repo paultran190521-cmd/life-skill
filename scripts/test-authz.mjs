@@ -95,6 +95,14 @@ const rules = [
     checks: ['requireSessionUser(request)', "evaluatePermission({", "teacher_must_own_lesson_plan"],
   },
   {
+    file: "app/api/lesson-plans/[id]/messages/route.ts",
+    checks: ['requireSessionUser(request)', "evaluatePermission({", "lesson_plan_chat_not_owner"],
+  },
+  {
+    file: "app/api/lesson-plans/[id]/attachments/route.ts",
+    checks: ['requireSessionUser(request)', "evaluatePermission({", "lesson_plan_chat_not_owner"],
+  },
+  {
     file: "app/api/notifications/route.ts",
     checks: ['requireSessionUser(request)', "evaluatePermission({", "teacher_feedback_only"],
   },

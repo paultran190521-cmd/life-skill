@@ -9,6 +9,8 @@ import type {
   Lesson,
   LessonPeriod,
   LessonPlan,
+  LessonPlanAttachment,
+  LessonPlanMessage,
   Notification,
   Role,
   Schedule,
@@ -33,6 +35,8 @@ type SheetName =
   | "TimeSlots"
   | "Schedules"
   | "LessonPlans"
+  | "LessonPlanMessages"
+  | "LessonPlanAttachments"
   | "Attendance"
   | "Notifications"
   | "AuditLogs"
@@ -650,6 +654,14 @@ export const notificationHeaders = [
   "read",
   "createdAt",
   "updatedAt",
+];
+
+export const lessonPlanMessageHeaders = [
+  "id", "lessonPlanId", "senderUserId", "senderName", "senderEmail", "senderRole", "content", "createdAt", "updatedAt",
+];
+
+export const lessonPlanAttachmentHeaders = [
+  "id", "messageId", "lessonPlanId", "fileName", "mimeType", "sizeBytes", "kind", "driveFileId", "url", "width", "height", "createdAt",
 ];
 
 export const userHeaders = [
