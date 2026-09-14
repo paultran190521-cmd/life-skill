@@ -73,7 +73,7 @@ export async function uploadLessonPlanChatFile(input: {
   mimeType: string;
   bytes: Buffer;
 }) {
-  const parentId = String(process.env.GOOGLE_DRIVE_LESSON_PLAN_CHAT_FOLDER_ID || "1CoRFcMAFz0zk_OooXkiIdNKZ_j0QgAIF").trim();
+  const parentId = String(process.env.GOOGLE_DRIVE_LESSON_PLAN_CHAT_FOLDER_ID || "1je9scthVhG6im9cv3AGhs5WobMi4wZCg").trim();
 
   const drive = getDriveClient();
   const folderName = `lesson-plan-${input.lessonPlanId}`;
