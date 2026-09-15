@@ -5,6 +5,10 @@ const workspaceRoot = process.cwd();
 
 const rules = [
   {
+    file: "app/api/schedules/[id]/history/route.ts",
+    checks: ['requireSessionUser(request, { allowHeaderFallback: false })', 'auth.user.role !== "admin"'],
+  },
+  {
     file: "app/api/announcements/route.ts",
     checks: ['requireSessionUser(request)', 'evaluateRolePermission(auth.user, "admin"'],
   },

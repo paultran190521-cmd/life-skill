@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   const requestId = createRequestId("app-data");
   try {
     const auth = await requireSessionUser(request, { allowHeaderFallback: false });
-    const data = await getAppDataFromSheets();
+    const data = await getAppDataFromSheets({ includeHistory: new URL(request.url).searchParams.get("history") !== "lazy" });
     const schools = data.schools.map((school) => ({
       ...school,
       mapUrl: schoolGuideMapUrlForName(school.name),

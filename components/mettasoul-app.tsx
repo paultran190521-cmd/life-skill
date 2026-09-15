@@ -49,6 +49,9 @@ import dynamic from "next/dynamic";
 import type { SchoolGuideCache } from "@/components/school-guide-panel";
 import { PagedList } from "@/components/paged-list";
 import { LessonPlanLinkForm } from "@/components/lesson-plan-link-form";
+import { ChatComposer } from "@/components/chat-composer";
+import { PerformanceDiagnostics } from "@/components/performance-diagnostics";
+import { beginMenuTiming, finishMenuTiming, recordPerformance } from "@/lib/client-performance";
 import { statusLabels, statusStyles } from "@/lib/status";
 import {
   canShareClassTimeSlot,
@@ -526,6 +529,11 @@ export function MettasoulApp() {
   const schoolGuideCache = useRef<SchoolGuideCache | null>(null);
   const chatSummaryLoadingRef = useRef(false);
   const deferredActiveTab = useDeferredValue(activeTab);
+  useEffect(() => {
+    let second = 0;
+    const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => finishMenuTiming(deferredActiveTab)); });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
+  }, [deferredActiveTab]);
   const [appUsers, setAppUsers] = useState<User[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
   const [sessionUserId, setSessionUserId] = useState("");
@@ -541,6 +549,12 @@ export function MettasoulApp() {
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [historyLoadError, setHistoryLoadError] = useState("");
+  const [weeklyLoadError, setWeeklyLoadError] = useState("");
+  const [weeklyLoaded, setWeeklyLoaded] = useState(false);
+  const [calendarRefreshing, setCalendarRefreshing] = useState(false);
+  const [calendarRefreshError, setCalendarRefreshError] = useState("");
+  const mutationRevision = useRef(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appAnnouncements, setAppAnnouncements] = useState<AppAnnouncement[]>([]);
   const [dataStatus, setDataStatus] = useState<"loading" | "connected" | "offline">("loading");
@@ -594,7 +608,9 @@ export function MettasoulApp() {
   const [lessonPlanChatPlan, setLessonPlanChatPlan] = useState<LessonPlan | null>(null);
   const [lessonPlanChatMessages, setLessonPlanChatMessages] = useState<LessonPlanMessage[]>([]);
   const [lessonPlanChatAttachments, setLessonPlanChatAttachments] = useState<LessonPlanAttachment[]>([]);
-  const [lessonPlanChatDraft, setLessonPlanChatDraft] = useState("");
+  const [lessonPlanChatCursor, setLessonPlanChatCursor] = useState<string | null>(null);
+  const chatLoadSequence = useRef(0);
+  const activeChatId = useRef<string | null>(null);
   const [lessonPlanChatLoadError, setLessonPlanChatLoadError] = useState("");
   const [lessonPlanChatImage, setLessonPlanChatImage] = useState<LessonPlanAttachment | null>(null);
   const [lessonPlanChatSummary, setLessonPlanChatSummary] = useState<Record<string, { total: number; unread: number; latestAt: string }>>({});
@@ -903,7 +919,7 @@ export function MettasoulApp() {
 
     async function loadAppData() {
       try {
-        const data = await apiRequest<AppData>("/api/app-data");
+        const data = await apiRequest<AppData>("/api/app-data?history=lazy");
         if (cancelled) {
           return;
         }
@@ -952,6 +968,29 @@ export function MettasoulApp() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (authStatus !== "signed-in" || role !== "admin" || activeTab !== "assignment" || weeklyLoaded || dataStatus !== "connected") return;
+    let cancelled = false;
+    setWeeklyLoadError("");
+    void apiRequest<WeeklyUpdate[]>("/api/weekly-updates").then((rows) => {
+      if (!cancelled) {
+        setWeeklyUpdates((current) => [...current, ...rows.filter((row) => !current.some((item) => item.id === row.id))]);
+        setWeeklyLoaded(true);
+      }
+    }).catch(() => { if (!cancelled) setWeeklyLoadError("Không tải được cập nhật tuần. Hãy chuyển menu rồi quay lại để thử lại."); });
+    return () => { cancelled = true; };
+  }, [activeTab, authStatus, role, weeklyLoaded, dataStatus]);
+
+  useEffect(() => {
+    if (authStatus !== "signed-in" || role !== "admin" || !expandedHistoryScheduleId) return;
+    let cancelled = false;
+    setHistoryLoadError("");
+    void apiRequest<AuditLog[]>(`/api/schedules/${encodeURIComponent(expandedHistoryScheduleId)}/history`).then((rows) => {
+      if (!cancelled) setAuditLogs((current) => [...current.filter((row) => row.entityId !== expandedHistoryScheduleId), ...rows]);
+    }).catch(() => { if (!cancelled) setHistoryLoadError("Không tải được lịch sử. Hãy đóng và mở lại mục lịch sử để thử lại."); });
+    return () => { cancelled = true; };
+  }, [expandedHistoryScheduleId, authStatus, role]);
 
   useEffect(() => {
     if (authStatus !== "signed-in" || role !== "admin" || activeTab !== "assignment") return;
@@ -1317,6 +1356,25 @@ export function MettasoulApp() {
     () => visibleSchedules.filter((schedule) => schedule.date === selectedCalendarDate),
     [selectedCalendarDate, visibleSchedules],
   );
+  const calendarRangeFrom = calendarDays[0]?.dateKey || "";
+  const calendarRangeTo = calendarDays[calendarDays.length - 1]?.dateKey || "";
+  useEffect(() => {
+    if (activeTab !== "calendar" || authStatus !== "signed-in" || dataStatus !== "connected" || pendingAction || !calendarRangeFrom || !calendarRangeTo) return;
+    const controller = new AbortController();
+    const revision = mutationRevision.current;
+    setCalendarRefreshing(true);
+    setCalendarRefreshError("");
+    void apiRequest<Schedule[]>(`/api/schedules?typed=1&from=${calendarRangeFrom}&to=${calendarRangeTo}`, { signal: controller.signal }).then((rows) => {
+      if (controller.signal.aborted || revision !== mutationRevision.current) return;
+      setSchedules((current) => {
+        const outside = current.filter((row) => row.date < calendarRangeFrom || row.date > calendarRangeTo);
+        return [...outside, ...rows];
+      });
+    }).catch(() => {
+      if (!controller.signal.aborted) setCalendarRefreshError("Chưa làm mới được khoảng ngày đang xem. Dữ liệu đang hiển thị là bản đã tải trước đó.");
+    }).finally(() => { if (!controller.signal.aborted) setCalendarRefreshing(false); });
+    return () => { controller.abort(); };
+  }, [activeTab, authStatus, dataStatus, pendingAction, calendarRangeFrom, calendarRangeTo, sessionUserId]);
   const calendarStats = useMemo(() => buildCalendarStats(visibleSchedules), [visibleSchedules]);
   const primaryTeacherAttendance = useMemo(
     () => attendance.filter((record) => scheduleById.get(record.scheduleId)?.teacherId === record.teacherId),
@@ -1805,6 +1863,7 @@ export function MettasoulApp() {
   }
 
   async function saveRequest<T>(label: string, url: string, init?: RequestInit) {
+    if (init?.method && init.method !== "GET") mutationRevision.current++;
     setPendingAction(label);
     try {
       const headers = new Headers(init?.headers);
@@ -1820,23 +1879,30 @@ export function MettasoulApp() {
     }
   }
 
-  async function openLessonPlanChat(plan: LessonPlan) {
+  async function openLessonPlanChat(plan: LessonPlan, before?: string) {
+    const sequence = ++chatLoadSequence.current;
+    activeChatId.current = plan.id;
     setLessonPlanChatLoadError("");
     setLessonPlanChatPlan(plan);
-    setLessonPlanChatMessages([]);
-    setLessonPlanChatAttachments([]);
-    setLessonPlanChatDraft("");
+    if (!before) {
+      setLessonPlanChatMessages([]);
+      setLessonPlanChatAttachments([]);
+      setLessonPlanChatCursor(null);
+    }
     try {
-      const response = await saveRequest<{ messages: LessonPlanMessage[]; attachments: LessonPlanAttachment[] }>(
+      const response = await saveRequest<{ messages: LessonPlanMessage[]; attachments: LessonPlanAttachment[]; nextCursor: string | null }>(
         "Đang tải trao đổi giáo án...",
-        `/api/lesson-plans/${plan.id}/messages`,
+        `/api/lesson-plans/${plan.id}/messages${before ? `?before=${encodeURIComponent(before)}` : ""}`,
       );
-      setLessonPlanChatMessages(response.messages);
-      setLessonPlanChatAttachments(response.attachments);
+      if (sequence !== chatLoadSequence.current) return;
+      setLessonPlanChatMessages((current) => before ? [...response.messages, ...current.filter((item) => !response.messages.some((row) => row.id === item.id))] : response.messages);
+      setLessonPlanChatAttachments((current) => before ? [...response.attachments, ...current.filter((item) => !response.attachments.some((row) => row.id === item.id))] : response.attachments);
+      setLessonPlanChatCursor(response.nextCursor);
       const receivedIds = response.messages.filter((message) => message.senderUserId !== currentUser.id).map((message) => message.id);
       if (receivedIds.length) void persistUserActivity({ notificationIds: receivedIds });
       void refreshLessonPlanChatSummary();
     } catch (error) {
+      if (sequence !== chatLoadSequence.current) return;
       setLessonPlanChatLoadError(error instanceof Error ? error.message : "Không tải được cuộc trò chuyện.");
     }
   }
@@ -1862,26 +1928,29 @@ export function MettasoulApp() {
     }
   }
 
-  async function sendLessonPlanChatMessage() {
-    if (!lessonPlanChatPlan || !lessonPlanChatDraft.trim()) return;
+  async function sendLessonPlanChatMessage(content: string): Promise<boolean> {
+    if (!lessonPlanChatPlan || !content.trim()) return false;
+    const planId = lessonPlanChatPlan.id;
     try {
       const message = await saveRequest<LessonPlanMessage>("Đang gửi phản hồi...", `/api/lesson-plans/${lessonPlanChatPlan.id}/messages`, {
         method: "POST",
-        body: JSON.stringify({ content: lessonPlanChatDraft }),
+        body: JSON.stringify({ content }),
       });
-      setLessonPlanChatMessages((items) => [...items, message]);
-      setLessonPlanChatDraft("");
+      if (activeChatId.current === planId) setLessonPlanChatMessages((items) => [...items, message]);
       setDataStatus("connected");
+      return true;
     } catch (error) {
       handleSaveError(error);
+      return false;
     }
   }
 
-  async function uploadLessonPlanChatAttachment(file: File, content = "") {
-    if (!lessonPlanChatPlan) return;
+  async function uploadLessonPlanChatAttachment(file: File, content = ""): Promise<boolean> {
+    if (!lessonPlanChatPlan) return false;
+    const planId = lessonPlanChatPlan.id;
     if (file.size > maxLessonPlanFileBytes) {
       pushToast("Tệp vượt quá 10 MB", "Hãy tải tệp lên Google Drive rồi dán link vào khung chat.", "warning");
-      return;
+      return false;
     }
     try {
       const uploadFile = file.type.startsWith("image/") ? await compressChatImage(file) : file;
@@ -1898,20 +1967,16 @@ export function MettasoulApp() {
           }),
         },
       );
-      setLessonPlanChatMessages((items) => [...items, response.message]);
-      setLessonPlanChatAttachments((items) => [...items, response.attachment]);
-      setLessonPlanChatDraft("");
+      if (activeChatId.current === planId) {
+        setLessonPlanChatMessages((items) => [...items, response.message]);
+        setLessonPlanChatAttachments((items) => [...items, response.attachment]);
+      }
       setDataStatus("connected");
+      return true;
     } catch (error) {
       handleSaveError(error);
+      return false;
     }
-  }
-
-  function handleLessonPlanChatPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
-    const image = Array.from(event.clipboardData.files).find((file) => file.type.startsWith("image/"));
-    if (!image) return;
-    event.preventDefault();
-    void uploadLessonPlanChatAttachment(image, lessonPlanChatDraft);
   }
 
   function initialAvailabilityDraft(existing: TeacherAvailability[]): TeacherAvailabilityDraft {
@@ -4356,6 +4421,7 @@ export function MettasoulApp() {
   }
 
   function changeTab(tabId: TabId) {
+    if (tabId !== activeTab) beginMenuTiming(tabId);
     if (tabId === "calendar") {
       markSchedulesViewed();
     }
@@ -4631,6 +4697,10 @@ export function MettasoulApp() {
           </header>
 
           <AnnouncementTicker announcements={activeAppAnnouncements} />
+          {activeTab === "calendar" && calendarRefreshing ? <p role="status" className="px-4 py-2 text-xs text-cyan-800">Đang làm mới khoảng ngày đang xem…</p> : null}
+          {activeTab === "calendar" && calendarRefreshError ? <p role="alert" className="p-3 text-sm text-amber-800">{calendarRefreshError}</p> : null}
+          {activeTab === "calendar" && historyLoadError ? <p role="alert" className="p-3 text-sm text-rose-700">{historyLoadError}</p> : null}
+          {activeTab === "assignment" && weeklyLoadError ? <p role="alert" className="p-3 text-sm text-rose-700">{weeklyLoadError}</p> : null}
           <div
             aria-busy={deferredActiveTab !== activeTab}
             className={`px-3 pb-28 pt-4 transition-opacity duration-150 sm:px-4 md:p-7 ${
@@ -4761,9 +4831,10 @@ export function MettasoulApp() {
                       <h2 className="mt-2 truncate text-xl font-black text-[var(--brand-dark)]">{lessonPlanChatPlan.fileName}</h2>
                       <p className="mt-1 text-xs font-semibold text-[var(--muted)]">Mỗi giáo án có một luồng trao đổi riêng. Người gửi luôn hiển thị theo tài khoản đăng nhập.</p>
                     </div>
-                    <button type="button" title="Đóng" onClick={() => setLessonPlanChatPlan(null)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--brand-dark)] hover:bg-cyan-50"><X size={18} /></button>
+                    <button type="button" title="Đóng" onClick={() => { activeChatId.current = null; chatLoadSequence.current += 1; setLessonPlanChatPlan(null); }} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--brand-dark)] hover:bg-cyan-50"><X size={18} /></button>
                   </div>
                   <div className="mt-4 min-h-52 space-y-3 rounded-2xl border border-cyan-100 bg-slate-50/80 p-3">
+                    {lessonPlanChatCursor ? <button type="button" disabled={isBusy} className={ghostButtonClass} onClick={() => void openLessonPlanChat(lessonPlanChatPlan, lessonPlanChatCursor)}>Xem tin nhắn cũ hơn</button> : null}
                     {lessonPlanChatMessages.map((message) => {
                       const attachments = lessonPlanChatAttachments.filter((attachment) => attachment.messageId === message.id);
                       const mine = message.senderUserId === currentUser.id;
@@ -4771,9 +4842,11 @@ export function MettasoulApp() {
                         <article className={`max-w-[92%] rounded-2xl px-3 py-2.5 ${mine ? "bg-cyan-700 text-white" : "border border-white bg-white text-[var(--brand-dark)] shadow-sm"}`}>
                           <p className={`text-xs font-black ${mine ? "text-cyan-50" : "text-cyan-800"}`}>{message.senderName}</p>
                           {message.content ? <ChatMessageContent content={message.content} inverse={mine} /> : null}
-                          {attachments.length ? <div className="mt-2 flex flex-wrap gap-2">{attachments.map((attachment) => attachment.kind === "image" ? (
+                          {attachments.length ? <div className="mt-2 flex flex-wrap gap-2">{attachments.map((attachment) => attachment.expired ? (
+                            <span key={attachment.id} className="rounded-xl border border-current/20 p-3 text-xs">Ảnh đã hết thời hạn lưu 5 tháng.</span>
+                          ) : attachment.kind === "image" ? (
                             <button key={attachment.id} type="button" onClick={() => setLessonPlanChatImage(attachment)} className="group relative h-28 w-40 overflow-hidden rounded-xl border border-white/30 bg-slate-100">
-                              <img src={attachment.url} alt={attachment.fileName} className="h-full w-full object-cover" />
+                              <img src={attachment.url} alt={attachment.fileName} loading="lazy" decoding="async" width={160} height={112} className="h-full w-full object-cover" />
                               <span className="absolute inset-0 grid place-items-center bg-slate-950/0 text-white opacity-0 transition group-hover:bg-slate-950/35 group-hover:opacity-100"><Maximize2 size={20} /></span>
                             </button>
                           ) : (
@@ -4785,14 +4858,7 @@ export function MettasoulApp() {
                     })}
                     {lessonPlanChatLoadError ? <div role="alert" className="p-4 text-center text-sm text-rose-700"><p>{lessonPlanChatLoadError}</p><button type="button" className="mt-3 rounded-xl border px-4 py-2 font-bold" onClick={() => void openLessonPlanChat(lessonPlanChatPlan)}>Tải lại cuộc trò chuyện</button></div> : !lessonPlanChatMessages.length && !isBusy ? <p className="px-3 py-12 text-center text-sm font-semibold text-[var(--muted)]">Chưa có phản hồi. Hãy bắt đầu trao đổi về giáo án này.</p> : null}
                   </div>
-                  <div className="mt-4 grid gap-2">
-                    <textarea value={lessonPlanChatDraft} onChange={(event) => setLessonPlanChatDraft(event.target.value)} onPaste={handleLessonPlanChatPaste} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void sendLessonPlanChatMessage(); } }} rows={3} placeholder="Nhập phản hồi, dán ảnh màn hình, hoặc dán link Drive cho tệp trên 10 MB..." className={`${inputClass} resize-none`} />
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label title="Tải ảnh hoặc tệp dưới 10 MB" className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 text-xs font-black text-cyan-800 hover:bg-cyan-100"><UploadCloud size={16} />Tải ảnh/tệp (≤ 10 MB)<input type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv" className="hidden" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void uploadLessonPlanChatAttachment(file, lessonPlanChatDraft); }} /></label>
-                      <button type="button" disabled={!lessonPlanChatDraft.trim() || isBusy} onClick={() => void sendLessonPlanChatMessage()} className={primaryButtonClass}><Send size={16} />Gửi phản hồi</button>
-                    </div>
-                    <p className="text-[11px] font-semibold text-[var(--muted)]">Ảnh dán vào khung sẽ được nén khi cần. Tệp trên 10 MB: upload Drive rồi dán link vào tin nhắn.</p>
-                  </div>
+                  <ChatComposer key={lessonPlanChatPlan.id} busy={isBusy} onSend={sendLessonPlanChatMessage} onUpload={uploadLessonPlanChatAttachment} />
                 </div>
               </div>
             </ViewportPortal>
@@ -9116,6 +9182,7 @@ export function MettasoulApp() {
     const upgradeUatChecklistUrl = "/uat-nang-cap-15-09-2026.html";
     return (
       <div className="space-y-5">
+        <PerformanceDiagnostics />
         <Panel
           title="Thông báo chạy đầu ứng dụng"
           action={`${appAnnouncements.filter((item) => item.active).length} đang chạy`}
@@ -11680,12 +11747,14 @@ function sameTeacherAvailability(current: TeacherAvailability[], next: TeacherAv
 }
 
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  const started = performance.now();
   const isFormData = init?.body instanceof FormData;
   const headers = new Headers(init?.headers);
   if (!isFormData && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
+  try {
   const response = await fetch(url, {
     ...init,
     headers,
@@ -11696,7 +11765,11 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(body?.error || `Request failed: ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  return await response.json() as T;
+  } finally {
+    const route = url.split("?")[0].replace(/\/(sch|lp|lpm|lpa|t|u)[-_][^/]+/g, "/:id");
+    recordPerformance(`api:${init?.method || "GET"}:${route}`, performance.now() - started);
+  }
 }
 
 async function fileToBase64(file: File) {

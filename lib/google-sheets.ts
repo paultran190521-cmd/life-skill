@@ -570,7 +570,7 @@ export async function clearSheetData(sheetName: SheetName) {
   return dataRowCount;
 }
 
-export async function getAppDataFromSheets() {
+export async function getAppDataFromSheets(options: { includeHistory?: boolean } = {}) {
   const [
     teachers,
     users,
@@ -604,8 +604,8 @@ export async function getAppDataFromSheets() {
     ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders)
       .then(() => readSheetRows("AppAnnouncements").then(toAppAnnouncements))
       .catch(() => [] as AppAnnouncement[]),
-    readSheetRows("AuditLogs").then(toAuditLogs).catch(() => [] as AuditLog[]),
-    ensureSheetHeaders("WeeklyUpdates", weeklyUpdateHeaders)
+    options.includeHistory === false ? Promise.resolve([] as AuditLog[]) : readSheetRows("AuditLogs").then(toAuditLogs).catch(() => [] as AuditLog[]),
+    options.includeHistory === false ? Promise.resolve([] as WeeklyUpdate[]) : ensureSheetHeaders("WeeklyUpdates", weeklyUpdateHeaders)
       .then(() => readSheetRows("WeeklyUpdates").then(toWeeklyUpdates))
       .catch(() => [] as WeeklyUpdate[]),
     ensureSheetHeaders("TeacherAvailability", teacherAvailabilityHeaders)
@@ -998,7 +998,7 @@ function toTimeSlots(rows: SheetRow[]) {
   }));
 }
 
-function toSchedules(rows: SheetRow[]): Schedule[] {
+export function toSchedules(rows: SheetRow[]): Schedule[] {
   return rows.map((row) => ({
     id: row.id,
     date: row.date,
@@ -1091,7 +1091,7 @@ function toTopics(rows: SheetRow[]): Topic[] {
   }));
 }
 
-function toWeeklyUpdates(rows: SheetRow[]): WeeklyUpdate[] {
+export function toWeeklyUpdates(rows: SheetRow[]): WeeklyUpdate[] {
   return rows.map((row) => ({
     id: row.id,
     weekNumber: Number(row.weekNumber || 0),
@@ -1121,7 +1121,7 @@ function toTeacherAvailability(rows: SheetRow[]): TeacherAvailability[] {
   }));
 }
 
-function toAuditLogs(rows: SheetRow[]): AuditLog[] {
+export function toAuditLogs(rows: SheetRow[]): AuditLog[] {
   return rows.map((row) => ({
     id: row.id,
     actorId: row.actorId,

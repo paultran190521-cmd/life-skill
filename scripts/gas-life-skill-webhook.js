@@ -4,7 +4,7 @@ const LESSON_PLAN_CHAT_FOLDER_ID = "1je9scthVhG6im9cv3AGhs5WobMi4wZCg";
 const SPREADSHEET_ID = "1wTbm61GHwmvza94UmNeptTAmhSlLEPHQaoCLC7uMni0";
 
 const APP_NAME = "HỌC VIỆN METTASOUL";
-const GAS_WEBHOOK_VERSION = "mettasoul-gas-2026-05-28";
+const GAS_WEBHOOK_VERSION = "mettasoul-gas-2026-09-15-retention";
 const ACTIVE_SCHEDULE_EMAIL_TEMPLATE_VERSION = "mettasoul-schedule-email-2026-05-28";
 const SCHEDULE_EMAIL_SYSTEM_TITLE = "HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -59,6 +59,16 @@ function doPost(e) {
         message: "Lesson plan uploaded successfully.",
         lessonPlan: uploadResult.lessonPlan,
       });
+    }
+
+    if (payload.action === "chatImageRetentionStatus") {
+      return json({ ok: true, version: GAS_WEBHOOK_VERSION, retention: chatImageRetentionStatus() });
+    }
+    if (payload.action === "installChatImageRetention") {
+      return json({ ok: true, version: GAS_WEBHOOK_VERSION, retention: installChatImageRetention() });
+    }
+    if (payload.action === "cleanupExpiredChatImages") {
+      return json({ ok: true, version: GAS_WEBHOOK_VERSION, retention: cleanupExpiredChatImages({ dryRun: payload.dryRun !== false }) });
     }
 
     if (payload.action === "uploadLessonPlanChatAttachment") {

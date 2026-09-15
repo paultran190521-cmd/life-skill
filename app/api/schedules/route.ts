@@ -10,7 +10,9 @@ import {
   readSheetRowsCached,
   scheduleHeaders,
   teacherAvailabilityHeaders,
+  toSchedules,
 } from "@/lib/google-sheets";
+import { parseDateRange } from "@/lib/date-range";
 import { deleteSchedulesCascade } from "@/lib/schedule-cascade-delete";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 import { canShareClassTimeSlot, hasTeacherTimeConflict, type GroupClassTimeSlot } from "@/lib/schedule-conflict-policy";
@@ -54,14 +56,21 @@ export async function GET(request: Request) {
   const requestId = createRequestId("schedules-list");
   try {
     const auth = await requireSessionUser(request);
-    const rows = await readSheetRows("Schedules");
+    const query = new URL(request.url).searchParams;
+    let range: ReturnType<typeof parseDateRange>;
+    try { range = parseDateRange(query); } catch { return apiFailure(400, "Khoảng ngày không hợp lệ hoặc vượt quá 63 ngày.", undefined, requestId); }
+    let rows = await readSheetRows("Schedules");
+    if (range) rows = rows.filter((row) => row.date >= range.from && row.date <= range.to);
     if (auth.user.role !== "admin") {
       const teacherId = String(auth.user.teacherId || "").trim();
-      return NextResponse.json(rows.filter((row) => auth.user.role === "assistant"
+      const own = rows.filter((row) => teacherId && (auth.user.role === "assistant"
         ? parseIdList(row.assistantIds).includes(teacherId)
         : String(row.teacherId || "").trim() === teacherId));
+      const groups = new Set(own.map((row) => row.groupId).filter(Boolean));
+      const ids = new Set(own.map((row) => row.id));
+      rows = query.get("typed") === "1" ? rows.filter((row) => ids.has(row.id) || (row.groupId && groups.has(row.groupId))) : own;
     }
-    return NextResponse.json(rows);
+    return NextResponse.json(query.get("typed") === "1" ? toSchedules(rows) : rows, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiError(error, requestId);
   }

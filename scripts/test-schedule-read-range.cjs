@@ -1,0 +1,24 @@
+const fs = require('node:fs');
+const vm = require('node:vm');
+const ts = require('typescript');
+const assert = require('node:assert/strict');
+const text=fs.readFileSync('app/api/schedules/route.ts','utf8');
+const file=ts.createSourceFile('route.ts',text,ts.ScriptTarget.Latest,true);
+const get=file.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='GET').getText(file);
+const range={exports:{}};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/date-range.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,range);
+let role='teacher',teacherId='t1';
+const rows=[{id:'own',date:'2026-09-15',teacherId:'t1',groupId:'g',assistantIds:'a1'},{id:'peer',date:'2026-09-15',teacherId:'t2',groupId:'g'}, {id:'other',date:'2026-09-15',teacherId:'t3'}, {id:'old',date:'2025-01-01',teacherId:'t1'}];
+const context={exports:{},URL,Set,NextResponse:Response,createRequestId:()=> 'test',requireSessionUser:async()=>({user:{role,teacherId}}),readSheetRows:async()=>rows,toSchedules:value=>value,parseIdList:value=>(value||'').split(','),parseDateRange:range.exports.parseDateRange,apiFailure:(status)=>Response.json({}, {status}),apiError:()=>Response.json({}, {status:500})};
+vm.runInNewContext(ts.transpileModule(get,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
+const query='?typed=1&from=2026-09-01&to=2026-09-30';
+const request=(suffix=query)=>context.exports.GET(new Request('https://example.test/api/schedules'+suffix));
+(async()=>{
+ assert.deepEqual((await (await request()).json()).map(row=>row.id),['own','peer']);
+ role='assistant';teacherId='a1';assert.deepEqual((await (await request()).json()).map(row=>row.id),['own','peer']);
+ teacherId='';assert.equal((await (await request()).json()).length,0);
+ role='admin';assert.equal((await (await request()).json()).length,3);
+ assert.equal((await request('?from=2026-99-99&to=2026-09-30')).status,400);
+ assert.equal((await (await request('')).json()).length,4);
+ console.log('Schedule range read passed: bounds, teacher/assistant scope, group peers, empty identity and backward-compatible full read. No network.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

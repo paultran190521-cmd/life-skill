@@ -160,6 +160,7 @@ export type LessonPlanMessage = {
 export type LessonPlanAttachmentKind = "image" | "file" | "drive_link";
 
 export type LessonPlanAttachment = {
+  expired?: boolean;
   id: string;
   messageId: string;
   lessonPlanId: string;

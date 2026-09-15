@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
-import { appendSheetRow, readSheetRows, updateSheetRowById, deleteSheetRowById } from "@/lib/google-sheets";
+import { appendSheetRow, readSheetRows, updateSheetRowById, deleteSheetRowById, toWeeklyUpdates } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 
-export async function GET() {
+export async function GET(request: Request) {
   const requestId = createRequestId("weekly-update");
   try {
-    return NextResponse.json(await readSheetRows("WeeklyUpdates"));
+    const auth = await requireSessionUser(request, { allowHeaderFallback: false });
+    if (auth.user.role !== "admin") return apiFailure(403, "Chỉ quản trị viên được xem cập nhật tuần.", undefined, requestId);
+    return NextResponse.json(toWeeklyUpdates(await readSheetRows("WeeklyUpdates")), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiError(error, requestId);
   }

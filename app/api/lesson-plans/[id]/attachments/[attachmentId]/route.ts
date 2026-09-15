@@ -1,6 +1,7 @@
 import { apiError, apiFailure, createRequestId } from "@/lib/api";
 import { readSheetRowsBatch } from "@/lib/google-sheets";
 import { requireSessionUser } from "@/lib/route-auth";
+import { isExpiredChatImage } from "@/lib/chat-retention";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string; attachmentId: string }> }) {
   const requestId = createRequestId("chat-image");
@@ -13,6 +14,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (auth.user.role !== "admin" && auth.user.teacherId !== plan.teacherId) return apiFailure(403, "Bạn không có quyền xem ảnh này.", undefined, requestId);
     const attachment = rows.LessonPlanAttachments.find((row) => row.id === attachmentId && row.lessonPlanId === id);
     if (!attachment?.driveFileId || attachment.kind !== "image") return apiFailure(404, "Không tìm thấy ảnh.", undefined, requestId);
+    if (isExpiredChatImage(attachment)) return apiFailure(410, "Ảnh đã hết thời hạn lưu 5 tháng.", undefined, requestId);
     const url = process.env.GAS_UPLOAD_WEBHOOK_URL || process.env.GAS_MAIL_WEBHOOK_URL;
     const secret = process.env.GAS_UPLOAD_WEBHOOK_SECRET || process.env.GAS_MAIL_WEBHOOK_SECRET;
     if (!url || !secret) throw new Error("Missing chat image webhook configuration");
