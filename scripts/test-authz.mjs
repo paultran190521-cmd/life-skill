@@ -84,7 +84,11 @@ const rules = [
   },
   {
     file: "app/api/attendance/route.ts",
-    checks: ['requireSessionUser(request)', "evaluatePermission({", "teacher_must_own_schedule_attendance"],
+    checks: ['requireSessionUser(request)', "evaluatePermission({", "participant_must_be_assigned_to_schedule_attendance"],
+  },
+  {
+    file: "app/api/schedules/[id]/assistant-confirm/route.ts",
+    checks: ['requireSessionUser(request, { allowHeaderFallback: false })', "evaluatePermission({", "assistant_must_be_assigned_to_schedule"],
   },
   {
     file: "app/api/lesson-plans/route.ts",

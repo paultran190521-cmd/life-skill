@@ -7,6 +7,8 @@ export type ScheduleCascadeDeleteResult = {
   deletedScheduleIds: string[];
   deletedAttendanceIds: string[];
   deletedLessonPlanIds: string[];
+  deletedLessonPlanMessageIds: string[];
+  deletedLessonPlanAttachmentIds: string[];
   trashedDriveFileIds: string[];
 };
 
@@ -17,20 +19,44 @@ export type ScheduleCascadeDeleteResult = {
  * các bản ghi Sheets bị xóa.
  */
 export async function deleteSchedulesCascade(scheduleIds: string[]): Promise<ScheduleCascadeDeleteResult> {
+  const result = await deleteScheduleDependentData(scheduleIds);
+  await deleteSheetRowsByIds("Schedules", result.deletedScheduleIds);
+  return result;
+}
+
+/**
+ * Xóa dữ liệu phát sinh của lịch nhưng giữ lại chính dòng Schedule. Dùng trước
+ * khi phân công lại để dữ liệu của giáo viên cũ không đi theo người nhận mới.
+ */
+export async function resetScheduleAssignmentData(scheduleIds: string[]): Promise<ScheduleCascadeDeleteResult> {
+  return deleteScheduleDependentData(scheduleIds);
+}
+
+async function deleteScheduleDependentData(scheduleIds: string[]): Promise<ScheduleCascadeDeleteResult> {
   const requestedIds = Array.from(new Set(scheduleIds.map((id) => String(id || "").trim()).filter(Boolean)));
   if (requestedIds.length === 0) {
-    return { deletedScheduleIds: [], deletedAttendanceIds: [], deletedLessonPlanIds: [], trashedDriveFileIds: [] };
+    return {
+      deletedScheduleIds: [],
+      deletedAttendanceIds: [],
+      deletedLessonPlanIds: [],
+      deletedLessonPlanMessageIds: [],
+      deletedLessonPlanAttachmentIds: [],
+      trashedDriveFileIds: [],
+    };
   }
 
-  const { Schedules: schedules, Attendance: attendance, LessonPlans: lessonPlans } = await readSheetRowsBatch(
-    ["Schedules", "Attendance", "LessonPlans"] as const,
+  const rows = await readSheetRowsBatch(
+    ["Schedules", "Attendance", "LessonPlans", "LessonPlanMessages", "LessonPlanAttachments"] as const,
   );
   const requestedIdSet = new Set(requestedIds);
-  const targetSchedules = schedules.filter((schedule) => requestedIdSet.has(String(schedule.id || "").trim()));
+  const targetSchedules = rows.Schedules.filter((schedule) => requestedIdSet.has(String(schedule.id || "").trim()));
   const deletedScheduleIds = targetSchedules.map((schedule) => String(schedule.id || "").trim()).filter(Boolean);
   const deletedIdSet = new Set(deletedScheduleIds);
-  const relatedAttendance = attendance.filter((record) => deletedIdSet.has(String(record.scheduleId || "").trim()));
-  const relatedLessonPlans = lessonPlans.filter((plan) => deletedIdSet.has(String(plan.scheduleId || "").trim()));
+  const relatedAttendance = rows.Attendance.filter((record) => deletedIdSet.has(String(record.scheduleId || "").trim()));
+  const relatedLessonPlans = rows.LessonPlans.filter((plan) => deletedIdSet.has(String(plan.scheduleId || "").trim()));
+  const relatedLessonPlanIdSet = new Set(relatedLessonPlans.map((plan) => String(plan.id || "").trim()).filter(Boolean));
+  const relatedMessages = rows.LessonPlanMessages.filter((message) => relatedLessonPlanIdSet.has(String(message.lessonPlanId || "").trim()));
+  const relatedAttachments = rows.LessonPlanAttachments.filter((attachment) => relatedLessonPlanIdSet.has(String(attachment.lessonPlanId || "").trim()));
   const uploadedLessonPlans = relatedLessonPlans.filter(
     (plan) => plan.source !== "external_link" && String(plan.driveFileId || "").trim(),
   );
@@ -52,15 +78,35 @@ export async function deleteSchedulesCascade(scheduleIds: string[]): Promise<Sch
     trashedDriveFileIds.add(driveFileId);
   }));
 
+  const attachmentDriveFileIds = Array.from(new Set(relatedAttachments
+    .map((attachment) => String(attachment.driveFileId || "").trim())
+    .filter(Boolean)));
+  await Promise.all(attachmentDriveFileIds.map(async (driveFileId) => {
+    if (!await deleteChatAttachmentViaGas(driveFileId)) {
+      await trashDriveFileById(driveFileId);
+    }
+    trashedDriveFileIds.add(driveFileId);
+  }));
+
   const deletedAttendanceIds = relatedAttendance.map((record) => String(record.id || "").trim()).filter(Boolean);
   const deletedLessonPlanIds = relatedLessonPlans.map((plan) => String(plan.id || "").trim()).filter(Boolean);
+  const deletedLessonPlanMessageIds = relatedMessages.map((message) => String(message.id || "").trim()).filter(Boolean);
+  const deletedLessonPlanAttachmentIds = relatedAttachments.map((attachment) => String(attachment.id || "").trim()).filter(Boolean);
   await Promise.all([
     deleteSheetRowsByIds("Attendance", deletedAttendanceIds),
+    deleteSheetRowsByIds("LessonPlanMessages", deletedLessonPlanMessageIds),
+    deleteSheetRowsByIds("LessonPlanAttachments", deletedLessonPlanAttachmentIds),
     deleteSheetRowsByIds("LessonPlans", deletedLessonPlanIds.filter((id) => !deletedViaGasIds.has(id))),
-    deleteSheetRowsByIds("Schedules", deletedScheduleIds),
   ]);
 
-  return { deletedScheduleIds, deletedAttendanceIds, deletedLessonPlanIds, trashedDriveFileIds: Array.from(trashedDriveFileIds) };
+  return {
+    deletedScheduleIds,
+    deletedAttendanceIds,
+    deletedLessonPlanIds,
+    deletedLessonPlanMessageIds,
+    deletedLessonPlanAttachmentIds,
+    trashedDriveFileIds: Array.from(trashedDriveFileIds),
+  };
 }
 
 async function deleteLessonPlanViaGas(lessonPlanId: string) {
@@ -85,5 +131,29 @@ async function deleteLessonPlanViaGas(lessonPlanId: string) {
     return false;
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+async function deleteChatAttachmentViaGas(driveFileId: string) {
+  const webhookUrl = process.env.GAS_UPLOAD_WEBHOOK_URL || process.env.GAS_MAIL_WEBHOOK_URL;
+  const secret = process.env.GAS_UPLOAD_WEBHOOK_SECRET || process.env.GAS_MAIL_WEBHOOK_SECRET;
+  if (!driveFileId || !webhookUrl || !secret) return false;
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json;charset=utf-8" },
+      body: JSON.stringify({
+        action: "deleteLessonPlanChatAttachment",
+        secret,
+        requestId: `schedule-reset-${crypto.randomUUID()}`,
+        driveFileId,
+      }),
+      signal: AbortSignal.timeout(GAS_TIMEOUT_MS),
+    });
+    const payload = await response.json().catch(() => null) as { ok?: boolean } | null;
+    return response.ok && payload?.ok === true;
+  } catch {
+    return false;
   }
 }

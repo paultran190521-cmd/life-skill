@@ -8,12 +8,14 @@ import {
   readSheetRows,
   readSheetRowsBatch,
   readSheetRowsCached,
+  scheduleHeaders,
   teacherAvailabilityHeaders,
 } from "@/lib/google-sheets";
 import { deleteSchedulesCascade } from "@/lib/schedule-cascade-delete";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 import { canShareClassTimeSlot, hasTeacherTimeConflict, type GroupClassTimeSlot } from "@/lib/schedule-conflict-policy";
 import { classifySchedulingParticipantIds } from "@/lib/scheduling-participants";
+import { normalizeScheduleParticipantScope, resolveScheduleParticipantSelection } from "@/lib/schedule-participant-scope";
 import {
   addSchedulesToConflictIndex,
   getScheduleConflictIndex,
@@ -21,13 +23,16 @@ import {
   type TeacherSlotInfo,
 } from "@/lib/schedule-conflict-index";
 import { isTeacherAvailableForSlot } from "@/lib/teacher-availability";
-import type { LessonPeriod, Notification, Schedule, TeacherAvailability, TeachingEnvironment } from "@/lib/types";
+import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy";
+import type { LessonPeriod, Notification, Schedule, ScheduleParticipantScope, TeacherAvailability, TeachingEnvironment } from "@/lib/types";
 
 type ScheduleDraftItem = {
   date: string;
   schoolId: string;
   classId: string;
   classIds: string[];
+  participantScope: ScheduleParticipantScope;
+  participantGrade: string;
   lessonId: string;
   lessonPeriods: LessonPeriod[];
   timeSlotId: string;
@@ -52,7 +57,9 @@ export async function GET(request: Request) {
     const rows = await readSheetRows("Schedules");
     if (auth.user.role !== "admin") {
       const teacherId = String(auth.user.teacherId || "").trim();
-      return NextResponse.json(rows.filter((row) => String(row.teacherId || "").trim() === teacherId));
+      return NextResponse.json(rows.filter((row) => auth.user.role === "assistant"
+        ? parseIdList(row.assistantIds).includes(teacherId)
+        : String(row.teacherId || "").trim() === teacherId));
     }
     return NextResponse.json(rows);
   } catch (error) {
@@ -110,6 +117,8 @@ export async function POST(request: Request) {
         schoolId: item.schoolId,
         classId: item.classId,
         participantClassIds: item.classIds.join(","),
+        participantScope: item.participantScope,
+        participantGrade: item.participantGrade || undefined,
         lessonId: item.lessonId,
         lessonPeriods: item.lessonPeriods.join(","),
         timeSlotId: item.timeSlotId,
@@ -121,11 +130,32 @@ export async function POST(request: Request) {
       }));
     });
 
-    const conflicts = await detectScheduleConflictsSafe(schedules);
+    const existingSchedules = await readSheetRows("Schedules");
+    const progressionConflicts = findLessonProgressionConflicts(
+      schedules,
+      existingSchedules,
+      {
+        startMonth: readPositiveIntEnv("ACADEMIC_YEAR_START_MONTH", 8),
+        startDay: readPositiveIntEnv("ACADEMIC_YEAR_START_DAY", 1),
+      },
+    );
+    if (progressionConflicts.length > 0) {
+      const sample = progressionConflicts[0];
+      const duplicatePeriods = sample.periods.map((period) => period === "lesson1" ? "Tiết 1" : "Tiết 2").join(", ");
+      return apiFailure(
+        409,
+        `${duplicatePeriods} của bài học này đã được giao cho một hoặc nhiều lớp trùng phạm vi trong năm học hiện tại. Hãy chọn tiết tiếp theo hoặc đổi đúng đối tượng học sinh.`,
+        "CONFLICT",
+        requestId,
+      );
+    }
+
+    const conflicts = await detectScheduleConflictsSafe(schedules, existingSchedules);
     if (conflicts.length > 0) {
       return apiFailure(409, buildConflictMessage(conflicts), "CONFLICT", requestId);
     }
 
+    await ensureSheetHeaders("Schedules", scheduleHeaders);
     await appendSheetRows(
       "Schedules",
       schedules.map((schedule) => ({
@@ -156,6 +186,9 @@ export async function POST(request: Request) {
       after: {
         teacherId: schedule.teacherId,
         classId: schedule.classId,
+        participantClassIds: schedule.participantClassIds,
+        participantScope: schedule.participantScope,
+        participantGrade: schedule.participantGrade,
         lessonId: schedule.lessonId,
         schoolId: schedule.schoolId,
         status: schedule.status,
@@ -374,14 +407,13 @@ function detectScheduleConflicts(schedules: Schedule[], existingRows: Array<Reco
   return conflicts;
 }
 
-async function detectScheduleConflictsSafe(schedules: Schedule[]) {
+async function detectScheduleConflictsSafe(schedules: Schedule[], existingRows?: Array<Record<string, string>>) {
   const conflictIndex = await getScheduleConflictIndex();
   if (conflictIndex) {
     return detectScheduleConflictsWithSets(schedules, conflictIndex.teacherSlotsByKey, conflictIndex.classKeySet);
   }
 
-  const existingSchedules = await readSheetRows("Schedules");
-  return detectScheduleConflicts(schedules, existingSchedules);
+  return detectScheduleConflicts(schedules, existingRows ?? await readSheetRows("Schedules"));
 }
 
 function detectScheduleConflictsWithSets(
@@ -575,6 +607,8 @@ function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: s
           schoolId: normalizeId(entry.schoolId),
           classId: classIds[0] || "",
           classIds,
+          participantScope: normalizeScheduleParticipantScope(entry.participantScope),
+          participantGrade: String(entry.participantGrade || "").trim(),
           lessonId: normalizeId(entry.lessonId),
           lessonPeriods: parseLessonPeriods(entry.lessonPeriods),
           timeSlotId: normalizeId(entry.timeSlotId),
@@ -591,6 +625,8 @@ function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: s
     schoolId: normalizeId(body.schoolId),
     classId: parseIdList(body.classIds ?? body.classId)[0] || "",
     classIds: parseIdList(body.classIds ?? body.classId),
+    participantScope: normalizeScheduleParticipantScope(body.participantScope),
+    participantGrade: String(body.participantGrade || "").trim(),
     lessonId: normalizeId(body.lessonId),
     lessonPeriods: parseLessonPeriods(body.lessonPeriods),
     timeSlotId: normalizeId(body.timeSlotId),
@@ -616,7 +652,18 @@ function normalizeScheduleItems(
     const school = findSchool(data.schools, item.schoolId);
     const schoolId = normalizeId(school?.id) || item.schoolId;
 
-    const classIds = item.classIds.map((id) => findClassRoom(data.classes, id, school)).filter((row): row is Record<string, string> => Boolean(row)).map((row) => normalizeId(row.id));
+    const teachingEnvironment = normalizeTeachingEnvironment(item.teachingEnvironment);
+    const requestedClassRooms = item.classIds
+      .map((id) => findClassRoom(data.classes, id, school))
+      .filter((row): row is Record<string, string> => Boolean(row));
+    const schoolClassRooms = data.classes.filter((classRoom) => isRowActive(classRoom) && Boolean(findClassRoom([classRoom], normalizeId(classRoom.id), school)));
+    const participantSelection = resolveScheduleParticipantSelection({
+      teachingEnvironment,
+      participantScope: item.participantScope,
+      participantGrade: item.participantGrade,
+      requestedClassIds: requestedClassRooms.map((row) => normalizeId(row.id)),
+    }, schoolClassRooms.map((row) => ({ id: normalizeId(row.id), grade: normalizeId(row.grade) })));
+    const { participantScope, participantGrade, classIds } = participantSelection;
     const classId = classIds[0] || item.classId;
 
     const lesson = findLesson(data.lessons, item.lessonId);
@@ -630,8 +677,11 @@ function normalizeScheduleItems(
       schoolId,
       classId,
       classIds,
+      participantScope,
+      participantGrade,
       lessonId,
       timeSlotId,
+      teachingEnvironment,
     };
   });
 }
@@ -824,7 +874,7 @@ function createScheduleNotifications(schedules: Schedule[], emailResults: EmailR
       failedEmails ? `, ${failedEmails} lỗi gửi` : ""
     }.` + (failureSummary ? ` Lý do: ${failureSummary}` : "");
 
-  return [
+  const notifications: Notification[] = [
     {
       id: createId("n"),
       title: "Đã gửi lịch dạy",
@@ -842,6 +892,17 @@ function createScheduleNotifications(schedules: Schedule[], emailResults: EmailR
       read: false,
     },
   ];
+  if (schedules.some((schedule) => parseIdList(schedule.assistantIds).length > 0)) {
+    notifications.push({
+      id: createId("n"),
+      title: "Bạn có lịch trợ giảng mới",
+      body: "Vui lòng mở lịch trợ giảng để xác nhận và chuẩn bị hỗ trợ lớp.",
+      role: "assistant",
+      createdAt: now,
+      read: false,
+    });
+  }
+  return notifications;
 }
 
 function summarizeEmailFailures(emailResults: EmailResult[]) {
@@ -891,6 +952,13 @@ async function sendScheduleEmailsByTeacher(
           schedule,
           school: data.schools.find((item) => normalizeId(item.id) === normalizeId(schedule.schoolId)),
           classRoom: data.classes.find((item) => normalizeId(item.id) === normalizeId(schedule.classId)),
+          participantClassNames: schedule.participantScope === "whole_school"
+            ? ["Toàn trường"]
+            : schedule.participantScope === "whole_grade"
+              ? [`Toàn ${schedule.participantGrade || "khối"}`]
+              : scheduleClassIds(schedule)
+                  .map((classId) => data.classes.find((item) => normalizeId(item.id) === classId)?.name)
+                  .filter((name): name is string => Boolean(name)),
           lesson: data.lessons.find((item) => normalizeId(item.id) === normalizeId(schedule.lessonId)),
           slot: data.slots.find((item) => normalizeId(item.id) === normalizeId(schedule.timeSlotId)),
           assistantNames: parseIdList(schedule.assistantIds)

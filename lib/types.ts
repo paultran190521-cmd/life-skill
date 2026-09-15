@@ -16,6 +16,8 @@ export type TeachingEnvironment =
   | "schoolyard_report"
   | "hall";
 
+export type ScheduleParticipantScope = "selected_classes" | "whole_grade" | "whole_school";
+
 export type LessonPeriod = "lesson1" | "lesson2";
 
 export type TeacherAvailabilityScope = "all_day" | "morning" | "afternoon" | "time_slots";
@@ -113,6 +115,10 @@ export type Schedule = {
   classId: string;
   /** Các lớp tham gia một hoạt động chung, lưu dạng id phân tách bằng dấu phẩy. */
   participantClassIds?: string;
+  /** Phạm vi học sinh được chốt tại thời điểm tạo lịch. */
+  participantScope?: ScheduleParticipantScope;
+  /** Khối áp dụng khi participantScope là whole_grade. */
+  participantGrade?: string;
   lessonId: string;
   /** Danh sách tiết đã giao, lưu trên Sheet dạng lesson1,lesson2. */
   lessonPeriods?: string;
@@ -124,6 +130,8 @@ export type Schedule = {
   reassignedFrom?: string;
   groupId?: string;
   assistantIds?: string;
+  /** Các trợ giảng đã tự xác nhận lịch, lưu dạng id phân tách bằng dấu phẩy. */
+  assistantConfirmedIds?: string;
 };
 
 export type LessonPlan = {

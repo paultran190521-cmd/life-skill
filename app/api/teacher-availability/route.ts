@@ -9,7 +9,7 @@ import {
   updateSheetRowById,
 } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
-import { availabilityTimeRangeKey, isTeacherAvailabilityLocked, selectTeacherAvailabilityRowsForChange } from "@/lib/teacher-availability";
+import { isTeacherAvailabilityLocked, selectTeacherAvailabilityRowsForChange } from "@/lib/teacher-availability";
 import type { TeacherAvailability, TeacherAvailabilityScope } from "@/lib/types";
 
 const availabilityScopes: TeacherAvailabilityScope[] = ["all_day", "morning", "afternoon", "time_slots"];
@@ -96,23 +96,12 @@ export async function POST(request: Request) {
     if (!isWithdraw && entries.length !== dates.length) {
       return apiFailure(400, "Lựa chọn thời gian đăng ký không hợp lệ.", undefined, requestId);
     }
-    if (entries.some((entry) => entry.scope === "time_slots" && entry.timeSlotIds.length === 0)) {
-      return apiFailure(400, "Hãy chọn ít nhất một khung giờ cụ thể.", undefined, requestId);
+    if (entries.some((entry) => entry.scope === "time_slots")) {
+      return apiFailure(400, "Ứng dụng chỉ nhận đăng ký Cả ngày, Buổi sáng hoặc Buổi chiều.", undefined, requestId);
     }
 
     await ensureSheetHeaders("TeacherAvailability", teacherAvailabilityHeaders);
-    const [existingRows, slots] = await Promise.all([
-      readSheetRows("TeacherAvailability"),
-      readSheetRows("TimeSlots"),
-    ]);
-    const activeSlots = slots.filter((slot) => String(slot.active || "true").toLowerCase() !== "false");
-    const activeSlotIds = new Set(activeSlots.flatMap((slot) => [
-      String(slot.id || "").trim(),
-      availabilityTimeRangeKey({ start: String(slot.start || "").trim(), end: String(slot.end || "").trim() }),
-    ]));
-    if (entries.some((entry) => entry.timeSlotIds.some((id) => !activeSlotIds.has(id)))) {
-      return apiFailure(400, "Có khung giờ không còn hoạt động. Vui lòng tải lại và chọn lại.", undefined, requestId);
-    }
+    const existingRows = await readSheetRows("TeacherAvailability");
 
     const rowsToWithdraw = selectTeacherAvailabilityRowsForChange(
       existingRows.map((row) => ({
@@ -164,9 +153,7 @@ export async function POST(request: Request) {
 
     const rowsToCreate: TeacherAvailability[] = isWithdraw
       ? []
-      : entries.flatMap((entry) => {
-          const selectedSlots = entry.scope === "time_slots" ? entry.timeSlotIds : [""];
-          return selectedSlots.map((timeSlotId) => ({
+      : entries.map((entry) => ({
             id: createId("availability"),
             registrationId: operation === "update" && !targetRegistrationId.startsWith("legacy:")
               ? targetRegistrationId
@@ -174,14 +161,12 @@ export async function POST(request: Request) {
             teacherId,
             date: entry.date,
             scope: entry.scope,
-            timeSlotId: timeSlotId || undefined,
             status: "available" as const,
             note: String(body.note || "").trim() || undefined,
             createdBy: auth.user.id,
             createdAt: originalCreatedAtByDate.get(entry.date) || now,
             updatedAt: now,
           }));
-        });
     await appendSheetRows("TeacherAvailability", rowsToCreate);
 
     await appendAuditLog({
@@ -220,27 +205,20 @@ function parseDates(value: unknown) {
   ).sort();
 }
 
-function parseIds(value: unknown) {
-  return Array.from(
-    new Set((Array.isArray(value) ? value : []).map((id) => String(id || "").trim()).filter(Boolean)),
-  );
-}
-
 function parseAvailabilityInput(value: unknown): AvailabilityInput | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
   const date = String(row.date || "").trim();
   const scope = String(row.scope || "").trim() as TeacherAvailabilityScope;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !availabilityScopes.includes(scope)) return null;
-  return { date, scope, timeSlotIds: scope === "time_slots" ? parseIds(row.timeSlotIds) : [] };
+  return { date, scope, timeSlotIds: [] };
 }
 
 function parseLegacyAvailabilityInputs(body: Record<string, unknown>): AvailabilityInput[] {
   const dates = parseDates(body.dates);
   const scope = String(body.scope || "").trim() as TeacherAvailabilityScope;
   if (!availabilityScopes.includes(scope)) return [];
-  const timeSlotIds = scope === "time_slots" ? parseIds(body.timeSlotIds) : [];
-  return dates.map((date) => ({ date, scope, timeSlotIds }));
+  return dates.map((date) => ({ date, scope, timeSlotIds: [] }));
 }
 
 function currentVietnamDateKey() {

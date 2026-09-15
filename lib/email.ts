@@ -18,6 +18,7 @@ type ScheduleEmailInput = {
   teacher: { name?: string; email?: string };
   school?: { name?: string };
   classRoom?: { name?: string };
+  participantClassNames?: string[];
   lesson?: ScheduleEmailLesson;
   slot?: { label?: string; start?: string; end?: string };
 };
@@ -90,6 +91,7 @@ export async function sendScheduleEmail(input: ScheduleEmailInput) {
         schedule: input.schedule,
         school: input.school,
         classRoom: input.classRoom,
+        participantClassNames: input.participantClassNames,
         lesson: input.lesson,
         slot: input.slot,
       },

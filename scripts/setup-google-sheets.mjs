@@ -76,6 +76,10 @@ const SHEETS = [
       "teachingEnvironment",
       "groupId",
       "assistantIds",
+      "participantClassIds",
+      "participantScope",
+      "participantGrade",
+      "assistantConfirmedIds",
     ],
   },
   {

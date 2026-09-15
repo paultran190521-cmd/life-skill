@@ -16,6 +16,50 @@ type LessonDuplicateInput = {
   lesson2Objective?: unknown;
 };
 
+type ScheduledLessonInput = {
+  title?: unknown;
+  objective?: unknown;
+  lesson1Title?: unknown;
+  lesson1Objective?: unknown;
+  lesson2Title?: unknown;
+  lesson2Objective?: unknown;
+};
+
+export type ScheduledLessonPeriod = "lesson1" | "lesson2";
+
+export type ScheduledLessonSection = {
+  period: ScheduledLessonPeriod;
+  label: "Tiết 1" | "Tiết 2";
+  title: string;
+  objective: string;
+};
+
+export function normalizeScheduledLessonPeriods(value: unknown): ScheduledLessonPeriod[] {
+  const periods = String(value || "lesson1")
+    .split(",")
+    .map((period) => period.trim())
+    .filter((period): period is ScheduledLessonPeriod => period === "lesson1" || period === "lesson2");
+  return periods.length > 0 ? Array.from(new Set(periods)) : ["lesson1"];
+}
+
+/** Chỉ trả về nội dung của đúng các tiết đã được giao trên lịch. */
+export function scheduledLessonSections(
+  lessonPeriods: unknown,
+  lesson: ScheduledLessonInput | undefined,
+): ScheduledLessonSection[] {
+  return normalizeScheduledLessonPeriods(lessonPeriods).map((period) => {
+    const isFirstPeriod = period === "lesson1";
+    return {
+      period,
+      label: isFirstPeriod ? "Tiết 1" : "Tiết 2",
+      title: String(isFirstPeriod ? lesson?.lesson1Title : lesson?.lesson2Title).trim()
+        || String(lesson?.title || "Chưa cập nhật").trim(),
+      objective: String(isFirstPeriod ? lesson?.lesson1Objective : lesson?.lesson2Objective).trim()
+        || String(lesson?.objective || "Chưa cập nhật mục tiêu.").trim(),
+    };
+  });
+}
+
 /**
  * Chỉ khi toàn bộ tên chuyên đề và nội dung của hai tiết giống nhau mới trùng.
  * Khác mục tiêu (dù cùng tên chuyên đề) luôn được coi là bài mới.

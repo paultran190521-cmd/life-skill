@@ -71,6 +71,11 @@ function doPost(e) {
       return json({ ok: true, requestId: requestId, version: GAS_WEBHOOK_VERSION, attachment: sharedAttachment });
     }
 
+    if (payload.action === "deleteLessonPlanChatAttachment") {
+      var deletedAttachment = deleteLessonPlanChatAttachment(payload);
+      return json({ ok: true, requestId: requestId, version: GAS_WEBHOOK_VERSION, driveFileId: deletedAttachment.driveFileId });
+    }
+
     if (payload.action === "deleteLessonPlan") {
       var deleteResult = deleteLessonPlan(payload, requestId);
       logInfo("deleteLessonPlan.success", requestId, {
@@ -628,6 +633,20 @@ function deleteLessonPlan(payload, requestId) {
     driveFileId: driveFileId,
     requestId: requestId,
   };
+}
+
+function deleteLessonPlanChatAttachment(payload) {
+  var driveFileId = asText(payload.driveFileId);
+  if (!driveFileId) {
+    throw appError("DELETE_FIELDS_MISSING", "Missing driveFileId.");
+  }
+
+  try {
+    DriveApp.getFileById(driveFileId).setTrashed(true);
+  } catch (error) {
+    throw appError("DRIVE_DELETE_FAILED", "Cannot delete lesson plan chat attachment from Google Drive.", error);
+  }
+  return { driveFileId: driveFileId };
 }
 
 function authorizeDriveAndSheets() {

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
-import { appendAuditLog } from "@/lib/audit";
-import { appendSheetRow, readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
+import { appendAuditLogs } from "@/lib/audit";
+import { attendanceGroupKey } from "@/lib/attendance-grouping";
+import { appendSheetRows, readSheetRowsBatch, updateSheetRowsById } from "@/lib/google-sheets";
 import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 
 const attendanceEarlyMinutes = 30;
@@ -15,15 +16,24 @@ export async function POST(request: Request) {
     const scheduleId = String(body.scheduleId || "").trim();
     const now = new Date().toISOString();
     const checkedInAt = body.checkedInAt || now;
-    const schedule = await readSheetRowById("Schedules", scheduleId);
+    const rows = await readSheetRowsBatch(["Schedules", "Attendance", "TimeSlots"] as const);
+    const schedule = rows.Schedules.find((item) => item.id === scheduleId);
 
     if (!schedule) {
       return apiFailure(404, "Không tìm thấy lịch.", undefined, requestId);
     }
 
+    const participantId = auth.user.role === "admin"
+      ? String(schedule.teacherId || "").trim()
+      : String(auth.user.teacherId || "").trim();
+    const participantRole = auth.user.role === "assistant" ? "assistant" : "teacher";
     const permission = evaluatePermission({
-      allowed: auth.user.role === "admin" || auth.user.teacherId === schedule.teacherId,
-      reason: "teacher_must_own_schedule_attendance",
+      allowed: Boolean(participantId) && (
+        auth.user.role === "admin"
+        || (auth.user.role === "teacher" && participantId === schedule.teacherId)
+        || (auth.user.role === "assistant" && parseIds(schedule.assistantIds).includes(participantId))
+      ),
+      reason: "participant_must_be_assigned_to_schedule_attendance",
     });
     if (permission.decision === "would_block") {
       console.warn(`[auth-shadow][${requestId}] attendance.create ${permission.reason}`);
@@ -36,48 +46,73 @@ export async function POST(request: Request) {
       return apiFailure(400, "Không thể điểm danh lịch đã hủy.", undefined, requestId);
     }
 
-    const existingAttendance = await readSheetRows("Attendance");
-    if (existingAttendance.some((item) => item.scheduleId === scheduleId)) {
-      return apiFailure(409, "Tiết này đã được điểm danh.", undefined, requestId);
+    const anchorGroupKey = attendanceGroupKey({ ...schedule, teacherId: participantId }, rows.TimeSlots);
+    if (!anchorGroupKey) {
+      return apiFailure(400, "Lịch thiếu khung giờ hợp lệ để xác định buổi điểm danh.", undefined, requestId);
+    }
+    const groupSchedules = rows.Schedules.filter((item) =>
+      item.status !== "cancelled"
+      && isParticipantAssigned(item, participantId, participantRole)
+      && attendanceGroupKey({ ...item, teacherId: participantId }, rows.TimeSlots) === anchorGroupKey,
+    );
+    const existingAttendanceKeys = new Set(rows.Attendance.map((item) => `${item.scheduleId}|${item.teacherId}`));
+    const targetSchedules = groupSchedules.filter((item) => !existingAttendanceKeys.has(`${item.id}|${participantId}`));
+    if (targetSchedules.length === 0) {
+      return apiFailure(409, "Buổi dạy này đã được điểm danh.", undefined, requestId);
     }
 
-    const slots = await readSheetRows("TimeSlots");
-    const slot = slots.find((item) => item.id === schedule.timeSlotId);
-    const timeValidation = validateAttendanceTime(schedule.date, slot?.start, slot?.end, checkedInAt);
+    const groupSlots = groupSchedules
+      .map((item) => rows.TimeSlots.find((slot) => slot.id === item.timeSlotId))
+      .filter((slot): slot is Record<string, string> => Boolean(slot));
+    if (groupSlots.length !== groupSchedules.length) {
+      return apiFailure(400, "Một lịch trong buổi dạy thiếu khung giờ hợp lệ.", undefined, requestId);
+    }
+    const groupStart = groupSlots.map((slot) => slot.start).sort()[0];
+    const groupEnd = groupSlots.map((slot) => slot.end).sort().at(-1);
+    const timeValidation = validateAttendanceTime(schedule.date, groupStart, groupEnd, checkedInAt);
     const timeError = timeValidation.error;
     if (timeError) {
       return apiFailure(400, timeError, undefined, requestId);
     }
 
-    const attendance = {
-      id: body.id || createId("att"),
-      scheduleId,
-      teacherId: schedule.teacherId,
+    const attendance = targetSchedules.map((item) => ({
+      id: createId("att"),
+      scheduleId: item.id,
+      teacherId: participantId,
       checkedInAt,
       note: body.note || timeValidation.note,
       createdAt: now,
       updatedAt: now,
-    };
+    }));
+    const scheduleUpdates = participantRole === "teacher"
+      ? targetSchedules.map((item) => ({ id: item.id, patch: { status: "attended", updatedAt: now } }))
+      : [];
 
-    await appendSheetRow("Attendance", attendance);
-    await updateSheetRowById("Schedules", scheduleId, { status: "attended", updatedAt: now });
-    await appendAuditLog({
+    await appendSheetRows("Attendance", attendance);
+    await updateSheetRowsById("Schedules", scheduleUpdates);
+    await appendAuditLogs(targetSchedules.map((item) => ({
       requestId,
       actor: auth.user,
-      action: "schedule.attend",
+      action: participantRole === "assistant" ? "schedule.assistant_attend" : "schedule.attend",
       entityType: "Schedule",
-      entityId: scheduleId,
+      entityId: item.id,
       route: "/api/attendance",
       method: "POST",
       authMode: permission.authMode,
       decision: permission.decision,
       reason: permission.reason,
       source: auth.source,
-      before: { status: schedule.status, teacherId: schedule.teacherId },
-      after: { status: "attended", teacherId: schedule.teacherId, checkedInAt },
-    });
+      before: { status: item.status, participantId, participantRole },
+      after: { status: participantRole === "teacher" ? "attended" : item.status, participantId, participantRole, checkedInAt, attendanceGroupKey: anchorGroupKey },
+    })));
 
-    return NextResponse.json({ attendance, schedule: { id: scheduleId, status: "attended", updatedAt: now } });
+    return NextResponse.json({
+      attendance,
+      schedules: participantRole === "teacher"
+        ? targetSchedules.map((item) => ({ id: item.id, status: "attended", updatedAt: now }))
+        : [],
+      group: { key: anchorGroupKey, scheduleCount: targetSchedules.length },
+    });
   } catch (error) {
     return apiError(error, requestId);
   }
@@ -111,4 +146,14 @@ function validateAttendanceTime(date: string | undefined, start: string | undefi
 
 function parseScheduleDateTime(date: string, time: string) {
   return new Date(`${date}T${time}:00+07:00`);
+}
+
+function parseIds(value: unknown) {
+  return String(value || "").split(",").map((id) => id.trim()).filter(Boolean);
+}
+
+function isParticipantAssigned(schedule: Record<string, string>, participantId: string, role: "teacher" | "assistant") {
+  return role === "teacher"
+    ? schedule.teacherId === participantId
+    : parseIds(schedule.assistantIds).includes(participantId);
 }

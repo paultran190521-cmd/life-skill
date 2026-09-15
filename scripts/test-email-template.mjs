@@ -17,6 +17,7 @@ const requiredPatterns = [
   ['desktop action wrapper', 'class="desktop-email-actions"'],
   ['mobile action wrapper', 'class="mobile-email-actions"'],
   ['full-width mobile actions', 'class="email-button"'],
+  ['teacher recipient source', 'normalizeEmailAddress(input.teacher.email)'],
   ['presentation tables', 'role="presentation"'],
   ['safe Vietnamese word wrapping', 'word-break:normal;overflow-wrap:break-word'],
 ];
@@ -44,7 +45,7 @@ if (!appTemplateVersion || appTemplateVersion !== gasTemplateVersion) {
   throw new Error(`Email template version mismatch: app=${appTemplateVersion}, gas=${gasTemplateVersion}`);
 }
 
-const compiled = ts.transpileModule(`${emailSource}\nexport { renderScheduleDigestEmail };`, {
+const compiled = ts.transpileModule(`${emailSource}\nexport { renderScheduleDigestEmail, normalizeEmailAddress, isValidEmailAddress };`, {
   compilerOptions: {
     module: ts.ModuleKind.CommonJS,
     target: ts.ScriptTarget.ES2022,
@@ -75,6 +76,13 @@ const runtimeContext = {
   console,
 };
 vm.runInNewContext(compiled, runtimeContext, { filename: "lib/email.ts" });
+
+if (runtimeModule.exports.normalizeEmailAddress("  teacher@example.com\u200B ") !== "teacher@example.com") {
+  throw new Error("Teacher email normalization failed.");
+}
+if (!runtimeModule.exports.isValidEmailAddress("teacher@example.com") || runtimeModule.exports.isValidEmailAddress("teacher@")) {
+  throw new Error("Teacher email validation failed.");
+}
 
 const schedule = {
   id: "schedule-preview-1",

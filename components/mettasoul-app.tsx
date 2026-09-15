@@ -54,9 +54,10 @@ import {
   type TeacherTimeSlot,
 } from "@/lib/schedule-conflict-policy";
 import { classifySchedulingParticipantIds } from "@/lib/scheduling-participants";
+import { normalizeScheduleParticipantScope, resolveScheduleParticipantSelection } from "@/lib/schedule-participant-scope";
+import { scheduledLessonSections } from "@/lib/lessons";
 import {
   availabilityTimeRangeKey,
-  availabilityTimeRangeDuration,
   buildTeacherAvailabilityEntries,
   canRegisterTeacherAvailability,
   isMorningTimeSlot,
@@ -66,9 +67,7 @@ import {
   teacherAvailabilityLockDeadline,
   teacherAvailabilityScopeLabels,
   teacherAvailabilityRegistrationKey,
-  TEACHER_AVAILABILITY_DURATION_GROUPS,
   type TeacherAvailabilityDraft,
-  uniqueAvailabilityTimeRanges,
 } from "@/lib/teacher-availability";
 import {
   MIN_TIME_SLOT_MINUTES,
@@ -121,6 +120,8 @@ type DraftScheduleItem = {
   schoolId: string;
   classId: string;
   classIds: string[];
+  participantScope: NonNullable<Schedule["participantScope"]>;
+  participantGrade: string;
   lessonId: string;
   lessonPeriods: LessonPeriod[];
   timeSlotId: string;
@@ -211,18 +212,22 @@ type ScheduleUpdateResponse = Partial<Schedule> & {
   id: string;
   notifications?: Notification[];
   emailResult?: EmailResult | null;
+  resetResult?: ScheduleCascadeDeleteResponse | null;
 };
 
 type ScheduleCascadeDeleteResponse = {
   deletedScheduleIds: string[];
   deletedAttendanceIds: string[];
   deletedLessonPlanIds: string[];
+  deletedLessonPlanMessageIds: string[];
+  deletedLessonPlanAttachmentIds: string[];
   trashedDriveFileIds: string[];
 };
 
 type AttendanceCreateResponse = {
-  attendance: Attendance;
-  schedule: Partial<Schedule> & { id: string };
+  attendance: Attendance[];
+  schedules: Array<Partial<Schedule> & { id: string }>;
+  group: { key: string; scheduleCount: number };
 };
 
 type ClassCreateResponse = ClassRoom | { classes: ClassRoom[] };
@@ -346,10 +351,10 @@ type LessonDraft = {
   topicId: string;
   title: string;
   objective: string;
-  lesson1Title?: string;
-  lesson1Objective?: string;
-  lesson2Title?: string;
-  lesson2Objective?: string;
+  lesson1Title: string;
+  lesson1Objective: string;
+  lesson2Title: string;
+  lesson2Objective: string;
   samplePlanUrl: string;
   durationMinutes: number | "";
 };
@@ -498,6 +503,14 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
 
+const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
+  { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
+  { id: "calendar", label: "Lịch trợ giảng", icon: CalendarDays },
+  { id: "plans", label: "Giáo án tham khảo", icon: BookOpen },
+  { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
+  { id: "school-guide", label: "Thông tin trường", icon: School2 },
+];
+
 export function MettasoulApp() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const deferredActiveTab = useDeferredValue(activeTab);
@@ -534,7 +547,6 @@ export function MettasoulApp() {
   const [availabilityEditingDate, setAvailabilityEditingDate] = useState("");
   const [availabilityEditingRegistrationId, setAvailabilityEditingRegistrationId] = useState("");
   const [availabilityBatchDates, setAvailabilityBatchDates] = useState<string[]>([]);
-  const [expandedAvailabilityDurationGroups, setExpandedAvailabilityDurationGroups] = useState<string[]>(["45"]);
   const [isRegisteredAvailabilityExpanded, setIsRegisteredAvailabilityExpanded] = useState(false);
   const [availabilityClock, setAvailabilityClock] = useState(() => Date.now());
   const [assignmentAvailabilityMonth, setAssignmentAvailabilityMonth] = useState(() => currentMonthKey());
@@ -590,14 +602,7 @@ export function MettasoulApp() {
   const [bulkLessonRows, setBulkLessonRows] = useState<BulkLessonRow[]>(() => [createBulkLessonRow()]);
   const [bulkLessonErrors, setBulkLessonErrors] = useState<Record<string, string>>({});
   const [editingLessonId, setEditingLessonId] = useState("");
-  const [lessonEditDraft, setLessonEditDraft] = useState<LessonDraft>({
-    grade: "Khối 1",
-    topicId: "",
-    title: "",
-    objective: "",
-    samplePlanUrl: "",
-    durationMinutes: 45,
-  });
+  const [lessonEditDraft, setLessonEditDraft] = useState<LessonDraft>(() => createEmptyLessonDraft());
   const [lessonDeleteTarget, setLessonDeleteTarget] = useState<Lesson | null>(null);
   const [reassignTarget, setReassignTarget] = useState<Schedule | null>(null);
   const [reassignTeacherId, setReassignTeacherId] = useState("");
@@ -693,7 +698,7 @@ export function MettasoulApp() {
   const hasAdminAccess = sessionUser?.role === "admin";
   const currentTeacherId = currentUser.teacherId ?? "";
   const canRegisterAvailability = canRegisterTeacherAvailability(role, currentTeacherId);
-  const navigationTabs = role === "admin" ? adminTabs : teacherTabs;
+  const navigationTabs = role === "admin" ? adminTabs : role === "assistant" ? assistantTabs : teacherTabs;
   const activeTabMeta = navigationTabs.find((item) => item.id === activeTab) ?? navigationTabs[0];
   const activeTeachers = useMemo(() => teachers.filter((teacher) => teacher.active !== false), [teachers]);
   const schedulingParticipantIds = useMemo(
@@ -713,28 +718,6 @@ export function MettasoulApp() {
   );
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
   const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);
-  const availabilityTimeRanges = useMemo(() => uniqueAvailabilityTimeRanges(activeTimeSlots), [activeTimeSlots]);
-  const availabilityTimeRangeGroups = useMemo(() => {
-    const rangesByDuration = new Map<number, typeof availabilityTimeRanges>();
-    for (const range of availabilityTimeRanges) {
-      const duration = availabilityTimeRangeDuration(range);
-      const group = rangesByDuration.get(duration) ?? [];
-      group.push(range);
-      rangesByDuration.set(duration, group);
-    }
-    const standardGroups = TEACHER_AVAILABILITY_DURATION_GROUPS.map((duration) => ({
-      key: String(duration),
-      label: `Khung ${duration} phút`,
-      ranges: rangesByDuration.get(duration) ?? [],
-    })).filter((group) => group.ranges.length > 0);
-    const otherRanges = Array.from(rangesByDuration.entries())
-      .filter(([duration]) => !TEACHER_AVAILABILITY_DURATION_GROUPS.includes(duration as (typeof TEACHER_AVAILABILITY_DURATION_GROUPS)[number]))
-      .sort(([left], [right]) => left - right)
-      .flatMap(([, ranges]) => ranges);
-    return otherRanges.length > 0
-      ? [...standardGroups, { key: "other", label: "Khung khác", ranges: otherRanges }]
-      : standardGroups;
-  }, [availabilityTimeRanges]);
   const availabilitySelectedDates = useMemo(() => Object.keys(availabilityDrafts).sort(), [availabilityDrafts]);
   const availabilityTargetDates = availabilityApplyMode === "batch"
     ? availabilityBatchDates
@@ -1060,9 +1043,9 @@ export function MettasoulApp() {
   }, [activeUsers, currentUserId]);
 
   useEffect(() => {
-    const allowedTabs = role === "admin" ? adminTabs : teacherTabs;
+    const allowedTabs = role === "admin" ? adminTabs : role === "assistant" ? assistantTabs : teacherTabs;
     if (!allowedTabs.some((tab) => tab.id === activeTab)) {
-      setActiveTab(role === "teacher" ? "calendar" : "dashboard");
+      setActiveTab(role === "admin" ? "dashboard" : "calendar");
     }
   }, [activeTab, role]);
 
@@ -1081,11 +1064,11 @@ export function MettasoulApp() {
   }, [activeTab]);
 
   useEffect(() => {
-    if (authStatus !== "signed-in") return;
+    if (authStatus !== "signed-in" || role === "assistant") return;
     void refreshLessonPlanChatSummary();
     const intervalId = window.setInterval(() => void refreshLessonPlanChatSummary(), 5 * 60 * 1000);
     return () => window.clearInterval(intervalId);
-  }, [authStatus, currentUser.id]);
+  }, [authStatus, currentUser.id, role]);
 
   useEffect(() => {
     if (!hasBlockingModal) {
@@ -1126,7 +1109,7 @@ export function MettasoulApp() {
   }, [hasBlockingModal]);
 
   useEffect(() => {
-    if (role !== "teacher" || activeTab !== "calendar" || !currentTeacherId) {
+    if (role === "admin" || activeTab !== "calendar" || !currentTeacherId) {
       return;
     }
     const today = currentDateKey();
@@ -1170,6 +1153,8 @@ export function MettasoulApp() {
           item.schoolId !== currentItem.schoolId ||
           item.classId !== currentItem.classId ||
           item.classIds.join(",") !== currentItem.classIds.join(",") ||
+          item.participantScope !== currentItem.participantScope ||
+          item.participantGrade !== currentItem.participantGrade ||
           item.lessonId !== currentItem.lessonId ||
           item.lessonPeriods.join(",") !== currentItem.lessonPeriods.join(",") ||
           item.timeSlotId !== currentItem.timeSlotId ||
@@ -1235,11 +1220,12 @@ export function MettasoulApp() {
   }, [calendarFilters]);
 
   useEffect(() => {
-    if (role !== "teacher" || !currentTeacherId) {
+    if (role === "admin" || !currentTeacherId) {
       return;
     }
-    if (calendarFilters.teacherId !== currentTeacherId) {
-      setCalendarFilters((current) => ({ ...current, teacherId: currentTeacherId }));
+    const expectedTeacherFilter = role === "teacher" ? currentTeacherId : "all";
+    if (calendarFilters.teacherId !== expectedTeacherFilter) {
+      setCalendarFilters((current) => ({ ...current, teacherId: expectedTeacherFilter }));
     }
   }, [calendarFilters.teacherId, currentTeacherId, role]);
 
@@ -1247,7 +1233,9 @@ export function MettasoulApp() {
     const scoped =
       role === "admin"
         ? schedules
-        : schedules.filter((schedule) => schedule.teacherId === currentTeacherId);
+        : schedules.filter((schedule) => role === "assistant"
+            ? isAssistantAssignedToSchedule(schedule, currentTeacherId)
+            : schedule.teacherId === currentTeacherId);
 
     const term = searchTerm.trim().toLowerCase();
     return sortSchedules(
@@ -1281,6 +1269,10 @@ export function MettasoulApp() {
     [selectedCalendarDate, visibleSchedules],
   );
   const calendarStats = useMemo(() => buildCalendarStats(visibleSchedules), [visibleSchedules]);
+  const primaryTeacherAttendance = useMemo(
+    () => attendance.filter((record) => schedules.find((schedule) => schedule.id === record.scheduleId)?.teacherId === record.teacherId),
+    [attendance, schedules],
+  );
   const scheduleCountByDate = useMemo(() => {
     const countByDate = new Map<string, number>();
     for (const schedule of visibleSchedules) {
@@ -1303,8 +1295,8 @@ export function MettasoulApp() {
     }));
   }, [calendarMonth, scheduleCountByDate, visibleSchedules]);
   const operationalAlerts = useMemo(
-    () => buildOperationalAlerts(visibleSchedules, attendance, teachers),
-    [attendance, teachers, visibleSchedules],
+    () => buildOperationalAlerts(visibleSchedules, primaryTeacherAttendance, teachers),
+    [primaryTeacherAttendance, teachers, visibleSchedules],
   );
   const selectedOperationalAlertSchedules = useMemo(() => {
     if (!selectedOperationalAlert) {
@@ -1363,6 +1355,8 @@ export function MettasoulApp() {
           schoolId: item.schoolId,
           classId: item.classId,
           participantClassIds: item.classIds.join(","),
+          participantScope: item.participantScope,
+          participantGrade: item.participantGrade || undefined,
           lessonId: item.lessonId,
           lessonPeriods: item.lessonPeriods.join(","),
           timeSlotId: item.timeSlotId,
@@ -1519,10 +1513,10 @@ export function MettasoulApp() {
   );
   const isNotificationRead = (notification: Notification) => notification.read || readNotificationIds.has(notification.id);
   const unseenScheduleCount = useMemo(() => {
-    if (role !== "teacher" || !currentTeacherId) return 0;
+    if (role === "admin" || !currentTeacherId) return 0;
     const viewedAt = currentUser.scheduleViewedAt || "";
     return schedules.filter((schedule) =>
-      schedule.teacherId === currentTeacherId &&
+      (role === "assistant" ? isAssistantAssignedToSchedule(schedule, currentTeacherId) : schedule.teacherId === currentTeacherId) &&
       schedule.status !== "cancelled" &&
       Boolean(schedule.sentAt) &&
       (!viewedAt || String(schedule.sentAt) > viewedAt),
@@ -1597,7 +1591,10 @@ export function MettasoulApp() {
       plans: lessonPlans
         .filter((item) => item.scheduleId === schedule.id)
         .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)),
-      checkIn: attendance.find((item) => item.scheduleId === schedule.id),
+      checkIn: attendance.find((item) =>
+        item.scheduleId === schedule.id
+        && item.teacherId === (role === "admin" ? schedule.teacherId : currentTeacherId),
+      ),
     };
   }
 
@@ -1855,15 +1852,19 @@ export function MettasoulApp() {
 
   function initialAvailabilityDraft(existing: TeacherAvailability[]): TeacherAvailabilityDraft {
     const scope = existing[0]?.scope ?? "all_day";
-    const timeSlotIds = scope === "time_slots"
-      ? Array.from(new Set(existing.flatMap((item) => {
-          if (!item.timeSlotId) return [];
-          if (item.timeSlotId.startsWith("time:")) return [item.timeSlotId];
-          const slot = activeTimeSlots.find((candidate) => candidate.id === item.timeSlotId);
-          return slot ? [availabilityTimeRangeKey(slot)] : [];
-        })))
-      : [];
-    return { scope, timeSlotIds };
+    if (scope !== "time_slots") return { scope, timeSlotIds: [] };
+
+    const legacyPeriods = new Set(existing.flatMap((item) => {
+      if (!item.timeSlotId) return [];
+      const slot = activeTimeSlots.find((candidate) =>
+        candidate.id === item.timeSlotId || availabilityTimeRangeKey(candidate) === item.timeSlotId,
+      );
+      return slot ? [isMorningTimeSlot(slot) ? "morning" : "afternoon"] : [];
+    }));
+    const migratedScope: TeacherAvailabilityScope = legacyPeriods.size === 1
+      ? (Array.from(legacyPeriods)[0] as "morning" | "afternoon")
+      : "all_day";
+    return { scope: migratedScope, timeSlotIds: [] };
   }
 
   function toggleAvailabilityDate(dateKey: string) {
@@ -1957,51 +1958,18 @@ export function MettasoulApp() {
     setAvailabilityDrafts((drafts) => {
       const next = { ...drafts };
       for (const date of availabilityTargetDates) {
-        const current = drafts[date] ?? { scope: "all_day" as const, timeSlotIds: [] };
         next[date] = {
           scope,
-          timeSlotIds: scope === "time_slots" && availabilityTargetScope === "time_slots" ? current.timeSlotIds : [],
+          timeSlotIds: [],
         };
       }
       return next;
     });
   }
 
-  function toggleAvailabilityTimeSlot(timeSlotId: string) {
-    if (availabilityTargetDates.length === 0) return;
-    setAvailabilityDrafts((drafts) => {
-      const next = { ...drafts };
-      const removeFromAll = availabilityTargetDates.every((date) => drafts[date]?.timeSlotIds.includes(timeSlotId));
-      for (const date of availabilityTargetDates) {
-        const current = drafts[date] ?? { scope: "time_slots" as const, timeSlotIds: [] };
-        const timeSlotIds = removeFromAll
-          ? current.timeSlotIds.filter((id) => id !== timeSlotId)
-          : Array.from(new Set([...current.timeSlotIds, timeSlotId]));
-        next[date] = { scope: "time_slots", timeSlotIds };
-      }
-      return next;
-    });
-  }
-
-  function toggleAvailabilityDurationGroup(groupKey: string) {
-    setExpandedAvailabilityDurationGroups((expandedGroups) =>
-      expandedGroups.includes(groupKey)
-        ? expandedGroups.filter((key) => key !== groupKey)
-        : [...expandedGroups, groupKey],
-    );
-  }
-
   async function submitTeacherAvailability() {
     if (availabilitySelectedDates.length === 0) {
       pushToast("Chưa chọn ngày", "Hãy chọn ít nhất một ngày trên lịch.", "warning");
-      return;
-    }
-    const incompleteDates = availabilitySelectedDates.filter((date) => {
-      const draft = availabilityDrafts[date];
-      return draft.scope === "time_slots" && draft.timeSlotIds.length === 0;
-    });
-    if (incompleteDates.length > 0) {
-      pushToast("Chưa chọn khung giờ", `Hãy chọn ít nhất một khung giờ cho ${formatShortDateLabel(incompleteDates[0])}.`, "warning");
       return;
     }
     if (availabilityApplyMode === "batch" && availabilitySelectedDates.length === 1) {
@@ -2179,6 +2147,8 @@ export function MettasoulApp() {
             schoolId: item.schoolId,
             classId: item.classId,
             classIds: item.classIds,
+            participantScope: item.participantScope,
+            participantGrade: item.participantGrade || undefined,
             lessonId: item.lessonId,
             lessonPeriods: item.lessonPeriods,
             timeSlotId: item.timeSlotId,
@@ -2241,6 +2211,22 @@ export function MettasoulApp() {
     );
     addLocalAudit("schedule.confirm", scheduleId, { status: "confirmed" });
     pushToast("Đã xác nhận lịch", "Lịch dạy đã được xác nhận thành công.", "success");
+  }
+
+  async function confirmAssistantSchedule(scheduleId: string) {
+    try {
+      const response = await saveRequest<Pick<Schedule, "id" | "assistantConfirmedIds">>(
+        "Đang xác nhận lịch trợ giảng...",
+        `/api/schedules/${scheduleId}/assistant-confirm`,
+        { method: "POST" },
+      );
+      setSchedules((items) => items.map((item) => item.id === scheduleId ? { ...item, ...response } : item));
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã xác nhận", "Bạn đã xác nhận tham gia lịch trợ giảng.", "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
   }
 
   async function uploadLessonPlans(schedule: Schedule, selectedFiles: FileList | null) {
@@ -2450,7 +2436,8 @@ export function MettasoulApp() {
   }
 
   async function checkIn(schedule: Schedule) {
-    if (attendance.some((item) => item.scheduleId === schedule.id)) {
+    const attendanceOwnerId = role === "admin" ? schedule.teacherId : currentTeacherId;
+    if (attendance.some((item) => item.scheduleId === schedule.id && item.teacherId === attendanceOwnerId)) {
       return;
     }
 
@@ -2474,14 +2461,12 @@ export function MettasoulApp() {
       return;
     }
 
-    setAttendance((items) => [
-      response.attendance,
-      ...items,
-    ]);
+    setAttendance((items) => [...response.attendance, ...items]);
+    const schedulesById = new Map(response.schedules.map((item) => [item.id, item]));
     setSchedules((items) =>
-      items.map((item) => (item.id === schedule.id ? { ...item, ...response.schedule } : item)),
+      items.map((item) => schedulesById.has(item.id) ? { ...item, ...schedulesById.get(item.id) } : item),
     );
-    addNotification("Đã điểm danh", `${teacherName(schedule.teacherId)} đã điểm danh tiết dạy.`, "admin", {
+    addNotification("Đã điểm danh", `${role === "assistant" ? currentUser.name : teacherName(schedule.teacherId)} đã điểm danh ${response.group.scheduleCount} tiết cùng trường và cùng buổi.`, "admin", {
       tone: "success",
     });
   }
@@ -2587,6 +2572,12 @@ export function MettasoulApp() {
       if (response.notifications?.length) {
         setNotifications((items) => [...response.notifications!, ...items]);
       }
+      if (response.resetResult) {
+        const deletedAttendanceIds = new Set(response.resetResult.deletedAttendanceIds);
+        const deletedLessonPlanIds = new Set(response.resetResult.deletedLessonPlanIds);
+        setAttendance((items) => items.filter((item) => !deletedAttendanceIds.has(item.id)));
+        setLessonPlans((items) => items.filter((item) => !deletedLessonPlanIds.has(item.id)));
+      }
       setDataStatus("connected");
       setSaveError("");
     } catch (error) {
@@ -2604,6 +2595,8 @@ export function MettasoulApp() {
               status: "reassigned",
               reassignedFrom: reassignTarget.teacherId,
               sentAt: new Date().toISOString(),
+              confirmedAt: undefined,
+              assistantConfirmedIds: undefined,
             }
           : item,
       ),
@@ -2613,7 +2606,10 @@ export function MettasoulApp() {
       teacherId: replacement.id,
       reassignedFrom: reassignTarget.teacherId,
     });
-    pushToast("Đã chuyển lịch", `Lịch đã chuyển sang giáo viên ${replacement.name}.`, "success");
+    const removedDetails = response.resetResult
+      ? ` Đã làm sạch ${response.resetResult.deletedAttendanceIds.length} điểm danh và ${response.resetResult.deletedLessonPlanIds.length} giáo án cũ.`
+      : "";
+    pushToast("Đã chuyển lịch", `Lịch đã chuyển sang giáo viên ${replacement.name}.${removedDetails}`, "success");
     setReassignTarget(null);
     setReassignTeacherId("");
     setReassignTimeSlotId("");
@@ -2719,6 +2715,11 @@ export function MettasoulApp() {
       if (newNotifications.length > 0) {
         setNotifications((items) => [...newNotifications, ...items]);
       }
+      const resetResults = responses.flatMap((response) => response.resetResult ? [response.resetResult] : []);
+      const deletedAttendanceIds = new Set(resetResults.flatMap((result) => result.deletedAttendanceIds));
+      const deletedLessonPlanIds = new Set(resetResults.flatMap((result) => result.deletedLessonPlanIds));
+      setAttendance((items) => items.filter((item) => !deletedAttendanceIds.has(item.id)));
+      setLessonPlans((items) => items.filter((item) => !deletedLessonPlanIds.has(item.id)));
       setSchedules((items) =>
         items.map((item) =>
           selectedScheduleIds.includes(item.id)
@@ -2728,6 +2729,8 @@ export function MettasoulApp() {
                 status: "reassigned",
                 reassignedFrom: item.teacherId,
                 sentAt: new Date().toISOString(),
+                confirmedAt: undefined,
+                assistantConfirmedIds: undefined,
               }
             : item,
         ),
@@ -2960,9 +2963,10 @@ export function MettasoulApp() {
       ["Họ tên", "Email Google", "Số điện thoại", "Chuyên môn", "Quyền"],
       ["Nguyễn Văn Admin", "admin@example.com", "0900000001", "Điều phối giáo vụ", "admin"],
       ["Trần Thị Giáo Viên", "giaovien@example.com", "0900000002", "Kỹ năng sống", "giáo viên"],
+      ["Lê Minh Trợ Giảng", "trogiang@example.com", "0900000003", "Hỗ trợ lớp học", "trợ giảng"],
     ]);
     worksheet["!cols"] = [{ wch: 24 }, { wch: 30 }, { wch: 18 }, { wch: 24 }, { wch: 16 }];
-    worksheet["!autofilter"] = { ref: "A1:E3" };
+    worksheet["!autofilter"] = { ref: "A1:E4" };
     applyMettasoulExcelBrand(XLSX, worksheet, { headerRow: 0 });
     XLSX.utils.book_append_sheet(workbook, worksheet, "Giao vien");
     const fileData = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
@@ -3334,7 +3338,7 @@ export function MettasoulApp() {
   }
 
   function markSchedulesViewed() {
-    if (role !== "teacher" || !currentTeacherId || unseenScheduleCount === 0) return;
+    if (role === "admin" || !currentTeacherId || unseenScheduleCount === 0) return;
     const scheduleViewedAt = new Date().toISOString();
     setAppUsers((items) => items.map((user) => user.id === currentUser.id ? { ...user, scheduleViewedAt } : user));
     void persistUserActivity({ markSchedulesViewed: true }).catch(console.error);
@@ -3479,13 +3483,18 @@ export function MettasoulApp() {
       topicId: lesson.topicId ?? "",
       title: lesson.title,
       objective: lesson.objective,
+      lesson1Title: lesson.lesson1Title ?? "",
+      lesson1Objective: lesson.lesson1Objective ?? "",
+      lesson2Title: lesson.lesson2Title ?? "",
+      lesson2Objective: lesson.lesson2Objective ?? "",
       samplePlanUrl: lesson.samplePlanUrl ?? "",
       durationMinutes: lesson.durationMinutes,
     });
   }
 
   async function saveLessonEdit(lessonId: string) {
-    const error = validateLessonDraft(lessonEditDraft);
+    const normalizedDraft = withCombinedLessonObjective(lessonEditDraft);
+    const error = validateLessonDraft(normalizedDraft);
     if (error) {
       setSaveError(error);
       return;
@@ -3494,7 +3503,7 @@ export function MettasoulApp() {
     try {
       const savedLesson = await saveRequest<Lesson>("Đang lưu bài học...", `/api/lessons/${lessonId}`, {
         method: "PATCH",
-        body: JSON.stringify(lessonEditDraft),
+        body: JSON.stringify(normalizedDraft),
       });
       setLessons((items) => items.map((item) => (item.id === lessonId ? { ...item, ...savedLesson } : item)));
       setEditingLessonId("");
@@ -4382,7 +4391,7 @@ export function MettasoulApp() {
                 </button>
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-[var(--brand-dark)]">
-                    {role === "admin" ? "Bàn điều phối giáo vụ" : "Công việc của giáo viên"}
+                    {role === "admin" ? "Bàn điều phối giáo vụ" : role === "assistant" ? "Công việc của trợ giảng" : "Công việc của giáo viên"}
                   </p>
                   <h1 className="mt-1 truncate text-xl font-black tracking-tight md:text-3xl">
                     <span className="sm:hidden">{activeTabMeta?.label ?? "Mettasoul"}</span>
@@ -4401,7 +4410,7 @@ export function MettasoulApp() {
                     className="min-w-0 bg-transparent text-sm text-[var(--brand-dark)] outline-none placeholder:text-slate-400"
                   />
                 </label>
-                {role === "teacher" ? (
+                {role !== "admin" ? (
                   <button
                     type="button"
                     title="Góp ý nâng cấp"
@@ -4801,6 +4810,7 @@ export function MettasoulApp() {
                     className={inputClass}
                   >
                     <option value="teacher">Quyền giáo viên</option>
+                    <option value="assistant">Quyền trợ giảng</option>
                     <option value="admin">Quyền quản trị</option>
                   </select>
                 </div>
@@ -4808,7 +4818,7 @@ export function MettasoulApp() {
                 <div className="mt-5 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4">
                   <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Import Excel nhanh</p>
                   <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
-                    File mẫu có sẵn 2 dòng ví dụ cho quyền admin và giáo viên.
+                    File mẫu có sẵn ví dụ cho quyền admin, giáo viên và trợ giảng.
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button type="button" onClick={downloadTeacherSpreadsheetTemplate} className={ghostButtonClass}>
@@ -5055,7 +5065,7 @@ export function MettasoulApp() {
                     },
                     {
                       label: "Lớp",
-                      value: meta.classRoom?.name || "Chưa rõ",
+                      value: scheduleParticipantLabel(selectedScheduleDetail, classes),
                       tone: "orange",
                     },
                     {
@@ -5127,18 +5137,16 @@ export function MettasoulApp() {
                         </div>
 
                         <div className="mt-5 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-4">
-                          <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Mục tiêu bài học</p>
-                          <div className="mt-3 space-y-2">
-                            {splitObjectiveLines(meta.lesson?.objective || "").map((line, index) => (
-                              <div
-                                key={`${line}-${index}`}
-                                className={`rounded-xl border px-3 py-2 text-sm font-bold leading-6 shadow-sm ${
-                                  isLessonPeriodTitle(line)
-                                    ? "border-orange-300 bg-orange-50 text-orange-800"
-                                    : "border-orange-100 bg-white text-[var(--brand-dark)]"
-                                }`}
-                              >
-                                {line}
+                          <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Nội dung tiết được phân công</p>
+                          <div className="mt-3 space-y-3">
+                            {scheduledLessonSections(selectedScheduleDetail.lessonPeriods, meta.lesson).map((section) => (
+                              <div key={section.period} className="rounded-xl border border-orange-100 bg-white p-3 shadow-sm">
+                                <p className="text-sm font-black text-orange-800">{section.label}: {section.title}</p>
+                                <div className="mt-2 space-y-2">
+                                  {splitObjectiveLines(section.objective).map((line, index) => (
+                                    <p key={`${section.period}-${index}`} className="text-sm font-bold leading-6 text-[var(--brand-dark)]">{line}</p>
+                                  ))}
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -5254,10 +5262,13 @@ export function MettasoulApp() {
     if (role === "teacher") {
       return <TeacherOverviewPanel />;
     }
+    if (role === "assistant") {
+      return <AssistantOverviewPanel />;
+    }
 
     const confirmed = schedules.filter((item) => item.status === "confirmed").length;
     const uploaded = lessonPlans.length;
-    const attended = attendance.length;
+    const attended = primaryTeacherAttendance.length;
 
     return (
       <div className="space-y-6">
@@ -5283,6 +5294,32 @@ export function MettasoulApp() {
             </div>
           </Panel>
         </div>
+      </div>
+    );
+  }
+
+  function AssistantOverviewPanel() {
+    const assignedSchedules = visibleSchedules.filter((schedule) => schedule.status !== "cancelled");
+    const confirmedCount = assignedSchedules.filter((schedule) => isAssistantScheduleConfirmed(schedule, currentTeacherId)).length;
+    const attendedScheduleIds = new Set(attendance
+      .filter((record) => record.teacherId === currentTeacherId)
+      .map((record) => record.scheduleId));
+    const upcomingSchedules = assignedSchedules.filter((schedule) => schedule.date >= currentDateKey());
+
+    return (
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <Stat icon={CalendarDays} label="Lịch được phân công" value={assignedSchedules.length} tone="cyan" />
+          <Stat icon={CheckCircle2} label="Đã xác nhận" value={confirmedCount} tone="emerald" />
+          <Stat icon={Clock3} label="Lịch sắp tới" value={upcomingSchedules.length} tone="blue" />
+          <Stat icon={ShieldCheck} label="Đã điểm danh" value={attendedScheduleIds.size} tone="orange" />
+        </div>
+        <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-4 text-sm font-semibold text-violet-900">
+          Trợ giảng xác nhận và điểm danh cho chính mình. Giáo án của giáo viên được mở ở chế độ chỉ đọc; mọi chỉnh sửa hoặc tải lên vẫn thuộc giáo viên phụ trách.
+        </div>
+        <Panel title="Lịch trợ giảng gần nhất" action={`${upcomingSchedules.length} lịch sắp tới`}>
+          <ScheduleList items={upcomingSchedules.slice(0, 8)} />
+        </Panel>
       </div>
     );
   }
@@ -5438,6 +5475,8 @@ export function MettasoulApp() {
                                 schoolId,
                                 classId,
                                 classIds: classId ? [classId] : [],
+                                participantScope: "selected_classes",
+                                participantGrade: "",
                                 timeSlotId,
                                 lessonId: pickLessonIdForGrade(grade, item.lessonId, activeLessons),
                                 topicId: "",
@@ -5465,6 +5504,8 @@ export function MettasoulApp() {
                               updateDraftItem(item.id, {
                                 classId,
                                 classIds: classId ? [classId] : [],
+                                participantScope: "selected_classes",
+                                participantGrade: "",
                                 lessonId: pickLessonIdForGrade(grade, item.lessonId, activeLessons),
                                 timeSlotId: schoolSlots.some((slot) => slot.id === item.timeSlotId)
                                   ? item.timeSlotId
@@ -5491,6 +5532,8 @@ export function MettasoulApp() {
                               updateDraftItem(item.id, {
                                 classId,
                                 classIds: classId ? [classId] : [],
+                                participantScope: "selected_classes",
+                                participantGrade: "",
                                 lessonId: pickLessonIdForClass(classId, item.lessonId, classes, activeLessons),
                               });
                             }}
@@ -5598,6 +5641,12 @@ export function MettasoulApp() {
                                   normalizeTeachingEnvironmentValue(e.target.value) === "in_class"
                                     ? (item.classId ? [item.classId] : [])
                                     : item.classIds.length > 0 ? item.classIds : (item.classId ? [item.classId] : []),
+                                participantScope: normalizeTeachingEnvironmentValue(e.target.value) === "in_class"
+                                  ? "selected_classes"
+                                  : item.participantScope,
+                                participantGrade: normalizeTeachingEnvironmentValue(e.target.value) === "in_class"
+                                  ? ""
+                                  : item.participantGrade,
                               })
                             }
                             className={inputClass}
@@ -5610,25 +5659,50 @@ export function MettasoulApp() {
                           </select>
                           {item.teachingEnvironment !== "in_class" ? (
                             <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-3 md:col-span-2">
-                              <p className="text-xs font-black uppercase text-violet-800">Lớp tham gia hoạt động chung</p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {rowClasses.map((classRoom) => (
-                                  <label key={classRoom.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-semibold text-violet-900 shadow-sm">
-                                    <input
-                                      type="checkbox"
-                                      checked={item.classIds.includes(classRoom.id)}
-                                      onChange={(event) => {
-                                        const classIds = event.target.checked
-                                          ? Array.from(new Set([...item.classIds, classRoom.id]))
-                                          : item.classIds.filter((id) => id !== classRoom.id);
-                                        updateDraftItem(item.id, { classIds, classId: classIds[0] ?? "" });
-                                      }}
-                                    />
-                                    {classRoom.name}
-                                  </label>
+                              <p className="text-xs font-black uppercase text-violet-800">Phạm vi học sinh tham gia</p>
+                              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                                {([
+                                  ["selected_classes", "Chọn lớp", item.classIds],
+                                  ["whole_grade", `Toàn ${rowSelectedGrade}`, rowGradeClasses.map((classRoom) => classRoom.id)],
+                                  ["whole_school", "Toàn trường", rowClasses.map((classRoom) => classRoom.id)],
+                                ] as const).map(([scope, label, classIds]) => (
+                                  <button
+                                    key={scope}
+                                    type="button"
+                                    onClick={() => updateDraftItem(item.id, {
+                                      participantScope: scope,
+                                      participantGrade: scope === "whole_grade" ? rowSelectedGrade : "",
+                                      classIds: scope === "selected_classes" ? (item.classIds.length > 0 ? item.classIds : item.classId ? [item.classId] : []) : [...classIds],
+                                      classId: (scope === "selected_classes" ? item.classIds[0] || item.classId : classIds[0]) || "",
+                                    })}
+                                    className={`rounded-xl border px-3 py-2 text-xs font-black transition ${item.participantScope === scope ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-900 hover:bg-violet-100"}`}
+                                  >
+                                    {label}
+                                  </button>
                                 ))}
                               </div>
-                              <p className="mt-2 text-xs font-semibold text-violet-700">Đã chọn {item.classIds.length} lớp. Hoạt động chung cho phép các lớp và giáo viên đã chọn diễn ra đồng thời.</p>
+                              {item.participantScope === "selected_classes" ? (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {rowClasses.map((classRoom) => (
+                                    <label key={classRoom.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-semibold text-violet-900 shadow-sm">
+                                      <input
+                                        type="checkbox"
+                                        checked={item.classIds.includes(classRoom.id)}
+                                        onChange={(event) => {
+                                          const classIds = event.target.checked
+                                            ? Array.from(new Set([...item.classIds, classRoom.id]))
+                                            : item.classIds.filter((id) => id !== classRoom.id);
+                                          updateDraftItem(item.id, { classIds, classId: classIds[0] ?? "", participantGrade: "" });
+                                        }}
+                                      />
+                                      {classRoom.name}
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : null}
+                              <p className="mt-2 text-xs font-semibold text-violet-700">
+                                {item.participantScope === "whole_school" ? "Áp dụng cho toàn trường" : item.participantScope === "whole_grade" ? `Áp dụng cho toàn ${item.participantGrade || rowSelectedGrade}` : `Đã chọn ${item.classIds.length} lớp`} · {item.classIds.length} lớp hiện có trong phạm vi.
+                              </p>
                             </div>
                           ) : null}
                           {rowSelectedGrade && rowLessons.length === 0 ? (
@@ -5930,9 +6004,7 @@ export function MettasoulApp() {
           const lesson = lessons.find((l) => l.id === s.lessonId);
           const slot = timeSlots.find((ts) => ts.id === s.timeSlotId);
           const envLabel = teachingEnvironmentOptions.find((o) => o.value === s.teachingEnvironment)?.label ?? s.teachingEnvironment ?? "";
-          const classNames = scheduleParticipantClassIds(s)
-            .map((classId) => classes.find((classRoom) => classRoom.id === classId)?.name ?? classId)
-            .join(", ");
+          const classNames = scheduleParticipantLabel(s, classes);
           const periodNames = String(s.lessonPeriods || "lesson1")
             .split(",")
             .map((period) => period.trim())
@@ -6274,12 +6346,11 @@ export function MettasoulApp() {
                         : `Đang thiết lập ngày ${formatShortDateLabel(availabilityTargetDates[0])}`}
                     </p>
                   ) : null}
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid gap-2 sm:grid-cols-3">
                     {([
                       ["all_day", "Cả ngày"],
                       ["morning", "Buổi sáng"],
                       ["afternoon", "Buổi chiều"],
-                      ["time_slots", "Khung giờ cụ thể"],
                     ] as Array<[TeacherAvailabilityScope, string]>).map(([scope, label]) => (
                       <button
                         key={scope}
@@ -6292,53 +6363,6 @@ export function MettasoulApp() {
                       </button>
                     ))}
                   </div>
-                  {availabilityTargetScope === "time_slots" ? (
-                    <div className="space-y-2 rounded-xl border border-emerald-200 bg-white p-3">
-                      <p className="text-xs font-bold text-[var(--muted)]">Mở nhóm thời lượng phù hợp, sau đó chọn giờ ở buổi sáng hoặc buổi chiều.</p>
-                      {availabilityTimeRangeGroups.map((durationGroup) => {
-                        const selectedCount = durationGroup.ranges.filter((slot) =>
-                          availabilityTargetDates.some((date) => availabilityDrafts[date]?.timeSlotIds.includes(slot.id)),
-                        ).length;
-                        const isExpanded = expandedAvailabilityDurationGroups.includes(durationGroup.key);
-                        return (
-                          <div key={durationGroup.key} className="rounded-xl border border-emerald-100 bg-emerald-50/40">
-                            <button
-                              type="button"
-                              aria-expanded={isExpanded}
-                              onClick={() => toggleAvailabilityDurationGroup(durationGroup.key)}
-                              className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left text-sm font-black text-emerald-900"
-                            >
-                              <span>{durationGroup.label}</span>
-                              <span className="flex items-center gap-2">
-                                {selectedCount > 0 ? <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] text-white">Đã chọn {selectedCount}</span> : null}
-                                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] text-emerald-700">{durationGroup.ranges.length} giờ</span>
-                                <ChevronRight className={`size-4 transition ${isExpanded ? "rotate-90" : ""}`} aria-hidden="true" />
-                              </span>
-                            </button>
-                            {isExpanded ? <div className="grid gap-3 border-t border-emerald-100 p-3 lg:grid-cols-2">
-                              {([
-                                ["Buổi sáng", durationGroup.ranges.filter((slot) => isMorningTimeSlot(slot))],
-                                ["Buổi chiều", durationGroup.ranges.filter((slot) => !isMorningTimeSlot(slot))],
-                              ] as const).map(([periodLabel, ranges]) => (
-                                <div key={periodLabel} className="rounded-xl bg-white p-3">
-                                  <p className="mb-2 text-xs font-black uppercase tracking-wide text-emerald-800">{periodLabel}</p>
-                                  <div className="grid gap-2 sm:grid-cols-2">
-                                    {ranges.map((slot) => (
-                                      <label key={slot.id} className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-emerald-900">
-                                        <input type="checkbox" checked={availabilityTargetDates.every((date) => availabilityDrafts[date]?.timeSlotIds.includes(slot.id))} onChange={() => toggleAvailabilityTimeSlot(slot.id)} />
-                                        <span>{slot.start} - {slot.end}{durationGroup.key === "other" ? ` · ${availabilityTimeRangeDuration(slot)} phút` : ""}</span>
-                                      </label>
-                                    ))}
-                                    {ranges.length === 0 ? <span className="text-xs font-semibold text-[var(--muted)]">Không có khung giờ.</span> : null}
-                                  </div>
-                                </div>
-                              ))}
-                            </div> : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : null}
                   <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
                     Lưu ý: lịch trống sẽ được khóa sau 24 giờ kể từ thời điểm xác nhận. Sau khi khóa, bạn không thể sửa hoặc xóa đăng ký đó.
                   </p>
@@ -6970,11 +6994,38 @@ export function MettasoulApp() {
                           ))}
                         </select>
                       </div>
-                      <textarea
-                        value={lessonEditDraft.objective}
-                        onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, objective: event.target.value })}
-                        className={`${compactInputClass} min-h-28 resize-y whitespace-pre-line`}
-                      />
+                      <div className="grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/40 p-3 md:grid-cols-2">
+                        <div className="grid gap-2">
+                          <p className="text-xs font-black uppercase text-cyan-900">Tiết 1</p>
+                          <input
+                            value={lessonEditDraft.lesson1Title}
+                            onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, lesson1Title: event.target.value })}
+                            placeholder="Tên tiết 1"
+                            className={compactInputClass}
+                          />
+                          <textarea
+                            value={lessonEditDraft.lesson1Objective}
+                            onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, lesson1Objective: event.target.value })}
+                            placeholder="Mục tiêu tiết 1"
+                            className={`${compactInputClass} min-h-24 resize-y whitespace-pre-line`}
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <p className="text-xs font-black uppercase text-cyan-900">Tiết 2</p>
+                          <input
+                            value={lessonEditDraft.lesson2Title}
+                            onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, lesson2Title: event.target.value })}
+                            placeholder="Tên tiết 2"
+                            className={compactInputClass}
+                          />
+                          <textarea
+                            value={lessonEditDraft.lesson2Objective}
+                            onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, lesson2Objective: event.target.value })}
+                            placeholder="Mục tiêu tiết 2"
+                            className={`${compactInputClass} min-h-24 resize-y whitespace-pre-line`}
+                          />
+                        </div>
+                      </div>
                       <input
                         value={lessonEditDraft.samplePlanUrl}
                         onChange={(event) =>
@@ -7314,7 +7365,47 @@ export function MettasoulApp() {
   }
 
   function LessonPlansPanel() {
-    return role === "admin" ? <AdminLessonPlansPanel /> : <TeacherLessonPlansPanel />;
+    return role === "admin" ? <AdminLessonPlansPanel /> : role === "assistant" ? <AssistantLessonPlansPanel /> : <TeacherLessonPlansPanel />;
+  }
+
+  function AssistantLessonPlansPanel() {
+    const assignedSchedules = schedules
+      .filter((schedule) => isAssistantAssignedToSchedule(schedule, currentTeacherId) && schedule.status !== "cancelled")
+      .sort((left, right) => left.date.localeCompare(right.date));
+
+    return (
+      <Panel title="Giáo án tham khảo" action="Chỉ đọc">
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4 text-sm font-semibold text-[var(--brand-dark)]">
+            Bạn có thể xem giáo án của giáo viên phụ trách để chuẩn bị dụng cụ và hỗ trợ lớp. Trợ giảng không thể tải lên, sửa hoặc xóa giáo án.
+          </div>
+          {assignedSchedules.map((schedule) => {
+            const meta = lookupSchedule(schedule);
+            return (
+              <div key={schedule.id} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
+                    <p className="mt-1 text-xs font-bold text-[var(--muted)]">{formatScheduleDateTime(schedule)} · {meta.school?.name} · {scheduleParticipantLabel(schedule, classes)}</p>
+                  </div>
+                  <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-black text-violet-800">GV: {meta.teacher?.name || "Chưa rõ"}</span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {meta.plans.map((plan) => (
+                    <a key={plan.id} href={plan.driveUrl} target="_blank" rel="noopener noreferrer" className={ghostButtonClass}>
+                      <ExternalLink size={15} />
+                      {plan.fileName}
+                    </a>
+                  ))}
+                  {meta.plans.length === 0 ? <span className="text-xs font-bold text-amber-700">Giáo viên chưa tải giáo án.</span> : null}
+                </div>
+              </div>
+            );
+          })}
+          {assignedSchedules.length === 0 ? <p className="rounded-2xl bg-slate-50 p-5 text-sm font-semibold text-[var(--muted)]">Chưa có lịch trợ giảng được phân công.</p> : null}
+        </div>
+      </Panel>
+    );
   }
 
   function AdminLessonPlansPanel() {
@@ -8150,11 +8241,17 @@ export function MettasoulApp() {
   }
 
   function AttendancePanel() {
-    const scopedSchedules =
-      role === "admin" ? schedules : schedules.filter((item) => item.teacherId === currentTeacherId);
+    const scopedSchedules = role === "admin"
+      ? schedules
+      : schedules.filter((item) => role === "assistant"
+          ? isAssistantAssignedToSchedule(item, currentTeacherId)
+          : item.teacherId === currentTeacherId);
     const today = currentDateKey();
     const scopedScheduleIds = new Set(scopedSchedules.map((schedule) => schedule.id));
-    const attendanceToday = attendance.filter((record) => dateTimeDateKey(record.checkedInAt) === today);
+    const attendanceToday = attendance.filter((record) =>
+      dateTimeDateKey(record.checkedInAt) === today
+      && (role !== "admin" || schedules.find((schedule) => schedule.id === record.scheduleId)?.teacherId === record.teacherId),
+    );
     const todaySchedules = scopedSchedules.filter((schedule) => schedule.date === today && isAttendanceTrackedSchedule(schedule));
     const checkedToday = attendanceToday
       .map((record) => schedules.find((schedule) => schedule.id === record.scheduleId))
@@ -8182,7 +8279,7 @@ export function MettasoulApp() {
       "missing-today": "Chưa điểm danh hôm nay",
       "late-today": "Điểm danh trễ hôm nay",
     }[attendanceAdminFocus ?? "all-today"];
-    const teacherWarnings = buildAttendanceTeacherWarnings(schedules, attendance, teachers, timeSlots);
+    const teacherWarnings = buildAttendanceTeacherWarnings(schedules, primaryTeacherAttendance, teachers, timeSlots);
     const selectedWarning = attendanceWarningFocus
       ? teacherWarnings.find((warning) => warning.teacher.id === attendanceWarningFocus.teacherId)
       : undefined;
@@ -8270,9 +8367,9 @@ export function MettasoulApp() {
             </div>
           </Panel>
 
-          <Panel title="Lịch sử điểm danh gần nhất" action={`${attendance.length} bản ghi`}>
+          <Panel title="Lịch sử điểm danh gần nhất" action={`${primaryTeacherAttendance.length} bản ghi`}>
             <div className="space-y-3">
-              {attendance.slice(0, 8).map((record) => {
+              {primaryTeacherAttendance.slice(0, 8).map((record) => {
                 const schedule = schedules.find((item) => item.id === record.scheduleId);
                 if (!schedule) {
                   return null;
@@ -8362,7 +8459,7 @@ export function MettasoulApp() {
     }
 
     return (
-      <Panel title="Điểm danh từng tiết" action="Lưu thời gian bấm">
+      <Panel title="Điểm danh theo trường và buổi" action="Một lần cho các tiết cùng nhóm">
         <div className="space-y-3">
           {scopedSchedules.map((schedule) => {
             const meta = lookupSchedule(schedule);
@@ -8408,7 +8505,7 @@ export function MettasoulApp() {
                   }
                 >
                   <CheckCircle2 size={18} />
-                  {isCheckedIn ? "Đã điểm danh" : "Điểm danh"}
+                  {isCheckedIn ? "Đã điểm danh" : "Điểm danh buổi"}
                 </button>
               </div>
             );
@@ -9597,6 +9694,17 @@ export function MettasoulApp() {
                         Xác nhận
                       </button>
                     ) : null}
+                    {!compact && role === "assistant" && isAssistantAssignedToSchedule(schedule, currentTeacherId) && !isAssistantScheduleConfirmed(schedule, currentTeacherId) && schedule.status !== "cancelled" ? (
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          confirmAssistantSchedule(schedule.id);
+                        }}
+                        className="rounded-xl bg-violet-600 px-3 py-2 text-xs font-black text-white"
+                      >
+                        Xác nhận trợ giảng
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 {isHistoryOpen ? (
@@ -10237,6 +10345,9 @@ function parseTeacherRole(value: string | undefined): Role {
   if (["admin", "quan tri", "quantri", "quan tri vien", "quantrivien", "quyen quan tri", "quyenquantri"].includes(normalized)) {
     return "admin";
   }
+  if (["assistant", "tro giang", "trogiang", "quyen tro giang", "quyentrogiang"].includes(normalized)) {
+    return "assistant";
+  }
   return "teacher";
 }
 
@@ -10386,6 +10497,13 @@ function validateLessonDraft(row: LessonDraft, label = "Bài học") {
   }
 
   return "";
+}
+
+function withCombinedLessonObjective(row: LessonDraft): LessonDraft {
+  return {
+    ...row,
+    objective: `Tiết 1 - ${row.lesson1Title.trim()}:\n${row.lesson1Objective.trim()}\n\nTiết 2 - ${row.lesson2Title.trim()}:\n${row.lesson2Objective.trim()}`,
+  };
 }
 
 function normalizeTimeSlotDraft<T extends TimeSlotDraft & { id?: string }>(row: T) {
@@ -10558,6 +10676,10 @@ function parseLessonClipboard(text: string): BulkLessonRow[] {
       topicId: "",
       title: cells[1]?.trim() ?? "",
       objective: cells[2]?.trim() ?? "",
+      lesson1Title: "",
+      lesson1Objective: "",
+      lesson2Title: "",
+      lesson2Objective: "",
       samplePlanUrl: cells.length >= 5 ? cells[3]?.trim() ?? "" : "",
       durationMinutes: normalizeDuration(cells.length >= 5 ? cells[4] : cells[3]),
     }));
@@ -10756,6 +10878,8 @@ function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftSchedu
     schoolId: seed?.schoolId || "",
     classId: seed?.classId || "",
     classIds: seed?.classIds ?? (seed?.classId ? [seed.classId] : []),
+    participantScope: normalizeScheduleParticipantScope(seed?.participantScope),
+    participantGrade: seed?.participantGrade ?? "",
     lessonId: seed?.lessonId || "",
     lessonPeriods: seed?.lessonPeriods ?? ["lesson1"],
     timeSlotId: seed?.timeSlotId || "",
@@ -10799,6 +10923,25 @@ function buildClassSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "cla
 
 function scheduleParticipantClassIds(schedule: Pick<Schedule, "classId" | "participantClassIds">) {
   return Array.from(new Set(String(schedule.participantClassIds || schedule.classId || "").split(",").map((id) => id.trim()).filter(Boolean)));
+}
+
+function isAssistantAssignedToSchedule(schedule: Pick<Schedule, "assistantIds">, assistantId: string) {
+  return Boolean(assistantId) && String(schedule.assistantIds || "").split(",").map((id) => id.trim()).includes(assistantId);
+}
+
+function isAssistantScheduleConfirmed(schedule: Pick<Schedule, "assistantConfirmedIds">, assistantId: string) {
+  return Boolean(assistantId) && String(schedule.assistantConfirmedIds || "").split(",").map((id) => id.trim()).includes(assistantId);
+}
+
+function scheduleParticipantLabel(
+  schedule: Pick<Schedule, "classId" | "participantClassIds" | "participantScope" | "participantGrade">,
+  classes: ClassRoom[],
+) {
+  if (schedule.participantScope === "whole_school") return "Toàn trường";
+  if (schedule.participantScope === "whole_grade") return `Toàn ${schedule.participantGrade || "khối"}`;
+  const names = scheduleParticipantClassIds(schedule)
+    .map((classId) => classes.find((classRoom) => classRoom.id === classId)?.name ?? classId);
+  return names.join(", ") || "Chưa rõ";
 }
 
 function pushDraftConflict(
@@ -10849,9 +10992,14 @@ function normalizeDraftScheduleItem(
     context.classes.some((classRoom) => classRoom.id === selectedClassId && classRoom.schoolId === schoolId),
   )));
   if (classIds.length === 0 && classId) classIds.push(classId);
-  const normalizedClassIds = normalizeTeachingEnvironmentValue(item.teachingEnvironment) === "in_class"
-    ? classIds.slice(0, 1)
-    : classIds;
+  const teachingEnvironment = normalizeTeachingEnvironmentValue(item.teachingEnvironment);
+  const participantSelection = resolveScheduleParticipantSelection({
+    teachingEnvironment,
+    participantScope: item.participantScope,
+    participantGrade: item.participantGrade || grade,
+    requestedClassIds: classIds,
+  }, classesForSchool(context.classes, schoolId));
+  const { participantScope, participantGrade, classIds: normalizedClassIds } = participantSelection;
   const lessonId = pickLessonIdForClass(classId, item.lessonId, context.classes, context.activeLessons);
   const lesson = context.activeLessons.find((entry) => entry.id === lessonId);
   const timeSlotId = context.activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
@@ -10867,7 +11015,9 @@ function normalizeDraftScheduleItem(
     lessonId,
     lessonPeriods: normalizeLessonPeriods(item.lessonPeriods, lesson),
     timeSlotId,
-    teachingEnvironment: normalizeTeachingEnvironmentValue(item.teachingEnvironment),
+    teachingEnvironment,
+    participantScope,
+    participantGrade,
     teacherIds: item.teacherIds ?? [],
     topicId: item.topicId ?? "",
     assistantIds: item.assistantIds ?? [],
@@ -11834,8 +11984,4 @@ function splitObjectiveLines(objective: string) {
     .filter(Boolean);
 
   return normalized.length > 0 ? normalized : [text];
-}
-
-function isLessonPeriodTitle(line: string) {
-  return /^Tiết\s*[12]\b/i.test(line.trim());
 }

@@ -3,6 +3,8 @@ import fs from "node:fs";
 import ts from "typescript";
 
 const source = fs.readFileSync(new URL("../lib/teacher-availability.ts", import.meta.url), "utf8");
+const appSource = fs.readFileSync(new URL("../components/mettasoul-app.tsx", import.meta.url), "utf8");
+const routeSource = fs.readFileSync(new URL("../app/api/teacher-availability/route.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -147,4 +149,7 @@ assert.deepEqual(selectTeacherAvailabilityRowsForChange(sameDayRegistrations, "t
 assert.equal(isTeacherAvailabilityLocked(selectTeacherAvailabilityRowsForChange(sameDayRegistrations, "teacher-1", ["2027-09-09"], "update", "old-group"), confirmedAtMs + 25 * 60 * 60 * 1000), true);
 assert.equal(isTeacherAvailabilityLocked(selectTeacherAvailabilityRowsForChange(sameDayRegistrations, "teacher-1", ["2027-09-09"], "update", "new-group"), confirmedAtMs + 25 * 60 * 60 * 1000), false);
 
-console.log("Teacher availability policy tests passed, including independent registrations on the same day.");
+assert.equal(appSource.includes('["time_slots", "Khung giờ cụ thể"]'), false);
+assert.match(routeSource, /chỉ nhận đăng ký Cả ngày, Buổi sáng hoặc Buổi chiều/);
+
+console.log("Teacher availability policy tests passed, including broad-scope writes and legacy exact-slot reads.");

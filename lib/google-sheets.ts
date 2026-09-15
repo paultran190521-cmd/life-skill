@@ -672,6 +672,9 @@ export const scheduleHeaders = [
   "groupId",
   "assistantIds",
   "participantClassIds",
+  "participantScope",
+  "participantGrade",
+  "assistantConfirmedIds",
 ];
 
 export const notificationHeaders = [
@@ -1003,6 +1006,10 @@ function toSchedules(rows: SheetRow[]): Schedule[] {
     schoolId: row.schoolId,
     classId: row.classId,
     participantClassIds: row.participantClassIds || undefined,
+    participantScope: (["selected_classes", "whole_grade", "whole_school"].includes(row.participantScope)
+      ? row.participantScope
+      : "selected_classes") as Schedule["participantScope"],
+    participantGrade: row.participantGrade || undefined,
     lessonId: row.lessonId,
     lessonPeriods: normalizeLessonPeriods(row.lessonPeriods),
     timeSlotId: row.timeSlotId,
@@ -1013,6 +1020,7 @@ function toSchedules(rows: SheetRow[]): Schedule[] {
     reassignedFrom: row.reassignedFrom || undefined,
     groupId: row.groupId || undefined,
     assistantIds: row.assistantIds || undefined,
+    assistantConfirmedIds: row.assistantConfirmedIds || undefined,
   }));
 }
 

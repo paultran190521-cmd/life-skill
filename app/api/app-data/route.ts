@@ -51,16 +51,14 @@ export async function GET(request: Request) {
         lessons: data.lessons,
         timeSlots: data.timeSlots,
         schedules: scopedSchedules,
-        lessonPlans: auth.user.role === "teacher" && teacherId
-          ? data.lessonPlans.filter((plan) => plan.teacherId === teacherId)
+        lessonPlans: teacherId
+          ? data.lessonPlans.filter((plan) => auth.user.role === "assistant"
+              ? assignedScheduleIds.has(plan.scheduleId)
+              : plan.teacherId === teacherId)
           : [],
-        attendance: auth.user.role === "teacher" && teacherId
-          ? data.attendance.filter(
-              (record) => record.teacherId === teacherId || assignedScheduleIds.has(record.scheduleId),
-            )
-          : [],
+        attendance: teacherId ? data.attendance.filter((record) => record.teacherId === teacherId) : [],
         notifications: data.notifications.filter(
-          (notification) => notification.role === "teacher" || notification.role === "all",
+          (notification) => notification.role === auth.user.role || notification.role === "all",
         ),
         appAnnouncements: data.appAnnouncements.filter((announcement) => announcement.active),
         auditLogs: [],

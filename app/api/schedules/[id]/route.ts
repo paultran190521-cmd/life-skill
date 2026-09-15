@@ -8,7 +8,7 @@ import {
   readSheetRows,
   updateSheetRowById,
 } from "@/lib/google-sheets";
-import { deleteSchedulesCascade } from "@/lib/schedule-cascade-delete";
+import { deleteSchedulesCascade, resetScheduleAssignmentData, type ScheduleCascadeDeleteResult } from "@/lib/schedule-cascade-delete";
 import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 import { invalidateScheduleConflictIndex } from "@/lib/schedule-conflict-index";
 import { hasTeacherTimeConflict } from "@/lib/schedule-conflict-policy";
@@ -48,6 +48,7 @@ export async function PATCH(request: Request, { params }: Params) {
     let emailResult: Record<string, unknown> | null = null;
     let scheduleForEmail: Schedule | null = null;
     let notifications: Notification[] = [];
+    let resetResult: ScheduleCascadeDeleteResult | null = null;
 
     if (status === "confirmed") {
       patch.confirmedAt = now;
@@ -74,6 +75,9 @@ export async function PATCH(request: Request, { params }: Params) {
       patch.timeSlotId = nextTimeSlotId;
       patch.reassignedFrom = schedule.teacherId;
       patch.sentAt = now;
+      patch.confirmedAt = "";
+      patch.assistantConfirmedIds = "";
+      resetResult = await resetScheduleAssignmentData([id]);
       notifications = [
         createNotification("Đã chuyển lịch", "Một lịch dạy vừa được chuyển sang giáo viên mới.", "admin", now),
         createNotification("Bạn có lịch dạy mới", "Vui lòng mở lịch cá nhân để xác nhận.", "teacher", now),
@@ -115,10 +119,14 @@ export async function PATCH(request: Request, { params }: Params) {
       after: {
         ...patch,
         teacherId: patch.teacherId || schedule.teacherId,
+        resetAttendanceCount: resetResult?.deletedAttendanceIds.length || 0,
+        resetLessonPlanCount: resetResult?.deletedLessonPlanIds.length || 0,
+        resetLessonPlanMessageCount: resetResult?.deletedLessonPlanMessageIds.length || 0,
+        resetLessonPlanAttachmentCount: resetResult?.deletedLessonPlanAttachmentIds.length || 0,
       },
     });
 
-    return NextResponse.json({ id, ...patch, emailResult, notifications });
+    return NextResponse.json({ id, ...patch, emailResult, notifications, resetResult });
   } catch (error) {
     return apiError(error, requestId);
   }
@@ -163,6 +171,8 @@ export async function DELETE(request: Request, { params }: Params) {
       after: {
         deletedAttendanceCount: result.deletedAttendanceIds.length,
         deletedLessonPlanCount: result.deletedLessonPlanIds.length,
+        deletedLessonPlanMessageCount: result.deletedLessonPlanMessageIds.length,
+        deletedLessonPlanAttachmentCount: result.deletedLessonPlanAttachmentIds.length,
         trashedDriveFileCount: result.trashedDriveFileIds.length,
       },
     });
@@ -235,6 +245,14 @@ async function sendReassignEmail(schedule: Schedule) {
     teacher: teachers.find((teacher) => teacher.id === schedule.teacherId) || {},
     school: schools.find((school) => school.id === schedule.schoolId),
     classRoom: classes.find((classRoom) => classRoom.id === schedule.classId),
+    participantClassNames: schedule.participantScope === "whole_school"
+      ? ["Toàn trường"]
+      : schedule.participantScope === "whole_grade"
+        ? [`Toàn ${schedule.participantGrade || "khối"}`]
+        : String(schedule.participantClassIds || schedule.classId || "")
+            .split(",")
+            .map((id) => classes.find((classRoom) => classRoom.id === id.trim())?.name)
+            .filter((name): name is string => Boolean(name)),
     lesson: lessons.find((lesson) => lesson.id === schedule.lessonId),
     slot: slots.find((slot) => slot.id === schedule.timeSlotId),
   });
