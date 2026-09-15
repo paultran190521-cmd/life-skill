@@ -141,7 +141,7 @@ button:disabled {
 }
 
 .ui-polish .ui-enter {
-  animation: ui-fade-up 0.55s var(--ease-smooth) both;
+  animation: ui-fade-up 0.55s var(--ease-smooth) backwards;
 }
 
 .ui-polish :is(section, div, article, li)[class*="rounded-3xl"][class*="bg-white"][class*="border"],
