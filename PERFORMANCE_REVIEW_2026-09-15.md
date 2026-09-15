@@ -78,3 +78,12 @@ Chưa bổ sung thư viện hiệu ứng, thư viện phân trang hoặc dịch 
 - React giữ trạng thái theo vị trí và loại component trong cây giao diện: [Preserving and Resetting State](https://react.dev/learn/preserving-and-resetting-state).
 - Next.js hỗ trợ tải component theo nhu cầu: [Lazy Loading](https://nextjs.org/docs/app/guides/lazy-loading).
 - React cho phép ưu tiên thao tác nhập khi cập nhật kết quả nặng: [useDeferredValue](https://react.dev/reference/react/useDeferredValue). Hiệu quả đầy đủ còn phụ thuộc ranh giới component và mức giảm công việc dựng giao diện.
+# Bổ sung: giáo án trên điện thoại và menu gọn (15/09/2026)
+
+- Sidebar giới hạn chiều cao theo số mục (48px/mục, gồm khoảng cách), thay vì chia 432px cho cả vai trò chỉ có 5 mục. Giữ cơ chế fixed và co theo chiều cao màn hình hiện có.
+- Thẻ giáo án co đúng cột; tên tệp dài được xuống dòng; nhóm phản hồi/sửa/xóa tự bọc; ô link dùng cột minmax(0,1fr). Không che nội dung bằng overflow-x:hidden.
+- Giáo viên/trợ giảng dựng tối đa 12 thẻ chuyên đề/trang; các danh sách trạng thái giáo viên tối đa 30 dòng/trang. Tổng số vẫn tính trên toàn bộ dữ liệu.
+- Tách LessonPlanLinkForm: gõ link chỉ cập nhật component nhỏ; nháp nằm trong ref theo tài khoản+lịch, giữ khi chuyển menu/trang; thất bại giữ nháp; thành công mới xóa; chặn bấm lưu kép.
+- Không thêm thư viện animation hoặc dependency. Không thay đổi quyền trợ giảng, API ghi, GAS, dữ liệu trường/lớp hay quy tắc trùng lịch.
+- Kiểm thử: 16 tổ hợp vai trò/menu giữ nguyên nội dung; kiểm thử link form (khôi phục nháp, cách ly tài khoản, thành công/thất bại, chống gửi kép); TypeScript và production build đạt.
+- Chưa triển khai việc chia bootstrap theo miền dữ liệu/khoảng ngày hay tách toàn bộ state từng menu. Đây vẫn là phần tiếp theo của kế hoạch, cần endpoint tổng hợp thống kê và giữ đủ lịch sử kiểm tra trùng lịch ở server; không được thay bằng việc cắt bớt mảng schedules đang dùng chung.

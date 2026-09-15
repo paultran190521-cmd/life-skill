@@ -48,6 +48,7 @@ import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import type { SchoolGuideCache } from "@/components/school-guide-panel";
 import { PagedList } from "@/components/paged-list";
+import { LessonPlanLinkForm } from "@/components/lesson-plan-link-form";
 import { statusLabels, statusStyles } from "@/lib/status";
 import {
   canShareClassTimeSlot,
@@ -589,7 +590,7 @@ export function MettasoulApp() {
   const [lessonPlanStatusFilter, setLessonPlanStatusFilter] = useState<"all" | "uploaded" | "missing">("all");
   const [lessonPlanAdminFocus, setLessonPlanAdminFocus] = useState<LessonPlanAdminFocus>("uploaded");
   const [lessonPlanTeacherFocus, setLessonPlanTeacherFocus] = useState<LessonPlanTeacherFocus>("uploaded");
-  const [lessonPlanLinkDrafts, setLessonPlanLinkDrafts] = useState<Record<string, string>>({});
+  const lessonPlanLinkDrafts = useRef<Record<string, string>>({});
   const [lessonPlanChatPlan, setLessonPlanChatPlan] = useState<LessonPlan | null>(null);
   const [lessonPlanChatMessages, setLessonPlanChatMessages] = useState<LessonPlanMessage[]>([]);
   const [lessonPlanChatAttachments, setLessonPlanChatAttachments] = useState<LessonPlanAttachment[]>([]);
@@ -2374,11 +2375,11 @@ export function MettasoulApp() {
     }
   }
 
-  async function attachLessonPlanLink(schedule: Schedule) {
-    const rawLink = String(lessonPlanLinkDrafts[schedule.id] || "").trim();
+  async function attachLessonPlanLink(schedule: Schedule, value: string): Promise<boolean> {
+    const rawLink = value.trim();
     if (!rawLink) {
       pushToast("Thiếu link giáo án", "Dán link Google Drive/PPT trước khi lưu.", "warning");
-      return;
+      return false;
     }
 
     let url: URL;
@@ -2386,12 +2387,12 @@ export function MettasoulApp() {
       url = new URL(rawLink);
     } catch {
       pushToast("Link không hợp lệ", "Link giáo án phải là đường dẫn http hoặc https.", "warning");
-      return;
+      return false;
     }
 
     if (!["http:", "https:"].includes(url.protocol)) {
       pushToast("Link không hợp lệ", "Link giáo án phải bắt đầu bằng http hoặc https.", "warning");
-      return;
+      return false;
     }
 
     try {
@@ -2413,15 +2414,16 @@ export function MettasoulApp() {
             : item,
         ),
       );
-      setLessonPlanLinkDrafts((items) => ({ ...items, [schedule.id]: "" }));
       setDataStatus("connected");
       setSaveError("");
       addNotification("Giáo án mới", `${teacherName(schedule.teacherId)} đã gửi link giáo án.`, "admin", {
         tone: "success",
       });
       pushToast("Đã lưu link giáo án", "Link đã hiện ngay trong card chuyên đề.", "success");
+      return true;
     } catch (error) {
       handleSaveError(error);
+      return false;
     }
   }
 
@@ -4452,7 +4454,7 @@ export function MettasoulApp() {
             </div>
           </div>
 
-          <nav className="mt-5 space-y-1 lg:grid lg:min-h-0 lg:max-h-[432px] lg:flex-1 lg:auto-rows-fr lg:gap-1 lg:space-y-0 lg:overflow-hidden">
+          <nav style={{ maxHeight: `${navigationTabs.length * 48}px` }} className="mt-5 space-y-1 lg:grid lg:min-h-0 lg:flex-1 lg:auto-rows-fr lg:gap-1 lg:space-y-0 lg:overflow-hidden">
             {navigationTabs.map((item) => {
               const Icon = item.icon;
               return (
@@ -7527,10 +7529,11 @@ export function MettasoulApp() {
           <div className="rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4 text-sm font-semibold text-[var(--brand-dark)]">
             Bạn có thể xem giáo án của giáo viên phụ trách để chuẩn bị dụng cụ và hỗ trợ lớp. Trợ giảng không thể tải lên, sửa hoặc xóa giáo án.
           </div>
-          {assignedSchedules.map((schedule) => {
+          <PagedList items={assignedSchedules} resetKey={`${currentUserId}:assistant-plans`} pageSize={12} className="space-y-3">
+          {(rows) => rows.map((schedule) => {
             const meta = lookupSchedule(schedule);
             return (
-              <div key={schedule.id} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+              <div key={schedule.id} className="min-w-0 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm [overflow-wrap:anywhere]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
@@ -7540,9 +7543,9 @@ export function MettasoulApp() {
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {meta.plans.map((plan) => (
-                    <a key={plan.id} href={plan.driveUrl} target="_blank" rel="noopener noreferrer" className={ghostButtonClass}>
-                      <ExternalLink size={15} />
-                      {plan.fileName}
+                    <a key={plan.id} href={plan.driveUrl} target="_blank" rel="noopener noreferrer" className={`${ghostButtonClass} min-w-0 max-w-full`}>
+                      <ExternalLink size={15} className="shrink-0" />
+                      <span className="min-w-0 [overflow-wrap:anywhere]">{plan.fileName}</span>
                     </a>
                   ))}
                   {meta.plans.length === 0 ? <span className="text-xs font-bold text-amber-700">Giáo viên chưa tải giáo án.</span> : null}
@@ -7550,6 +7553,7 @@ export function MettasoulApp() {
               </div>
             );
           })}
+          </PagedList>
           {assignedSchedules.length === 0 ? <p className="rounded-2xl bg-slate-50 p-5 text-sm font-semibold text-[var(--muted)]">Chưa có lịch trợ giảng được phân công.</p> : null}
         </div>
       </Panel>
@@ -7857,11 +7861,13 @@ export function MettasoulApp() {
                 </p>
               </div>
             </div>
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              {lessonPlanScheduleCards.map((schedule) => {
+            <div className="mt-4 min-w-0">
+              <PagedList items={lessonPlanScheduleCards} resetKey={`${currentUserId}:plan-cards`} pageSize={12} className="grid min-w-0 gap-3 lg:grid-cols-2">
+              {(rows) => rows.map((schedule) => {
                 const meta = lookupSchedule(schedule);
                 return <Fragment key={schedule.id}>{renderTeacherLessonPlanCard({ schedule: schedule, meta: meta })}</Fragment>;
               })}
+              </PagedList>
               {lessonPlanScheduleCards.length === 0 ? (
                 <p className="rounded-2xl bg-white/80 px-4 py-5 text-sm font-semibold text-emerald-700">
                   Chưa có lịch cần nộp giáo án.
@@ -7878,29 +7884,35 @@ export function MettasoulApp() {
             <div className="divide-y divide-[var(--line)]">
               {lessonPlanTeacherFocus === "uploaded" ? (
                 <>
-                  {myPlanRows.map(({ plan, schedule, meta }) => (
+                  <PagedList items={myPlanRows} resetKey={`${currentUserId}:uploaded-plans`} className="divide-y divide-[var(--line)]">
+                  {(rows) => rows.map(({ plan, schedule, meta }) => (
                     <Fragment key={plan.id}>{renderLessonPlanFileRow({ plan: plan, schedule: schedule, meta: meta })}</Fragment>
                   ))}
+                  </PagedList>
                   {myPlanRows.length === 0 ? (
                     <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Bạn chưa tải giáo án nào.</div>
                   ) : null}
                 </>
               ) : lessonPlanTeacherFocus === "pending" ? (
                 <>
-                  {pendingSchedules.map((schedule) => {
+                  <PagedList items={pendingSchedules} resetKey={`${currentUserId}:pending-plans`} className="divide-y divide-[var(--line)]">
+                  {(rows) => rows.map((schedule) => {
                     const meta = lookupSchedule(schedule);
                     return <Fragment key={schedule.id}>{renderMissingLessonPlanRow({ schedule: schedule, meta: meta, allowUpload: true })}</Fragment>;
                   })}
+                  </PagedList>
                   {pendingSchedules.length === 0 ? (
                     <div className="px-4 py-6 text-sm font-semibold text-emerald-700">Bạn không còn lịch thiếu giáo án.</div>
                   ) : null}
                 </>
               ) : (
                 <>
-                  {submittedSchedules.map((schedule) => {
+                  <PagedList items={submittedSchedules} resetKey={`${currentUserId}:submitted-plans`} className="divide-y divide-[var(--line)]">
+                  {(rows) => rows.map((schedule) => {
                     const meta = lookupSchedule(schedule);
                     return <Fragment key={schedule.id}>{renderLessonPlanScheduleRow({ schedule: schedule, meta: meta })}</Fragment>;
                   })}
+                  </PagedList>
                   {submittedSchedules.length === 0 ? (
                     <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Chưa có lịch đã nộp giáo án.</div>
                   ) : null}
@@ -7923,7 +7935,7 @@ export function MettasoulApp() {
     meta: ReturnType<typeof lookupSchedule>;
   }) {
     return (
-      <div className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_auto]">
+      <div className="grid min-w-0 gap-3 px-4 py-3 [overflow-wrap:anywhere] lg:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0">
           <a
             href={plan.driveUrl}
@@ -7961,11 +7973,11 @@ export function MettasoulApp() {
     const hasPlans = meta.plans.length > 0;
     return (
       <div
-        className={`rounded-2xl border p-4 shadow-sm ${
+        className={`min-w-0 rounded-2xl border p-3 shadow-sm [overflow-wrap:anywhere] sm:p-4 ${
           hasPlans ? "border-emerald-200 bg-emerald-50/55" : "border-white/80 bg-white/90"
         }`}
       >
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:gap-3">
           <div className="min-w-0">
             <p className="text-sm font-black uppercase text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
             <p className="mt-1 text-xs font-bold text-[var(--muted)]">
@@ -7991,15 +8003,15 @@ export function MettasoulApp() {
                   rel="noreferrer"
                   className="inline-flex min-w-0 max-w-full items-center gap-2 text-sm font-black text-sky-800"
                 >
-                  <UploadCloud size={15} />
-                  <span className="truncate">{plan.fileName}</span>
+                  <UploadCloud size={15} className="shrink-0" />
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{plan.fileName}</span>
                   {plan.source === "external_link" ? (
                     <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">
                       Link
                     </span>
                   ) : null}
                 </a>
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
                   <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700">
                     {formatDateTime(plan.uploadedAt)}
                   </span>
@@ -8014,25 +8026,13 @@ export function MettasoulApp() {
           <div className="flex flex-wrap gap-2">
             {renderLessonPlanUploadButton({ schedule: schedule })}
           </div>
-          <div className="grid gap-2 md:grid-cols-[1fr_auto]">
-            <input
-              value={lessonPlanLinkDrafts[schedule.id] || ""}
-              onChange={(event) =>
-                setLessonPlanLinkDrafts((items) => ({ ...items, [schedule.id]: event.target.value }))
-              }
-              placeholder="Dán link PPT/PPTX từ Google Drive nếu file nặng hơn 10MB (mở quyền xem cho admin)"
-              className={compactInputClass}
-            />
-            <button
-              type="button"
-              onClick={() => attachLessonPlanLink(schedule)}
-              disabled={isBusy}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-black text-amber-800 transition hover:bg-amber-50"
-            >
-              <ExternalLink size={15} />
-              Lưu link
-            </button>
-          </div>
+          <LessonPlanLinkForm
+            key={`${currentUserId}:${schedule.id}`}
+            draftKey={`${currentUserId}:${schedule.id}`}
+            drafts={lessonPlanLinkDrafts}
+            busy={isBusy}
+            onSave={(value) => attachLessonPlanLink(schedule, value)}
+          />
         </div>
       </div>
     );
@@ -8332,7 +8332,7 @@ export function MettasoulApp() {
   function renderLessonPlanActions({ plan }: { plan: LessonPlan }) {
     const chat = lessonPlanChatSummary[plan.id];
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
         <button
           type="button"
           title="Phản hồi giáo án"
