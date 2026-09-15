@@ -4362,9 +4362,9 @@ export function MettasoulApp() {
               aria-label={sidebarCollapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
               aria-pressed={sidebarCollapsed}
               onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-              className="ml-auto hidden h-10 w-10 place-items-center rounded-xl bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100 lg:grid"
+              className={`ml-auto hidden h-10 w-10 place-items-center rounded-xl bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100 lg:grid ${sidebarCollapsed ? "lg:hidden" : ""}`}
             >
-              {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+              <ChevronLeft size={18} />
             </button>
           </div>
 
@@ -4439,6 +4439,18 @@ export function MettasoulApp() {
             })}
           </nav>
         </aside>
+        {sidebarCollapsed ? (
+          <button
+            type="button"
+            title="Mở rộng thanh bên"
+            aria-label="Mở rộng thanh bên"
+            aria-pressed="true"
+            onClick={() => setSidebarCollapsed(false)}
+            className="ui-sidebar-reopen fixed left-[68px] top-5 z-40 hidden h-10 w-10 place-items-center rounded-xl border border-cyan-200 bg-white/95 text-[var(--brand-dark)] shadow-lg shadow-cyan-900/15 backdrop-blur lg:grid"
+          >
+            <ChevronRight size={18} />
+          </button>
+        ) : null}
 
         <section className="min-w-0">
           <header className="ui-glass-header sticky top-0 z-20 border-b border-white/70 px-4 py-4 backdrop-blur-xl md:px-7">

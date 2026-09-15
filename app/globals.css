@@ -210,6 +210,21 @@ button:disabled {
     radial-gradient(420px 220px at 10% 0%, rgba(224, 160, 32, 0.13), transparent 70%);
 }
 
+.ui-sidebar-reopen {
+  animation: sidebar-reopen-in 0.24s var(--ease-smooth) both;
+}
+
+@keyframes sidebar-reopen-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
 .ui-glass-header {
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.9), rgba(248, 252, 255, 0.82)),
