@@ -140,6 +140,70 @@ button:disabled {
   background-attachment: scroll;
 }
 
+/* Opt-in dashboard pilot. No sibling dimming, perpetual animation or blur. */
+.ui-polish .spotlight-grid > [data-stat-card] {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  backdrop-filter: none;
+  transform: none;
+  translate: none;
+  transition: border-color 180ms ease;
+}
+
+.spotlight-grid > [data-stat-card]::before,
+.spotlight-grid > [data-stat-card]::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.spotlight-grid > [data-stat-card]::before {
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 15% 5%, #e0a02024, transparent 65%),
+    radial-gradient(ellipse at 95% 95%, #20b0b024, transparent 65%);
+  opacity: 0.45;
+}
+
+.spotlight-grid > [data-stat-card]::after {
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, #ffffff88 50%, transparent 70%);
+  transform: translateX(-120%);
+}
+
+.ui-polish .spotlight-grid > button[data-stat-card]:focus-visible {
+  outline: 3px solid var(--brand-dark);
+  outline-offset: 3px;
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .ui-polish .spotlight-grid > [data-stat-card] {
+    transition: transform 160ms ease-out, border-color 180ms ease;
+  }
+  .ui-polish .spotlight-grid > [data-stat-card]:hover {
+    transform: perspective(900px) rotateX(var(--spot-x, 0deg)) rotateY(var(--spot-y, 0deg)) translateY(-2px);
+    translate: none;
+    border-color: #20b0b090;
+  }
+  .spotlight-grid > [data-stat-card]::before { transition: opacity 180ms ease; }
+  .spotlight-grid > [data-stat-card]:hover::before { opacity: 1; }
+  .spotlight-grid > [data-stat-card]:hover::after {
+    transform: translateX(120%);
+    transition: transform 600ms ease-out;
+  }
+}
+
+@media (prefers-reduced-motion: reduce), (hover: none), (pointer: coarse) {
+  .ui-polish .spotlight-grid > [data-stat-card],
+  .ui-polish .spotlight-grid > [data-stat-card]:hover {
+    transform: none !important;
+    translate: none !important;
+  }
+  .spotlight-grid > [data-stat-card]::after { display: none; }
+}
+
 .ui-polish .ui-enter {
   animation: ui-fade-up 0.55s var(--ease-smooth) backwards;
 }

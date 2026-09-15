@@ -52,6 +52,7 @@ import type { SchoolGuideCache } from "@/components/school-guide-panel";
 import { PagedList } from "@/components/paged-list";
 import { LessonPlanLinkForm } from "@/components/lesson-plan-link-form";
 import { ChatComposer } from "@/components/chat-composer";
+import { SpotlightGrid } from "@/components/spotlight-grid";
 import { PerformanceDiagnostics } from "@/components/performance-diagnostics";
 import { beginMenuTiming, finishMenuTiming, recordPerformance } from "@/lib/client-performance";
 import { statusLabels, statusStyles } from "@/lib/status";
@@ -5464,12 +5465,12 @@ export function MettasoulApp() {
 
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <SpotlightGrid className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <Stat icon={CalendarDays} label="Lịch trong hệ thống" value={schedules.length} tone="cyan" />
           <Stat icon={CheckCircle2} label="Đã nhận lịch" value={confirmed} tone="emerald" />
           <Stat icon={UploadCloud} label="Giáo án đã nộp" value={uploaded} tone="blue" />
           <Stat icon={ShieldCheck} label="Đã điểm danh" value={attended} tone="orange" />
-        </div>
+        </SpotlightGrid>
 
         <div className="grid gap-5 xl:grid-cols-[1.5fr_0.85fr]">
           <Panel title="Lịch dạy gần nhất" action="Xem theo tuần">
@@ -5500,12 +5501,12 @@ export function MettasoulApp() {
 
     return (
       <div className="space-y-5">
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <SpotlightGrid className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           <Stat icon={CalendarDays} label="Lịch được phân công" value={assignedSchedules.length} tone="cyan" />
           <Stat icon={CheckCircle2} label="Đã xác nhận" value={confirmedCount} tone="emerald" />
           <Stat icon={Clock3} label="Lịch sắp tới" value={upcomingSchedules.length} tone="blue" />
           <Stat icon={ShieldCheck} label="Đã điểm danh" value={attendedScheduleIds.size} tone="orange" />
-        </div>
+        </SpotlightGrid>
         <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-4 text-sm font-semibold text-violet-900">
           Trợ giảng xác nhận và điểm danh cho chính mình. Giáo án của giáo viên được mở ở chế độ chỉ đọc; mọi chỉnh sửa hoặc tải lên vẫn thuộc giáo viên phụ trách.
         </div>
@@ -7866,7 +7867,7 @@ export function MettasoulApp() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+            <SpotlightGrid className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
                 <Stat
                   icon={CalendarDays}
                   label="Số lịch đã dạy"
@@ -7915,7 +7916,7 @@ export function MettasoulApp() {
                   active={teacherOverviewFocus === "plan-missing"}
                   onClick={() => setTeacherOverviewFocus("plan-missing")}
                 />
-              </div>
+              </SpotlightGrid>
 
             <Panel title="Tổng số tiết đã dạy theo môi trường" action={`${taughtSchedules.length} tiết`}>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -9971,11 +9972,11 @@ function Stat({
   );
 
   return onClick ? (
-    <button type="button" onClick={onClick} className={className}>
+    <button type="button" onClick={onClick} className={className} data-stat-card>
       {content}
     </button>
   ) : (
-    <div className={className}>{content}</div>
+    <div className={className} data-stat-card>{content}</div>
   );
 }
 
