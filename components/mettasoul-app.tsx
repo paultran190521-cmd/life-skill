@@ -4453,7 +4453,7 @@ export function MettasoulApp() {
           </button>
         ) : null}
 
-        <section className="min-w-0">
+        <section className="min-w-0 lg:col-start-2 lg:row-start-1">
           <header className="ui-glass-header sticky top-0 z-20 border-b border-white/70 px-4 py-4 backdrop-blur-xl md:px-7">
             <div className="relative flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex min-w-0 items-start gap-3">
