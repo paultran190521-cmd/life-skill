@@ -4336,7 +4336,7 @@ export function MettasoulApp() {
           />
         ) : null}
         <aside
-          className={`ui-shell-sidebar fixed inset-y-0 left-0 z-50 w-[min(86vw,320px)] overflow-y-auto border-r border-white/70 px-4 py-5 shadow-[16px_0_44px_rgba(18,46,68,0.16)] transition-transform duration-300 lg:z-30 lg:translate-x-0 ${sidebarCollapsed ? "lg:w-[84px] lg:px-2" : "lg:w-[280px] lg:px-4"} ${
+          className={`ui-shell-sidebar fixed inset-y-0 left-0 z-50 w-[min(86vw,320px)] overflow-y-auto border-r border-white/70 px-4 py-5 shadow-[16px_0_44px_rgba(18,46,68,0.16)] transition-transform duration-300 lg:z-30 lg:flex lg:flex-col lg:translate-x-0 lg:overflow-hidden ${sidebarCollapsed ? "lg:w-[84px] lg:px-2" : "lg:w-[280px] lg:px-4"} ${
             mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -4408,7 +4408,7 @@ export function MettasoulApp() {
             </div>
           </div>
 
-          <nav className="mt-5 space-y-1">
+          <nav className="mt-5 space-y-1 lg:grid lg:min-h-0 lg:max-h-[432px] lg:flex-1 lg:auto-rows-fr lg:gap-1 lg:space-y-0 lg:overflow-hidden">
             {navigationTabs.map((item) => {
               const Icon = item.icon;
               return (
@@ -4417,7 +4417,7 @@ export function MettasoulApp() {
                   title={sidebarCollapsed ? item.label : undefined}
                   aria-label={sidebarCollapsed ? item.label : undefined}
                   aria-current={activeTab === item.id ? "page" : undefined}
-                  className={`ui-nav-item relative flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-bold transition ${sidebarCollapsed ? "lg:justify-center lg:px-2" : ""} ${
+                  className={`ui-nav-item relative flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-bold transition lg:min-h-0 lg:py-2 ${sidebarCollapsed ? "lg:justify-center lg:px-2" : ""} ${
                     activeTab === item.id
                       ? "bg-gradient-to-r from-[var(--brand)] via-[var(--mint)] to-[var(--sky)] text-white shadow-lg shadow-cyan-800/20"
                       : "text-[var(--brand-dark)] hover:bg-white hover:text-[var(--brand-dark)] hover:shadow-md hover:shadow-cyan-900/5"
