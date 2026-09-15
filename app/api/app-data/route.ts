@@ -26,14 +26,14 @@ export async function GET(request: Request) {
           )
         : [];
       const sharedGroupIds = new Set(assignedSchedules.map((schedule) => String(schedule.groupId || "").trim()).filter(Boolean));
+      const assignedScheduleIds = new Set(assignedSchedules.map((schedule) => schedule.id));
       // Lịch cùng group là một hoạt động chung đã được giao cho giáo viên này.
       // Chỉ dùng các bản ghi đó để hiển thị đồng giảng, không đưa chúng vào danh sách lịch của người khác.
       const scopedSchedules = data.schedules.filter(
         (schedule) =>
-          assignedSchedules.some((assigned) => assigned.id === schedule.id) ||
+          assignedScheduleIds.has(schedule.id) ||
           (Boolean(schedule.groupId) && sharedGroupIds.has(String(schedule.groupId).trim())),
       );
-      const assignedScheduleIds = new Set(assignedSchedules.map((schedule) => schedule.id));
       const visibleTeacherIds = new Set<string>([teacherId]);
       for (const schedule of scopedSchedules) {
         visibleTeacherIds.add(schedule.teacherId);

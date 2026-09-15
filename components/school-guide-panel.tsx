@@ -14,7 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { SchoolGuideEntry, SchoolGuideLeader, SchoolGuideResponse } from "@/lib/school-guide-types";
 
 function normalizeSearch(value: string) {
@@ -26,38 +26,59 @@ function normalizeSearch(value: string) {
     .toLocaleLowerCase("vi");
 }
 
-export function SchoolGuidePanel() {
-  const [guide, setGuide] = useState<SchoolGuideResponse | null>(null);
-  const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+export type SchoolGuideCache = { key: string; loadedAt: number; data: SchoolGuideResponse };
+const guideCacheLifetime = 5 * 60_000;
 
-  async function loadGuide() {
+export const SchoolGuidePanel = memo(function SchoolGuidePanel({ cacheRef, cacheKey }: {
+  cacheRef: RefObject<SchoolGuideCache | null>;
+  cacheKey: string;
+}) {
+  const cached = cacheRef.current?.key === cacheKey ? cacheRef.current : null;
+  const [guide, setGuide] = useState<SchoolGuideResponse | null>(() => cached?.data ?? null);
+  const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
+  const [loading, setLoading] = useState(!cached);
+  const [error, setError] = useState("");
+  const requestRef = useRef<AbortController | null>(null);
+
+  const loadGuide = useCallback(async () => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setLoading(true);
     setError("");
     try {
       const response = await fetch("/api/school-guide", {
         credentials: "same-origin",
         cache: "no-store",
+        signal: controller.signal,
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload?.message || payload?.error || "Không tải được thông tin trường.");
       }
-      setGuide(payload as SchoolGuideResponse);
+      if (controller.signal.aborted) return;
+      const data = payload as SchoolGuideResponse;
+      cacheRef.current = { key: cacheKey, loadedAt: Date.now(), data };
+      setGuide(data);
     } catch (loadError) {
+      if (controller.signal.aborted) return;
       setError(loadError instanceof Error ? loadError.message : "Không tải được thông tin trường.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  }
+  }, [cacheKey, cacheRef]);
 
   useEffect(() => {
-    void loadGuide();
-  }, []);
+    const entry = cacheRef.current;
+    if (!entry || entry.key !== cacheKey || Date.now() - entry.loadedAt >= guideCacheLifetime) {
+      void loadGuide();
+    }
+    return () => requestRef.current?.abort();
+  }, [cacheKey, cacheRef, loadGuide]);
 
   const filteredSchools = useMemo(() => {
-    const normalizedQuery = normalizeSearch(query.trim());
+    const normalizedQuery = normalizeSearch(deferredQuery.trim());
     if (!normalizedQuery) {
       return guide?.schools ?? [];
     }
@@ -66,7 +87,7 @@ export function SchoolGuidePanel() {
         [school.name, school.schoolType, school.address, school.teachingGrades].join(" "),
       ).includes(normalizedQuery),
     );
-  }, [guide, query]);
+  }, [guide, deferredQuery]);
 
   return (
     <section className="space-y-5">
@@ -115,7 +136,7 @@ export function SchoolGuidePanel() {
         </div>
       </div>
 
-      {loading ? (
+      {loading && !guide ? (
         <div className="grid min-h-64 place-items-center rounded-[28px] border border-cyan-200 bg-white">
           <div className="flex items-center gap-3 text-sm font-black text-[var(--brand-dark)]">
             <LoaderCircle className="animate-spin" size={22} aria-hidden="true" />
@@ -149,7 +170,7 @@ export function SchoolGuidePanel() {
       )}
     </section>
   );
-}
+});
 
 function SchoolGuideCard({ school, index }: { school: SchoolGuideEntry; index: number }) {
   const accents = [

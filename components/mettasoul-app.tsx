@@ -43,9 +43,11 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { SchoolGuidePanel } from "@/components/school-guide-panel";
+import dynamic from "next/dynamic";
+import type { SchoolGuideCache } from "@/components/school-guide-panel";
+import { PagedList } from "@/components/paged-list";
 import { statusLabels, statusStyles } from "@/lib/status";
 import {
   canShareClassTimeSlot,
@@ -57,6 +59,7 @@ import { classifySchedulingParticipantIds } from "@/lib/scheduling-participants"
 import { normalizeScheduleParticipantScope, resolveScheduleParticipantSelection } from "@/lib/schedule-participant-scope";
 import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy";
 import { scheduledLessonSections } from "@/lib/lessons";
+import { attendanceLookupKey, groupByKey, indexById, legacyScheduleGroupKey } from "@/lib/view-index";
 import {
   availabilityTimeRangeKey,
   buildTeacherAvailabilityEntries,
@@ -103,6 +106,11 @@ import type {
   User,
   WeeklyUpdate,
 } from "@/lib/types";
+
+const SchoolGuidePanel = dynamic(
+  () => import("@/components/school-guide-panel").then((module) => module.SchoolGuidePanel),
+  { loading: () => <AppContentSkeleton /> },
+);
 
 type TabId =
   | "dashboard"
@@ -514,6 +522,8 @@ const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }
 
 export function MettasoulApp() {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
+  const schoolGuideCache = useRef<SchoolGuideCache | null>(null);
+  const chatSummaryLoadingRef = useRef(false);
   const deferredActiveTab = useDeferredValue(activeTab);
   const [appUsers, setAppUsers] = useState<User[]>([]);
   const [currentUserId, setCurrentUserId] = useState("");
@@ -537,8 +547,16 @@ export function MettasoulApp() {
   const [saveError, setSaveError] = useState("");
   const [pendingAction, setPendingAction] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [calendarMonth, setCalendarMonth] = useState(() => currentMonthKey());
   const [scheduleReportMonth, setScheduleReportMonth] = useState(() => currentMonthKey());
+  // Keep hooks at the component level; render helpers below must remain hook-free.
+  const reportSchedules = useMemo(
+    () => sortSchedules(schedules.filter((schedule) =>
+      schedule.status !== "draft" && (!scheduleReportMonth || schedule.date.startsWith(`${scheduleReportMonth}-`)),
+    ), "date-asc"),
+    [schedules, scheduleReportMonth],
+  );
   const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
   const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("week");
   const [availabilityRegistrationMode, setAvailabilityRegistrationMode] = useState(false);
@@ -565,6 +583,7 @@ export function MettasoulApp() {
   const selectedCalendarDayRef = useRef<HTMLButtonElement | null>(null);
   const shouldScrollCalendarDetailRef = useRef(false);
   const [lessonSearchTerm, setLessonSearchTerm] = useState("");
+  const deferredLessonSearchTerm = useDeferredValue(lessonSearchTerm);
   const [lessonGradeFilter, setLessonGradeFilter] = useState("all");
   const [lessonPlanTeacherFilter, setLessonPlanTeacherFilter] = useState("all");
   const [lessonPlanStatusFilter, setLessonPlanStatusFilter] = useState<"all" | "uploaded" | "missing">("all");
@@ -690,6 +709,31 @@ export function MettasoulApp() {
   const mobileCalendarInitRef = useRef(false);
 
   const activeUsers = useMemo(() => appUsers.filter((user) => user.isActive !== false), [appUsers]);
+  const teacherById = useMemo(() => indexById(teachers), [teachers]);
+  const schoolById = useMemo(() => indexById(schools), [schools]);
+  const classById = useMemo(() => indexById(classes), [classes]);
+  const lessonById = useMemo(() => indexById(lessons), [lessons]);
+  const slotById = useMemo(() => indexById(timeSlots), [timeSlots]);
+  const scheduleById = useMemo(() => indexById(schedules), [schedules]);
+  const plansBySchedule = useMemo(() => groupByKey(
+    [...lessonPlans].sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)),
+    (plan) => plan.scheduleId,
+  ), [lessonPlans]);
+  const attendanceByParticipant = useMemo(() => {
+    const result = new Map<string, Attendance>();
+    for (const record of attendance) {
+      const key = attendanceLookupKey(record.scheduleId, record.teacherId);
+      if (!result.has(key)) result.set(key, record);
+    }
+    return result;
+  }, [attendance]);
+  const peerScheduleIndexes = useMemo(() => {
+    const active = schedules.filter((schedule) => schedule.status !== "cancelled");
+    return {
+      byGroup: groupByKey(active, (schedule) => schedule.groupId || ""),
+      byLegacy: groupByKey(active, legacyScheduleGroupKey),
+    };
+  }, [schedules]);
   const sessionUser = appUsers.find((user) => user.id === sessionUserId) ?? null;
   const currentUser =
     activeUsers.find((user) => user.id === currentUserId) ??
@@ -748,7 +792,7 @@ export function MettasoulApp() {
       appDialog,
   );
   const filteredTeachers = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
+    const term = deferredSearchTerm.trim().toLowerCase();
     if (!term) {
       return teachers;
     }
@@ -760,9 +804,9 @@ export function MettasoulApp() {
         .toLowerCase()
         .includes(term),
     );
-  }, [searchTerm, teachers]);
+  }, [deferredSearchTerm, teachers]);
   const filteredLessons = useMemo(() => {
-    const term = lessonSearchTerm.trim().toLowerCase();
+    const term = deferredLessonSearchTerm.trim().toLowerCase();
     return activeLessons.filter((lesson) => {
       const matchesGrade = lessonGradeFilter === "all" || lesson.grade === lessonGradeFilter;
       const matchesTerm =
@@ -774,7 +818,7 @@ export function MettasoulApp() {
           .includes(term);
       return matchesGrade && matchesTerm;
     });
-  }, [activeLessons, lessonGradeFilter, lessonSearchTerm]);
+  }, [activeLessons, lessonGradeFilter, deferredLessonSearchTerm]);
   const isBusy = Boolean(pendingAction);
   const availabilityOverviewTeachers = useMemo(() => {
     if (!availabilityOverviewDate) return [];
@@ -789,10 +833,10 @@ export function MettasoulApp() {
 
     return Array.from(entriesByTeacher, ([teacherId, entries]) => ({
       teacherId,
-      teacher: teachers.find((item) => item.id === teacherId),
+      teacher: teacherById.get(teacherId),
       entries: [...entries].sort((left, right) => availabilityEntryLabel(left, timeSlots).localeCompare(availabilityEntryLabel(right, timeSlots), "vi")),
     })).sort((left, right) => (left.teacher?.name || left.teacherId).localeCompare(right.teacher?.name || right.teacherId, "vi"));
-  }, [availabilityOverviewDate, teacherAvailability, teachers, timeSlots]);
+  }, [availabilityOverviewDate, teacherAvailability, teacherById, timeSlots]);
 
   function selectCalendarDate(dateKey: string, { scrollDetail = true }: { scrollDetail?: boolean } = {}) {
     shouldScrollCalendarDetailRef.current = scrollDetail;
@@ -1068,7 +1112,9 @@ export function MettasoulApp() {
   useEffect(() => {
     if (authStatus !== "signed-in" || role === "assistant") return;
     void refreshLessonPlanChatSummary();
-    const intervalId = window.setInterval(() => void refreshLessonPlanChatSummary(), 5 * 60 * 1000);
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible" && document.hasFocus()) void refreshLessonPlanChatSummary();
+    }, 5 * 60 * 1000);
     return () => window.clearInterval(intervalId);
   }, [authStatus, currentUser.id, role]);
 
@@ -1239,7 +1285,7 @@ export function MettasoulApp() {
             ? isAssistantAssignedToSchedule(schedule, currentTeacherId)
             : schedule.teacherId === currentTeacherId);
 
-    const term = searchTerm.trim().toLowerCase();
+    const term = deferredSearchTerm.trim().toLowerCase();
     return sortSchedules(
       scoped.filter((schedule) => {
         if (!matchesCalendarFilters(schedule, calendarFilters)) {
@@ -1249,10 +1295,10 @@ export function MettasoulApp() {
           return true;
         }
 
-        const teacher = teachers.find((item) => item.id === schedule.teacherId);
-        const school = schools.find((item) => item.id === schedule.schoolId);
-        const classRoom = classes.find((item) => item.id === schedule.classId);
-        const lesson = lessons.find((item) => item.id === schedule.lessonId);
+        const teacher = teacherById.get(schedule.teacherId);
+        const school = schoolById.get(schedule.schoolId);
+        const classRoom = classById.get(schedule.classId);
+        const lesson = lessonById.get(schedule.lessonId);
         return [teacher?.name, school?.name, classRoom?.name, lesson?.title, schedule.date]
           .filter(Boolean)
           .join(" ")
@@ -1261,7 +1307,7 @@ export function MettasoulApp() {
       }),
       calendarFilters.sort,
     );
-  }, [calendarFilters, classes, currentTeacherId, lessons, role, schedules, schools, searchTerm, teachers]);
+  }, [calendarFilters, classById, currentTeacherId, lessonById, role, schedules, schoolById, deferredSearchTerm, teacherById]);
   const calendarDays = useMemo(
     () => buildCalendarDays(calendarMonth, selectedCalendarDate, calendarViewMode, visibleSchedules),
     [calendarMonth, calendarViewMode, selectedCalendarDate, visibleSchedules],
@@ -1272,8 +1318,8 @@ export function MettasoulApp() {
   );
   const calendarStats = useMemo(() => buildCalendarStats(visibleSchedules), [visibleSchedules]);
   const primaryTeacherAttendance = useMemo(
-    () => attendance.filter((record) => schedules.find((schedule) => schedule.id === record.scheduleId)?.teacherId === record.teacherId),
-    [attendance, schedules],
+    () => attendance.filter((record) => scheduleById.get(record.scheduleId)?.teacherId === record.teacherId),
+    [attendance, scheduleById],
   );
   const scheduleCountByDate = useMemo(() => {
     const countByDate = new Map<string, number>();
@@ -1373,9 +1419,9 @@ export function MettasoulApp() {
   const draftPreviewTeacherOptions = useMemo(
     () =>
       allDraftTeacherIds
-        .map((teacherId) => teachers.find((teacher) => teacher.id === teacherId))
+        .map((teacherId) => teacherById.get(teacherId))
         .filter((teacher): teacher is Teacher => Boolean(teacher)),
-    [allDraftTeacherIds, teachers],
+    [allDraftTeacherIds, teacherById],
   );
   const draftPreviewScheduleCountByTeacher = useMemo(() => {
     const countByTeacher = new Map<string, number>();
@@ -1591,18 +1637,15 @@ export function MettasoulApp() {
 
   function lookupSchedule(schedule: Schedule) {
     return {
-      teacher: teachers.find((item) => item.id === schedule.teacherId),
-      school: schools.find((item) => item.id === schedule.schoolId),
-      classRoom: classes.find((item) => item.id === schedule.classId),
-      lesson: lessons.find((item) => item.id === schedule.lessonId),
-      slot: timeSlots.find((item) => item.id === schedule.timeSlotId),
-      plans: lessonPlans
-        .filter((item) => item.scheduleId === schedule.id)
-        .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)),
-      checkIn: attendance.find((item) =>
-        item.scheduleId === schedule.id
-        && item.teacherId === (role === "admin" ? schedule.teacherId : currentTeacherId),
-      ),
+      teacher: teacherById.get(schedule.teacherId),
+      school: schoolById.get(schedule.schoolId),
+      classRoom: classById.get(schedule.classId),
+      lesson: lessonById.get(schedule.lessonId),
+      slot: slotById.get(schedule.timeSlotId),
+      plans: plansBySchedule.get(schedule.id) ?? [],
+      checkIn: attendanceByParticipant.get(attendanceLookupKey(
+        schedule.id, role === "admin" ? schedule.teacherId : currentTeacherId,
+      )),
     };
   }
 
@@ -1611,7 +1654,7 @@ export function MettasoulApp() {
   }
 
   function formatScheduleDateTime(schedule: Schedule) {
-    const slot = timeSlots.find((item) => item.id === schedule.timeSlotId);
+    const slot = slotById.get(schedule.timeSlotId);
     const timeText = slot ? `${formatTimeSlotDisplay(slot, timeSlots)} · ${slot.start}-${slot.end}` : "Chưa có khung giờ";
     return `${formatDate(schedule.date)} • ${timeText}`;
   }
@@ -1630,7 +1673,7 @@ export function MettasoulApp() {
   }
 
   function reassignableTimeSlots(schedule: Schedule) {
-    const school = schools.find((item) => item.id === schedule.schoolId);
+    const school = schoolById.get(schedule.schoolId);
     return timeSlotsForSchool(activeTimeSlots, school?.name || "");
   }
 
@@ -1798,11 +1841,23 @@ export function MettasoulApp() {
   }
 
   async function refreshLessonPlanChatSummary() {
+    if (chatSummaryLoadingRef.current) return;
+    chatSummaryLoadingRef.current = true;
     try {
       const response = await apiRequest<{ byPlan: Record<string, { total: number; unread: number; latestAt: string }> }>("/api/lesson-plans/chat-summary");
-      setLessonPlanChatSummary(response.byPlan);
+      setLessonPlanChatSummary((current) => {
+        const ids = Object.keys(response.byPlan);
+        const unchanged = ids.length === Object.keys(current).length && ids.every((id) =>
+          current[id]?.total === response.byPlan[id].total &&
+          current[id]?.unread === response.byPlan[id].unread &&
+          current[id]?.latestAt === response.byPlan[id].latestAt,
+        );
+        return unchanged ? current : response.byPlan;
+      });
     } catch (error) {
       console.warn("Không tải được tóm tắt chat giáo án.", error);
+    } finally {
+      chatSummaryLoadingRef.current = false;
     }
   }
 
@@ -1960,7 +2015,7 @@ export function MettasoulApp() {
 
   async function adminDeleteConfirmedAvailability(teacherId: string, dateKey: string, registrationId: string) {
     if (role !== "admin") return;
-    const teacher = teachers.find((item) => item.id === teacherId);
+    const teacher = teacherById.get(teacherId);
     const confirmed = await openConfirmDialog({
       title: "Admin xóa lịch trống?",
       message: `Bạn muốn xóa lịch trống của ${teacher?.name || teacherId} ngày ${formatDate(dateKey)}? Lịch đã khóa vẫn sẽ bị xóa.`,
@@ -2072,7 +2127,7 @@ export function MettasoulApp() {
     }
     const rowsMissingLessons = draftSchedule.items
       .map((item, index) => {
-        const classRoom = classes.find((entry) => entry.id === item.classId);
+        const classRoom = classById.get(item.classId);
         if (!classRoom) {
           return null;
         }
@@ -2592,7 +2647,7 @@ export function MettasoulApp() {
       return;
     }
 
-    const replacement = teachers.find((teacher) => teacher.id === reassignTeacherId);
+    const replacement = teacherById.get(reassignTeacherId);
     if (!replacement) {
       handleSaveError(new Error("Không tìm thấy giáo viên thay thế."));
       return;
@@ -2733,7 +2788,7 @@ export function MettasoulApp() {
 
   async function bulkReassignSchedules() {
     const targets = selectedDaySchedules.filter((schedule) => selectedScheduleIds.includes(schedule.id));
-    const replacement = teachers.find((teacher) => teacher.id === bulkReassignTeacherId);
+    const replacement = teacherById.get(bulkReassignTeacherId);
     if (targets.length === 0 || !replacement) {
       return;
     }
@@ -4232,7 +4287,7 @@ export function MettasoulApp() {
   }
 
   function teacherName(teacherId: string) {
-    return teachers.find((teacher) => teacher.id === teacherId)?.name ?? "Giáo viên";
+    return teacherById.get(teacherId)?.name ?? "Giáo viên";
   }
 
   function scheduleAssistantNames(schedule: Schedule) {
@@ -4240,7 +4295,7 @@ export function MettasoulApp() {
       .split(",")
       .map((teacherId) => teacherId.trim())
       .filter(Boolean)
-      .map((teacherId) => teachers.find((teacher) => teacher.id === teacherId)?.name)
+      .map((teacherId) => teacherById.get(teacherId)?.name)
       .filter((name): name is string => Boolean(name));
   }
 
@@ -4250,32 +4305,20 @@ export function MettasoulApp() {
       .map((teacherId) => teacherId.trim())
       .filter(Boolean)
       .map((teacherId) => {
-        const assistant = teachers.find((teacher) => teacher.id === teacherId);
+        const assistant = teacherById.get(teacherId);
         return assistant ? `${assistant.name || "Chưa rõ"} - ${assistant.phone || "Chưa cập nhật"}` : teacherId;
       });
   }
 
   function scheduleCoTeacherNames(schedule: Schedule) {
+    const peers = schedule.groupId
+      ? peerScheduleIndexes.byGroup.get(schedule.groupId)
+      : peerScheduleIndexes.byLegacy.get(legacyScheduleGroupKey(schedule));
     return Array.from(
       new Set(
-        schedules
-          .filter((candidate) => {
-            if (candidate.id === schedule.id || candidate.status === "cancelled") {
-              return false;
-            }
-            if (schedule.groupId) {
-              return candidate.groupId === schedule.groupId;
-            }
-            return (
-              candidate.date === schedule.date &&
-              candidate.schoolId === schedule.schoolId &&
-              candidate.classId === schedule.classId &&
-              candidate.lessonId === schedule.lessonId &&
-              candidate.timeSlotId === schedule.timeSlotId &&
-              candidate.teachingEnvironment === schedule.teachingEnvironment
-            );
-          })
-          .map((candidate) => teachers.find((teacher) => teacher.id === candidate.teacherId)?.name)
+        (peers ?? [])
+          .filter((candidate) => candidate.id !== schedule.id)
+          .map((candidate) => teacherById.get(candidate.teacherId)?.name)
           .filter((name): name is string => Boolean(name)),
       ),
     );
@@ -4283,30 +4326,31 @@ export function MettasoulApp() {
 
   function renderMain(tabId: TabId) {
     if (tabId === "dashboard") {
-      return Dashboard();
+      return renderDashboard();
     }
     if (tabId === "assignment") {
-      return AssignmentPanel();
+      return renderAssignmentPanel();
     }
     if (tabId === "calendar") {
-      return CalendarPanel();
+      return renderCalendarPanel();
     }
     if (tabId === "school-guide") {
-      return <SchoolGuidePanel />;
+      const cacheKey = `${sessionUserId}:${currentUserId}:${role}`;
+      return <SchoolGuidePanel key={cacheKey} cacheKey={cacheKey} cacheRef={schoolGuideCache} />;
     }
     if (tabId === "teachers") {
-      return TeachersPanel();
+      return renderTeachersPanel();
     }
     if (tabId === "lessons") {
-      return LessonsPanel();
+      return renderLessonsPanel();
     }
     if (tabId === "plans") {
-      return LessonPlansPanel();
+      return renderLessonPlansPanel();
     }
     if (tabId === "attendance") {
-      return AttendancePanel();
+      return renderAttendancePanel();
     }
-    return SettingsPanel();
+    return renderSettingsPanel();
   }
 
   function changeTab(tabId: TabId) {
@@ -5353,12 +5397,12 @@ export function MettasoulApp() {
     </main>
   );
 
-  function Dashboard() {
+  function renderDashboard() {
     if (role === "teacher") {
-      return <TeacherOverviewPanel />;
+      return renderTeacherOverviewPanel();
     }
     if (role === "assistant") {
-      return <AssistantOverviewPanel />;
+      return renderAssistantOverviewPanel();
     }
 
     const confirmed = schedules.filter((item) => item.status === "confirmed").length;
@@ -5376,7 +5420,7 @@ export function MettasoulApp() {
 
         <div className="grid gap-5 xl:grid-cols-[1.5fr_0.85fr]">
           <Panel title="Lịch dạy gần nhất" action="Xem theo tuần">
-            <ScheduleList items={visibleSchedules.slice(0, 5)} compact />
+            {renderScheduleList({ items: visibleSchedules.slice(0, 5), compact: true })}
           </Panel>
           <Panel title="Thông báo vận hành" action={`${unreadNotifications} mới`}>
             <div className="space-y-3">
@@ -5393,7 +5437,7 @@ export function MettasoulApp() {
     );
   }
 
-  function AssistantOverviewPanel() {
+  function renderAssistantOverviewPanel() {
     const assignedSchedules = visibleSchedules.filter((schedule) => schedule.status !== "cancelled");
     const confirmedCount = assignedSchedules.filter((schedule) => isAssistantScheduleConfirmed(schedule, currentTeacherId)).length;
     const attendedScheduleIds = new Set(attendance
@@ -5413,13 +5457,13 @@ export function MettasoulApp() {
           Trợ giảng xác nhận và điểm danh cho chính mình. Giáo án của giáo viên được mở ở chế độ chỉ đọc; mọi chỉnh sửa hoặc tải lên vẫn thuộc giáo viên phụ trách.
         </div>
         <Panel title="Lịch trợ giảng gần nhất" action={`${upcomingSchedules.length} lịch sắp tới`}>
-          <ScheduleList items={upcomingSchedules.slice(0, 8)} />
+          {renderScheduleList({ items: upcomingSchedules.slice(0, 8) })}
         </Panel>
       </div>
     );
   }
 
-  function AssignmentPanel() {
+  function renderAssignmentPanel() {
     const activeTopics = topics.filter((t) => t.active !== false);
 
     function updateDraftItem(itemId: string, patch: Partial<DraftScheduleItem>) {
@@ -5472,7 +5516,7 @@ export function MettasoulApp() {
 
     return (
       <div className="space-y-5">
-        <AdminAvailabilityPanel />
+        {renderAdminAvailabilityPanel()}
         <div className="grid gap-5 xl:grid-cols-[0.9fr_1.35fr]">
           <Panel title="Tạo lịch dạy mới" action="Email xác nhận">
             <div className="grid gap-4">
@@ -5512,7 +5556,7 @@ export function MettasoulApp() {
                 </div>
                 <div className="mt-3 grid gap-3">
                   {draftSchedule.items.map((item, index) => {
-                    const rowSchool = schools.find((s) => s.id === item.schoolId);
+                    const rowSchool = schoolById.get(item.schoolId);
                     const rowSelectedGrade = pickDefaultGradeForSchool(item.schoolId, item.classId, classes);
                     const rowTimeSlots = schedulingTimeSlotsForSchoolGrade(
                       activeTimeSlots,
@@ -5598,7 +5642,7 @@ export function MettasoulApp() {
                               const schoolId = e.target.value;
                               const grade = pickDefaultGradeForSchool(schoolId, item.classId, classes);
                               const classId = pickClassIdForSchoolGrade(schoolId, grade, item.classId, classes);
-                              const selectedSchool = schools.find((s) => s.id === schoolId);
+                              const selectedSchool = schoolById.get(schoolId);
                               const schoolSlots = schedulingTimeSlotsForSchoolGrade(
                                 activeTimeSlots,
                                 selectedSchool?.name ?? "",
@@ -5631,7 +5675,7 @@ export function MettasoulApp() {
                             onChange={(e) => {
                               const grade = e.target.value;
                               const classId = pickClassIdForSchoolGrade(item.schoolId, grade, item.classId, classes);
-                              const selectedSchool = schools.find((school) => school.id === item.schoolId);
+                              const selectedSchool = schoolById.get(item.schoolId);
                               const schoolSlots = schedulingTimeSlotsForSchoolGrade(
                                 activeTimeSlots,
                                 selectedSchool?.name ?? "",
@@ -5951,17 +5995,17 @@ export function MettasoulApp() {
                   </p>
                 </div>
               ) : null}
-              <ScheduleList items={filteredDraftSchedulePreview} compact />
+              {renderScheduleList({ items: filteredDraftSchedulePreview, compact: true })}
             </div>
           </Panel>
         </div>
-        <WeeklyUpdatesPanel embedded />
-        <AssignmentSummaryPanel />
+        {renderWeeklyUpdatesPanel({ embedded: true })}
+        {renderAssignmentSummaryPanel()}
       </div>
     );
   }
 
-  function AdminAvailabilityPanel() {
+  function renderAdminAvailabilityPanel() {
     const days = buildCalendarDays(
       assignmentAvailabilityMonth,
       assignmentAvailabilityDate,
@@ -6054,7 +6098,7 @@ export function MettasoulApp() {
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">
                     {teacherIds.slice(0, 6).map((teacherId) => {
-                      const teacher = teachers.find((item) => item.id === teacherId);
+                      const teacher = teacherById.get(teacherId);
                       const teacherEntries = entries.filter((item) => item.teacherId === teacherId);
                       const labels = summarizeAvailabilityEntries(teacherEntries, timeSlots);
                       return (
@@ -6075,16 +6119,7 @@ export function MettasoulApp() {
     );
   }
 
-  function AssignmentSummaryPanel() {
-    const reportSchedules = useMemo(
-      () => sortSchedules(
-        schedules.filter((schedule) => (
-          schedule.status !== "draft" && (!scheduleReportMonth || schedule.date.startsWith(`${scheduleReportMonth}-`))
-        )),
-        "date-asc",
-      ),
-      [schedules, scheduleReportMonth],
-    );
+  function renderAssignmentSummaryPanel() {
     const selectedReportSchedules = reportSchedules.filter((schedule) => selectedReportScheduleIds.includes(schedule.id));
 
     function toggleReportScheduleSelection(scheduleId: string) {
@@ -6125,10 +6160,10 @@ export function MettasoulApp() {
       try {
         const XLSX = await import("xlsx-js-style");
         const rows = reportSchedules.map((s) => {
-          const teacher = teachers.find((t) => t.id === s.teacherId);
-          const school = schools.find((sc) => sc.id === s.schoolId);
-          const lesson = lessons.find((l) => l.id === s.lessonId);
-          const slot = timeSlots.find((ts) => ts.id === s.timeSlotId);
+          const teacher = teacherById.get(s.teacherId);
+          const school = schoolById.get(s.schoolId);
+          const lesson = lessonById.get(s.lessonId);
+          const slot = slotById.get(s.timeSlotId);
           const envLabel = teachingEnvironmentOptions.find((o) => o.value === s.teachingEnvironment)?.label ?? s.teachingEnvironment ?? "";
           const classNames = scheduleParticipantLabel(s, classes);
           const periodNames = String(s.lessonPeriods || "lesson1")
@@ -6174,12 +6209,12 @@ export function MettasoulApp() {
 
         const kpiHeaders = ["Giáo viên", "Ngày", "Khung giờ", "Trường", "Lớp", "Số tiết KPI", "Trạng thái", "Chuyên đề"];
         const kpiRows = reportSchedules.map((schedule) => {
-          const teacher = teachers.find((item) => item.id === schedule.teacherId);
-          const school = schools.find((item) => item.id === schedule.schoolId);
-          const lesson = lessons.find((item) => item.id === schedule.lessonId);
-          const slot = timeSlots.find((item) => item.id === schedule.timeSlotId);
+          const teacher = teacherById.get(schedule.teacherId);
+          const school = schoolById.get(schedule.schoolId);
+          const lesson = lessonById.get(schedule.lessonId);
+          const slot = slotById.get(schedule.timeSlotId);
           const classNames = scheduleParticipantClassIds(schedule)
-            .map((classId) => classes.find((classRoom) => classRoom.id === classId)?.name ?? classId)
+            .map((classId) => classById.get(classId)?.name ?? classId)
             .join(", ");
           const lessonCount = new Set(
             String(schedule.lessonPeriods || "lesson1")
@@ -6269,18 +6304,13 @@ export function MettasoulApp() {
               </button>
             </div>
           </div>
-          <ScheduleList
-            items={reportSchedules}
-            selectedIds={selectedReportScheduleIds}
-            onToggleSelect={toggleReportScheduleSelection}
-            onOpenDetail={setSelectedScheduleDetail}
-          />
+          {renderScheduleList({ items: reportSchedules, selectedIds: selectedReportScheduleIds, onToggleSelect: toggleReportScheduleSelection, onOpenDetail: setSelectedScheduleDetail })}
         </Panel>
       </div>
     );
   }
 
-  function CalendarPanel() {
+  function renderCalendarPanel() {
     const todayKey = currentDateKey();
     const calendarGridClass = calendarViewMode === "day" ? "grid-cols-1" : "grid-cols-7";
     const showTeacherBadgesInCalendarCell = calendarViewMode === "day" || !isMobileViewport;
@@ -6869,17 +6899,8 @@ export function MettasoulApp() {
                 </button>
               </div>
             ) : null}
-            <ScheduleList
-              items={selectedDaySchedules}
-              selectedIds={selectedScheduleIds}
-              onToggleSelect={role === "admin" ? toggleScheduleSelection : undefined}
-              onOpenDetail={setSelectedScheduleDetail}
-              auditLogs={auditLogs}
-              expandedHistoryId={expandedHistoryScheduleId}
-              onToggleHistory={(scheduleId) =>
-                setExpandedHistoryScheduleId((current) => (current === scheduleId ? "" : scheduleId))
-              }
-            />
+            {renderScheduleList({ items: selectedDaySchedules, selectedIds: selectedScheduleIds, onToggleSelect: role === "admin" ? toggleScheduleSelection : undefined, onOpenDetail: setSelectedScheduleDetail, auditLogs: auditLogs, expandedHistoryId: expandedHistoryScheduleId, onToggleHistory: (scheduleId) =>
+                setExpandedHistoryScheduleId((current) => (current === scheduleId ? "" : scheduleId)) })}
           </Panel>
         ) : (
           <div className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 px-5 py-4 text-sm font-bold text-[var(--brand-dark)]">
@@ -6890,7 +6911,7 @@ export function MettasoulApp() {
     );
   }
 
-  function TeachersPanel() {
+  function renderTeachersPanel() {
     return (
       <Panel title="Danh sách giáo viên" action={`${filteredTeachers.length}/${teachers.length} người`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -6914,7 +6935,8 @@ export function MettasoulApp() {
               <span>Thao tác</span>
             </div>
             <div className="divide-y divide-[var(--line)]">
-              {filteredTeachers.map((teacher) => (
+              <PagedList items={filteredTeachers} resetKey={deferredSearchTerm} className="divide-y divide-[var(--line)]">
+              {(pageTeachers) => pageTeachers.map((teacher) => (
                 <TeacherTableRow
                   key={teacher.id}
                   teacher={teacher}
@@ -6930,6 +6952,7 @@ export function MettasoulApp() {
                   onDelete={deleteTeacher}
                 />
               ))}
+              </PagedList>
               {filteredTeachers.length === 0 ? (
                 <div className="px-4 py-8 text-center text-sm font-semibold text-[var(--muted)]">
                   Không tìm thấy giáo viên phù hợp với từ khóa đang nhập.
@@ -6942,7 +6965,7 @@ export function MettasoulApp() {
     );
   }
 
-  function LessonsPanel() {
+  function renderLessonsPanel() {
     return (
       <div className="space-y-5">
         <Panel title="Nhập mẫu bài học" action="Spreadsheet / hàng loạt">
@@ -7080,8 +7103,8 @@ export function MettasoulApp() {
               ))}
             </select>
           </div>
-          <div className="grid gap-3 lg:grid-cols-2">
-            {filteredLessons.map((lesson) => {
+          <PagedList items={filteredLessons} resetKey={`${lessonGradeFilter}:${deferredLessonSearchTerm}`} pageSize={24} className="grid gap-3 lg:grid-cols-2">
+            {(pageLessons) => pageLessons.map((lesson) => {
               const isEditing = editingLessonId === lesson.id;
               return (
                 <div key={lesson.id} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
@@ -7217,13 +7240,13 @@ export function MettasoulApp() {
                 </div>
               );
             })}
-          </div>
+          </PagedList>
         </Panel>
       </div>
     );
   }
 
-  function SlotsPanel() {
+  function renderSlotsPanel() {
     const orderedSlots = [...timeSlots].sort((left, right) => left.start.localeCompare(right.start));
     const selectedSlotCount = selectedSlotIds.length;
     const allVisibleSlotsSelected =
@@ -7236,6 +7259,7 @@ export function MettasoulApp() {
         collapsed={collapsedSettingsSections.slots}
         onToggleCollapse={() => toggleSettingsSection("slots")}
       >
+        {!collapsedSettingsSections.slots ? <>
         <div className="grid gap-5 xl:grid-cols-[0.85fr_1.5fr]">
           <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3">
@@ -7483,15 +7507,16 @@ export function MettasoulApp() {
             </div>
           </div>
         </div>
+        </> : null}
       </Panel>
     );
   }
 
-  function LessonPlansPanel() {
-    return role === "admin" ? <AdminLessonPlansPanel /> : role === "assistant" ? <AssistantLessonPlansPanel /> : <TeacherLessonPlansPanel />;
+  function renderLessonPlansPanel() {
+    return role === "admin" ? renderAdminLessonPlansPanel() : role === "assistant" ? renderAssistantLessonPlansPanel() : renderTeacherLessonPlansPanel();
   }
 
-  function AssistantLessonPlansPanel() {
+  function renderAssistantLessonPlansPanel() {
     const assignedSchedules = schedules
       .filter((schedule) => isAssistantAssignedToSchedule(schedule, currentTeacherId) && schedule.status !== "cancelled")
       .sort((left, right) => left.date.localeCompare(right.date));
@@ -7531,8 +7556,8 @@ export function MettasoulApp() {
     );
   }
 
-  function AdminLessonPlansPanel() {
-    const searchableTerm = searchTerm.trim().toLowerCase();
+  function renderAdminLessonPlansPanel() {
+    const searchableTerm = deferredSearchTerm.trim().toLowerCase();
     const operationalSchedules = schedules.filter((schedule) => schedule.status !== "cancelled");
     const submittedScheduleIds = new Set(lessonPlans.map((plan) => plan.scheduleId));
     const missingSchedules = operationalSchedules
@@ -7541,7 +7566,7 @@ export function MettasoulApp() {
     const upcomingMissingSchedules = missingSchedules.filter((schedule) => isWithinNextDays(schedule.date, 3));
     const latestPlanRows = lessonPlans
       .map((plan) => {
-        const schedule = schedules.find((item) => item.id === plan.scheduleId);
+        const schedule = scheduleById.get(plan.scheduleId);
         return schedule ? { plan, schedule, meta: lookupSchedule(schedule) } : null;
       })
       .filter((item): item is { plan: LessonPlan; schedule: Schedule; meta: ReturnType<typeof lookupSchedule> } => Boolean(item))
@@ -7691,7 +7716,7 @@ export function MettasoulApp() {
                 {lessonPlanAdminFocus === "uploaded" ? (
                   <>
                     {filteredPlanRows.map(({ plan, schedule, meta }) => (
-                      <LessonPlanFileRow key={plan.id} plan={plan} schedule={schedule} meta={meta} />
+                      <Fragment key={plan.id}>{renderLessonPlanFileRow({ plan: plan, schedule: schedule, meta: meta })}</Fragment>
                     ))}
                     {filteredPlanRows.length === 0 ? (
                       <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Chưa có giáo án phù hợp bộ lọc.</div>
@@ -7701,7 +7726,7 @@ export function MettasoulApp() {
                   <>
                     {filteredSubmittedSchedules.map((schedule) => {
                       const meta = lookupSchedule(schedule);
-                      return <LessonPlanScheduleRow key={schedule.id} schedule={schedule} meta={meta} />;
+                      return <Fragment key={schedule.id}>{renderLessonPlanScheduleRow({ schedule: schedule, meta: meta })}</Fragment>;
                     })}
                     {filteredSubmittedSchedules.length === 0 ? (
                       <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Chưa có lịch đã nộp giáo án phù hợp bộ lọc.</div>
@@ -7711,7 +7736,7 @@ export function MettasoulApp() {
                   <>
                     {focusedMissingSchedules.map((schedule) => {
                       const meta = lookupSchedule(schedule);
-                      return <MissingLessonPlanRow key={schedule.id} schedule={schedule} meta={meta} />;
+                      return <Fragment key={schedule.id}>{renderMissingLessonPlanRow({ schedule: schedule, meta: meta })}</Fragment>;
                     })}
                     {focusedMissingSchedules.length === 0 ? (
                       <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Không có lịch thiếu giáo án phù hợp.</div>
@@ -7759,7 +7784,7 @@ export function MettasoulApp() {
     );
   }
 
-  function TeacherLessonPlansPanel() {
+  function renderTeacherLessonPlansPanel() {
     const scopedSchedules = schedules.filter((item) => item.teacherId === currentTeacherId && item.status !== "cancelled");
     const submittedScheduleIds = new Set(
       lessonPlans.filter((plan) => plan.teacherId === currentTeacherId).map((plan) => plan.scheduleId),
@@ -7776,7 +7801,7 @@ export function MettasoulApp() {
     const myPlanRows = lessonPlans
       .filter((plan) => plan.teacherId === currentTeacherId)
       .map((plan) => {
-        const schedule = schedules.find((item) => item.id === plan.scheduleId);
+        const schedule = scheduleById.get(plan.scheduleId);
         return schedule ? { plan, schedule, meta: lookupSchedule(schedule) } : null;
       })
       .filter((item): item is { plan: LessonPlan; schedule: Schedule; meta: ReturnType<typeof lookupSchedule> } => Boolean(item))
@@ -7835,7 +7860,7 @@ export function MettasoulApp() {
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
               {lessonPlanScheduleCards.map((schedule) => {
                 const meta = lookupSchedule(schedule);
-                return <TeacherLessonPlanCard key={schedule.id} schedule={schedule} meta={meta} />;
+                return <Fragment key={schedule.id}>{renderTeacherLessonPlanCard({ schedule: schedule, meta: meta })}</Fragment>;
               })}
               {lessonPlanScheduleCards.length === 0 ? (
                 <p className="rounded-2xl bg-white/80 px-4 py-5 text-sm font-semibold text-emerald-700">
@@ -7854,7 +7879,7 @@ export function MettasoulApp() {
               {lessonPlanTeacherFocus === "uploaded" ? (
                 <>
                   {myPlanRows.map(({ plan, schedule, meta }) => (
-                    <LessonPlanFileRow key={plan.id} plan={plan} schedule={schedule} meta={meta} />
+                    <Fragment key={plan.id}>{renderLessonPlanFileRow({ plan: plan, schedule: schedule, meta: meta })}</Fragment>
                   ))}
                   {myPlanRows.length === 0 ? (
                     <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Bạn chưa tải giáo án nào.</div>
@@ -7864,7 +7889,7 @@ export function MettasoulApp() {
                 <>
                   {pendingSchedules.map((schedule) => {
                     const meta = lookupSchedule(schedule);
-                    return <MissingLessonPlanRow key={schedule.id} schedule={schedule} meta={meta} allowUpload />;
+                    return <Fragment key={schedule.id}>{renderMissingLessonPlanRow({ schedule: schedule, meta: meta, allowUpload: true })}</Fragment>;
                   })}
                   {pendingSchedules.length === 0 ? (
                     <div className="px-4 py-6 text-sm font-semibold text-emerald-700">Bạn không còn lịch thiếu giáo án.</div>
@@ -7874,7 +7899,7 @@ export function MettasoulApp() {
                 <>
                   {submittedSchedules.map((schedule) => {
                     const meta = lookupSchedule(schedule);
-                    return <LessonPlanScheduleRow key={schedule.id} schedule={schedule} meta={meta} />;
+                    return <Fragment key={schedule.id}>{renderLessonPlanScheduleRow({ schedule: schedule, meta: meta })}</Fragment>;
                   })}
                   {submittedSchedules.length === 0 ? (
                     <div className="px-4 py-6 text-sm font-semibold text-[var(--muted)]">Chưa có lịch đã nộp giáo án.</div>
@@ -7888,7 +7913,7 @@ export function MettasoulApp() {
     );
   }
 
-  function LessonPlanFileRow({
+  function renderLessonPlanFileRow({
     plan,
     schedule,
     meta,
@@ -7920,13 +7945,13 @@ export function MettasoulApp() {
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
             {formatDateTime(plan.uploadedAt)}
           </span>
-          <LessonPlanActions plan={plan} />
+          {renderLessonPlanActions({ plan: plan })}
         </div>
       </div>
     );
   }
 
-  function TeacherLessonPlanCard({
+  function renderTeacherLessonPlanCard({
     schedule,
     meta,
   }: {
@@ -7978,7 +8003,7 @@ export function MettasoulApp() {
                   <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700">
                     {formatDateTime(plan.uploadedAt)}
                   </span>
-                  <LessonPlanActions plan={plan} />
+                  {renderLessonPlanActions({ plan: plan })}
                 </div>
               </div>
             ))}
@@ -7987,7 +8012,7 @@ export function MettasoulApp() {
 
         <div className="mt-3 grid gap-2">
           <div className="flex flex-wrap gap-2">
-            <LessonPlanUploadButton schedule={schedule} />
+            {renderLessonPlanUploadButton({ schedule: schedule })}
           </div>
           <div className="grid gap-2 md:grid-cols-[1fr_auto]">
             <input
@@ -8013,8 +8038,8 @@ export function MettasoulApp() {
     );
   }
 
-  function TeacherOverviewPanel() {
-    const teacher = teachers.find((item) => item.id === currentTeacherId);
+  function renderTeacherOverviewPanel() {
+    const teacher = teacherById.get(currentTeacherId);
     const today = currentDateKey();
     const scopedSchedules = schedules.filter(
       (schedule) =>
@@ -8230,7 +8255,7 @@ export function MettasoulApp() {
                   <X size={18} />
                 </button>
               </div>
-              <ScheduleList items={selectedRows} compact />
+              {renderScheduleList({ items: selectedRows, compact: true })}
             </div>
             </div>
           </ViewportPortal>
@@ -8239,7 +8264,7 @@ export function MettasoulApp() {
     );
   }
 
-  function LessonPlanScheduleRow({
+  function renderLessonPlanScheduleRow({
     schedule,
     meta,
   }: {
@@ -8265,7 +8290,7 @@ export function MettasoulApp() {
                   <UploadCloud size={14} />
                   <span className="truncate">{plan.fileName}</span>
                 </a>
-                <LessonPlanActions plan={plan} />
+                {renderLessonPlanActions({ plan: plan })}
               </div>
             ))}
           </div>
@@ -8279,7 +8304,7 @@ export function MettasoulApp() {
     );
   }
 
-  function MissingLessonPlanRow({
+  function renderMissingLessonPlanRow({
     schedule,
     meta,
     allowUpload = false,
@@ -8298,13 +8323,13 @@ export function MettasoulApp() {
         </div>
         <div className="flex items-center justify-between gap-2 lg:justify-end">
           <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">Chưa có giáo án</span>
-          {allowUpload ? <LessonPlanUploadButton schedule={schedule} compact /> : null}
+          {allowUpload ? renderLessonPlanUploadButton({ schedule: schedule, compact: true }) : null}
         </div>
       </div>
     );
   }
 
-  function LessonPlanActions({ plan }: { plan: LessonPlan }) {
+  function renderLessonPlanActions({ plan }: { plan: LessonPlan }) {
     const chat = lessonPlanChatSummary[plan.id];
     return (
       <div className="flex items-center gap-2">
@@ -8340,7 +8365,7 @@ export function MettasoulApp() {
     );
   }
 
-  function LessonPlanUploadButton({ schedule, compact = false }: { schedule: Schedule; compact?: boolean }) {
+  function renderLessonPlanUploadButton({ schedule, compact = false }: { schedule: Schedule; compact?: boolean }) {
     return (
       <label
         className={`inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 text-sm font-black text-white shadow-lg shadow-orange-500/20 transition hover:-translate-y-0.5 ${
@@ -8363,7 +8388,7 @@ export function MettasoulApp() {
     );
   }
 
-  function AttendancePanel() {
+  function renderAttendancePanel() {
     const scopedSchedules = role === "admin"
       ? schedules
       : schedules.filter((item) => role === "assistant"
@@ -8373,11 +8398,11 @@ export function MettasoulApp() {
     const scopedScheduleIds = new Set(scopedSchedules.map((schedule) => schedule.id));
     const attendanceToday = attendance.filter((record) =>
       dateTimeDateKey(record.checkedInAt) === today
-      && (role !== "admin" || schedules.find((schedule) => schedule.id === record.scheduleId)?.teacherId === record.teacherId),
+      && (role !== "admin" || scheduleById.get(record.scheduleId)?.teacherId === record.teacherId),
     );
     const todaySchedules = scopedSchedules.filter((schedule) => schedule.date === today && isAttendanceTrackedSchedule(schedule));
     const checkedToday = attendanceToday
-      .map((record) => schedules.find((schedule) => schedule.id === record.scheduleId))
+      .map((record) => scheduleById.get(record.scheduleId))
       .filter(
         (schedule): schedule is Schedule =>
           Boolean(schedule && scopedScheduleIds.has(schedule.id) && isAttendanceTrackedSchedule(schedule)),
@@ -8493,11 +8518,11 @@ export function MettasoulApp() {
           <Panel title="Lịch sử điểm danh gần nhất" action={`${primaryTeacherAttendance.length} bản ghi`}>
             <div className="space-y-3">
               {primaryTeacherAttendance.slice(0, 8).map((record) => {
-                const schedule = schedules.find((item) => item.id === record.scheduleId);
+                const schedule = scheduleById.get(record.scheduleId);
                 if (!schedule) {
                   return null;
                 }
-                return <AttendanceScheduleRow key={record.id} schedule={schedule} />;
+                return <Fragment key={record.id}>{renderAttendanceScheduleRow({ schedule: schedule })}</Fragment>;
               })}
             </div>
           </Panel>
@@ -8526,7 +8551,7 @@ export function MettasoulApp() {
                 <div className="space-y-3">
                   {selectedAttendanceRows.length > 0 ? (
                     selectedAttendanceRows.map((schedule) => (
-                      <AttendanceScheduleRow key={schedule.id} schedule={schedule} showLateDetail />
+                      <Fragment key={schedule.id}>{renderAttendanceScheduleRow({ schedule: schedule, showLateDetail: true })}</Fragment>
                     ))
                   ) : (
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm font-bold text-slate-600">
@@ -8565,7 +8590,7 @@ export function MettasoulApp() {
                 <div className="space-y-3">
                   {selectedWarningRows.length > 0 ? (
                     selectedWarningRows.map((schedule) => (
-                      <AttendanceScheduleRow key={schedule.id} schedule={schedule} showLateDetail />
+                      <Fragment key={schedule.id}>{renderAttendanceScheduleRow({ schedule: schedule, showLateDetail: true })}</Fragment>
                     ))
                   ) : (
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm font-bold text-slate-600">
@@ -8638,7 +8663,7 @@ export function MettasoulApp() {
     );
   }
 
-  function AttendanceScheduleRow({ schedule, showLateDetail = false }: { schedule: Schedule; showLateDetail?: boolean }) {
+  function renderAttendanceScheduleRow({ schedule, showLateDetail = false }: { schedule: Schedule; showLateDetail?: boolean }) {
     const meta = lookupSchedule(schedule);
     const lateMinutes = getAttendanceLateMinutes(schedule, meta.checkIn, timeSlots);
     return (
@@ -8668,7 +8693,7 @@ export function MettasoulApp() {
     );
   }
 
-  function WeeklyUpdatesPanel({ embedded = false }: { embedded?: boolean }) {
+  function renderWeeklyUpdatesPanel({ embedded = false }: { embedded?: boolean }) {
     const sortedUpdates = [...weeklyUpdates].sort((a, b) => {
       if (b.weekNumber !== a.weekNumber) return b.weekNumber - a.weekNumber;
       return (b.updateDate || "").localeCompare(a.updateDate || "");
@@ -8904,8 +8929,8 @@ export function MettasoulApp() {
                 <tbody>
                   {sortedUpdates.map((update) => {
                     const isEditing = editingWeeklyUpdateId === update.id;
-                    const schoolLabel = schools.find((s) => s.id === update.schoolId)?.name || update.schoolId;
-                    const classLabel = classes.find((c) => c.id === update.classId)?.name || update.classId;
+                    const schoolLabel = schoolById.get(update.schoolId)?.name || update.schoolId;
+                    const classLabel = classById.get(update.classId)?.name || update.classId;
 
                     if (isEditing) {
                       return (
@@ -9058,7 +9083,7 @@ export function MettasoulApp() {
               <h3 className="mb-2 text-base font-black text-slate-800">Xóa cập nhật tuần?</h3>
               <p className="mb-4 text-sm text-slate-600">
                 Bạn có chắc muốn xóa cập nhật tuần {weeklyUpdateDeleteTarget.weekNumber} —{" "}
-                {schools.find((s) => s.id === weeklyUpdateDeleteTarget.schoolId)?.name || ""}?
+                {schoolById.get(weeklyUpdateDeleteTarget.schoolId)?.name || ""}?
               </p>
               <div className="flex justify-end gap-2">
                 <button
@@ -9085,7 +9110,7 @@ export function MettasoulApp() {
     );
   }
 
-  function SettingsPanel() {
+  function renderSettingsPanel() {
     const usageGuideUrl = "/huong-dan-su-dung/";
     const trainingChecklistUrl = "/training-14-09-2026.html";
     const upgradeUatChecklistUrl = "/uat-nang-cap-15-09-2026.html";
@@ -9097,6 +9122,7 @@ export function MettasoulApp() {
           collapsed={collapsedSettingsSections.announcements}
           onToggleCollapse={() => toggleSettingsSection("announcements")}
         >
+        {!collapsedSettingsSections.announcements ? <>
           <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
             <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-rose-50 p-4 shadow-sm">
               <div className="flex items-start gap-3">
@@ -9223,6 +9249,7 @@ export function MettasoulApp() {
               </div>
             </div>
           </div>
+        </> : null}
         </Panel>
 
         <Panel title="Observability vận hành" action="Admin-only">
@@ -9462,6 +9489,7 @@ export function MettasoulApp() {
           collapsed={collapsedSettingsSections.schools}
           onToggleCollapse={() => toggleSettingsSection("schools")}
         >
+        {!collapsedSettingsSections.schools ? <>
           <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3">
               <School2 className="text-[var(--brand)]" />
@@ -9545,6 +9573,7 @@ export function MettasoulApp() {
               ))}
             </div>
           </div>
+        </> : null}
         </Panel>
 
         <Panel
@@ -9553,6 +9582,7 @@ export function MettasoulApp() {
           collapsed={collapsedSettingsSections.classes}
           onToggleCollapse={() => toggleSettingsSection("classes")}
         >
+        {!collapsedSettingsSections.classes ? <>
           <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3">
               <BookOpen className="text-[var(--accent)]" />
@@ -9645,7 +9675,7 @@ export function MettasoulApp() {
                           {classRoom.name} - {classRoom.grade}
                         </p>
                         <p className="truncate text-xs font-bold text-[var(--muted)]">
-                          {schools.find((school) => school.id === classRoom.schoolId)?.name || "Không rõ trường"}
+                          {schoolById.get(classRoom.schoolId)?.name || "Không rõ trường"}
                         </p>
                       </div>
                       <div className="ml-auto flex gap-1">
@@ -9670,13 +9700,14 @@ export function MettasoulApp() {
               ))}
             </div>
           </div>
+        </> : null}
         </Panel>
 
-        <SlotsPanel />
+        {renderSlotsPanel()}
       </div>
     );
   }
-  function ScheduleList({
+  function renderScheduleList({
     items,
     compact = false,
     selectedIds = [],
@@ -9706,8 +9737,8 @@ export function MettasoulApp() {
 
     return (
       <div className="app-scrollbar overflow-x-auto">
-        <div className="space-y-3 sm:min-w-[860px]">
-          {items.map((schedule) => {
+        <PagedList items={items} resetKey={`${items[0]?.id ?? ""}:${items.length}`} className="space-y-3 sm:min-w-[860px]">
+          {(pageSchedules) => pageSchedules.map((schedule) => {
             const meta = lookupSchedule(schedule);
             const checkedIn = Boolean(meta.checkIn);
             const assistantNames = scheduleAssistantNames(schedule);
@@ -9880,7 +9911,7 @@ export function MettasoulApp() {
               </div>
             );
           })}
-        </div>
+        </PagedList>
       </div>
     );
   }
@@ -10080,7 +10111,7 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className={`rounded-2xl border border-white/75 bg-white/90 p-4 shadow-[0_20px_52px_rgba(18,46,68,0.09),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur sm:rounded-3xl sm:p-5 ${className}`}>
+    <section className={`rounded-2xl border border-white/75 bg-white/90 p-4 shadow-[0_20px_52px_rgba(18,46,68,0.09),inset_0_1px_0_rgba(255,255,255,0.9)] sm:rounded-3xl sm:p-5 ${className}`}>
       <div className={`${collapsed ? "" : "mb-4 sm:mb-5"} flex items-start justify-between gap-3`}>
         <h2 className="text-base font-black tracking-tight text-[var(--brand-dark)] sm:text-lg">{title}</h2>
         <div className="flex items-center gap-2">
@@ -11711,6 +11742,7 @@ function isSupportedLessonPlanFile(file: File) {
 }
 
 const invalidDateFallback = "—";
+const dateFormatters = new Map<string, Intl.DateTimeFormat>();
 
 /**
  * Intl.DateTimeFormat.format() nem RangeError khi gap Invalid Date.
@@ -11723,7 +11755,13 @@ function safeFormatDate(value: string, options: Intl.DateTimeFormatOptions) {
     return invalidDateFallback;
   }
 
-  return new Intl.DateTimeFormat("vi-VN", options).format(date);
+  const key = JSON.stringify(options);
+  let formatter = dateFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("vi-VN", options);
+    dateFormatters.set(key, formatter);
+  }
+  return formatter.format(date);
 }
 
 function formatDate(value: string) {
