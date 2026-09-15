@@ -34,12 +34,13 @@ const baseCandidate = {
   lessonId: "lesson-emotion", lessonPeriods: "lesson1", status: "sent",
 };
 assert.equal(findLessonProgressionConflicts([baseCandidate], [previousLessonOne]).length, 1);
-assert.equal(findLessonProgressionConflicts([{ ...baseCandidate, classId: "7A", participantClassIds: "7A" }], [previousLessonOne]).length, 0);
+assert.equal(findLessonProgressionConflicts([{ ...baseCandidate, classId: "7A", participantClassIds: "7A" }], [previousLessonOne]).length, 1);
 assert.equal(findLessonProgressionConflicts([{ ...baseCandidate, lessonPeriods: "lesson2" }], [previousLessonOne]).length, 0);
-assert.equal(findLessonProgressionConflicts([{ ...baseCandidate, date: "2027-08-01" }], [previousLessonOne]).length, 0);
+assert.equal(findLessonProgressionConflicts([{ ...baseCandidate, date: "2027-01-02" }], [previousLessonOne]).length, 0);
+assert.equal(findLessonProgressionConflicts([{ ...baseCandidate, schoolId: "school-b" }], [previousLessonOne]).length, 0);
 assert.equal(findLessonProgressionConflicts([
   { ...baseCandidate, id: "co-1", groupId: "group-1" },
   { ...baseCandidate, id: "co-2", groupId: "group-1" },
 ], []).length, 0);
 
-console.log("Lesson progression tests passed for overlapping audiences and academic-year reset.");
+console.log("Lesson progression tests passed for same-school Tiết 1 rolling two-month policy.");

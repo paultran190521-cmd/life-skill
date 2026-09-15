@@ -48,24 +48,31 @@ export async function POST(request: Request) {
   const requestId = createRequestId("teacher-availability");
   try {
     const auth = await requireSessionUser(request, { allowHeaderFallback: false });
-    const permission = evaluateRolePermission(auth.user, ["teacher", "assistant"], "teacher_only_availability_write");
-    if (permission.decision === "would_block") {
-      console.warn(`[auth-shadow][${requestId}] teacherAvailability.replace ${permission.reason}`);
-    }
-    if (!permission.allowed) {
-      return apiFailure(403, "Chỉ giáo viên được đăng ký lịch trống.", undefined, requestId);
-    }
-
-    const teacherId = String(auth.user.teacherId || "").trim();
-    if (!teacherId) {
-      return apiFailure(400, "Tài khoản chưa được liên kết với hồ sơ giáo viên.", undefined, requestId);
-    }
-
     const body = (await request.json()) as Record<string, unknown>;
     const operation = String(body.operation || "").trim();
     if (operation && !["create", "update", "delete"].includes(operation)) {
       return apiFailure(400, "Thao tác đăng ký không hợp lệ.", undefined, requestId);
     }
+    const requestedTeacherId = String(body.teacherId || "").trim();
+    if (requestedTeacherId && auth.user.role !== "admin") {
+      return apiFailure(403, "Chỉ quản trị viên mới được thao tác lịch trống của giáo viên khác.", undefined, requestId);
+    }
+    const adminDelete = operation === "delete" && auth.user.role === "admin" && Boolean(requestedTeacherId);
+    const permission = adminDelete
+      ? evaluateRolePermission(auth.user, "admin", "admin_delete_locked_teacher_availability")
+      : evaluateRolePermission(auth.user, ["teacher", "assistant"], "teacher_only_availability_write");
+    if (permission.decision === "would_block") {
+      console.warn(`[auth-shadow][${requestId}] teacherAvailability.replace ${permission.reason}`);
+    }
+    if (!permission.allowed) {
+      return apiFailure(403, adminDelete ? "Chỉ quản trị viên được xóa lịch trống của người khác." : "Chỉ giáo viên được đăng ký lịch trống.", undefined, requestId);
+    }
+
+    const teacherId = adminDelete ? requestedTeacherId : String(auth.user.teacherId || "").trim();
+    if (!teacherId) {
+      return apiFailure(400, adminDelete ? "Thiếu giáo viên cần xóa lịch trống." : "Tài khoản chưa được liên kết với hồ sơ giáo viên.", undefined, requestId);
+    }
+
     const targetRegistrationId = String(body.registrationId || "").trim();
     const rawEntries = Array.isArray(body.entries) ? body.entries : null;
     const rawScope = String(body.scope || "").trim();
@@ -128,7 +135,7 @@ export async function POST(request: Request) {
         .map((row) => ({ createdAt: String(row.createdAt || "") }));
       return isTeacherAvailabilityLocked(dateRows, nowDate.getTime());
     });
-    if (lockedDates.length > 0) {
+    if (!adminDelete && lockedDates.length > 0) {
       return apiFailure(
         409,
         `Lịch trống ngày ${lockedDates.join(", ")} đã khóa sau 24 giờ và không thể sửa hoặc xóa.`,
@@ -172,7 +179,7 @@ export async function POST(request: Request) {
     await appendAuditLog({
       requestId,
       actor: auth.user,
-      action: isWithdraw ? "teacherAvailability.withdraw" : operation === "create" ? "teacherAvailability.create" : "teacherAvailability.replace",
+      action: adminDelete ? "teacherAvailability.admin_withdraw" : isWithdraw ? "teacherAvailability.withdraw" : operation === "create" ? "teacherAvailability.create" : "teacherAvailability.replace",
       entityType: "TeacherAvailability",
       entityId: teacherId,
       route: "/api/teacher-availability",
@@ -186,11 +193,10 @@ export async function POST(request: Request) {
     });
 
     const withdrawnIds = new Set(rowsToWithdraw.map((row) => String(row.id || "")));
-    const untouched = existingRows.filter(
-      (row) =>
-        String(row.teacherId || "") === teacherId &&
-        !withdrawnIds.has(String(row.id || "")) &&
-        String(row.status || "available") === "available",
+    const untouched = existingRows.filter((row) =>
+      (adminDelete || String(row.teacherId || "") === teacherId) &&
+      !withdrawnIds.has(String(row.id || "")) &&
+      String(row.status || "available") === "available",
     );
     return NextResponse.json({ availability: [...untouched, ...rowsToCreate] });
   } catch (error) {

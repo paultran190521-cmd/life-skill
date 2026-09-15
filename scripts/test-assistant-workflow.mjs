@@ -15,5 +15,6 @@ assert.match(confirmation, /assistant_must_be_assigned_to_schedule/);
 assert.match(confirmation, /assistantConfirmedIds/);
 assert.match(app, /<option value="assistant">Quyền trợ giảng<\/option>/);
 assert.match(app, /Trợ giảng không thể tải lên, sửa hoặc xóa giáo án/);
+assert.match(app, /role === "assistant" \? "Trợ giảng" : "Giáo viên"/);
 
 console.log("Assistant workflow tests passed for scoped data, self confirmation, attendance, and read-only plans.");

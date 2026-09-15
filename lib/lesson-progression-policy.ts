@@ -19,6 +19,7 @@ export type LessonProgressionConflict = {
 };
 
 type AcademicYearOptions = { startMonth?: number; startDay?: number };
+type RecentLessonOptions = { lookbackMonths?: number };
 
 export function academicYearKey(dateKey: unknown, options: AcademicYearOptions = {}) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey || "").trim());
@@ -33,43 +34,61 @@ export function academicYearKey(dateKey: unknown, options: AcademicYearOptions =
 }
 
 /**
- * Chặn lặp cùng tiết/bài cho nhóm học sinh giao nhau trong cùng trường và năm học.
- * Các dòng đồng giảng chung groupId được xem là một hoạt động, không tự xung đột.
+ * Chặn giao lại Tiết 1 của cùng bài tại cùng trường trong hai tháng gần nhất.
+ * Các dòng đồng giảng thuộc cùng groupId là một hoạt động, không tự xung đột.
  */
 export function findLessonProgressionConflicts(
   candidates: ProgressionSchedule[],
   existingSchedules: ProgressionSchedule[],
-  options: AcademicYearOptions = {},
+  options: RecentLessonOptions = {},
 ): LessonProgressionConflict[] {
   const conflicts: LessonProgressionConflict[] = [];
   const earlierCandidates: ProgressionSchedule[] = [];
+  const lookbackMonths = validInteger(options.lookbackMonths, 1, 12, 2);
 
   for (const candidate of candidates) {
-    const candidateYear = academicYearKey(candidate.date, options);
     const candidatePeriods = normalizeScheduledLessonPeriods(candidate.lessonPeriods);
-    const candidateClassIds = participantClassIds(candidate);
+    if (!candidatePeriods.includes("lesson1")) {
+      earlierCandidates.push(candidate);
+      continue;
+    }
     const comparisons = [...existingSchedules, ...earlierCandidates];
     const existing = comparisons.find((schedule) => {
       if (String(schedule.status || "") === "cancelled") return false;
       if (String(schedule.id || "") && String(schedule.id) === String(candidate.id || "")) return false;
       if (candidate.groupId && String(schedule.groupId || "") === String(candidate.groupId)) return false;
-      if (!candidateYear || academicYearKey(schedule.date, options) !== candidateYear) return false;
       if (String(schedule.schoolId || "") !== String(candidate.schoolId || "")) return false;
       if (String(schedule.lessonId || "") !== String(candidate.lessonId || "")) return false;
-      if (!hasIntersection(candidateClassIds, participantClassIds(schedule))) return false;
-      return hasIntersection(candidatePeriods, normalizeScheduledLessonPeriods(schedule.lessonPeriods));
+      if (!normalizeScheduledLessonPeriods(schedule.lessonPeriods).includes("lesson1")) return false;
+      return isWithinPreviousCalendarMonths(schedule.date, candidate.date, lookbackMonths);
     });
     if (existing) {
       conflicts.push({
         candidate,
         existing,
-        periods: candidatePeriods.filter((period) => normalizeScheduledLessonPeriods(existing.lessonPeriods).includes(period)),
+        periods: ["lesson1"],
       });
     }
     earlierCandidates.push(candidate);
   }
 
   return conflicts;
+}
+
+function isWithinPreviousCalendarMonths(existingDateKey: unknown, candidateDateKey: unknown, months: number) {
+  const existing = parseDateKey(existingDateKey);
+  const candidate = parseDateKey(candidateDateKey);
+  if (!existing || !candidate || existing.getTime() > candidate.getTime()) return false;
+  const earliest = new Date(candidate.getTime());
+  earliest.setUTCMonth(earliest.getUTCMonth() - months);
+  return existing.getTime() >= earliest.getTime();
+}
+
+function parseDateKey(value: unknown) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || "").trim());
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function participantClassIds(schedule: ProgressionSchedule) {

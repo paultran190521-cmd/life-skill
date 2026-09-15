@@ -55,6 +55,7 @@ import {
 } from "@/lib/schedule-conflict-policy";
 import { classifySchedulingParticipantIds } from "@/lib/scheduling-participants";
 import { normalizeScheduleParticipantScope, resolveScheduleParticipantSelection } from "@/lib/schedule-participant-scope";
+import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy";
 import { scheduledLessonSections } from "@/lib/lessons";
 import {
   availabilityTimeRangeKey,
@@ -680,6 +681,7 @@ export function MettasoulApp() {
   const [appDialog, setAppDialog] = useState<AppDialog | null>(null);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [observability, setObservability] = useState<ObservabilitySnapshot | null>(null);
   const [observabilityLoading, setObservabilityLoading] = useState(false);
@@ -1386,6 +1388,12 @@ export function MettasoulApp() {
     assignmentPreviewTeacherId === "all"
       ? draftSchedulePreview
       : draftSchedulePreview.filter((schedule) => schedule.teacherId === assignmentPreviewTeacherId);
+  const draftLessonProgressionConflicts = useMemo(() => {
+    const candidates = draftSchedule.items
+      .filter((item) => item.date && item.schoolId && item.lessonId && item.lessonPeriods.length > 0)
+      .map((item) => draftProgressionSchedule(item));
+    return findLessonProgressionConflicts(candidates, schedules, { lookbackMonths: 2 });
+  }, [draftSchedule.items, schedules]);
   const draftScheduleConflicts = useMemo<DraftScheduleConflict[]>(() => {
     const conflicts: DraftScheduleConflict[] = [];
     const dedupe = new Set<string>();
@@ -1950,6 +1958,29 @@ export function MettasoulApp() {
     }
   }
 
+  async function adminDeleteConfirmedAvailability(teacherId: string, dateKey: string, registrationId: string) {
+    if (role !== "admin") return;
+    const teacher = teachers.find((item) => item.id === teacherId);
+    const confirmed = await openConfirmDialog({
+      title: "Admin xóa lịch trống?",
+      message: `Bạn muốn xóa lịch trống của ${teacher?.name || teacherId} ngày ${formatDate(dateKey)}? Lịch đã khóa vẫn sẽ bị xóa.`,
+      confirmText: "Xóa lịch trống",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    try {
+      const response = await saveRequest<{ availability: TeacherAvailability[] }>(
+        "Đang xóa lịch trống...",
+        "/api/teacher-availability",
+        { method: "POST", body: JSON.stringify({ operation: "delete", teacherId, registrationId, dates: [dateKey] }) },
+      );
+      setTeacherAvailability(response.availability ?? []);
+      pushToast("Đã xóa lịch trống", `Đã xóa lịch trống của ${teacher?.name || "giáo viên"}.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
   function updateAvailabilityScope(scope: TeacherAvailabilityScope) {
     if (availabilityTargetDates.length === 0) {
       pushToast("Chưa chọn ngày", "Hãy bấm một hoặc nhiều ngày trên lịch trước khi chọn thời gian.", "warning");
@@ -2030,6 +2061,15 @@ export function MettasoulApp() {
   }
 
   async function createSchedules() {
+    if (draftLessonProgressionConflicts.length > 0) {
+      const conflict = draftLessonProgressionConflicts[0];
+      pushToast(
+        "Không thể giao lại Tiết 1",
+        `Bài này đã được giao tại cùng trường ngày ${String(conflict.existing.date || "")}. Quy tắc 2 tháng chưa cho phép giao lại Tiết 1.`,
+        "warning",
+      );
+      return;
+    }
     const rowsMissingLessons = draftSchedule.items
       .map((item, index) => {
         const classRoom = classes.find((entry) => entry.id === item.classId);
@@ -4275,7 +4315,7 @@ export function MettasoulApp() {
 
   return (
     <main className="ui-polish min-h-screen overflow-x-hidden bg-[var(--canvas)]">
-      <div className="ui-enter grid min-h-screen lg:grid-cols-[280px_1fr]">
+      <div className={`ui-enter grid min-h-screen transition-[grid-template-columns] duration-300 ${sidebarCollapsed ? "lg:grid-cols-[84px_1fr]" : "lg:grid-cols-[280px_1fr]"}`}>
         {mobileSidebarOpen ? (
           <button
             type="button"
@@ -4285,7 +4325,7 @@ export function MettasoulApp() {
           />
         ) : null}
         <aside
-          className={`ui-shell-sidebar fixed inset-y-0 left-0 z-50 w-[min(86vw,320px)] overflow-y-auto border-r border-white/70 px-4 py-5 shadow-[16px_0_44px_rgba(18,46,68,0.16)] transition-transform duration-300 lg:static lg:z-auto lg:w-auto lg:translate-x-0 lg:overflow-visible ${
+          className={`ui-shell-sidebar fixed inset-y-0 left-0 z-50 w-[min(86vw,320px)] overflow-y-auto border-r border-white/70 px-4 py-5 shadow-[16px_0_44px_rgba(18,46,68,0.16)] transition-transform duration-300 lg:static lg:z-auto lg:w-auto lg:translate-x-0 lg:overflow-visible ${sidebarCollapsed ? "lg:px-2" : "lg:px-4"} ${
             mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -4293,7 +4333,7 @@ export function MettasoulApp() {
             <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
               <img src="/mettasoul-logo.png" alt="METTASOUL" className="h-full w-full object-cover" />
             </div>
-            <div className="min-w-0">
+            <div className={`min-w-0 ${sidebarCollapsed ? "lg:hidden" : ""}`}>
               <p className="text-lg font-extrabold tracking-tight text-[var(--brand-dark)]">METTASOUL</p>
               <p className="text-xs font-semibold text-[var(--muted)]">Education with love</p>
             </div>
@@ -4305,9 +4345,19 @@ export function MettasoulApp() {
             >
               <X size={18} />
             </button>
+            <button
+              type="button"
+              title={sidebarCollapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
+              aria-label={sidebarCollapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
+              aria-pressed={sidebarCollapsed}
+              onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+              className="ml-auto hidden h-10 w-10 place-items-center rounded-xl bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100 lg:grid"
+            >
+              {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+            </button>
           </div>
 
-          <div className="ui-surface-lift mt-6 rounded-2xl border p-3">
+          <div className={`ui-surface-lift mt-6 rounded-2xl border p-3 ${sidebarCollapsed ? "lg:hidden" : ""}`}>
             <label className="grid gap-2">
               <span className="text-xs font-black uppercase text-[var(--brand-dark)]">Tài khoản</span>
               {hasAdminAccess ? (
@@ -4324,7 +4374,7 @@ export function MettasoulApp() {
                 </select>
               ) : (
                 <div className="w-full rounded-xl border border-cyan-100 bg-slate-50 px-3 py-2 text-sm font-bold text-[var(--brand-dark)]">
-                  {currentUser.name} - Giáo viên
+                  {currentUser.name} - {role === "admin" ? "Quản trị" : role === "assistant" ? "Trợ giảng" : "Giáo viên"}
                 </div>
               )}
             </label>
@@ -4353,7 +4403,9 @@ export function MettasoulApp() {
               return (
                 <button
                   key={item.id}
-                  className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-bold transition ${
+                  title={sidebarCollapsed ? item.label : undefined}
+                  aria-label={sidebarCollapsed ? item.label : undefined}
+                  className={`relative flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-bold transition ${sidebarCollapsed ? "lg:justify-center lg:px-2" : ""} ${
                     activeTab === item.id
                       ? "bg-gradient-to-r from-[var(--brand)] via-[var(--mint)] to-[var(--sky)] text-white shadow-lg shadow-cyan-800/20"
                       : "text-[var(--brand-dark)] hover:bg-white hover:text-[var(--brand-dark)] hover:shadow-md hover:shadow-cyan-900/5"
@@ -4361,16 +4413,16 @@ export function MettasoulApp() {
                   onClick={() => changeTab(item.id)}
                 >
                   <Icon size={18} />
-                  <span>{item.label}</span>
+                  <span className={sidebarCollapsed ? "lg:hidden" : ""}>{item.label}</span>
                   {item.id === "calendar" && role === "teacher" && unseenScheduleCount > 0 ? (
-                    <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-rose-600 px-1 text-[11px] font-black text-white">
+                    <span className={`ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-rose-600 px-1 text-[11px] font-black text-white ${sidebarCollapsed ? "lg:absolute lg:right-1" : ""}`}>
                       {unseenScheduleCount}
                     </span>
                   ) : null}
                   {item.id === "plans" && unreadLessonPlanChatCount > 0 ? (
-                    <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-violet-600 px-1 text-[11px] font-black text-white">{unreadLessonPlanChatCount}</span>
+                    <span className={`ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-violet-600 px-1 text-[11px] font-black text-white ${sidebarCollapsed ? "lg:absolute lg:right-1" : ""}`}>{unreadLessonPlanChatCount}</span>
                   ) : null}
-                  {activeTab === item.id ? <ChevronRight className="ml-auto" size={16} /> : null}
+                  {activeTab === item.id ? <ChevronRight className={`ml-auto ${sidebarCollapsed ? "lg:hidden" : ""}`} size={16} /> : null}
                 </button>
               );
             })}
@@ -4588,10 +4640,22 @@ export function MettasoulApp() {
                           </div>
                           <div className="mt-3 flex flex-wrap gap-2">
                             {entries.map((entry) => (
-                              <span key={entry.id} className="rounded-xl border border-white bg-white px-3 py-2 text-xs font-bold text-[var(--brand-dark)] shadow-sm">
-                                {availabilityEntryLabel(entry, timeSlots)}
-                                {entry.note ? <span className="font-semibold text-[var(--muted)]"> · {entry.note}</span> : null}
-                              </span>
+                              <div key={entry.id} className="flex items-center gap-2 rounded-xl border border-white bg-white px-3 py-2 text-xs font-bold text-[var(--brand-dark)] shadow-sm">
+                                <span>
+                                  {availabilityEntryLabel(entry, timeSlots)}
+                                  {entry.note ? <span className="font-semibold text-[var(--muted)]"> · {entry.note}</span> : null}
+                                </span>
+                                {role === "admin" ? (
+                                  <button
+                                    type="button"
+                                    title="Admin xóa lịch trống"
+                                    onClick={() => void adminDeleteConfirmedAvailability(teacherId, entry.date, teacherAvailabilityRegistrationKey(entry))}
+                                    className="rounded-lg bg-rose-50 px-2 py-1 text-[11px] font-black text-rose-700 transition hover:bg-rose-100"
+                                  >
+                                    Xóa
+                                  </button>
+                                ) : null}
+                              </div>
                             ))}
                           </div>
                         </article>
@@ -5021,7 +5085,7 @@ export function MettasoulApp() {
                           <span className="text-sm font-black text-[var(--accent)]">{formatScheduleDateTime(schedule)}</span>
                           <span className="text-sm font-black text-[var(--brand-dark)]">{meta.teacher?.name || "Chưa rõ"}</span>
                           <span className="inline-flex w-fit rounded-full bg-orange-50 px-2 py-1 text-xs font-black text-orange-800">
-                            {meta.classRoom?.name || "Chưa rõ"}
+                            {scheduleParticipantLabel(schedule, classes)}
                           </span>
                           <span className="text-sm font-bold text-cyan-800">{meta.school?.name || "Chưa rõ"}</span>
                           <span className="text-sm font-black leading-5 text-[var(--brand-dark)]">
@@ -5334,6 +5398,25 @@ export function MettasoulApp() {
       }));
     }
 
+    function toggleLessonPeriod(item: DraftScheduleItem, period: LessonPeriod, checked: boolean) {
+      const lessonPeriods = checked
+        ? Array.from(new Set([...item.lessonPeriods, period]))
+        : item.lessonPeriods.filter((value) => value !== period);
+      if (checked && period === "lesson1") {
+        const candidate = draftProgressionSchedule({ ...item, lessonPeriods });
+        const conflict = findLessonProgressionConflicts([candidate], schedules, { lookbackMonths: 2 })[0];
+        if (conflict) {
+          pushToast(
+            "Không thể chọn Tiết 1",
+            `Bài này đã được giao tại cùng trường ngày ${String(conflict.existing.date || "")}. Sau đủ 2 tháng mới có thể giao lại Tiết 1.`,
+            "warning",
+          );
+          return;
+        }
+      }
+      updateDraftItem(item.id, { lessonPeriods });
+    }
+
     function toggleDraftItemTeacher(itemId: string, teacherId: string, checked: boolean) {
       setDraftSchedule((current) => ({
         ...current,
@@ -5457,6 +5540,28 @@ export function MettasoulApp() {
                             className={inputClass}
                           />
                           <select
+                            value={item.teachingEnvironment}
+                            onChange={(e) => {
+                              const teachingEnvironment = normalizeTeachingEnvironmentValue(e.target.value);
+                              updateDraftItem(item.id, {
+                                teachingEnvironment,
+                                classIds:
+                                  teachingEnvironment === "in_class"
+                                    ? (item.classId ? [item.classId] : [])
+                                    : item.classIds.length > 0 ? item.classIds : (item.classId ? [item.classId] : []),
+                                participantScope: teachingEnvironment === "in_class" ? "selected_classes" : item.participantScope,
+                                participantGrade: teachingEnvironment === "in_class" ? "" : item.participantGrade,
+                              });
+                            }}
+                            className={inputClass}
+                          >
+                            {teachingEnvironmentOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                Môi trường: {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <select
                             value={item.schoolId}
                             onChange={(e) => {
                               const schoolId = e.target.value;
@@ -5525,30 +5630,32 @@ export function MettasoulApp() {
                               ))
                             )}
                           </select>
-                          <select
-                            value={item.classId}
-                            onChange={(e) => {
-                              const classId = e.target.value;
-                              updateDraftItem(item.id, {
-                                classId,
-                                classIds: classId ? [classId] : [],
-                                participantScope: "selected_classes",
-                                participantGrade: "",
-                                lessonId: pickLessonIdForClass(classId, item.lessonId, classes, activeLessons),
-                              });
-                            }}
-                            className={inputClass}
-                          >
-                            {rowGradeClasses.length === 0 ? (
-                              <option value="">Chưa có lớp trong khối</option>
-                            ) : (
-                              rowGradeClasses.map((cr) => (
-                                <option key={cr.id} value={cr.id}>
-                                  {cr.name}
-                                </option>
-                              ))
-                            )}
-                          </select>
+                          {item.teachingEnvironment === "in_class" ? (
+                            <select
+                              value={item.classId}
+                              onChange={(e) => {
+                                const classId = e.target.value;
+                                updateDraftItem(item.id, {
+                                  classId,
+                                  classIds: classId ? [classId] : [],
+                                  participantScope: "selected_classes",
+                                  participantGrade: "",
+                                  lessonId: pickLessonIdForClass(classId, item.lessonId, classes, activeLessons),
+                                });
+                              }}
+                              className={inputClass}
+                            >
+                              {rowGradeClasses.length === 0 ? (
+                                <option value="">Chưa có lớp trong khối</option>
+                              ) : (
+                                rowGradeClasses.map((cr) => (
+                                  <option key={cr.id} value={cr.id}>
+                                    {cr.name}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          ) : null}
                           <select
                             value={item.timeSlotId}
                             onChange={(e) => updateDraftItem(item.id, { timeSlotId: e.target.value })}
@@ -5618,12 +5725,7 @@ export function MettasoulApp() {
                                       <input
                                         type="checkbox"
                                         checked={item.lessonPeriods.includes(period.value)}
-                                        onChange={(event) => {
-                                          const lessonPeriods = event.target.checked
-                                            ? Array.from(new Set([...item.lessonPeriods, period.value]))
-                                            : item.lessonPeriods.filter((value) => value !== period.value);
-                                          updateDraftItem(item.id, { lessonPeriods });
-                                        }}
+                                        onChange={(event) => toggleLessonPeriod(item, period.value, event.target.checked)}
                                       />
                                       {period.label}
                                     </label>
@@ -5632,31 +5734,16 @@ export function MettasoulApp() {
                               </div>
                             ) : null;
                           })()}
-                          <select
-                            value={item.teachingEnvironment}
-                            onChange={(e) =>
-                              updateDraftItem(item.id, {
-                                teachingEnvironment: normalizeTeachingEnvironmentValue(e.target.value),
-                                classIds:
-                                  normalizeTeachingEnvironmentValue(e.target.value) === "in_class"
-                                    ? (item.classId ? [item.classId] : [])
-                                    : item.classIds.length > 0 ? item.classIds : (item.classId ? [item.classId] : []),
-                                participantScope: normalizeTeachingEnvironmentValue(e.target.value) === "in_class"
-                                  ? "selected_classes"
-                                  : item.participantScope,
-                                participantGrade: normalizeTeachingEnvironmentValue(e.target.value) === "in_class"
-                                  ? ""
-                                  : item.participantGrade,
-                              })
-                            }
-                            className={inputClass}
-                          >
-                            {teachingEnvironmentOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                Môi trường: {option.label}
-                              </option>
-                            ))}
-                          </select>
+                          {(() => {
+                            const conflict = draftLessonProgressionConflicts.find(
+                              (entry) => String(entry.candidate.id) === `progression-preview-${item.id}`,
+                            );
+                            return conflict ? (
+                              <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 md:col-span-2">
+                                Tiết 1 của bài này đã giao tại cùng trường ngày {String(conflict.existing.date || "")}. Không thể gửi lại trước khi đủ 2 tháng.
+                              </p>
+                            ) : null;
+                          })()}
                           {item.teachingEnvironment !== "in_class" ? (
                             <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-3 md:col-span-2">
                               <p className="text-xs font-black uppercase text-violet-800">Phạm vi học sinh tham gia</p>
@@ -5772,9 +5859,9 @@ export function MettasoulApp() {
               </div>
               <button
                 onClick={createSchedules}
-                disabled={isBusy || draftScheduleConflicts.length > 0}
+                disabled={isBusy || draftScheduleConflicts.length > 0 || draftLessonProgressionConflicts.length > 0}
                 className={`sticky bottom-24 z-10 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition lg:static ${
-                  isBusy || draftScheduleConflicts.length > 0
+                  isBusy || draftScheduleConflicts.length > 0 || draftLessonProgressionConflicts.length > 0
                     ? "cursor-not-allowed bg-slate-400 shadow-none"
                     : "bg-[var(--brand)] hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]"
                 }`}
@@ -5820,11 +5907,19 @@ export function MettasoulApp() {
                     ))}
                   </div>
                 </div>
-              ) : (
+              ) : draftLessonProgressionConflicts.length === 0 ? (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-800">
                   Không phát hiện xung đột lịch. Có thể gửi lịch hàng loạt an toàn.
                 </div>
-              )}
+              ) : null}
+              {draftLessonProgressionConflicts.length > 0 ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
+                  <p className="text-sm font-black text-rose-800">Không thể giao lại Tiết 1 trong vòng 2 tháng</p>
+                  <p className="mt-1 text-xs font-semibold text-rose-800">
+                    Bài đã được giao tại cùng trường ngày {String(draftLessonProgressionConflicts[0].existing.date || "")}.
+                  </p>
+                </div>
+              ) : null}
               <ScheduleList items={filteredDraftSchedulePreview} compact />
             </div>
           </Panel>
@@ -6185,8 +6280,8 @@ export function MettasoulApp() {
               </div>
               <div className="mt-5 grid gap-3">
                 {([
-                  ["single", "Đăng ký từng ngày", "Dùng khi các ngày khác nhau về buổi hoặc khung giờ dạy."],
-                  ["batch", "Đăng ký nhiều ngày cùng lúc", "Dùng khi các ngày cùng buổi và cùng khung giờ dạy."],
+                  ["single", "Đăng ký từng ngày", "Dùng khi các ngày khác nhau về buổi trống."],
+                  ["batch", "Đăng ký nhiều ngày cùng lúc", "Dùng khi các ngày cùng lựa chọn buổi trống."],
                 ] as const).map(([mode, title, description]) => (
                   <button key={mode} type="button" onClick={() => {
                     setAvailabilityChoiceOpen(false);
@@ -6291,8 +6386,8 @@ export function MettasoulApp() {
                   <div id="teacher-availability-settings" className="rounded-xl border border-emerald-200 bg-white p-3">
                     <p className="text-xs font-black text-emerald-900">
                       {availabilityApplyMode === "batch"
-                        ? "1. Bấm chọn nhiều ngày trên lịch · 2. Chọn một mức thời gian áp dụng cho cả nhóm"
-                        : "1. Bấm một ngày trên lịch · 2. Chọn thời gian riêng cho ngày đó"}
+                        ? "1. Bấm chọn nhiều ngày trên lịch · 2. Chọn buổi trống áp dụng cho cả nhóm"
+                        : "1. Bấm một ngày trên lịch · 2. Chọn buổi trống cho ngày đó"}
                     </p>
                     {availabilityApplyMode === "batch" ? (
                       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -6309,7 +6404,6 @@ export function MettasoulApp() {
                             <tr>
                               <th className="px-3 py-2">Ngày</th>
                               <th className="px-3 py-2">Lựa chọn</th>
-                              <th className="px-3 py-2">Khung giờ</th>
                               <th className="px-3 py-2 text-right">Thao tác</th>
                             </tr>
                           </thead>
@@ -6317,12 +6411,10 @@ export function MettasoulApp() {
                             {availabilitySelectedDates.map((date) => {
                               const draft = availabilityDrafts[date];
                               const isEditing = availabilityTargetDates.includes(date);
-                              const slotLabels = draft.timeSlotIds.map((id) => id.startsWith("time:") ? id.slice(5) : id).join(", ");
                               return (
                                 <tr key={date} className={`border-t border-emerald-100 ${isEditing ? "bg-amber-50" : "bg-white"}`}>
                                   <td className="px-3 py-2 font-black text-[var(--brand-dark)]">{formatDate(date)}</td>
                                   <td className="px-3 py-2 font-semibold text-emerald-800">{teacherAvailabilityScopeLabels[draft.scope]}</td>
-                                  <td className="px-3 py-2 text-slate-600">{draft.scope === "time_slots" ? (slotLabels || "Chưa chọn giờ") : "—"}</td>
                                   <td className="px-3 py-2">
                                     <div className="flex justify-end gap-2">
                                       <button type="button" onClick={() => { setAvailabilityApplyMode("single"); setAvailabilityBatchDates([]); setAvailabilityEditingDate(date); setAvailabilityDrafts({ [date]: draft }); }} className="rounded-lg bg-cyan-50 px-3 py-1.5 font-black text-cyan-800">Sửa</button>
@@ -6673,10 +6765,10 @@ export function MettasoulApp() {
           </div>
           {canRegisterAvailability && availabilityRegistrationMode && availabilityApplyMode === "batch" && availabilityBatchDates.length > 0 ? (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-              <span className="text-xs font-black text-emerald-900">Đã chọn {availabilityBatchDates.length} ngày{availabilityBatchDates.length === 1 ? ". Với một ngày, Đăng ký từng ngày sẽ thuận tiện hơn." : " cùng buổi/khung giờ."}</span>
+              <span className="text-xs font-black text-emerald-900">Đã chọn {availabilityBatchDates.length} ngày{availabilityBatchDates.length === 1 ? ". Với một ngày, Đăng ký từng ngày sẽ thuận tiện hơn." : " cùng lựa chọn buổi trống."}</span>
               <div className="flex flex-wrap gap-2">
                 {availabilityBatchDates.length === 1 ? <button type="button" onClick={() => { setAvailabilityApplyMode("single"); setAvailabilityEditingDate(availabilityBatchDates[0]); setAvailabilityBatchDates([]); document.getElementById("teacher-availability-settings")?.scrollIntoView({ behavior: "smooth", block: "start" }); }} className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-xs font-black text-emerald-800">Chuyển sang từng ngày</button> : null}
-                <button type="button" onClick={() => document.getElementById("teacher-availability-settings")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white">Chọn buổi và khung giờ</button>
+                <button type="button" onClick={() => document.getElementById("teacher-availability-settings")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white">Chọn buổi trống</button>
               </div>
             </div>
           ) : null}
@@ -7055,7 +7147,7 @@ export function MettasoulApp() {
                           <p className="text-xs font-black uppercase text-[var(--brand)]">{lesson.grade}</p>
                           <h3 className="mt-1 text-base font-black text-[var(--brand-dark)]">{lesson.title}</h3>
                           <p className="mt-2 whitespace-pre-line text-sm leading-6 text-[var(--muted)]">
-                            {lesson.objective}
+                            {formatLessonObjectiveForDisplay(lesson.objective)}
                           </p>
                           {lesson.samplePlanUrl ? (
                             <a
@@ -7613,7 +7705,7 @@ export function MettasoulApp() {
                     <div key={schedule.id} className="rounded-2xl border border-white/80 bg-white/90 p-3 shadow-sm">
                       <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
                       <p className="mt-1 text-xs font-bold text-[var(--muted)]">
-                        {meta.teacher?.name} • {meta.school?.name} • Lớp {meta.classRoom?.name}
+                        {meta.teacher?.name} • {meta.school?.name} • {scheduleParticipantLabel(schedule, classes)}
                       </p>
                       <div className="mt-3 flex items-center justify-between gap-2">
                         <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">
@@ -7790,7 +7882,7 @@ export function MettasoulApp() {
             {meta.lesson?.title || "Bài học"} • {meta.teacher?.name || "Giáo viên"}
           </p>
           <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
-            {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatScheduleDateTime(schedule)}
+            {meta.school?.name} • {scheduleParticipantLabel(schedule, classes)} • {formatScheduleDateTime(schedule)}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 lg:justify-end">
@@ -7821,7 +7913,7 @@ export function MettasoulApp() {
           <div className="min-w-0">
             <p className="text-sm font-black uppercase text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
             <p className="mt-1 text-xs font-bold text-[var(--muted)]">
-              {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatScheduleDateTime(schedule)}
+              {meta.school?.name} • {scheduleParticipantLabel(schedule, classes)} • {formatScheduleDateTime(schedule)}
             </p>
           </div>
           <span
@@ -8128,7 +8220,7 @@ export function MettasoulApp() {
         <div className="min-w-0">
           <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
           <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
-            {meta.teacher?.name || "Giáo viên"} • {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatScheduleDateTime(schedule)}
+            {meta.teacher?.name || "Giáo viên"} • {meta.school?.name} • {scheduleParticipantLabel(schedule, classes)} • {formatScheduleDateTime(schedule)}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {meta.plans.map((plan) => (
@@ -8170,7 +8262,7 @@ export function MettasoulApp() {
         <div className="min-w-0">
           <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài học"}</p>
           <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
-            {meta.teacher?.name || "Giáo viên"} • {meta.school?.name} • Lớp {meta.classRoom?.name} • {formatScheduleDateTime(schedule)}
+            {meta.teacher?.name || "Giáo viên"} • {meta.school?.name} • {scheduleParticipantLabel(schedule, classes)} • {formatScheduleDateTime(schedule)}
           </p>
         </div>
         <div className="flex items-center justify-between gap-2 lg:justify-end">
@@ -8475,7 +8567,7 @@ export function MettasoulApp() {
                     {meta.slot?.label} - {meta.lesson?.title}
                   </p>
                   <p className="mt-1 text-sm text-[var(--muted)]">
-                    {meta.teacher?.name} tại {meta.school?.name}, lớp {meta.classRoom?.name}
+                    {meta.teacher?.name} tại {meta.school?.name}, {scheduleParticipantLabel(schedule, classes)}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2 text-xs font-black">
                     <span className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-cyan-800">
@@ -8523,8 +8615,7 @@ export function MettasoulApp() {
         <div>
           <p className="text-sm font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Chưa rõ chuyên đề"}</p>
           <p className="mt-1 text-sm font-bold text-[var(--muted)]">
-            {meta.teacher?.name || "Chưa rõ giáo viên"} · {meta.school?.name || "Chưa rõ trường"} · Lớp{" "}
-            {meta.classRoom?.name || "?"}
+            {meta.teacher?.name || "Chưa rõ giáo viên"} · {meta.school?.name || "Chưa rõ trường"} · {scheduleParticipantLabel(schedule, classes)}
           </p>
           <div className="mt-2 flex flex-wrap gap-2 text-xs font-black">
             <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">Ngày dạy {formatDate(schedule.date)}</span>
@@ -9646,7 +9737,7 @@ export function MettasoulApp() {
                     </div>
                     <p className="mt-2 flex flex-wrap gap-1 text-xs font-black">
                       <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">{meta.school?.name}</span>
-                      <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700">Lớp {meta.classRoom?.name}</span>
+                      <span className="rounded-full bg-orange-50 px-2 py-1 text-orange-700">{scheduleParticipantLabel(schedule, classes)}</span>
                       <span className={`rounded-full px-2 py-1 ${checkedIn ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
                         {checkedIn ? "Đã điểm danh" : "Chưa điểm danh"}
                       </span>
@@ -10972,6 +11063,29 @@ function scheduleParticipantLabel(
   return names.join(", ") || "Chưa rõ";
 }
 
+function draftProgressionSchedule(item: DraftScheduleItem): Schedule {
+  return {
+    id: `progression-preview-${item.id}`,
+    date: item.date,
+    teacherId: "",
+    schoolId: item.schoolId,
+    classId: item.classId,
+    participantClassIds: item.classIds.join(","),
+    participantScope: item.participantScope,
+    participantGrade: item.participantGrade || undefined,
+    lessonId: item.lessonId,
+    lessonPeriods: item.lessonPeriods.join(","),
+    timeSlotId: item.timeSlotId,
+    teachingEnvironment: item.teachingEnvironment,
+    groupId: `progression-preview-group-${item.id}`,
+    status: "sent",
+  };
+}
+
+function formatLessonObjectiveForDisplay(objective: string) {
+  return objective.replace(/([^\n])\s*(Mục tiêu\s*2\s*:)/gi, "$1\n$2");
+}
+
 function pushDraftConflict(
   list: DraftScheduleConflict[],
   dedupe: Set<string>,
@@ -11628,14 +11742,7 @@ function summarizeAvailabilityEntries(entries: TeacherAvailability[], slots: Tim
   const labels: string[] = [];
   if (entries.some((entry) => entry.scope === "morning")) labels.push(teacherAvailabilityScopeLabels.morning);
   if (entries.some((entry) => entry.scope === "afternoon")) labels.push(teacherAvailabilityScopeLabels.afternoon);
-  const slotLabels = entries
-    .filter((entry) => entry.scope === "time_slots" && entry.timeSlotId)
-    .flatMap((entry) => {
-      if (entry.timeSlotId?.startsWith("time:")) return [entry.timeSlotId.slice(5)];
-      const slot = slots.find((candidate) => candidate.id === entry.timeSlotId);
-      return slot ? [`${slot.start}-${slot.end}`] : [];
-    });
-  if (slotLabels.length > 0) labels.push(Array.from(new Set(slotLabels)).join(", "));
+  if (entries.some((entry) => entry.scope === "time_slots")) labels.push("Đăng ký cũ");
   return labels.join(" · ") || "Chưa đăng ký";
 }
 
@@ -11643,8 +11750,7 @@ function availabilityEntryLabel(entry: TeacherAvailability, slots: TimeSlot[]) {
   if (entry.scope !== "time_slots") {
     return teacherAvailabilityScopeLabels[entry.scope];
   }
-  const slot = slots.find((item) => item.id === entry.timeSlotId || availabilityTimeRangeKey(item) === entry.timeSlotId);
-  return slot ? `Khung giờ ${slot.start}–${slot.end}` : "Khung giờ cụ thể";
+  return "Đăng ký cũ";
 }
 
 function teacherAvailabilityTone(teacherId: string) {

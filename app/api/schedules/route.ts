@@ -131,20 +131,12 @@ export async function POST(request: Request) {
     });
 
     const existingSchedules = await readSheetRows("Schedules");
-    const progressionConflicts = findLessonProgressionConflicts(
-      schedules,
-      existingSchedules,
-      {
-        startMonth: readPositiveIntEnv("ACADEMIC_YEAR_START_MONTH", 8),
-        startDay: readPositiveIntEnv("ACADEMIC_YEAR_START_DAY", 1),
-      },
-    );
+    const progressionConflicts = findLessonProgressionConflicts(schedules, existingSchedules, { lookbackMonths: 2 });
     if (progressionConflicts.length > 0) {
       const sample = progressionConflicts[0];
-      const duplicatePeriods = sample.periods.map((period) => period === "lesson1" ? "Tiết 1" : "Tiết 2").join(", ");
       return apiFailure(
         409,
-        `${duplicatePeriods} của bài học này đã được giao cho một hoặc nhiều lớp trùng phạm vi trong năm học hiện tại. Hãy chọn tiết tiếp theo hoặc đổi đúng đối tượng học sinh.`,
+        `Tiết 1 của bài này đã được giao tại cùng trường ngày ${String(sample.existing.date || "")} và chưa đủ 2 tháng. Hãy chọn bài khác.`,
         "CONFLICT",
         requestId,
       );
