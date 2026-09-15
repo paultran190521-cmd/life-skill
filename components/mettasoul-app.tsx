@@ -53,6 +53,7 @@ import { PagedList } from "@/components/paged-list";
 import { LessonPlanLinkForm } from "@/components/lesson-plan-link-form";
 import { ChatComposer } from "@/components/chat-composer";
 import { SpotlightGrid } from "@/components/spotlight-grid";
+import { ButtonParticles } from "@/components/button-particles";
 import { PerformanceDiagnostics } from "@/components/performance-diagnostics";
 import { beginMenuTiming, finishMenuTiming, recordPerformance } from "@/lib/client-performance";
 import { statusLabels, statusStyles } from "@/lib/status";
@@ -4420,6 +4421,7 @@ export function MettasoulApp() {
 
   return (
     <main className="ui-polish min-h-screen overflow-x-hidden bg-[var(--canvas)]">
+      <ButtonParticles />
       <div className={`ui-enter grid min-h-screen transition-[grid-template-columns] duration-300 ${sidebarCollapsed ? "lg:grid-cols-[84px_1fr]" : "lg:grid-cols-[280px_1fr]"}`}>
         {mobileSidebarOpen ? (
           <button
