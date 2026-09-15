@@ -46,6 +46,8 @@ import {
 import { Fragment, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
+import { Panel } from "@/components/menus/panel";
+import type { LessonDraft, BulkLessonRow, TeacherEditDraft } from "@/components/menus/menu-types";
 import type { SchoolGuideCache } from "@/components/school-guide-panel";
 import { PagedList } from "@/components/paged-list";
 import { LessonPlanLinkForm } from "@/components/lesson-plan-link-form";
@@ -63,7 +65,7 @@ import { classifySchedulingParticipantIds } from "@/lib/scheduling-participants"
 import { normalizeScheduleParticipantScope, resolveScheduleParticipantSelection } from "@/lib/schedule-participant-scope";
 import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy";
 import { scheduledLessonSections } from "@/lib/lessons";
-import { attendanceLookupKey, groupByKey, indexById, legacyScheduleGroupKey } from "@/lib/view-index";
+import { attendanceLookupKey, groupByKey, indexById, legacyScheduleGroupKey, buildTextSearchIndex, searchTextIndex } from "@/lib/view-index";
 import {
   availabilityTimeRangeKey,
   buildTeacherAvailabilityEntries,
@@ -110,6 +112,16 @@ import type {
   User,
   WeeklyUpdate,
 } from "@/lib/types";
+
+const LessonsPanel = dynamic(() => import("@/components/menus/lessons-panel").then((module) => module.LessonsPanel), { loading: () => <AppContentSkeleton /> });
+const TeachersPanel = dynamic(() => import("@/components/menus/teachers-panel").then((module) => module.TeachersPanel), { loading: () => <AppContentSkeleton /> });
+
+function preloadMenu(tabId: TabId) {
+  if (typeof navigator === "undefined" || (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
+  // Code only: never read records or fire mutations while hovering a menu.
+  if (tabId === "lessons") void import("@/components/menus/lessons-panel").then((module) => module.LessonsPanel).catch(() => undefined);
+  if (tabId === "teachers") void import("@/components/menus/teachers-panel").then((module) => module.TeachersPanel).catch(() => undefined);
+}
 
 const SchoolGuidePanel = dynamic(
   () => import("@/components/school-guide-panel").then((module) => module.SchoolGuidePanel),
@@ -359,23 +371,9 @@ type GasLessonPlanUploadResponse = {
   lessonPlan: LessonPlan;
 };
 
-type LessonDraft = {
-  grade: string;
-  topicId: string;
-  title: string;
-  objective: string;
-  lesson1Title: string;
-  lesson1Objective: string;
-  lesson2Title: string;
-  lesson2Objective: string;
-  samplePlanUrl: string;
-  durationMinutes: number | "";
-};
 
-type BulkLessonRow = LessonDraft & {
-  id: string;
-  topicId: string;
-};
+
+
 
 type TimeSlotDraft = {
   label: string;
@@ -399,12 +397,7 @@ type TeacherImportDraft = {
   role: Role;
 };
 
-type TeacherEditDraft = {
-  name: string;
-  email: string;
-  phone: string;
-  specialty: string;
-};
+
 
 type ToastTone = "info" | "success" | "warning" | "error";
 
@@ -808,34 +801,22 @@ export function MettasoulApp() {
       attendanceWarningFocus ||
       appDialog,
   );
+  const teacherSearchIndex = useMemo(() => buildTextSearchIndex(teachers, (teacher) =>
+    [teacher.name, teacher.email, teacher.phone, teacher.specialty]), [teachers]);
+  const lessonSearchIndex = useMemo(() => buildTextSearchIndex(activeLessons, (lesson) =>
+    [lesson.title, lesson.objective]), [activeLessons]);
   const filteredTeachers = useMemo(() => {
     const term = deferredSearchTerm.trim().toLowerCase();
     if (!term) {
       return teachers;
     }
 
-    return teachers.filter((teacher) =>
-      [teacher.name, teacher.email, teacher.phone, teacher.specialty]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(term),
-    );
-  }, [deferredSearchTerm, teachers]);
+    return searchTextIndex(teacherSearchIndex, term);
+  }, [deferredSearchTerm, teachers, teacherSearchIndex]);
   const filteredLessons = useMemo(() => {
-    const term = deferredLessonSearchTerm.trim().toLowerCase();
-    return activeLessons.filter((lesson) => {
-      const matchesGrade = lessonGradeFilter === "all" || lesson.grade === lessonGradeFilter;
-      const matchesTerm =
-        !term ||
-        [lesson.title, lesson.objective]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase()
-          .includes(term);
-      return matchesGrade && matchesTerm;
-    });
-  }, [activeLessons, lessonGradeFilter, deferredLessonSearchTerm]);
+    return searchTextIndex(lessonSearchIndex, deferredLessonSearchTerm,
+      (lesson) => lessonGradeFilter === "all" || lesson.grade === lessonGradeFilter);
+  }, [lessonSearchIndex, lessonGradeFilter, deferredLessonSearchTerm]);
   const isBusy = Boolean(pendingAction);
   const availabilityOverviewTeachers = useMemo(() => {
     if (!availabilityOverviewDate) return [];
@@ -4535,6 +4516,8 @@ export function MettasoulApp() {
                       : "text-[var(--brand-dark)] hover:bg-white hover:text-[var(--brand-dark)] hover:shadow-md hover:shadow-cyan-900/5"
                   }`}
                   onClick={() => changeTab(item.id)}
+                  onMouseEnter={() => preloadMenu(item.id)}
+                  onFocus={() => preloadMenu(item.id)}
                 >
                   <Icon size={18} />
                   <span className={sidebarCollapsed ? "lg:hidden" : ""}>{item.label}</span>
@@ -4725,6 +4708,8 @@ export function MettasoulApp() {
                     key={item.id}
                     type="button"
                     onClick={() => changeTab(item.id)}
+                    onMouseEnter={() => preloadMenu(item.id)}
+                    onFocus={() => preloadMenu(item.id)}
                     aria-current={selected ? "page" : undefined}
                     className={`ui-nav-item flex min-w-[78px] flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-black transition ${
                       selected
@@ -6980,338 +6965,11 @@ export function MettasoulApp() {
   }
 
   function renderTeachersPanel() {
-    return (
-      <Panel title="Danh sách giáo viên" action={`${filteredTeachers.length}/${teachers.length} người`}>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-black text-[var(--brand-dark)]">Bảng quản lý giáo viên</p>
-            <p className="text-xs font-semibold text-[var(--muted)]">Theo dõi thông tin, email, số điện thoại và phân quyền.</p>
-          </div>
-          <button type="button" onClick={() => setTeacherModalOpen(true)} className={primaryButtonClass}>
-            <UserPlus size={18} />
-            Thêm giáo viên
-          </button>
-        </div>
-        <div className="app-scrollbar overflow-x-auto">
-          <div className="min-w-[1120px] overflow-hidden rounded-2xl border border-[var(--line)] bg-white">
-            <div className="grid grid-cols-[2fr_150px_2fr_150px_110px_190px] gap-3 border-b border-[var(--line)] bg-cyan-50 px-4 py-3 text-xs font-black uppercase text-[var(--brand-dark)]">
-              <span>Tên giáo viên</span>
-              <span>Số điện thoại</span>
-              <span>Email</span>
-              <span>Phân quyền</span>
-              <span>Trạng thái</span>
-              <span>Thao tác</span>
-            </div>
-            <div className="divide-y divide-[var(--line)]">
-              <PagedList items={filteredTeachers} resetKey={deferredSearchTerm} className="divide-y divide-[var(--line)]">
-              {(pageTeachers) => pageTeachers.map((teacher) => (
-                <TeacherTableRow
-                  key={teacher.id}
-                  teacher={teacher}
-                  user={userForTeacher(teacher.id)}
-                  onRoleChange={updateTeacherRole}
-                  isEditing={editingTeacherId === teacher.id}
-                  draft={teacherEditDraft}
-                  onStartEdit={startEditTeacher}
-                  onCancelEdit={cancelEditTeacher}
-                  onDraftChange={setTeacherEditDraft}
-                  onSaveEdit={saveTeacherEdit}
-                  onToggleActive={toggleTeacherActive}
-                  onDelete={deleteTeacher}
-                />
-              ))}
-              </PagedList>
-              {filteredTeachers.length === 0 ? (
-                <div className="px-4 py-8 text-center text-sm font-semibold text-[var(--muted)]">
-                  Không tìm thấy giáo viên phù hợp với từ khóa đang nhập.
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </Panel>
-    );
+    return <TeachersPanel filteredTeachers={filteredTeachers} teachers={teachers} deferredSearchTerm={deferredSearchTerm} primaryButtonClass={primaryButtonClass} setTeacherModalOpen={setTeacherModalOpen} userForTeacher={userForTeacher} updateTeacherRole={updateTeacherRole} editingTeacherId={editingTeacherId} teacherEditDraft={teacherEditDraft} startEditTeacher={startEditTeacher} cancelEditTeacher={cancelEditTeacher} setTeacherEditDraft={setTeacherEditDraft} saveTeacherEdit={saveTeacherEdit} toggleTeacherActive={toggleTeacherActive} deleteTeacher={deleteTeacher} />;
   }
 
   function renderLessonsPanel() {
-    return (
-      <div className="space-y-5">
-        <Panel title="Nhập mẫu bài học" action="Spreadsheet / hàng loạt">
-          <div className="grid gap-4">
-            <div className="app-scrollbar overflow-x-auto">
-              <div className="min-w-[920px]">
-                <div className="grid grid-cols-[130px_210px_1fr_220px_120px_48px] gap-2 px-2 pb-2 text-xs font-black uppercase text-[var(--brand-dark)]">
-                  <span>Khối</span>
-                  <span>Tên chuyên đề</span>
-                  <span>Mục tiêu</span>
-                  <span>Giáo án mẫu</span>
-                  <span>Số phút</span>
-                  <span />
-                </div>
-                <div className="space-y-2">
-                  {bulkLessonRows.map((row) => (
-                    <div key={row.id}>
-                      <div className="grid grid-cols-[130px_210px_1fr_220px_120px_48px] items-start gap-2">
-                        <select
-                          value={row.grade}
-                          onChange={(event) => updateBulkLessonRow(row.id, { grade: event.target.value })}
-                          onPaste={(event) => pasteBulkLessons(row.id, event)}
-                          className={compactInputClass}
-                        >
-                          {lessonGrades.map((grade) => (
-                            <option key={grade}>{grade}</option>
-                          ))}
-                        </select>
-                        <input
-                          value={row.title}
-                          onChange={(event) => updateBulkLessonRow(row.id, { title: event.target.value })}
-                          onPaste={(event) => pasteBulkLessons(row.id, event)}
-                          placeholder="Tên chuyên đề"
-                          className={compactInputClass}
-                        />
-                        <textarea
-                          value={row.objective}
-                          onChange={(event) => updateBulkLessonRow(row.id, { objective: event.target.value })}
-                          onPaste={(event) => pasteBulkLessons(row.id, event)}
-                          placeholder="Mỗi mục tiêu một dòng"
-                          className={`${compactInputClass} min-h-12 resize-y whitespace-pre-line`}
-                        />
-                        <input
-                          value={row.samplePlanUrl}
-                          onChange={(event) => updateBulkLessonRow(row.id, { samplePlanUrl: event.target.value })}
-                          onPaste={(event) => pasteBulkLessons(row.id, event)}
-                          placeholder="Link Google Drive/PDF"
-                          className={compactInputClass}
-                        />
-                        <select
-                          value={row.durationMinutes}
-                          onChange={(event) =>
-                            updateBulkLessonRow(row.id, { durationMinutes: toLessonDuration(event.target.value) })
-                          }
-                          onPaste={(event) => pasteBulkLessons(row.id, event)}
-                          className={compactInputClass}
-                        >
-                          <option value="">Chọn</option>
-                          {lessonDurations.map((minutes) => (
-                            <option key={minutes} value={minutes}>
-                              {minutes}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          title="Xóa dòng"
-                          onClick={() => removeBulkLessonRow(row.id)}
-                          className="grid h-11 w-11 place-items-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                      {bulkLessonErrors[row.id] ? (
-                        <p className="mt-1 px-2 text-xs font-bold text-rose-700">{bulkLessonErrors[row.id]}</p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    onClick={downloadLessonSpreadsheetTemplate}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"
-                  >
-                    <Download size={16} />
-                    Tải mẫu spreadsheet
-                  </button>
-                  <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50">
-                    <FileSpreadsheet size={16} />
-                    Nhập từ spreadsheet
-                    <input
-                      type="file"
-                      accept=".xlsx,.csv,.tsv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/tab-separated-values"
-                      className="hidden"
-                      onChange={importLessonsFromSpreadsheet}
-                    />
-                  </label>
-                  <button
-                    onClick={addBulkLessonRow}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"
-                  >
-                    <Plus size={16} />
-                    Thêm dòng
-                  </button>
-                  <button onClick={saveBulkLessons} disabled={isBusy} className={primaryButtonClass}>
-                    {isBusy ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />}
-                    {isBusy ? "Đang lưu..." : "Lưu hàng loạt"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Panel>
-
-        <Panel title="Thư viện bài học" action={`${filteredLessons.length}/${activeLessons.length} bài`}>
-          <div className="mb-4 grid gap-3 md:grid-cols-[1fr_180px]">
-            <label className="flex min-w-0 items-center gap-2 rounded-2xl border border-[var(--line)] bg-white px-3 py-2 shadow-sm transition focus-within:border-[var(--brand)]">
-              <Search size={17} className="text-[var(--muted)]" />
-              <input
-                value={lessonSearchTerm}
-                onChange={(event) => setLessonSearchTerm(event.target.value)}
-                placeholder="Tìm chuyên đề, mục tiêu..."
-                className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[var(--brand-dark)] outline-none placeholder:text-slate-400"
-              />
-            </label>
-            <select
-              value={lessonGradeFilter}
-              onChange={(event) => setLessonGradeFilter(event.target.value)}
-              className={compactInputClass}
-            >
-              <option value="all">Tất cả khối</option>
-              {lessonGrades.map((grade) => (
-                <option key={grade} value={grade}>
-                  {grade}
-                </option>
-              ))}
-            </select>
-          </div>
-          <PagedList items={filteredLessons} resetKey={`${lessonGradeFilter}:${deferredLessonSearchTerm}`} pageSize={24} className="grid gap-3 lg:grid-cols-2">
-            {(pageLessons) => pageLessons.map((lesson) => {
-              const isEditing = editingLessonId === lesson.id;
-              return (
-                <div key={lesson.id} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
-                  {isEditing ? (
-                    <div className="grid gap-3">
-                      <div className="grid gap-3 md:grid-cols-[140px_1fr_120px]">
-                        <select
-                          value={lessonEditDraft.grade}
-                          onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, grade: event.target.value })}
-                          className={compactInputClass}
-                        >
-                          {lessonGrades.map((grade) => (
-                            <option key={grade}>{grade}</option>
-                          ))}
-                        </select>
-                        <input
-                          value={lessonEditDraft.title}
-                          onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, title: event.target.value })}
-                          className={compactInputClass}
-                        />
-                        <select
-                          value={lessonEditDraft.durationMinutes}
-                          onChange={(event) =>
-                            setLessonEditDraft({ ...lessonEditDraft, durationMinutes: toLessonDuration(event.target.value) })
-                          }
-                          className={compactInputClass}
-                        >
-                          <option value="">Chọn</option>
-                          {lessonDurations.map((minutes) => (
-                            <option key={minutes} value={minutes}>
-                              {minutes} phút
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/40 p-3 md:grid-cols-2">
-                        <div className="grid gap-2">
-                          <p className="text-xs font-black uppercase text-cyan-900">Tiết 1</p>
-                          <input
-                            value={lessonEditDraft.lesson1Title}
-                            onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, lesson1Title: event.target.value })}
-                            placeholder="Tên tiết 1"
-                            className={compactInputClass}
-                          />
-                          <textarea
-                            value={lessonEditDraft.lesson1Objective}
-                            onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, lesson1Objective: event.target.value })}
-                            placeholder="Mục tiêu tiết 1"
-                            className={`${compactInputClass} min-h-24 resize-y whitespace-pre-line`}
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <p className="text-xs font-black uppercase text-cyan-900">Tiết 2</p>
-                          <input
-                            value={lessonEditDraft.lesson2Title}
-                            onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, lesson2Title: event.target.value })}
-                            placeholder="Tên tiết 2"
-                            className={compactInputClass}
-                          />
-                          <textarea
-                            value={lessonEditDraft.lesson2Objective}
-                            onChange={(event) => setLessonEditDraft({ ...lessonEditDraft, lesson2Objective: event.target.value })}
-                            placeholder="Mục tiêu tiết 2"
-                            className={`${compactInputClass} min-h-24 resize-y whitespace-pre-line`}
-                          />
-                        </div>
-                      </div>
-                      <input
-                        value={lessonEditDraft.samplePlanUrl}
-                        onChange={(event) =>
-                          setLessonEditDraft({ ...lessonEditDraft, samplePlanUrl: event.target.value })
-                        }
-                        placeholder="Link giáo án mẫu trên Google Drive/PDF"
-                        className={compactInputClass}
-                      />
-                      <div className="flex flex-wrap justify-end gap-2">
-                        <button
-                          onClick={() => setEditingLessonId("")}
-                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"
-                        >
-                          <X size={16} />
-                          Hủy
-                        </button>
-                        <button onClick={() => saveLessonEdit(lesson.id)} disabled={isBusy} className={primaryButtonClass}>
-                          {isBusy ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />}
-                          {isBusy ? "Đang lưu..." : "Lưu"}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex h-full flex-col">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-xs font-black uppercase text-[var(--brand)]">{lesson.grade}</p>
-                          <h3 className="mt-1 text-base font-black text-[var(--brand-dark)]">{lesson.title}</h3>
-                          <p className="mt-2 whitespace-pre-line text-sm leading-6 text-[var(--muted)]">
-                            {formatLessonObjectiveForDisplay(lesson.objective)}
-                          </p>
-                          {lesson.samplePlanUrl ? (
-                            <a
-                              href={lesson.samplePlanUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-3 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700 transition hover:bg-blue-100"
-                            >
-                              <FileSpreadsheet size={14} />
-                              Giáo án mẫu
-                            </a>
-                          ) : null}
-                        </div>
-                        <span className="shrink-0 rounded-full bg-orange-50 px-3 py-1 text-xs font-black text-orange-700">
-                          {lesson.durationMinutes} phút
-                        </span>
-                      </div>
-                      <div className="mt-4 flex justify-end gap-2">
-                        <button
-                          title="Sửa bài học"
-                          onClick={() => startEditLesson(lesson)}
-                          className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          title="Xóa bài học"
-                          onClick={() => setLessonDeleteTarget(lesson)}
-                          className="grid h-9 w-9 place-items-center rounded-xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </PagedList>
-        </Panel>
-      </div>
-    );
+    return <LessonsPanel bulkLessonRows={bulkLessonRows} bulkLessonErrors={bulkLessonErrors} lessonGrades={lessonGrades} lessonDurations={lessonDurations} compactInputClass={compactInputClass} primaryButtonClass={primaryButtonClass} updateBulkLessonRow={updateBulkLessonRow} pasteBulkLessons={pasteBulkLessons} toLessonDuration={toLessonDuration} removeBulkLessonRow={removeBulkLessonRow} downloadLessonSpreadsheetTemplate={downloadLessonSpreadsheetTemplate} importLessonsFromSpreadsheet={importLessonsFromSpreadsheet} addBulkLessonRow={addBulkLessonRow} saveBulkLessons={saveBulkLessons} isBusy={isBusy} filteredLessons={filteredLessons} activeLessons={activeLessons} lessonSearchTerm={lessonSearchTerm} setLessonSearchTerm={setLessonSearchTerm} lessonGradeFilter={lessonGradeFilter} setLessonGradeFilter={setLessonGradeFilter} deferredLessonSearchTerm={deferredLessonSearchTerm} editingLessonId={editingLessonId} lessonEditDraft={lessonEditDraft} setLessonEditDraft={setLessonEditDraft} setEditingLessonId={setEditingLessonId} saveLessonEdit={saveLessonEdit} formatLessonObjectiveForDisplay={formatLessonObjectiveForDisplay} startEditLesson={startEditLesson} setLessonDeleteTarget={setLessonDeleteTarget} />;
   }
 
   function renderSlotsPanel() {
@@ -10162,48 +9820,7 @@ function AnnouncementTicker({ announcements }: { announcements: AppAnnouncement[
   );
 }
 
-function Panel({
-  title,
-  action,
-  collapsed = false,
-  onToggleCollapse,
-  className = "",
-  children,
-}: {
-  title: string;
-  action?: string;
-  collapsed?: boolean;
-  onToggleCollapse?: () => void;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className={`rounded-2xl border border-white/75 bg-white/90 p-4 shadow-[0_20px_52px_rgba(18,46,68,0.09),inset_0_1px_0_rgba(255,255,255,0.9)] sm:rounded-3xl sm:p-5 ${className}`}>
-      <div className={`${collapsed ? "" : "mb-4 sm:mb-5"} flex items-start justify-between gap-3`}>
-        <h2 className="text-base font-black tracking-tight text-[var(--brand-dark)] sm:text-lg">{title}</h2>
-        <div className="flex items-center gap-2">
-          {action ? (
-            <span className="max-w-[42vw] truncate rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-[var(--brand-dark)] sm:max-w-none">
-              {action}
-            </span>
-          ) : null}
-          {onToggleCollapse ? (
-            <button
-              type="button"
-              onClick={onToggleCollapse}
-              title={collapsed ? "Mở rộng" : "Thu gọn"}
-              aria-label={collapsed ? `Mở rộng ${title}` : `Thu gọn ${title}`}
-              className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-cyan-50 to-sky-50 text-[var(--brand-dark)] shadow-sm transition hover:bg-cyan-100"
-            >
-              <ChevronRight size={18} className={`transition-transform ${collapsed ? "" : "rotate-90"}`} />
-            </button>
-          ) : null}
-        </div>
-      </div>
-      {collapsed ? null : children}
-    </section>
-  );
-}
+
 
 function AppContentSkeleton() {
   return (
@@ -10399,154 +10016,7 @@ function InfoBlock({
   );
 }
 
-function TeacherTableRow({
-  teacher,
-  user,
-  onRoleChange,
-  isEditing,
-  draft,
-  onStartEdit,
-  onCancelEdit,
-  onDraftChange,
-  onSaveEdit,
-  onToggleActive,
-  onDelete,
-}: {
-  teacher: Teacher;
-  user?: User;
-  onRoleChange: (teacher: Teacher, role: Role) => void;
-  isEditing: boolean;
-  draft: TeacherEditDraft;
-  onStartEdit: (teacher: Teacher) => void;
-  onCancelEdit: () => void;
-  onDraftChange: (draft: TeacherEditDraft) => void;
-  onSaveEdit: (teacherId: string) => void;
-  onToggleActive: (teacher: Teacher) => void;
-  onDelete: (teacher: Teacher) => void;
-}) {
-  const role = user?.role ?? "teacher";
 
-  if (isEditing) {
-    return (
-      <div className="grid grid-cols-[2fr_150px_2fr_150px_110px_190px] items-center gap-3 bg-cyan-50/40 px-4 py-3 text-sm">
-        <div className="min-w-0 space-y-2">
-          <input
-            value={draft.name}
-            onChange={(event) => onDraftChange({ ...draft, name: event.target.value })}
-            placeholder="Họ tên"
-            className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 font-semibold text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
-          />
-          <input
-            value={draft.specialty}
-            onChange={(event) => onDraftChange({ ...draft, specialty: event.target.value })}
-            placeholder="Chuyên môn"
-            className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs font-semibold text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
-          />
-        </div>
-        <input
-          value={draft.phone}
-          onChange={(event) => onDraftChange({ ...draft, phone: event.target.value })}
-          placeholder="Số điện thoại"
-          className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 font-semibold text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
-        />
-        <input
-          value={draft.email}
-          onChange={(event) => onDraftChange({ ...draft, email: event.target.value })}
-          placeholder="Email"
-          className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 font-semibold text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
-        />
-        <select
-          value={role}
-          onChange={(event) => onRoleChange(teacher, event.target.value as Role)}
-          className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-black text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
-        >
-          <option value="teacher">Giáo viên</option>
-          <option value="assistant">Trợ giảng</option>
-          <option value="admin">Quản trị</option>
-        </select>
-        <span
-          className={`inline-flex h-10 items-center justify-center rounded-xl px-3 text-xs font-black ${
-            teacher.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
-          }`}
-        >
-          {teacher.active ? "Đang bật" : "Đang tắt"}
-        </span>
-        <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancelEdit}
-            className="inline-flex h-9 items-center rounded-lg border border-[var(--line)] bg-white px-3 text-xs font-black text-[var(--brand-dark)]"
-          >
-            Hủy
-          </button>
-          <button
-            type="button"
-            onClick={() => onSaveEdit(teacher.id)}
-            className="inline-flex h-9 items-center rounded-lg bg-[var(--brand)] px-3 text-xs font-black text-white"
-          >
-            Lưu
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-[2fr_150px_2fr_150px_110px_190px] items-center gap-3 px-4 py-3 text-sm transition hover:bg-cyan-50/45">
-      <div className="flex min-w-0 items-center gap-3">
-        <img alt={teacher.name} src={teacher.avatarUrl} className="h-10 w-10 rounded-xl object-cover" />
-        <div className="min-w-0">
-          <p className="truncate font-black text-[var(--brand-dark)]">{teacher.name}</p>
-          <p className="truncate text-xs font-bold uppercase text-[var(--muted)]">{teacher.specialty}</p>
-        </div>
-      </div>
-      <span className="truncate font-bold text-orange-700">{teacher.phone}</span>
-      <span className="truncate font-bold text-[var(--brand-dark)]">{teacher.email}</span>
-      <select
-        value={role}
-        onChange={(event) => onRoleChange(teacher, event.target.value as Role)}
-        className="w-full rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2 text-sm font-black text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
-        >
-          <option value="teacher">Giáo viên</option>
-          <option value="assistant">Trợ giảng</option>
-          <option value="admin">Quản trị</option>
-      </select>
-      <span
-        className={`inline-flex h-10 items-center justify-center rounded-xl px-3 text-xs font-black ${
-          teacher.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
-        }`}
-      >
-        {teacher.active ? "Đang bật" : "Đang tắt"}
-      </span>
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          title="Sửa giáo viên"
-          onClick={() => onStartEdit(teacher)}
-          className="grid h-8 w-8 place-items-center rounded-lg bg-cyan-50 text-[var(--brand-dark)] transition hover:bg-cyan-100"
-        >
-          <Pencil size={14} />
-        </button>
-        <button
-          type="button"
-          title={teacher.active ? "Tắt giáo viên" : "Bật giáo viên"}
-          onClick={() => onToggleActive(teacher)}
-          className="inline-flex h-8 items-center rounded-lg bg-white px-2 text-[11px] font-black text-[var(--brand-dark)] ring-1 ring-[var(--line)] transition hover:bg-cyan-50"
-        >
-          {teacher.active ? "Tắt" : "Bật"}
-        </button>
-        <button
-          type="button"
-          title="Xóa giáo viên"
-          onClick={() => onDelete(teacher)}
-          className="grid h-8 w-8 place-items-center rounded-lg bg-rose-100 text-rose-700 transition hover:bg-rose-200"
-        >
-          <Trash2 size={14} />
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function TeacherHover({ teacher }: { teacher?: Teacher }) {
   if (!teacher) {

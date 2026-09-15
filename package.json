@@ -16,7 +16,7 @@
     "test:schedule-cascade": "node scripts/test-schedule-cascade-delete.mjs",
     "test:schedule-participants": "node scripts/test-schedule-participant-scope.mjs",
     "test:teacher-availability": "node scripts/test-teacher-availability.mjs",
-    "test:menu-performance": "node scripts/test-menu-performance.mjs && node scripts/test-menu-rendering.cjs",
+    "test:menu-performance": "node scripts/test-menu-performance.mjs && node scripts/test-menu-rendering.cjs && node scripts/test-menu-extraction.cjs && node scripts/test-search-index.cjs",
     "test:chat-performance": "node scripts/test-chat-retention.cjs && node scripts/test-chat-pages.cjs && node scripts/test-lesson-plan-link-form.cjs",
     "benchmark:schedules": "node scripts/benchmark-schedules.mjs",
     "setup:sheets": "node scripts/setup-google-sheets.mjs",

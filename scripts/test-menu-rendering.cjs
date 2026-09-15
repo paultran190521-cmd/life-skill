@@ -48,7 +48,15 @@ function loadApp(appSource){
     const code=file===appPath?seedState(appSource):fs.readFileSync(file,'utf8');
     const compiled=ts.transpileModule(code,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
     const localRequire=(name)=>{
-      if(name==='next/dynamic') return ()=>()=>null; // Network-loaded school guide is verified in browser.
+      if(name==='next/dynamic') return (loader)=>{
+        // Execute the same extracted view synchronously for SSR equivalence;
+        // do not hide newly lazy-loaded menus behind a null test stub.
+        const source=loader.toString();
+        for(const [file,component] of [['lessons-panel','LessonsPanel'],['teachers-panel','TeachersPanel']]) {
+          if(source.includes('/menus/'+file)) return load(path.resolve('components/menus/'+file+'.tsx'))[component];
+        }
+        return ()=>null; // Network-loaded school guide is verified separately.
+      };
       if(name.startsWith('@/')) {
         const target=path.resolve(name.slice(2));
         return load(fs.existsSync(target+'.tsx')?target+'.tsx':target+'.ts');

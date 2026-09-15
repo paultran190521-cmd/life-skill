@@ -5,6 +5,22 @@ export function indexById<T extends { id: string }>(rows: readonly T[]): Map<str
   return result;
 }
 
+/** Normalize searchable fields once per source change, not once per keystroke.
+ * Keep the legacy Boolean/join/lowercase semantics (no accent stripping).
+ */
+export function buildTextSearchIndex<T>(rows: readonly T[], fields: (row: T) => (string | undefined)[]) {
+  return rows.map((row) => ({ row, text: fields(row).filter(Boolean).join(" ").toLowerCase() }));
+}
+
+export function searchTextIndex<T>(entries: readonly { row: T; text: string }[], query: string, include?: (row: T) => boolean): T[] {
+  const term = query.trim().toLowerCase();
+  const result: T[] = [];
+  for (const entry of entries) {
+    if ((!include || include(entry.row)) && (!term || entry.text.includes(term))) result.push(entry.row);
+  }
+  return result;
+}
+
 export function groupByKey<T>(rows: readonly T[], key: (row: T) => string): Map<string, T[]> {
   const result = new Map<string, T[]>();
   for (const row of rows) {
