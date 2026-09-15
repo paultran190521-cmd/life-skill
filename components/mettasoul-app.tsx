@@ -4244,6 +4244,17 @@ export function MettasoulApp() {
       .filter((name): name is string => Boolean(name));
   }
 
+  function scheduleAssistantContactLabels(schedule: Schedule) {
+    return String(schedule.assistantIds || "")
+      .split(",")
+      .map((teacherId) => teacherId.trim())
+      .filter(Boolean)
+      .map((teacherId) => {
+        const assistant = teachers.find((teacher) => teacher.id === teacherId);
+        return assistant ? `${assistant.name || "Chưa rõ"} - ${assistant.phone || "Chưa cập nhật"}` : teacherId;
+      });
+  }
+
   function scheduleCoTeacherNames(schedule: Schedule) {
     return Array.from(
       new Set(
@@ -5109,7 +5120,7 @@ export function MettasoulApp() {
               <div className="app-modal-panel w-full max-w-3xl rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
                 {(() => {
                   const meta = lookupSchedule(selectedScheduleDetail);
-                  const assistantNames = scheduleAssistantNames(selectedScheduleDetail);
+                  const assistantContactLabels = scheduleAssistantContactLabels(selectedScheduleDetail);
                   const coTeacherNames = scheduleCoTeacherNames(selectedScheduleDetail);
                   const detailCards = [
                     {
@@ -5168,8 +5179,8 @@ export function MettasoulApp() {
                     },
                     {
                       label: "Trợ giảng",
-                      value: assistantNames.length > 0 ? `Có - ${assistantNames.join(", ")}` : "Không có",
-                      tone: assistantNames.length > 0 ? "violet" : "slate",
+                      value: assistantContactLabels.length > 0 ? assistantContactLabels.join(", ") : "Không có",
+                      tone: assistantContactLabels.length > 0 ? "violet" : "slate",
                     },
                   ] as const;
                   return (
@@ -9680,6 +9691,7 @@ export function MettasoulApp() {
             const meta = lookupSchedule(schedule);
             const checkedIn = Boolean(meta.checkIn);
             const assistantNames = scheduleAssistantNames(schedule);
+            const assistantContactLabels = scheduleAssistantContactLabels(schedule);
             const coTeacherNames = scheduleCoTeacherNames(schedule);
             const scheduleLogs = rowAuditLogs
               .filter((log) => log.entityType === "Schedule" && log.entityId === schedule.id)
@@ -9748,7 +9760,7 @@ export function MettasoulApp() {
                       ) : null}
                       {assistantNames.length > 0 ? (
                         <span className="rounded-full bg-fuchsia-50 px-2 py-1 text-fuchsia-800">
-                          Có trợ giảng: {assistantNames.join(", ")}
+                          Trợ giảng: {assistantContactLabels.join(", ")}
                         </span>
                       ) : null}
                     </p>
