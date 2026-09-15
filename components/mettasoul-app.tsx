@@ -4416,7 +4416,8 @@ export function MettasoulApp() {
                   key={item.id}
                   title={sidebarCollapsed ? item.label : undefined}
                   aria-label={sidebarCollapsed ? item.label : undefined}
-                  className={`relative flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-bold transition ${sidebarCollapsed ? "lg:justify-center lg:px-2" : ""} ${
+                  aria-current={activeTab === item.id ? "page" : undefined}
+                  className={`ui-nav-item relative flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-bold transition ${sidebarCollapsed ? "lg:justify-center lg:px-2" : ""} ${
                     activeTab === item.id
                       ? "bg-gradient-to-r from-[var(--brand)] via-[var(--mint)] to-[var(--sky)] text-white shadow-lg shadow-cyan-800/20"
                       : "text-[var(--brand-dark)] hover:bg-white hover:text-[var(--brand-dark)] hover:shadow-md hover:shadow-cyan-900/5"
@@ -4590,7 +4591,13 @@ export function MettasoulApp() {
               deferredActiveTab !== activeTab ? "opacity-80" : "opacity-100"
             }`}
           >
-            {renderMain(deferredActiveTab)}
+            {dataStatus === "loading" && authStatus === "signed-in" ? (
+              <AppContentSkeleton />
+            ) : (
+              <div key={deferredActiveTab} className="ui-page-transition">
+                {renderMain(deferredActiveTab)}
+              </div>
+            )}
           </div>
           <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-cyan-100 bg-white/95 px-2 py-2 shadow-[0_-18px_42px_rgba(18,46,68,0.12)] backdrop-blur-xl lg:hidden">
             <div className="app-scrollbar flex gap-2 overflow-x-auto pb-[env(safe-area-inset-bottom)]">
@@ -4602,7 +4609,8 @@ export function MettasoulApp() {
                     key={item.id}
                     type="button"
                     onClick={() => changeTab(item.id)}
-                    className={`flex min-w-[78px] flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-black transition ${
+                    aria-current={selected ? "page" : undefined}
+                    className={`ui-nav-item flex min-w-[78px] flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-black transition ${
                       selected
                         ? "bg-[var(--brand)] text-white shadow-lg shadow-cyan-900/20"
                         : "bg-cyan-50 text-[var(--brand-dark)]"
@@ -10096,6 +10104,40 @@ function Panel({
       </div>
       {collapsed ? null : children}
     </section>
+  );
+}
+
+function AppContentSkeleton() {
+  return (
+    <div className="space-y-6" aria-label="Đang tải dữ liệu">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((item) => (
+          <div key={item} className="rounded-2xl border border-cyan-100 bg-white/85 p-5 shadow-sm">
+            <div className="ui-skeleton h-10 w-10 rounded-xl" />
+            <div className="ui-skeleton mt-5 h-8 w-16 rounded-lg" />
+            <div className="ui-skeleton mt-3 h-3 w-28 rounded-full" />
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[1.5fr_0.85fr]">
+        {[0, 1].map((item) => (
+          <div key={item} className="rounded-3xl border border-cyan-100 bg-white/85 p-5 shadow-sm">
+            <div className="ui-skeleton h-5 w-40 rounded-full" />
+            <div className="mt-6 space-y-3">
+              {[0, 1, 2].map((row) => (
+                <div key={row} className="flex items-center gap-3 rounded-2xl border border-slate-100 p-4">
+                  <div className="ui-skeleton h-10 w-10 shrink-0 rounded-xl" />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="ui-skeleton h-3 w-3/5 rounded-full" />
+                    <div className="ui-skeleton h-3 w-2/5 rounded-full" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
