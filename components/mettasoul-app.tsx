@@ -4336,7 +4336,7 @@ export function MettasoulApp() {
           />
         ) : null}
         <aside
-          className={`ui-shell-sidebar fixed inset-y-0 left-0 z-50 w-[min(86vw,320px)] overflow-y-auto border-r border-white/70 px-4 py-5 shadow-[16px_0_44px_rgba(18,46,68,0.16)] transition-transform duration-300 lg:static lg:z-auto lg:w-auto lg:translate-x-0 lg:overflow-visible ${sidebarCollapsed ? "lg:px-2" : "lg:px-4"} ${
+          className={`ui-shell-sidebar fixed inset-y-0 left-0 z-50 w-[min(86vw,320px)] overflow-y-auto border-r border-white/70 px-4 py-5 shadow-[16px_0_44px_rgba(18,46,68,0.16)] transition-transform duration-300 lg:sticky lg:inset-auto lg:top-0 lg:z-30 lg:h-dvh lg:self-start lg:w-auto lg:translate-x-0 lg:overflow-y-auto ${sidebarCollapsed ? "lg:px-2" : "lg:px-4"} ${
             mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
