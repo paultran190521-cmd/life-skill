@@ -151,5 +151,8 @@ assert.equal(isTeacherAvailabilityLocked(selectTeacherAvailabilityRowsForChange(
 
 assert.equal(appSource.includes('["time_slots", "Khung giờ cụ thể"]'), false);
 assert.match(routeSource, /chỉ nhận đăng ký Cả ngày, Buổi sáng hoặc Buổi chiều/);
+assert.match(routeSource, /"bulk_delete"/);
+assert.match(routeSource, /adminBulkDeleteAvailability/);
+assert.match(appSource, /Xóa \{selectedAvailabilityOverviewTargets\.length/);
 
-console.log("Teacher availability policy tests passed, including broad-scope writes and legacy exact-slot reads.");
+console.log("Teacher availability policy tests passed, including broad-scope writes, admin bulk deletion wiring, and legacy exact-slot reads.");

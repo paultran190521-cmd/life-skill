@@ -582,6 +582,7 @@ export function MettasoulApp() {
   const [assignmentAvailabilityDate, setAssignmentAvailabilityDate] = useState(() => currentDateKey());
   const [assignmentAvailabilityView, setAssignmentAvailabilityView] = useState<AvailabilityCalendarViewMode>("week");
   const [availabilityOverviewDate, setAvailabilityOverviewDate] = useState("");
+  const [selectedAvailabilityOverviewKeys, setSelectedAvailabilityOverviewKeys] = useState<string[]>([]);
   const [calendarFilters, setCalendarFilters] = useState<CalendarFilters>(() => loadCalendarFilters());
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
   const [selectedReportScheduleIds, setSelectedReportScheduleIds] = useState<string[]>([]);
@@ -837,6 +838,19 @@ export function MettasoulApp() {
       entries: [...entries].sort((left, right) => availabilityEntryLabel(left, timeSlots).localeCompare(availabilityEntryLabel(right, timeSlots), "vi")),
     })).sort((left, right) => (left.teacher?.name || left.teacherId).localeCompare(right.teacher?.name || right.teacherId, "vi"));
   }, [availabilityOverviewDate, teacherAvailability, teacherById, timeSlots]);
+  const availabilityOverviewTargets = useMemo(() => availabilityOverviewTeachers.flatMap(({ teacherId, entries }) => entries.map((entry) => {
+    const registrationId = teacherAvailabilityRegistrationKey(entry);
+    return { key: `${teacherId}\u0000${entry.date}\u0000${registrationId}`, teacherId, date: entry.date, registrationId };
+  })), [availabilityOverviewTeachers]);
+  const selectedAvailabilityOverviewTargets = useMemo(() => {
+    const selected = new Set(selectedAvailabilityOverviewKeys);
+    return availabilityOverviewTargets.filter((target) => selected.has(target.key));
+  }, [availabilityOverviewTargets, selectedAvailabilityOverviewKeys]);
+  const allAvailabilityOverviewTargetsSelected = availabilityOverviewTargets.length > 0 && selectedAvailabilityOverviewTargets.length === availabilityOverviewTargets.length;
+
+  useEffect(() => {
+    setSelectedAvailabilityOverviewKeys([]);
+  }, [availabilityOverviewDate]);
 
   function selectCalendarDate(dateKey: string, { scrollDetail = true }: { scrollDetail?: boolean } = {}) {
     shouldScrollCalendarDetailRef.current = scrollDetail;
@@ -2080,6 +2094,42 @@ export function MettasoulApp() {
       );
       setTeacherAvailability(response.availability ?? []);
       pushToast("Đã xóa lịch trống", `Đã xóa lịch trống của ${teacher?.name || "giáo viên"}.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  function closeAvailabilityOverview() {
+    setAvailabilityOverviewDate("");
+    setSelectedAvailabilityOverviewKeys([]);
+  }
+
+  function toggleAvailabilityOverviewSelection(key: string) {
+    setSelectedAvailabilityOverviewKeys((keys) => keys.includes(key) ? keys.filter((item) => item !== key) : [...keys, key]);
+  }
+
+  function toggleAllAvailabilityOverviewSelections() {
+    setSelectedAvailabilityOverviewKeys(allAvailabilityOverviewTargetsSelected ? [] : availabilityOverviewTargets.map((target) => target.key));
+  }
+
+  async function adminBulkDeleteAvailability() {
+    if (role !== "admin" || selectedAvailabilityOverviewTargets.length === 0) return;
+    const confirmed = await openConfirmDialog({
+      title: "Xóa các lịch trống đã chọn?",
+      message: `Bạn sắp xóa ${selectedAvailabilityOverviewTargets.length} lượt đăng ký lịch trống. Lịch đã khóa cũng sẽ bị xóa và thao tác này không thể hoàn tác trong hệ thống.`,
+      confirmText: `Xóa ${selectedAvailabilityOverviewTargets.length} lượt`,
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    try {
+      const response = await saveRequest<{ availability: TeacherAvailability[]; deletedRegistrations: number }>(
+        "Đang xóa các lịch trống...",
+        "/api/teacher-availability",
+        { method: "POST", body: JSON.stringify({ operation: "bulk_delete", targets: selectedAvailabilityOverviewTargets.map(({ teacherId, date, registrationId }) => ({ teacherId, date, registrationId })) }) },
+      );
+      setTeacherAvailability(response.availability ?? []);
+      setSelectedAvailabilityOverviewKeys([]);
+      pushToast("Đã xóa lịch trống", `Đã xóa ${response.deletedRegistrations ?? selectedAvailabilityOverviewTargets.length} lượt đăng ký đã chọn.`, "success");
     } catch (error) {
       handleSaveError(error);
     }
@@ -4746,7 +4796,7 @@ export function MettasoulApp() {
                 aria-modal="true"
                 aria-labelledby="availability-overview-title"
                 onMouseDown={(event) => {
-                  if (event.target === event.currentTarget) setAvailabilityOverviewDate("");
+                  if (event.target === event.currentTarget) closeAvailabilityOverview();
                 }}
                 className="app-modal-overlay z-[70] grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm"
               >
@@ -4757,42 +4807,58 @@ export function MettasoulApp() {
                       <h2 id="availability-overview-title" className="mt-4 text-xl font-black text-[var(--brand-dark)]">Giáo viên đã đăng ký lịch trống</h2>
                       <p className="mt-1 text-sm font-semibold text-[var(--muted)]">{formatDate(availabilityOverviewDate)} · {availabilityOverviewTeachers.length} giáo viên đăng ký</p>
                     </div>
-                    <button type="button" title="Đóng" aria-label="Đóng danh sách giáo viên đăng ký" onClick={() => setAvailabilityOverviewDate("")} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--brand-dark)] transition hover:bg-cyan-50">
+                    <button type="button" title="Đóng" aria-label="Đóng danh sách giáo viên đăng ký" onClick={closeAvailabilityOverview} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--brand-dark)] transition hover:bg-cyan-50">
                       <X size={18} />
                     </button>
                   </div>
 
                   {availabilityOverviewTeachers.length > 0 ? (
-                    <div className="mt-5 grid gap-2">
-                      {availabilityOverviewTeachers.map(({ teacherId, teacher, entries }) => (
-                        <article key={teacherId} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-cyan-100 bg-cyan-50/50 px-3 py-2.5">
-                          <div className="min-w-0 flex-1">
-                            <h3 className="truncate text-sm font-black text-[var(--brand-dark)]">{teacher?.name || teacherId}</h3>
-                            {teacher?.specialty ? <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">{teacher.specialty}</p> : null}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {entries.map((entry) => (
-                              <div key={entry.id} className="inline-flex items-center gap-1 rounded-lg border border-white bg-white px-2 py-1 text-xs font-bold text-[var(--brand-dark)] shadow-sm">
-                                <span className="whitespace-nowrap">
-                                  {availabilityEntryLabel(entry, timeSlots)}
-                                  {entry.note ? <span className="font-semibold text-[var(--muted)]"> · {entry.note}</span> : null}
-                                </span>
-                                {role === "admin" ? (
-                                  <button
-                                    type="button"
-                                    title="Admin xóa lịch trống"
-                                    onClick={() => void adminDeleteConfirmedAvailability(teacherId, entry.date, teacherAvailabilityRegistrationKey(entry))}
-                                    className="rounded-lg bg-rose-50 px-2 py-1 text-[11px] font-black text-rose-700 transition hover:bg-rose-100"
-                                  >
-                                    Xóa
-                                  </button>
-                                ) : null}
-                              </div>
-                            ))}
-                          </div>
-                          <span className={`ml-auto shrink-0 rounded-full px-2 py-1 text-[10px] font-black ${teacherAvailabilityTone(teacherId)}`}>{entries.length} đăng ký</span>
-                        </article>
-                      ))}
+                    <div className="mt-5">
+                      {role === "admin" ? (
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-cyan-100 bg-cyan-50/70 px-3 py-2">
+                          <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-bold text-[var(--brand-dark)]">
+                            <input type="checkbox" checked={allAvailabilityOverviewTargetsSelected} onChange={toggleAllAvailabilityOverviewSelections} className="size-4 accent-[var(--brand)]" />
+                            Chọn tất cả ({availabilityOverviewTargets.length})
+                          </label>
+                          <button type="button" disabled={selectedAvailabilityOverviewTargets.length === 0 || isBusy} onClick={() => void adminBulkDeleteAvailability()} className="inline-flex h-9 items-center rounded-lg bg-rose-50 px-3 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50">
+                            Xóa {selectedAvailabilityOverviewTargets.length > 0 ? `${selectedAvailabilityOverviewTargets.length} lượt` : "đã chọn"}
+                          </button>
+                        </div>
+                      ) : null}
+                      <div className="grid gap-2">
+                        {availabilityOverviewTeachers.map(({ teacherId, teacher, entries }) => (
+                          <article key={teacherId} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-cyan-100 bg-cyan-50/50 px-3 py-2.5">
+                            <div className="min-w-0 flex-1">
+                              <h3 className="truncate text-sm font-black text-[var(--brand-dark)]">{teacher?.name || teacherId}</h3>
+                              {teacher?.specialty ? <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">{teacher.specialty}</p> : null}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {entries.map((entry) => {
+                                const registrationId = teacherAvailabilityRegistrationKey(entry);
+                                const selectionKey = `${teacherId}\u0000${entry.date}\u0000${registrationId}`;
+                                return <div key={entry.id} className="inline-flex items-center gap-1 rounded-lg border border-white bg-white px-2 py-1 text-xs font-bold text-[var(--brand-dark)] shadow-sm">
+                                  {role === "admin" ? <input type="checkbox" aria-label={`Chọn lịch trống ${teacher?.name || teacherId}, ${availabilityEntryLabel(entry, timeSlots)}`} checked={selectedAvailabilityOverviewKeys.includes(selectionKey)} onChange={() => toggleAvailabilityOverviewSelection(selectionKey)} className="size-3.5 accent-[var(--brand)]" /> : null}
+                                  <span className="whitespace-nowrap">
+                                    {availabilityEntryLabel(entry, timeSlots)}
+                                    {entry.note ? <span className="font-semibold text-[var(--muted)]"> · {entry.note}</span> : null}
+                                  </span>
+                                  {role === "admin" ? (
+                                    <button
+                                      type="button"
+                                      title="Admin xóa lịch trống"
+                                      onClick={() => void adminDeleteConfirmedAvailability(teacherId, entry.date, registrationId)}
+                                      className="rounded-lg bg-rose-50 px-2 py-1 text-[11px] font-black text-rose-700 transition hover:bg-rose-100"
+                                    >
+                                      Xóa
+                                    </button>
+                                  ) : null}
+                                </div>;
+                              })}
+                            </div>
+                            <span className={`ml-auto shrink-0 rounded-full px-2 py-1 text-[10px] font-black ${teacherAvailabilityTone(teacherId)}`}>{entries.length} đăng ký</span>
+                          </article>
+                        ))}
+                      </div>
                     </div>
                   ) : (
                     <div className="mt-5 rounded-2xl border border-dashed border-cyan-200 bg-cyan-50/60 px-5 py-10 text-center">
@@ -4802,7 +4868,7 @@ export function MettasoulApp() {
                     </div>
                   )}
 
-                  <div className="mt-5 flex justify-end"><button type="button" onClick={() => setAvailabilityOverviewDate("")} className="inline-flex h-11 items-center rounded-xl border border-[var(--line)] bg-white px-4 text-sm font-black text-[var(--brand-dark)] transition hover:bg-cyan-50">Đóng</button></div>
+                  <div className="mt-5 flex justify-end"><button type="button" onClick={closeAvailabilityOverview} className="inline-flex h-11 items-center rounded-xl border border-[var(--line)] bg-white px-4 text-sm font-black text-[var(--brand-dark)] transition hover:bg-cyan-50">Đóng</button></div>
                 </div>
               </div>
             </ViewportPortal>

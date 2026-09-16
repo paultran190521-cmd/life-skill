@@ -9,8 +9,8 @@ import {
   updateSheetRowById,
 } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
-import { isTeacherAvailabilityLocked, selectTeacherAvailabilityRowsForChange } from "@/lib/teacher-availability";
-import type { TeacherAvailability, TeacherAvailabilityScope } from "@/lib/types";
+import { isTeacherAvailabilityLocked, selectTeacherAvailabilityRowsForChange, teacherAvailabilityRegistrationKey } from "@/lib/teacher-availability";
+import type { TeacherAvailability, TeacherAvailabilityScope, User } from "@/lib/types";
 
 const availabilityScopes: TeacherAvailabilityScope[] = ["all_day", "morning", "afternoon", "time_slots"];
 
@@ -18,6 +18,12 @@ type AvailabilityInput = {
   date: string;
   scope: TeacherAvailabilityScope;
   timeSlotIds: string[];
+};
+
+type AdminAvailabilityDeleteTarget = {
+  teacherId: string;
+  date: string;
+  registrationId: string;
 };
 
 export async function GET(request: Request) {
@@ -50,8 +56,11 @@ export async function POST(request: Request) {
     const auth = await requireSessionUser(request, { allowHeaderFallback: false });
     const body = (await request.json()) as Record<string, unknown>;
     const operation = String(body.operation || "").trim();
-    if (operation && !["create", "update", "delete"].includes(operation)) {
+    if (operation && !["create", "update", "delete", "bulk_delete"].includes(operation)) {
       return apiFailure(400, "Thao tác đăng ký không hợp lệ.", undefined, requestId);
+    }
+    if (operation === "bulk_delete") {
+      return adminBulkDeleteAvailability(auth.user, body, requestId);
     }
     const requestedTeacherId = String(body.teacherId || "").trim();
     if (requestedTeacherId && auth.user.role !== "admin") {
@@ -204,11 +213,90 @@ export async function POST(request: Request) {
   }
 }
 
+async function adminBulkDeleteAvailability(actor: User, body: Record<string, unknown>, requestId: string) {
+  const permission = evaluateRolePermission(actor, "admin", "admin_delete_locked_teacher_availability");
+  if (permission.decision === "would_block") {
+    console.warn(`[auth-shadow][${requestId}] teacherAvailability.bulk_delete ${permission.reason}`);
+  }
+  if (!permission.allowed) {
+    return apiFailure(403, "Chỉ quản trị viên được xóa nhiều lịch trống của giáo viên.", undefined, requestId);
+  }
+
+  const targets = parseAdminAvailabilityDeleteTargets(body.targets);
+  if (targets.length === 0 || targets.length > 100) {
+    return apiFailure(400, "Hãy chọn từ 1 đến 100 lượt đăng ký để xóa.", undefined, requestId);
+  }
+  const today = currentVietnamDateKey();
+  if (targets.some((target) => target.date < today)) {
+    return apiFailure(400, "Không thể xóa lịch trống trong quá khứ.", undefined, requestId);
+  }
+
+  await ensureSheetHeaders("TeacherAvailability", teacherAvailabilityHeaders);
+  const existingRows = await readSheetRows("TeacherAvailability");
+  const candidateRows = existingRows.map((row) => ({
+    ...row,
+    id: String(row.id || ""),
+    teacherId: String(row.teacherId || ""),
+    date: String(row.date || ""),
+    registrationId: String(row.registrationId || "") || undefined,
+    status: String(row.status || "available") === "withdrawn" ? "withdrawn" as const : "available" as const,
+  }));
+  const rowsByTarget = targets.map((target) => selectTeacherAvailabilityRowsForChange(
+    candidateRows,
+    target.teacherId,
+    [target.date],
+    "delete",
+    target.registrationId,
+  ));
+  if (rowsByTarget.some((rows) => rows.length === 0)) {
+    return apiFailure(409, "Có lịch trống không còn tồn tại. Vui lòng tải lại danh sách trước khi xóa.", "CONFLICT", requestId);
+  }
+
+  const rowsToWithdraw = Array.from(new Map(rowsByTarget.flat().map((row) => [row.id, row])).values());
+  const now = new Date().toISOString();
+  await Promise.all(rowsToWithdraw.map((row) => updateSheetRowById("TeacherAvailability", row.id, { status: "withdrawn", updatedAt: now })));
+  await appendAuditLog({
+    requestId,
+    actor,
+    action: "teacherAvailability.admin_bulk_withdraw",
+    entityType: "TeacherAvailability",
+    entityId: "bulk",
+    route: "/api/teacher-availability",
+    method: "POST",
+    authMode: permission.authMode,
+    decision: permission.decision,
+    reason: permission.reason,
+    source: "session",
+    before: { activeRows: rowsToWithdraw.length },
+    after: { targets, withdrawnRows: rowsToWithdraw.length },
+  });
+
+  const withdrawnIds = new Set(rowsToWithdraw.map((row) => row.id));
+  return NextResponse.json({
+    availability: existingRows.filter((row) => !withdrawnIds.has(String(row.id || "")) && String(row.status || "available") === "available"),
+    deletedRegistrations: targets.length,
+  });
+}
+
 function parseDates(value: unknown) {
   const values = Array.isArray(value) ? value : [];
   return Array.from(
     new Set(values.map((date) => String(date || "").trim()).filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))),
   ).sort();
+}
+
+function parseAdminAvailabilityDeleteTargets(value: unknown): AdminAvailabilityDeleteTarget[] {
+  if (!Array.isArray(value)) return [];
+  const targets = value.map((item) => {
+    const target = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    return {
+      teacherId: String(target.teacherId || "").trim(),
+      date: String(target.date || "").trim(),
+      registrationId: String(target.registrationId || "").trim(),
+    };
+  }).filter((target) => target.teacherId && target.registrationId && /^\d{4}-\d{2}-\d{2}$/.test(target.date));
+  const unique = new Map(targets.map((target) => [`${target.teacherId}\u0000${target.date}\u0000${target.registrationId}`, target]));
+  return Array.from(unique.values());
 }
 
 function parseAvailabilityInput(value: unknown): AvailabilityInput | null {
