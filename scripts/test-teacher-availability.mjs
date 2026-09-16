@@ -154,5 +154,8 @@ assert.match(routeSource, /chỉ nhận đăng ký Cả ngày, Buổi sáng ho�
 assert.match(routeSource, /"bulk_delete"/);
 assert.match(routeSource, /adminBulkDeleteAvailability/);
 assert.match(appSource, /Xóa \{selectedAvailabilityOverviewTargets\.length/);
+assert.match(routeSource, /!adminDelete && dates\.some/);
+assert.doesNotMatch(routeSource, /targets\.some\(\(target\) => target\.date < today\)/);
+assert.match(appSource, /z-\[200\].*place-items-center/s);
 
 console.log("Teacher availability policy tests passed, including broad-scope writes, admin bulk deletion wiring, and legacy exact-slot reads.");

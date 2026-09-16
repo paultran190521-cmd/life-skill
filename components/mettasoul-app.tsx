@@ -5447,7 +5447,7 @@ export function MettasoulApp() {
                   resolveDialog(appDialog.variant === "prompt" ? null : false);
                 }
               }}
-              className={`fixed inset-0 z-[60] grid place-items-center overflow-hidden bg-slate-950/45 p-4 backdrop-blur-sm transition-opacity duration-200 ${
+              className={`fixed inset-0 z-[200] grid place-items-center overflow-hidden bg-slate-950/45 p-4 backdrop-blur-sm transition-opacity duration-200 ${
                 appDialog.leaving ? "opacity-0" : "opacity-100"
               }`}
             >

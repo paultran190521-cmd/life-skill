@@ -106,7 +106,7 @@ export async function POST(request: Request) {
       return apiFailure(400, "Hãy chọn đúng một lượt đăng ký để sửa hoặc xóa.", undefined, requestId);
     }
     const today = currentVietnamDateKey();
-    if (dates.some((date) => date < today)) {
+    if (!adminDelete && dates.some((date) => date < today)) {
       return apiFailure(400, "Không thể đăng ký hoặc thay đổi ngày trong quá khứ.", undefined, requestId);
     }
     if (!isWithdraw && entries.length !== dates.length) {
@@ -226,11 +226,6 @@ async function adminBulkDeleteAvailability(actor: User, body: Record<string, unk
   if (targets.length === 0 || targets.length > 100) {
     return apiFailure(400, "Hãy chọn từ 1 đến 100 lượt đăng ký để xóa.", undefined, requestId);
   }
-  const today = currentVietnamDateKey();
-  if (targets.some((target) => target.date < today)) {
-    return apiFailure(400, "Không thể xóa lịch trống trong quá khứ.", undefined, requestId);
-  }
-
   await ensureSheetHeaders("TeacherAvailability", teacherAvailabilityHeaders);
   const existingRows = await readSheetRows("TeacherAvailability");
   const candidateRows = existingRows.map((row) => ({
