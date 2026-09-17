@@ -21,19 +21,22 @@ new Function("module", "exports", "require", "process", compiled)(
 const { hrmIntegrationConfigured, submitTeachingPeriodToHrm } = runtimeModule.exports;
 const previousUrl = process.env.HRM_METTASOUL_WEBHOOK_URL;
 const previousSecret = process.env.HRM_METTASOUL_WEBHOOK_SECRET;
+const previousEnabled = process.env.HRM_METTASOUL_INTEGRATION_ENABLED;
 const previousFetch = globalThis.fetch;
 
 try {
   delete process.env.HRM_METTASOUL_WEBHOOK_URL;
   delete process.env.HRM_METTASOUL_WEBHOOK_SECRET;
+  delete process.env.HRM_METTASOUL_INTEGRATION_ENABLED;
   assert.equal(hrmIntegrationConfigured(), false);
   await assert.rejects(
     () => submitTeachingPeriodToHrm({ source: "METTASOUL" }),
-    (error) => error.code === "HRM_NOT_CONFIGURED",
+    (error) => error.code === "HRM_INTEGRATION_DISABLED",
   );
 
   process.env.HRM_METTASOUL_WEBHOOK_URL = "https://hrm.example.test/webhook";
   process.env.HRM_METTASOUL_WEBHOOK_SECRET = "0123456789abcdef0123456789abcdef";
+  process.env.HRM_METTASOUL_INTEGRATION_ENABLED = "true";
   let captured;
   globalThis.fetch = async (url, init) => {
     captured = { url, init, envelope: JSON.parse(init.body) };
@@ -67,6 +70,8 @@ try {
   else process.env.HRM_METTASOUL_WEBHOOK_URL = previousUrl;
   if (previousSecret === undefined) delete process.env.HRM_METTASOUL_WEBHOOK_SECRET;
   else process.env.HRM_METTASOUL_WEBHOOK_SECRET = previousSecret;
+  if (previousEnabled === undefined) delete process.env.HRM_METTASOUL_INTEGRATION_ENABLED;
+  else process.env.HRM_METTASOUL_INTEGRATION_ENABLED = previousEnabled;
 }
 
 console.log("HRM integration tests passed for disabled state and HMAC envelope signing.");

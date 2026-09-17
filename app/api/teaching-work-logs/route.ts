@@ -135,7 +135,7 @@ export async function POST(request: Request) {
         errorMessage: message,
         updatedAt: new Date().toISOString(),
       });
-      const status = code === "HRM_NOT_CONFIGURED" || code === "HRM_UNREACHABLE" ? 503 : 409;
+      const status = ["HRM_NOT_CONFIGURED", "HRM_INTEGRATION_DISABLED", "HRM_UNREACHABLE"].includes(code) ? 503 : 409;
       return apiFailure(status, message, ErrorCodes.externalService, requestId);
     }
 

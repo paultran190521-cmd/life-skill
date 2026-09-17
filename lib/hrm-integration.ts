@@ -34,7 +34,7 @@ export type HrmTeachingResponse = {
 };
 
 export function hrmIntegrationConfigured() {
-  return Boolean(webhookUrl() && webhookSecret());
+  return integrationEnabled() && Boolean(webhookUrl() && webhookSecret());
 }
 
 export async function submitTeachingPeriodToHrm(payload: TeachingPeriodPayload) {
@@ -42,6 +42,9 @@ export async function submitTeachingPeriodToHrm(payload: TeachingPeriodPayload) 
 }
 
 async function sendSignedPayload(payload: Record<string, unknown>): Promise<HrmTeachingResponse> {
+  if (!integrationEnabled()) {
+    throw integrationFailure("HRM_INTEGRATION_DISABLED", "Kết nối HRM đang được quản trị viên giữ ở trạng thái tắt.");
+  }
   const url = webhookUrl();
   const secret = webhookSecret();
   if (!url || !secret) {
@@ -83,6 +86,10 @@ function webhookUrl() {
 
 function webhookSecret() {
   return String(process.env.HRM_METTASOUL_WEBHOOK_SECRET || "").trim();
+}
+
+function integrationEnabled() {
+  return String(process.env.HRM_METTASOUL_INTEGRATION_ENABLED || "").trim().toLowerCase() === "true";
 }
 
 function integrationFailure(code: string, message: string) {
