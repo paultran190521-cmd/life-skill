@@ -141,12 +141,12 @@ export async function POST(request: Request) {
     });
 
     const existingSchedules = await readSheetRows("Schedules");
-    const progressionConflicts = findLessonProgressionConflicts(schedules, existingSchedules, { lookbackMonths: 2 });
+    const progressionConflicts = findLessonProgressionConflicts(schedules, existingSchedules, { lookbackMonths: 5 });
     if (progressionConflicts.length > 0) {
       const sample = progressionConflicts[0];
       return apiFailure(
         409,
-        `Tiết 1 của bài này đã được giao tại cùng trường ngày ${String(sample.existing.date || "")} và chưa đủ 2 tháng. Hãy chọn bài khác.`,
+        `Giáo viên này đã dạy Tiết 1 của bài tại chính lớp này, cùng trường ngày ${String(sample.existing.date || "")} và chưa đủ 5 tháng. Hãy chọn lớp hoặc bài khác.`,
         "CONFLICT",
         requestId,
       );

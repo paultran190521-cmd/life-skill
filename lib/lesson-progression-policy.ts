@@ -3,6 +3,7 @@ import { normalizeScheduledLessonPeriods, type ScheduledLessonPeriod } from "@/l
 type ProgressionSchedule = {
   id?: unknown;
   date?: unknown;
+  teacherId?: unknown;
   schoolId?: unknown;
   classId?: unknown;
   participantClassIds?: unknown;
@@ -34,7 +35,8 @@ export function academicYearKey(dateKey: unknown, options: AcademicYearOptions =
 }
 
 /**
- * Chặn giao lại Tiết 1 của cùng bài tại cùng trường trong hai tháng gần nhất.
+ * Chặn giao lại Tiết 1 khi cùng giáo viên đã dạy cùng bài cho cùng lớp tại cùng
+ * trường trong năm tháng gần nhất. Cùng bài ở lớp khác vẫn được phép giao.
  * Các dòng đồng giảng thuộc cùng groupId là một hoạt động, không tự xung đột.
  */
 export function findLessonProgressionConflicts(
@@ -44,7 +46,7 @@ export function findLessonProgressionConflicts(
 ): LessonProgressionConflict[] {
   const conflicts: LessonProgressionConflict[] = [];
   const earlierCandidates: ProgressionSchedule[] = [];
-  const lookbackMonths = validInteger(options.lookbackMonths, 1, 12, 2);
+  const lookbackMonths = validInteger(options.lookbackMonths, 1, 12, 5);
 
   for (const candidate of candidates) {
     const candidatePeriods = normalizeScheduledLessonPeriods(candidate.lessonPeriods);
@@ -57,9 +59,11 @@ export function findLessonProgressionConflicts(
       if (String(schedule.status || "") === "cancelled") return false;
       if (String(schedule.id || "") && String(schedule.id) === String(candidate.id || "")) return false;
       if (candidate.groupId && String(schedule.groupId || "") === String(candidate.groupId)) return false;
+      if (String(schedule.teacherId || "") !== String(candidate.teacherId || "")) return false;
       if (String(schedule.schoolId || "") !== String(candidate.schoolId || "")) return false;
       if (String(schedule.lessonId || "") !== String(candidate.lessonId || "")) return false;
       if (!normalizeScheduledLessonPeriods(schedule.lessonPeriods).includes("lesson1")) return false;
+      if (!hasIntersection(participantClassIds(schedule), participantClassIds(candidate))) return false;
       return isWithinPreviousCalendarMonths(schedule.date, candidate.date, lookbackMonths);
     });
     if (existing) {

@@ -1505,8 +1505,8 @@ export function MettasoulApp() {
   const draftLessonProgressionConflicts = useMemo(() => {
     const candidates = draftSchedule.items
       .filter((item) => item.date && item.schoolId && item.lessonId && item.lessonPeriods.length > 0)
-      .map((item) => draftProgressionSchedule(item));
-    return findLessonProgressionConflicts(candidates, schedules, { lookbackMonths: 2 });
+      .flatMap((item) => item.teacherIds.map((teacherId) => draftProgressionSchedule(item, teacherId)));
+    return findLessonProgressionConflicts(candidates, schedules, { lookbackMonths: 5 });
   }, [draftSchedule.items, schedules]);
   const draftScheduleConflicts = useMemo<DraftScheduleConflict[]>(() => {
     const conflicts: DraftScheduleConflict[] = [];
@@ -2231,7 +2231,7 @@ export function MettasoulApp() {
       const conflict = draftLessonProgressionConflicts[0];
       pushToast(
         "Không thể giao lại Tiết 1",
-        `Bài này đã được giao tại cùng trường ngày ${String(conflict.existing.date || "")}. Quy tắc 2 tháng chưa cho phép giao lại Tiết 1.`,
+        `Giáo viên này đã dạy Tiết 1 của bài tại chính lớp này, cùng trường ngày ${String(conflict.existing.date || "")}. Quy tắc 5 tháng chưa cho phép giao lại.`,
         "warning",
       );
       return;
@@ -5634,12 +5634,12 @@ export function MettasoulApp() {
         ? Array.from(new Set([...item.lessonPeriods, period]))
         : item.lessonPeriods.filter((value) => value !== period);
       if (checked && period === "lesson1") {
-        const candidate = draftProgressionSchedule({ ...item, lessonPeriods });
-        const conflict = findLessonProgressionConflicts([candidate], schedules, { lookbackMonths: 2 })[0];
+        const candidates = item.teacherIds.map((teacherId) => draftProgressionSchedule({ ...item, lessonPeriods }, teacherId));
+        const conflict = findLessonProgressionConflicts(candidates, schedules, { lookbackMonths: 5 })[0];
         if (conflict) {
           pushToast(
             "Không thể chọn Tiết 1",
-            `Bài này đã được giao tại cùng trường ngày ${String(conflict.existing.date || "")}. Sau đủ 2 tháng mới có thể giao lại Tiết 1.`,
+            `Giáo viên này đã dạy Tiết 1 của bài tại chính lớp này, cùng trường ngày ${String(conflict.existing.date || "")}. Sau đủ 5 tháng mới có thể giao lại.`,
             "warning",
           );
           return;
@@ -5971,7 +5971,7 @@ export function MettasoulApp() {
                             );
                             return conflict ? (
                               <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 md:col-span-2">
-                                Tiết 1 của bài này đã giao tại cùng trường ngày {String(conflict.existing.date || "")}. Không thể gửi lại trước khi đủ 2 tháng.
+                                Giáo viên này đã dạy Tiết 1 của bài tại chính lớp này, cùng trường ngày {String(conflict.existing.date || "")}. Không thể giao lại trước khi đủ 5 tháng.
                               </p>
                             ) : null;
                           })()}
@@ -6145,9 +6145,9 @@ export function MettasoulApp() {
               ) : null}
               {draftLessonProgressionConflicts.length > 0 ? (
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
-                  <p className="text-sm font-black text-rose-800">Không thể giao lại Tiết 1 trong vòng 2 tháng</p>
+                  <p className="text-sm font-black text-rose-800">Không thể giao lại Tiết 1 cho cùng lớp trong vòng 5 tháng</p>
                   <p className="mt-1 text-xs font-semibold text-rose-800">
-                    Bài đã được giao tại cùng trường ngày {String(draftLessonProgressionConflicts[0].existing.date || "")}.
+                    Giáo viên đã dạy bài này tại chính lớp, cùng trường ngày {String(draftLessonProgressionConflicts[0].existing.date || "")}.
                   </p>
                 </div>
               ) : null}
@@ -10898,11 +10898,11 @@ function scheduleParticipantLabel(
   return names.join(", ") || "Chưa rõ";
 }
 
-function draftProgressionSchedule(item: DraftScheduleItem): Schedule {
+function draftProgressionSchedule(item: DraftScheduleItem, teacherId = ""): Schedule {
   return {
     id: `progression-preview-${item.id}`,
     date: item.date,
-    teacherId: "",
+    teacherId,
     schoolId: item.schoolId,
     classId: item.classId,
     participantClassIds: item.classIds.join(","),
