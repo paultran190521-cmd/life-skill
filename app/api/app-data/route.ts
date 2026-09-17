@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, createRequestId } from "@/lib/api";
 import { getAppDataFromSheets } from "@/lib/google-sheets";
+import { hrmIntegrationConfigured } from "@/lib/hrm-integration";
 import { requireSessionUser } from "@/lib/route-auth";
 import { schoolGuideMapUrlForName } from "@/lib/school-guide-data";
 
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
       const assignedSchedules = teacherId
         ? data.schedules.filter((schedule) =>
             schedule.teacherId === teacherId ||
-            (auth.user.role === "assistant" && String(schedule.assistantIds || "").split(",").map((id) => id.trim()).includes(teacherId)),
+            String(schedule.assistantIds || "").split(",").map((id) => id.trim()).includes(teacherId),
           )
         : [];
       const sharedGroupIds = new Set(assignedSchedules.map((schedule) => String(schedule.groupId || "").trim()).filter(Boolean));
@@ -57,6 +58,8 @@ export async function GET(request: Request) {
               : plan.teacherId === teacherId)
           : [],
         attendance: teacherId ? data.attendance.filter((record) => record.teacherId === teacherId) : [],
+        teachingWorkLogs: teacherId ? data.teachingWorkLogs.filter((record) => record.teacherId === teacherId) : [],
+        hrmIntegration: { configured: hrmIntegrationConfigured() },
         notifications: data.notifications.filter(
           (notification) => notification.role === auth.user.role || notification.role === "all",
         ),
@@ -80,6 +83,8 @@ export async function GET(request: Request) {
       schedules: data.schedules,
       lessonPlans: data.lessonPlans,
       attendance: data.attendance,
+      teachingWorkLogs: data.teachingWorkLogs,
+      hrmIntegration: { configured: hrmIntegrationConfigured() },
       notifications: data.notifications,
       appAnnouncements: data.appAnnouncements,
       auditLogs: data.auditLogs,

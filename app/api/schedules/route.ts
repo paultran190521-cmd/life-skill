@@ -119,7 +119,7 @@ export async function POST(request: Request) {
       // Lưu groupId để các luồng hiển thị/email nhận diện đúng, không suy đoán
       // từ các lịch trùng giờ độc lập.
       const groupId = item.teacherIds.length > 1 || item.classIds.length > 1 ? createId("grp") : undefined;
-      return item.teacherIds.map((teacherId) => ({
+      return item.teacherIds.map((teacherId, teacherIndex) => ({
         id: createId("sch"),
         date: item.date,
         teacherId,
@@ -134,6 +134,7 @@ export async function POST(request: Request) {
         teachingEnvironment: item.teachingEnvironment,
         groupId,
         assistantIds: item.assistantIds.join(",") || undefined,
+        teachingRole: teacherIndex === 0 ? "MAIN_TEACHER" as const : "CO_TEACHER" as const,
         status: "sent",
         sentAt: now,
       }));

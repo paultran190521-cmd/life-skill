@@ -1,5 +1,12 @@
 import { trashDriveFileById } from "@/lib/google-drive";
-import { deleteSheetRowsByIds, readSheetRowsBatch } from "@/lib/google-sheets";
+import { conflictError } from "@/lib/app-error";
+import {
+  deleteSheetRowsByIds,
+  ensureSheetHeaders,
+  readSheetRows,
+  readSheetRowsBatch,
+  teachingWorkLogHeaders,
+} from "@/lib/google-sheets";
 
 const GAS_TIMEOUT_MS = 25_000;
 
@@ -32,6 +39,23 @@ export async function resetScheduleAssignmentData(scheduleIds: string[]): Promis
   return deleteScheduleDependentData(scheduleIds);
 }
 
+export async function assertNoConfirmedTeachingWorkLogs(scheduleIds: string[]) {
+  const requestedIds = new Set(scheduleIds.map((id) => String(id || "").trim()).filter(Boolean));
+  if (requestedIds.size === 0) return;
+
+  await ensureSheetHeaders("TeachingWorkLogs", teachingWorkLogHeaders);
+  const workLogs = await readSheetRows("TeachingWorkLogs");
+  const protectedWorkLogs = workLogs.filter((row) =>
+    requestedIds.has(String(row.scheduleId || "").trim())
+    && ["CONFIRMED", "PENDING"].includes(String(row.status || "").toUpperCase()),
+  );
+  if (protectedWorkLogs.length > 0) {
+    throw conflictError(
+      "Không thể hủy, xóa hoặc chuyển lịch đã chấm công hoặc đang chờ HRM xác nhận. Hãy xử lý dòng công trong HRM trước.",
+    );
+  }
+}
+
 async function deleteScheduleDependentData(scheduleIds: string[]): Promise<ScheduleCascadeDeleteResult> {
   const requestedIds = Array.from(new Set(scheduleIds.map((id) => String(id || "").trim()).filter(Boolean)));
   if (requestedIds.length === 0) {
@@ -44,6 +68,8 @@ async function deleteScheduleDependentData(scheduleIds: string[]): Promise<Sched
       trashedDriveFileIds: [],
     };
   }
+
+  await assertNoConfirmedTeachingWorkLogs(requestedIds);
 
   const rows = await readSheetRowsBatch(
     ["Schedules", "Attendance", "LessonPlans", "LessonPlanMessages", "LessonPlanAttachments"] as const,

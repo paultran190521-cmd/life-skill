@@ -27,6 +27,7 @@ const fixture = {
     { id: "attachment-other", lessonPlanId: "plan-other", driveFileId: "drive-other" },
   ],
 };
+let teachingWorkLogs = [];
 
 const runtimeModule = { exports: {} };
 new Function("module", "exports", "require", "process", compiled)(
@@ -39,8 +40,14 @@ new Function("module", "exports", "require", "process", compiled)(
     if (specifier === "@/lib/google-sheets") {
       return {
         readSheetRowsBatch: async () => fixture,
+        ensureSheetHeaders: async () => undefined,
+        readSheetRows: async (sheet) => sheet === "TeachingWorkLogs" ? teachingWorkLogs : [],
+        teachingWorkLogHeaders: ["id", "scheduleId", "status"],
         deleteSheetRowsByIds: async (sheet, ids) => deletedRows.push({ sheet, ids: [...ids] }),
       };
+    }
+    if (specifier === "@/lib/app-error") {
+      return { conflictError: (message) => Object.assign(new Error(message), { status: 409, code: "CONFLICT" }) };
     }
     throw new Error(`Unexpected test import: ${specifier}`);
   },
@@ -61,4 +68,16 @@ deletedRows.length = 0;
 await deleteSchedulesCascade(["schedule-1"]);
 assert.deepEqual(deletedRows.find((call) => call.sheet === "Schedules")?.ids, ["schedule-1"]);
 
-console.log("Schedule cascade tests passed, including reassignment cleanup without deleting the schedule row.");
+teachingWorkLogs = [{ id: "work-log-1", scheduleId: "schedule-1", status: "CONFIRMED" }];
+await assert.rejects(
+  () => resetScheduleAssignmentData(["schedule-1"]),
+  (error) => error.status === 409 && /đã chấm công/.test(error.message),
+);
+
+teachingWorkLogs = [{ id: "work-log-pending", scheduleId: "schedule-1", status: "PENDING" }];
+await assert.rejects(
+  () => deleteSchedulesCascade(["schedule-1"]),
+  (error) => error.status === 409 && /đang chờ HRM/.test(error.message),
+);
+
+console.log("Schedule cascade tests passed, including HRM work-log protection.");

@@ -20,6 +20,8 @@ export type ScheduleParticipantScope = "selected_classes" | "whole_grade" | "who
 
 export type LessonPeriod = "lesson1" | "lesson2";
 
+export type TeachingRoleCode = "MAIN_TEACHER" | "CO_TEACHER" | "ASSISTANT";
+
 export type TeacherAvailabilityScope = "all_day" | "morning" | "afternoon" | "time_slots";
 
 export type TeacherAvailability = {
@@ -130,6 +132,8 @@ export type Schedule = {
   reassignedFrom?: string;
   groupId?: string;
   assistantIds?: string;
+  /** Vai trò trả công của giáo viên đứng tên lịch. Trợ giảng được xác định theo assistantIds. */
+  teachingRole?: Exclude<TeachingRoleCode, "ASSISTANT">;
   /** Các trợ giảng đã tự xác nhận lịch, lưu dạng id phân tách bằng dấu phẩy. */
   assistantConfirmedIds?: string;
 };
@@ -181,6 +185,26 @@ export type Attendance = {
   teacherId: string;
   checkedInAt: string;
   note?: string;
+};
+
+export type TeachingWorkLog = {
+  id: string;
+  scheduleId: string;
+  periodId: string;
+  teacherId: string;
+  userEmail: string;
+  roleCode: TeachingRoleCode;
+  idempotencyKey: string;
+  eventId: string;
+  status: "PENDING" | "CONFIRMED" | "FAILED" | "CANCELLED";
+  hrmWorkLogId?: string;
+  money?: number;
+  policyVersion?: string;
+  submittedAt: string;
+  cancelledAt?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  updatedAt?: string;
 };
 
 export type Notification = {

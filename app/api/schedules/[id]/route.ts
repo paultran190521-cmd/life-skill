@@ -8,7 +8,12 @@ import {
   readSheetRows,
   updateSheetRowById,
 } from "@/lib/google-sheets";
-import { deleteSchedulesCascade, resetScheduleAssignmentData, type ScheduleCascadeDeleteResult } from "@/lib/schedule-cascade-delete";
+import {
+  assertNoConfirmedTeachingWorkLogs,
+  deleteSchedulesCascade,
+  resetScheduleAssignmentData,
+  type ScheduleCascadeDeleteResult,
+} from "@/lib/schedule-cascade-delete";
 import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 import { invalidateScheduleConflictIndex } from "@/lib/schedule-conflict-index";
 import { hasTeacherTimeConflict } from "@/lib/schedule-conflict-policy";
@@ -57,6 +62,7 @@ export async function PATCH(request: Request, { params }: Params) {
       ];
       action = "schedule.confirm";
     } else if (status === "cancelled") {
+      await assertNoConfirmedTeachingWorkLogs([id]);
       patch.cancelledAt = now;
       notifications = [
         createNotification("Lịch đã hủy", "Một lịch dạy vừa được hủy.", "all", now),

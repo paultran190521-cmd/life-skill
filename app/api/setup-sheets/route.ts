@@ -13,6 +13,7 @@ import {
   userHeaders,
   lessonPlanMessageHeaders,
   lessonPlanAttachmentHeaders,
+  teachingWorkLogHeaders,
 } from "@/lib/google-sheets";
 
 /**
@@ -65,6 +66,10 @@ const ALL_SHEETS: { name: Parameters<typeof ensureSheetHeaders>[0]; headers: str
   {
     name: "Attendance",
     headers: ["id", "scheduleId", "teacherId", "checkedInAt", "note", "createdAt", "updatedAt"],
+  },
+  {
+    name: "TeachingWorkLogs",
+    headers: teachingWorkLogHeaders,
   },
   {
     name: "Notifications",

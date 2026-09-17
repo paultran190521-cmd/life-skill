@@ -17,6 +17,7 @@ import type {
   ScheduleStatus,
   School,
   Teacher,
+  TeachingWorkLog,
   TeachingEnvironment,
   TeacherAvailability,
   TeacherAvailabilityScope,
@@ -38,6 +39,7 @@ type SheetName =
   | "LessonPlanMessages"
   | "LessonPlanAttachments"
   | "Attendance"
+  | "TeachingWorkLogs"
   | "Notifications"
   | "AuditLogs"
   | "AppAnnouncements"
@@ -582,6 +584,7 @@ export async function getAppDataFromSheets(options: { includeHistory?: boolean }
     schedules,
     lessonPlans,
     attendance,
+    teachingWorkLogs,
     notifications,
     appAnnouncements,
     auditLogs,
@@ -600,6 +603,9 @@ export async function getAppDataFromSheets(options: { includeHistory?: boolean }
     readSheetRows("Schedules").then(toSchedules),
     readSheetRows("LessonPlans").then(toLessonPlans),
     readSheetRows("Attendance").then(toAttendance),
+    ensureSheetHeaders("TeachingWorkLogs", teachingWorkLogHeaders)
+      .then(() => readSheetRows("TeachingWorkLogs").then(toTeachingWorkLogs))
+      .catch(() => [] as TeachingWorkLog[]),
     readSheetRows("Notifications").then(toNotifications),
     ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders)
       .then(() => readSheetRows("AppAnnouncements").then(toAppAnnouncements))
@@ -624,6 +630,7 @@ export async function getAppDataFromSheets(options: { includeHistory?: boolean }
     schedules,
     lessonPlans,
     attendance,
+    teachingWorkLogs,
     notifications,
     appAnnouncements,
     auditLogs,
@@ -671,6 +678,7 @@ export const scheduleHeaders = [
   "teachingEnvironment",
   "groupId",
   "assistantIds",
+  "teachingRole",
   "participantClassIds",
   "participantScope",
   "participantGrade",
@@ -687,6 +695,26 @@ export const notificationHeaders = [
   "senderEmail",
   "read",
   "createdAt",
+  "updatedAt",
+];
+
+export const teachingWorkLogHeaders = [
+  "id",
+  "scheduleId",
+  "periodId",
+  "teacherId",
+  "userEmail",
+  "roleCode",
+  "idempotencyKey",
+  "eventId",
+  "status",
+  "hrmWorkLogId",
+  "money",
+  "policyVersion",
+  "submittedAt",
+  "cancelledAt",
+  "errorCode",
+  "errorMessage",
   "updatedAt",
 ];
 
@@ -1020,6 +1048,7 @@ export function toSchedules(rows: SheetRow[]): Schedule[] {
     reassignedFrom: row.reassignedFrom || undefined,
     groupId: row.groupId || undefined,
     assistantIds: row.assistantIds || undefined,
+    teachingRole: row.teachingRole === "CO_TEACHER" ? "CO_TEACHER" : row.teachingRole === "MAIN_TEACHER" ? "MAIN_TEACHER" : undefined,
     assistantConfirmedIds: row.assistantConfirmedIds || undefined,
   }));
 }
@@ -1052,6 +1081,30 @@ function toAttendance(rows: SheetRow[]): Attendance[] {
     teacherId: row.teacherId,
     checkedInAt: row.checkedInAt,
     note: row.note || undefined,
+  }));
+}
+
+function toTeachingWorkLogs(rows: SheetRow[]): TeachingWorkLog[] {
+  return rows.map((row) => ({
+    id: row.id,
+    scheduleId: row.scheduleId,
+    periodId: row.periodId,
+    teacherId: row.teacherId,
+    userEmail: row.userEmail,
+    roleCode: row.roleCode as TeachingWorkLog["roleCode"],
+    idempotencyKey: row.idempotencyKey,
+    eventId: row.eventId,
+    status: (["PENDING", "CONFIRMED", "FAILED", "CANCELLED"].includes(String(row.status).toUpperCase())
+      ? String(row.status).toUpperCase()
+      : "FAILED") as TeachingWorkLog["status"],
+    hrmWorkLogId: row.hrmWorkLogId || undefined,
+    money: row.money === "" || row.money === undefined ? undefined : Number(row.money),
+    policyVersion: row.policyVersion || undefined,
+    submittedAt: row.submittedAt,
+    cancelledAt: row.cancelledAt || undefined,
+    errorCode: row.errorCode || undefined,
+    errorMessage: row.errorMessage || undefined,
+    updatedAt: row.updatedAt || undefined,
   }));
 }
 

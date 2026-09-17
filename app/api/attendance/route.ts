@@ -26,12 +26,16 @@ export async function POST(request: Request) {
     const participantId = auth.user.role === "admin"
       ? String(schedule.teacherId || "").trim()
       : String(auth.user.teacherId || "").trim();
-    const participantRole = auth.user.role === "assistant" ? "assistant" : "teacher";
+    const participantRole = schedule.teacherId === participantId
+      ? "teacher"
+      : parseIds(schedule.assistantIds).includes(participantId)
+        ? "assistant"
+        : "teacher";
     const permission = evaluatePermission({
       allowed: Boolean(participantId) && (
         auth.user.role === "admin"
-        || (auth.user.role === "teacher" && participantId === schedule.teacherId)
-        || (auth.user.role === "assistant" && parseIds(schedule.assistantIds).includes(participantId))
+        || participantId === schedule.teacherId
+        || parseIds(schedule.assistantIds).includes(participantId)
       ),
       reason: "participant_must_be_assigned_to_schedule_attendance",
     });

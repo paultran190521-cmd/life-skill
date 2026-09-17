@@ -109,6 +109,7 @@ import type {
   TeacherAvailability,
   TeacherAvailabilityScope,
   TeachingEnvironment,
+  TeachingWorkLog,
   TimeSlot,
   Topic,
   User,
@@ -173,6 +174,8 @@ type AppData = {
   schedules: Schedule[];
   lessonPlans: LessonPlan[];
   attendance: Attendance[];
+  teachingWorkLogs: TeachingWorkLog[];
+  hrmIntegration: { configured: boolean };
   notifications: Notification[];
   appAnnouncements: AppAnnouncement[];
   auditLogs: AuditLog[];
@@ -255,6 +258,11 @@ type AttendanceCreateResponse = {
   attendance: Attendance[];
   schedules: Array<Partial<Schedule> & { id: string }>;
   group: { key: string; scheduleCount: number };
+};
+
+type TeachingWorkLogCreateResponse = {
+  workLog: TeachingWorkLog;
+  idempotent: boolean;
 };
 
 type ClassCreateResponse = ClassRoom | { classes: ClassRoom[] };
@@ -498,7 +506,7 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
   { id: "teachers", label: "Giáo viên", icon: Users },
   { id: "lessons", label: "Bài học", icon: BookOpen },
   { id: "plans", label: "Giáo án", icon: FileUp },
-  { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
+  { id: "attendance", label: "Điểm danh - Chấm công", icon: CheckCircle2 },
   { id: "settings", label: "Cấu hình", icon: Settings2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
@@ -507,7 +515,7 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "calendar", label: "Lịch của tôi", icon: CalendarDays },
   { id: "plans", label: "Giáo án", icon: FileUp },
-  { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
+  { id: "attendance", label: "Điểm danh - Chấm công", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
 
@@ -515,7 +523,7 @@ const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "calendar", label: "Lịch trợ giảng", icon: CalendarDays },
   { id: "plans", label: "Giáo án tham khảo", icon: BookOpen },
-  { id: "attendance", label: "Điểm danh", icon: CheckCircle2 },
+  { id: "attendance", label: "Điểm danh - Chấm công", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
 
@@ -543,6 +551,8 @@ export function MettasoulApp() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [teachingWorkLogs, setTeachingWorkLogs] = useState<TeachingWorkLog[]>([]);
+  const [hrmIntegrationConfigured, setHrmIntegrationConfigured] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [historyLoadError, setHistoryLoadError] = useState("");
   const [weeklyLoadError, setWeeklyLoadError] = useState("");
@@ -931,6 +941,8 @@ export function MettasoulApp() {
         setSchedules(data.schedules);
         setLessonPlans(data.lessonPlans);
         setAttendance(data.attendance);
+        setTeachingWorkLogs(data.teachingWorkLogs ?? []);
+        setHrmIntegrationConfigured(Boolean(data.hrmIntegration?.configured));
         setAuditLogs(data.auditLogs ?? []);
         setNotifications(data.notifications);
         setAppAnnouncements(data.appAnnouncements ?? []);
@@ -2664,6 +2676,30 @@ export function MettasoulApp() {
     addNotification("Đã điểm danh", `${role === "assistant" ? currentUser.name : teacherName(schedule.teacherId)} đã điểm danh ${response.group.scheduleCount} tiết cùng trường và cùng buổi.`, "admin", {
       tone: "success",
     });
+  }
+
+  async function submitTeachingWorkLog(schedule: Schedule) {
+    let response: TeachingWorkLogCreateResponse;
+    try {
+      response = await saveRequest<TeachingWorkLogCreateResponse>("Đang gửi chấm công sang HRM...", "/api/teaching-work-logs", {
+        method: "POST",
+        body: JSON.stringify({ scheduleId: schedule.id }),
+      });
+      setDataStatus("connected");
+      setSaveError("");
+    } catch (error) {
+      handleSaveError(error);
+      return;
+    }
+    setTeachingWorkLogs((items) => [
+      response.workLog,
+      ...items.filter((item) => item.id !== response.workLog.id),
+    ]);
+    pushToast(
+      response.idempotent ? "Đã đồng bộ trước đó" : "Đã chấm công",
+      `HRM đã ghi nhận ${teachingRoleLabel(response.workLog.roleCode).toLowerCase()} cho tiết này.`,
+      "success",
+    );
   }
 
   async function cancelSchedule(schedule: Schedule) {
@@ -8182,9 +8218,9 @@ export function MettasoulApp() {
   function renderAttendancePanel() {
     const scopedSchedules = role === "admin"
       ? schedules
-      : schedules.filter((item) => role === "assistant"
-          ? isAssistantAssignedToSchedule(item, currentTeacherId)
-          : item.teacherId === currentTeacherId);
+      : schedules.filter((item) =>
+          item.teacherId === currentTeacherId || isAssistantAssignedToSchedule(item, currentTeacherId),
+        );
     const today = currentDateKey();
     const scopedScheduleIds = new Set(scopedSchedules.map((schedule) => schedule.id));
     const attendanceToday = attendance.filter((record) =>
@@ -8398,6 +8434,7 @@ export function MettasoulApp() {
     }
 
     return (
+      <div className="space-y-5">
       <Panel title="Điểm danh theo trường và buổi" action="Một lần cho các tiết cùng nhóm">
         <div className="space-y-3">
           {scopedSchedules.map((schedule) => {
@@ -8451,6 +8488,74 @@ export function MettasoulApp() {
           })}
         </div>
       </Panel>
+      <Panel title="Chấm công từng tiết" action="Chỉ mở sau giờ kết thúc">
+        <div className="space-y-3">
+          {!hrmIntegrationConfigured ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+              Kết nối HRM đang tắt. Quản trị viên cần hoàn tất cấu hình trước khi giáo viên chấm công.
+            </div>
+          ) : null}
+          {scopedSchedules.map((schedule) => {
+            const meta = lookupSchedule(schedule);
+            const workLog = teachingWorkLogs.find((item) =>
+              item.scheduleId === schedule.id
+              && item.teacherId === currentTeacherId
+              && item.status === "CONFIRMED"
+            );
+            const pendingWorkLog = workLog ? undefined : teachingWorkLogs.find((item) =>
+              item.scheduleId === schedule.id
+              && item.teacherId === currentTeacherId
+              && item.status === "PENDING"
+            );
+            const ended = isTeachingPeriodEnded(schedule, timeSlots);
+            const isCancelled = schedule.status === "cancelled";
+            const roleCode = workLog?.roleCode || scheduleTeachingRoleForParticipant(schedule, currentTeacherId, schedules);
+            return (
+              <div key={`work-log-${schedule.id}`} className="grid gap-4 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm lg:grid-cols-[1fr_auto]">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-black text-[var(--brand-dark)]">{meta.slot?.label} - {meta.lesson?.title}</p>
+                    <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-black text-violet-700">
+                      {teachingRoleLabel(roleCode)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-[var(--muted)]">
+                    {meta.school?.name}, {scheduleParticipantLabel(schedule, classes)} · {formatDate(schedule.date)} · {meta.slot?.start || "--:--"}-{meta.slot?.end || "--:--"}
+                  </p>
+                  {workLog ? (
+                    <p className="mt-2 text-sm font-bold text-emerald-700">
+                      HRM đã ghi nhận lúc {formatDateTime(workLog.submittedAt)}
+                      {typeof workLog.money === "number" ? ` · ${formatCurrency(workLog.money)}` : ""}
+                    </p>
+                  ) : pendingWorkLog ? (
+                    <p className="mt-2 text-sm font-bold text-amber-700">
+                      Chưa xác định được kết quả từ HRM. Có thể bấm đồng bộ lại an toàn, hệ thống không tạo công trùng.
+                    </p>
+                  ) : ended ? (
+                    <p className="mt-2 text-sm font-bold text-orange-700">Tiết đã kết thúc, có thể chấm công.</p>
+                  ) : (
+                    <p className="mt-2 text-sm font-bold text-slate-500">Chưa đến giờ kết thúc tiết.</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => submitTeachingWorkLog(schedule)}
+                  disabled={Boolean(workLog) || isCancelled || !ended || !hrmIntegrationConfigured || isBusy}
+                  className={
+                    workLog || isCancelled || !ended || !hrmIntegrationConfigured || isBusy
+                      ? "inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-200 px-4 py-3 text-sm font-black text-slate-500 shadow-none"
+                      : primaryButtonClass
+                  }
+                >
+                  <ShieldCheck size={18} />
+                  {workLog ? "Đã chấm công" : isCancelled ? "Lịch đã hủy" : !hrmIntegrationConfigured ? "Chưa kết nối HRM" : pendingWorkLog ? "Đồng bộ lại HRM" : ended ? "Chấm công tiết" : "Chưa kết thúc"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
+      </div>
     );
   }
 
@@ -10751,6 +10856,35 @@ function isAssistantAssignedToSchedule(schedule: Pick<Schedule, "assistantIds">,
 
 function isAssistantScheduleConfirmed(schedule: Pick<Schedule, "assistantConfirmedIds">, assistantId: string) {
   return Boolean(assistantId) && String(schedule.assistantConfirmedIds || "").split(",").map((id) => id.trim()).includes(assistantId);
+}
+
+function scheduleTeachingRoleForParticipant(schedule: Schedule, participantId: string, schedules: Schedule[]) {
+  if (isAssistantAssignedToSchedule(schedule, participantId)) return "ASSISTANT" as const;
+  if (schedule.teacherId !== participantId) return "";
+  if (schedule.teachingRole === "MAIN_TEACHER" || schedule.teachingRole === "CO_TEACHER") {
+    return schedule.teachingRole;
+  }
+  if (!schedule.groupId) return "MAIN_TEACHER" as const;
+  const firstTeacher = schedules.find((item) => item.groupId === schedule.groupId && item.teacherId)?.teacherId;
+  return firstTeacher === participantId ? "MAIN_TEACHER" as const : "CO_TEACHER" as const;
+}
+
+function teachingRoleLabel(roleCode: TeachingWorkLog["roleCode"] | "") {
+  if (roleCode === "MAIN_TEACHER") return "Giáo viên chính";
+  if (roleCode === "CO_TEACHER") return "Đồng giảng";
+  if (roleCode === "ASSISTANT") return "Trợ giảng";
+  return "Chưa xác định vai trò";
+}
+
+function isTeachingPeriodEnded(schedule: Pick<Schedule, "date" | "timeSlotId">, slots: TimeSlot[]) {
+  const slot = slots.find((item) => item.id === schedule.timeSlotId);
+  if (!slot?.end || !schedule.date) return false;
+  const endsAt = new Date(`${schedule.date}T${slot.end}:00+07:00`);
+  return !Number.isNaN(endsAt.getTime()) && endsAt.getTime() <= Date.now();
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 }).format(value);
 }
 
 function scheduleParticipantLabel(
