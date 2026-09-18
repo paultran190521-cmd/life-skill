@@ -785,6 +785,10 @@ export function MettasoulApp() {
     () => activeTeachers.filter((teacher) => schedulingParticipantIds.assistantIds.has(teacher.id)),
     [activeTeachers, schedulingParticipantIds],
   );
+  // Teacher accounts remain eligible for normal teaching and can separately be
+  // assigned as a professional assistant on a particular period.
+  const activeProfessionalAssistantTeachers = activeSchedulingTeachers;
+  const activeStudentAssistantTeachers = activeAssistantTeachers;
   const activeLessons = useMemo(() => lessons.filter((lesson) => lesson.active !== false), [lessons]);
   const activeTimeSlots = useMemo(() => timeSlots.filter((slot) => slot.active !== false), [timeSlots]);
   const availabilitySelectedDates = useMemo(() => Object.keys(availabilityDrafts).sort(), [availabilityDrafts]);
@@ -1267,18 +1271,18 @@ export function MettasoulApp() {
 
   useEffect(() => {
     const activeTeacherIds = new Set(activeSchedulingTeachers.map((teacher) => teacher.id));
-    const activeAssistantIds = new Set(activeAssistantTeachers.map((teacher) => teacher.id));
+    const activeAssistantIds = new Set(activeTeachers.map((teacher) => teacher.id));
     setDraftSchedule((current) => ({
       ...current,
       items: current.items.map((item) => {
         const teacherIds = item.teacherIds.filter((id) => activeTeacherIds.has(id));
-        const assistantIds = item.assistantIds.filter((id) => activeAssistantIds.has(id));
+        const assistantIds = item.assistantIds.filter((id) => activeAssistantIds.has(id) && !teacherIds.includes(id));
         return teacherIds.length === item.teacherIds.length && assistantIds.length === item.assistantIds.length
           ? item
           : { ...item, teacherIds, assistantIds };
       }),
     }));
-  }, [activeSchedulingTeachers, activeAssistantTeachers]);
+  }, [activeSchedulingTeachers, activeTeachers]);
 
   useEffect(() => {
     setDraftSchedule((current) => {
@@ -1330,9 +1334,8 @@ export function MettasoulApp() {
     const scoped =
       role === "admin"
         ? schedules
-        : schedules.filter((schedule) => role === "assistant"
-            ? isAssistantAssignedToSchedule(schedule, currentTeacherId)
-            : schedule.teacherId === currentTeacherId);
+        : schedules.filter((schedule) =>
+            schedule.teacherId === currentTeacherId || isAssistantAssignedToSchedule(schedule, currentTeacherId));
 
     const term = deferredSearchTerm.trim().toLowerCase();
     return sortSchedules(
@@ -1638,7 +1641,7 @@ export function MettasoulApp() {
     if (role === "admin" || !currentTeacherId) return 0;
     const viewedAt = currentUser.scheduleViewedAt || "";
     return schedules.filter((schedule) =>
-      (role === "assistant" ? isAssistantAssignedToSchedule(schedule, currentTeacherId) : schedule.teacherId === currentTeacherId) &&
+      (schedule.teacherId === currentTeacherId || isAssistantAssignedToSchedule(schedule, currentTeacherId)) &&
       schedule.status !== "cancelled" &&
       Boolean(schedule.sentAt) &&
       (!viewedAt || String(schedule.sentAt) > viewedAt),
@@ -5653,8 +5656,8 @@ export function MettasoulApp() {
         ...current,
         items: current.items.map((ci) => {
           if (ci.id !== itemId) return ci;
-          const next = checked ? [...ci.teacherIds, teacherId] : ci.teacherIds.filter((id) => id !== teacherId);
-          return { ...ci, teacherIds: next };
+          const next = checked ? Array.from(new Set([...ci.teacherIds, teacherId])) : ci.teacherIds.filter((id) => id !== teacherId);
+          return { ...ci, teacherIds: next, assistantIds: checked ? ci.assistantIds.filter((id) => id !== teacherId) : ci.assistantIds };
         }),
       }));
     }
@@ -5664,8 +5667,8 @@ export function MettasoulApp() {
         ...current,
         items: current.items.map((ci) => {
           if (ci.id !== itemId) return ci;
-          const next = checked ? [...ci.assistantIds, teacherId] : ci.assistantIds.filter((id) => id !== teacherId);
-          return { ...ci, assistantIds: next };
+          const next = checked ? Array.from(new Set([...ci.assistantIds, teacherId])) : ci.assistantIds.filter((id) => id !== teacherId);
+          return { ...ci, assistantIds: next, teacherIds: checked ? ci.teacherIds.filter((id) => id !== teacherId) : ci.teacherIds };
         }),
       }));
     }
@@ -5733,13 +5736,19 @@ export function MettasoulApp() {
                     const rowDateTeachers = activeSchedulingTeachers.filter((teacher) =>
                       isTeacherAvailableOnDate(teacherAvailability, teacher.id, item.date),
                     );
-                    const rowDateAssistants = activeAssistantTeachers.filter((teacher) =>
+                    const rowDateProfessionalAssistants = activeProfessionalAssistantTeachers.filter((teacher) =>
+                      isTeacherAvailableOnDate(teacherAvailability, teacher.id, item.date),
+                    );
+                    const rowDateStudentAssistants = activeStudentAssistantTeachers.filter((teacher) =>
                       isTeacherAvailableOnDate(teacherAvailability, teacher.id, item.date),
                     );
                     const rowAvailableTeachers = rowDateTeachers.filter((teacher) =>
                       !selectedSlot || isTeacherAvailableForSlot(teacherAvailability, teacher.id, item.date, selectedSlot),
                     );
-                    const rowAvailableAssistants = rowDateAssistants.filter((teacher) =>
+                    const rowAvailableProfessionalAssistants = rowDateProfessionalAssistants.filter((teacher) =>
+                      !selectedSlot || isTeacherAvailableForSlot(teacherAvailability, teacher.id, item.date, selectedSlot),
+                    );
+                    const rowAvailableStudentAssistants = rowDateStudentAssistants.filter((teacher) =>
                       !selectedSlot || isTeacherAvailableForSlot(teacherAvailability, teacher.id, item.date, selectedSlot),
                     );
                     return (
@@ -6034,7 +6043,7 @@ export function MettasoulApp() {
                           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                             <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Người đăng ký rảnh và khớp giờ</p>
                             <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700">
-                              {rowAvailableTeachers.length + rowAvailableAssistants.length} khớp giờ / {rowDateTeachers.length + rowDateAssistants.length} đăng ký ngày
+                              {rowAvailableTeachers.length + rowAvailableProfessionalAssistants.length + rowAvailableStudentAssistants.length} khớp giờ / {rowDateTeachers.length + rowDateProfessionalAssistants.length + rowDateStudentAssistants.length} đăng ký ngày
                             </span>
                           </div>
                           {rowAvailableTeachers.length > 0 ? (
@@ -6060,11 +6069,11 @@ export function MettasoulApp() {
                                 : "Chọn ngày và khung giờ để xem giáo viên đã đăng ký."}
                             </p>
                           )}
-                          {rowAvailableAssistants.length > 0 ? (
+                          {rowAvailableProfessionalAssistants.length > 0 ? (
                             <div className="mt-2">
-                              <p className="mb-1 text-xs font-bold text-violet-700">Trợ giảng đã đăng ký và khớp giờ</p>
+                              <p className="mb-1 text-xs font-bold text-violet-700">Trợ giảng giáo viên · đã đăng ký và khớp giờ</p>
                               <div className="grid grid-cols-1 gap-2 min-[440px]:grid-cols-2 lg:grid-cols-3">
-                                {rowAvailableAssistants.map((teacher) => (
+                                {rowAvailableProfessionalAssistants.map((teacher) => (
                                   <label
                                     key={teacher.id}
                                     className="flex min-w-0 items-center gap-2 rounded-lg border border-violet-200 bg-violet-100 px-2 py-1.5 text-xs font-semibold text-violet-950 shadow-sm"
@@ -6079,7 +6088,20 @@ export function MettasoulApp() {
                                 ))}
                               </div>
                             </div>
-                          ) : rowDateAssistants.length > 0 && selectedSlot ? (
+                          ) : null}
+                          {rowAvailableStudentAssistants.length > 0 ? (
+                            <div className="mt-2">
+                              <p className="mb-1 text-xs font-bold text-fuchsia-700">Trợ giảng sinh viên · đã đăng ký và khớp giờ</p>
+                              <div className="grid grid-cols-1 gap-2 min-[440px]:grid-cols-2 lg:grid-cols-3">
+                                {rowAvailableStudentAssistants.map((teacher) => (
+                                  <label key={teacher.id} className="flex min-w-0 items-center gap-2 rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-2 py-1.5 text-xs font-semibold text-fuchsia-950 shadow-sm">
+                                    <input type="checkbox" checked={item.assistantIds.includes(teacher.id)} onChange={(e) => toggleDraftItemAssistant(item.id, teacher.id, e.target.checked)} />
+                                    <span className="truncate">{teacher.name}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          ) : rowDateProfessionalAssistants.length + rowDateStudentAssistants.length > 0 && selectedSlot ? (
                             <p className="mt-2 rounded-xl border border-violet-100 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700">Không có trợ giảng nào khớp khung giờ đã chọn.</p>
                           ) : null}
                         </div>
@@ -9638,6 +9660,7 @@ export function MettasoulApp() {
           {(pageSchedules) => pageSchedules.map((schedule) => {
             const meta = lookupSchedule(schedule);
             const checkedIn = Boolean(meta.checkIn);
+            const myTeachingRole = role === "admin" ? "" : scheduleTeachingRoleForParticipant(schedule, currentTeacherId, schedules);
             const assistantNames = scheduleAssistantNames(schedule);
             const assistantContactLabels = scheduleAssistantContactLabels(schedule);
             const coTeacherNames = scheduleCoTeacherNames(schedule);
@@ -9701,6 +9724,11 @@ export function MettasoulApp() {
                       <span className={`rounded-full px-2 py-1 ${checkedIn ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
                         {checkedIn ? "Đã điểm danh" : "Chưa điểm danh"}
                       </span>
+                      {myTeachingRole ? (
+                        <span className="rounded-full bg-fuchsia-50 px-2 py-1 text-fuchsia-800">
+                          Vai trò của bạn: {teachingRoleLabel(myTeachingRole)}
+                        </span>
+                      ) : null}
                       {coTeacherNames.length > 0 ? (
                         <span className="rounded-full bg-violet-50 px-2 py-1 text-violet-800">
                           Dạy cùng: {coTeacherNames.join(", ")}
@@ -9762,7 +9790,7 @@ export function MettasoulApp() {
                         </button>
                       </div>
                     ) : null}
-                    {!compact && role === "teacher" && ["sent", "reassigned"].includes(schedule.status) ? (
+                    {!compact && role === "teacher" && schedule.teacherId === currentTeacherId && ["sent", "reassigned"].includes(schedule.status) ? (
                       <button
                         onClick={(event) => {
                           event.stopPropagation();
@@ -9773,7 +9801,7 @@ export function MettasoulApp() {
                         Xác nhận
                       </button>
                     ) : null}
-                    {!compact && role === "assistant" && isAssistantAssignedToSchedule(schedule, currentTeacherId) && !isAssistantScheduleConfirmed(schedule, currentTeacherId) && schedule.status !== "cancelled" ? (
+                    {!compact && role !== "admin" && isAssistantAssignedToSchedule(schedule, currentTeacherId) && !isAssistantScheduleConfirmed(schedule, currentTeacherId) && schedule.status !== "cancelled" ? (
                       <button
                         onClick={(event) => {
                           event.stopPropagation();

@@ -18,7 +18,7 @@ export async function POST(request: Request, { params }: Params) {
     const assistantId = String(auth.user.teacherId || "").trim();
     const assignedAssistantIds = parseIds(schedule.assistantIds);
     const permission = evaluatePermission({
-      allowed: auth.user.role === "assistant" && Boolean(assistantId) && assignedAssistantIds.includes(assistantId),
+      allowed: Boolean(assistantId) && assignedAssistantIds.includes(assistantId),
       reason: "assistant_must_be_assigned_to_schedule",
     });
     if (!permission.allowed) {

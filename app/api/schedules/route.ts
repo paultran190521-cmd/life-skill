@@ -63,9 +63,9 @@ export async function GET(request: Request) {
     if (range) rows = rows.filter((row) => row.date >= range.from && row.date <= range.to);
     if (auth.user.role !== "admin") {
       const teacherId = String(auth.user.teacherId || "").trim();
-      const own = rows.filter((row) => teacherId && (auth.user.role === "assistant"
-        ? parseIdList(row.assistantIds).includes(teacherId)
-        : String(row.teacherId || "").trim() === teacherId));
+      const own = rows.filter((row) => teacherId && (
+        String(row.teacherId || "").trim() === teacherId || parseIdList(row.assistantIds).includes(teacherId)
+      ));
       const groups = new Set(own.map((row) => row.groupId).filter(Boolean));
       const ids = new Set(own.map((row) => row.id));
       rows = query.get("typed") === "1" ? rows.filter((row) => ids.has(row.id) || (row.groupId && groups.has(row.groupId))) : own;
@@ -714,6 +714,9 @@ function validateScheduleInput(
     if (item.teacherIds.length === 0) {
       return "Mỗi dòng lịch phải chọn ít nhất một giáo viên.";
     }
+    if (item.assistantIds.some((assistantId) => item.teacherIds.includes(assistantId))) {
+      return "Một người chỉ có thể giữ một vai trò trong cùng một tiết.";
+    }
     const school = findSchool(data.schools, item.schoolId);
     if (!school) {
       return "Trường đã chọn không tồn tại.";
@@ -751,8 +754,9 @@ function validateScheduleInput(
   if (!Array.from(teacherIdSet).every((teacherId) => activeTeacherIds.has(teacherId) && !activeAssistantIds.has(teacherId))) {
     return "Một hoặc nhiều giáo viên đã chọn không tồn tại hoặc đang tắt.";
   }
-  if (!assistantIds.every((assistantId) => activeAssistantIds.has(normalizeId(assistantId)))) {
-    return "Một hoặc nhiều trợ giảng đã chọn không tồn tại, đang tắt hoặc chưa được phân quyền trợ giảng.";
+  const activeParticipantIds = new Set(data.teachers.filter((item) => isRowActive(item)).map((item) => normalizeId(item.id)));
+  if (!assistantIds.every((assistantId) => activeParticipantIds.has(normalizeId(assistantId)))) {
+    return "Một hoặc nhiều trợ giảng đã chọn không tồn tại hoặc đang tắt.";
   }
 
   return "";
