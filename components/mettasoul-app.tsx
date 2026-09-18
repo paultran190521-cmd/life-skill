@@ -3695,7 +3695,7 @@ export function MettasoulApp() {
     try {
       const response = await saveRequest<{ lessons: Lesson[] }>("Đang lưu bài học hàng loạt...", "/api/lessons", {
         method: "POST",
-        body: JSON.stringify({ lessons: rowsToSave.map(stripBulkLessonId) }),
+        body: JSON.stringify({ lessons: rowsToSave.map((row) => withCombinedLessonObjective(stripBulkLessonId(row))) }),
       });
       setLessons((items) => [...response.lessons, ...items]);
       setBulkLessonRows([createBulkLessonRow()]);
@@ -10373,7 +10373,14 @@ function createBulkLessonRow(): BulkLessonRow {
 }
 
 function hasLessonContent(row: BulkLessonRow) {
-  return Boolean(row.title.trim() || row.objective.trim() || row.samplePlanUrl.trim());
+  return Boolean(
+    row.title.trim()
+    || row.lesson1Title.trim()
+    || row.lesson1Objective.trim()
+    || row.lesson2Title.trim()
+    || row.lesson2Objective.trim()
+    || row.samplePlanUrl.trim(),
+  );
 }
 
 function stripBulkLessonId(row: BulkLessonRow): LessonDraft {
@@ -10398,10 +10405,6 @@ function validateLessonDraft(row: LessonDraft, label = "Bài học") {
 
   if (!row.title.trim()) {
     return `${label}: Tên chuyên đề là bắt buộc.`;
-  }
-
-  if (!row.objective.trim()) {
-    return `${label}: Mục tiêu là bắt buộc.`;
   }
 
   if (!row.lesson1Title?.trim() || !row.lesson1Objective?.trim() || !row.lesson2Title?.trim() || !row.lesson2Objective?.trim()) {
@@ -10600,13 +10603,13 @@ function parseLessonClipboard(text: string): BulkLessonRow[] {
       grade: normalizeGrade(cells[0]),
       topicId: "",
       title: cells[1]?.trim() ?? "",
-      objective: cells[2]?.trim() ?? "",
-      lesson1Title: "",
-      lesson1Objective: "",
-      lesson2Title: "",
-      lesson2Objective: "",
-      samplePlanUrl: cells.length >= 5 ? cells[3]?.trim() ?? "" : "",
-      durationMinutes: normalizeDuration(cells.length >= 5 ? cells[4] : cells[3]),
+      objective: "",
+      lesson1Title: cells[2]?.trim() ?? "",
+      lesson1Objective: cells[3]?.trim() ?? "",
+      lesson2Title: cells[4]?.trim() ?? "",
+      lesson2Objective: cells[5]?.trim() ?? "",
+      samplePlanUrl: cells[6]?.trim() ?? "",
+      durationMinutes: normalizeDuration(cells[7]),
     }));
 }
 

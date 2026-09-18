@@ -45,11 +45,14 @@ export function LessonsPanel({bulkLessonRows, bulkLessonErrors, lessonGrades, le
         <Panel title="Nhập mẫu bài học" action="Spreadsheet / hàng loạt">
           <div className="grid gap-4">
             <div className="app-scrollbar overflow-x-auto">
-              <div className="min-w-[920px]">
-                <div className="grid grid-cols-[130px_210px_1fr_220px_120px_48px] gap-2 px-2 pb-2 text-xs font-black uppercase text-[var(--brand-dark)]">
+              <div className="min-w-[1680px]">
+                <div className="grid grid-cols-[120px_190px_200px_260px_200px_260px_210px_100px_48px] gap-2 px-2 pb-2 text-xs font-black uppercase text-[var(--brand-dark)]">
                   <span>Khối</span>
                   <span>Tên chuyên đề</span>
-                  <span>Mục tiêu</span>
+                  <span>Tên tiết 1</span>
+                  <span>Mục tiêu tiết 1</span>
+                  <span>Tên tiết 2</span>
+                  <span>Mục tiêu tiết 2</span>
                   <span>Giáo án mẫu</span>
                   <span>Số phút</span>
                   <span />
@@ -57,7 +60,7 @@ export function LessonsPanel({bulkLessonRows, bulkLessonErrors, lessonGrades, le
                 <div className="space-y-2">
                   {bulkLessonRows.map((row) => (
                     <div key={row.id}>
-                      <div className="grid grid-cols-[130px_210px_1fr_220px_120px_48px] items-start gap-2">
+                      <div className="grid grid-cols-[120px_190px_200px_260px_200px_260px_210px_100px_48px] items-start gap-2">
                         <select
                           value={row.grade}
                           onChange={(event) => updateBulkLessonRow(row.id, { grade: event.target.value })}
@@ -75,9 +78,30 @@ export function LessonsPanel({bulkLessonRows, bulkLessonErrors, lessonGrades, le
                           placeholder="Tên chuyên đề"
                           className={compactInputClass}
                         />
+                        <input
+                          value={row.lesson1Title}
+                          onChange={(event) => updateBulkLessonRow(row.id, { lesson1Title: event.target.value })}
+                          onPaste={(event) => pasteBulkLessons(row.id, event)}
+                          placeholder="Tên tiết 1"
+                          className={compactInputClass}
+                        />
                         <textarea
-                          value={row.objective}
-                          onChange={(event) => updateBulkLessonRow(row.id, { objective: event.target.value })}
+                          value={row.lesson1Objective}
+                          onChange={(event) => updateBulkLessonRow(row.id, { lesson1Objective: event.target.value })}
+                          onPaste={(event) => pasteBulkLessons(row.id, event)}
+                          placeholder="Mỗi mục tiêu một dòng"
+                          className={`${compactInputClass} min-h-12 resize-y whitespace-pre-line`}
+                        />
+                        <input
+                          value={row.lesson2Title}
+                          onChange={(event) => updateBulkLessonRow(row.id, { lesson2Title: event.target.value })}
+                          onPaste={(event) => pasteBulkLessons(row.id, event)}
+                          placeholder="Tên tiết 2"
+                          className={compactInputClass}
+                        />
+                        <textarea
+                          value={row.lesson2Objective}
+                          onChange={(event) => updateBulkLessonRow(row.id, { lesson2Objective: event.target.value })}
                           onPaste={(event) => pasteBulkLessons(row.id, event)}
                           placeholder="Mỗi mục tiêu một dòng"
                           className={`${compactInputClass} min-h-12 resize-y whitespace-pre-line`}
