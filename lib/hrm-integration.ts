@@ -20,6 +20,22 @@ export type TeachingPeriodPayload = {
   periodEndAt: string;
 };
 
+export type ActivityCompletionPayload = {
+  source: "METTASOUL";
+  action: "SUBMIT_ACTIVITY_COMPLETION";
+  eventId: string;
+  idempotencyKey: string;
+  activityId: string;
+  assignmentId: string;
+  activityTypeCode: string;
+  activityTitle: string;
+  userEmail: string;
+  roleCode: string;
+  unit: string;
+  workDate: string;
+  evidenceUrl?: string;
+};
+
 export type HrmTeachingResponse = {
   ok: boolean;
   code?: string;
@@ -28,6 +44,8 @@ export type HrmTeachingResponse = {
   idempotencyKey?: string;
   workLogId?: string;
   money?: number;
+  mcpPoints?: number;
+  mcpLedgerId?: string;
   currency?: string;
   policyVersion?: string;
   idempotent?: boolean;
@@ -38,6 +56,10 @@ export function hrmIntegrationConfigured() {
 }
 
 export async function submitTeachingPeriodToHrm(payload: TeachingPeriodPayload) {
+  return sendSignedPayload(payload);
+}
+
+export async function submitActivityCompletionToHrm(payload: ActivityCompletionPayload) {
   return sendSignedPayload(payload);
 }
 

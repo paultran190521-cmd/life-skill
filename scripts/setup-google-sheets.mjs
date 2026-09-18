@@ -106,6 +106,18 @@ const SHEETS = [
     ],
   },
   {
+    title: "ActivityTypes",
+    headers: ["id", "code", "name", "kind", "unit", "requiresEvidence", "requiresApproval", "active", "description", "createdAt", "updatedAt"],
+  },
+  {
+    title: "ActivityOccurrences",
+    headers: ["id", "activityTypeId", "title", "date", "startTime", "endTime", "location", "status", "note", "createdBy", "createdAt", "updatedAt"],
+  },
+  {
+    title: "ActivityAssignments",
+    headers: ["id", "activityId", "teacherId", "roleCode", "status", "evidenceUrl", "completedAt", "approvedAt", "approvedBy", "approvalNote", "integrationStatus", "integrationEventId", "hrmWorkLogId", "mcpPoints", "createdAt", "updatedAt"],
+  },
+  {
     title: "LessonPlans",
     headers: [
       "id",

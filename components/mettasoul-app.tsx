@@ -92,6 +92,9 @@ import {
 } from "@/lib/time-slots";
 import type {
   Attendance,
+  ActivityAssignment,
+  ActivityOccurrence,
+  ActivityType,
   AppAnnouncement,
   AppAnnouncementPriority,
   AuditLog,
@@ -134,6 +137,7 @@ const SchoolGuidePanel = dynamic(
 type TabId =
   | "dashboard"
   | "assignment"
+  | "activities"
   | "calendar"
   | "school-guide"
   | "teachers"
@@ -175,6 +179,9 @@ type AppData = {
   lessonPlans: LessonPlan[];
   attendance: Attendance[];
   teachingWorkLogs: TeachingWorkLog[];
+  activityTypes: ActivityType[];
+  activityOccurrences: ActivityOccurrence[];
+  activityAssignments: ActivityAssignment[];
   hrmIntegration: { configured: boolean };
   notifications: Notification[];
   appAnnouncements: AppAnnouncement[];
@@ -502,6 +509,7 @@ const fallbackCurrentUser: User = {
 const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "assignment", label: "Giao lịch", icon: Send },
+  { id: "activities", label: "Công việc & MCP", icon: ListChecks },
   { id: "calendar", label: "Lịch tổng", icon: CalendarDays },
   { id: "teachers", label: "Giáo viên", icon: Users },
   { id: "lessons", label: "Bài học", icon: BookOpen },
@@ -514,6 +522,7 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
 const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "calendar", label: "Lịch của tôi", icon: CalendarDays },
+  { id: "activities", label: "Công việc & MCP", icon: ListChecks },
   { id: "plans", label: "Giáo án", icon: FileUp },
   { id: "attendance", label: "Điểm danh - Chấm công", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
@@ -522,6 +531,7 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
 const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "calendar", label: "Lịch trợ giảng", icon: CalendarDays },
+  { id: "activities", label: "Công việc & MCP", icon: ListChecks },
   { id: "plans", label: "Giáo án tham khảo", icon: BookOpen },
   { id: "attendance", label: "Điểm danh - Chấm công", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
@@ -552,6 +562,9 @@ export function MettasoulApp() {
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [teachingWorkLogs, setTeachingWorkLogs] = useState<TeachingWorkLog[]>([]);
+  const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
+  const [activityOccurrences, setActivityOccurrences] = useState<ActivityOccurrence[]>([]);
+  const [activityAssignments, setActivityAssignments] = useState<ActivityAssignment[]>([]);
   const [hrmIntegrationConfigured, setHrmIntegrationConfigured] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [historyLoadError, setHistoryLoadError] = useState("");
@@ -946,6 +959,9 @@ export function MettasoulApp() {
         setLessonPlans(data.lessonPlans);
         setAttendance(data.attendance);
         setTeachingWorkLogs(data.teachingWorkLogs ?? []);
+        setActivityTypes(data.activityTypes ?? []);
+        setActivityOccurrences(data.activityOccurrences ?? []);
+        setActivityAssignments(data.activityAssignments ?? []);
         setHrmIntegrationConfigured(Boolean(data.hrmIntegration?.configured));
         setAuditLogs(data.auditLogs ?? []);
         setNotifications(data.notifications);
@@ -4470,6 +4486,9 @@ export function MettasoulApp() {
     if (tabId === "assignment") {
       return renderAssignmentPanel();
     }
+    if (tabId === "activities") {
+      return renderActivitiesPanel();
+    }
     if (tabId === "calendar") {
       return renderCalendarPanel();
     }
@@ -6483,6 +6502,115 @@ export function MettasoulApp() {
             </div>
           </div>
           {renderScheduleList({ items: reportSchedules, selectedIds: selectedReportScheduleIds, onToggleSelect: toggleReportScheduleSelection, onOpenDetail: setSelectedScheduleDetail })}
+        </Panel>
+      </div>
+    );
+  }
+
+  async function createActivityFromForm(formData: FormData) {
+    const participantIds = formData.getAll("teacherId").map(String).filter(Boolean);
+    if (participantIds.length === 0) {
+      pushToast("Chưa chọn người tham gia", "Hãy chọn ít nhất một người để giao công việc.", "warning");
+      return;
+    }
+    try {
+      const response = await saveRequest<{ activity: ActivityOccurrence; assignments: ActivityAssignment[] }>(
+        "Đang giao công việc...",
+        "/api/activities",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            activityTypeId: String(formData.get("activityTypeId") || ""),
+            title: String(formData.get("title") || ""),
+            date: String(formData.get("date") || ""),
+            startTime: String(formData.get("startTime") || ""),
+            endTime: String(formData.get("endTime") || ""),
+            location: String(formData.get("location") || ""),
+            note: String(formData.get("note") || ""),
+            participants: participantIds.map((teacherId) => ({ teacherId, roleCode: "PARTICIPANT" })),
+          }),
+        },
+      );
+      setActivityOccurrences((items) => [response.activity, ...items]);
+      setActivityAssignments((items) => [...response.assignments, ...items]);
+      pushToast("Đã giao công việc", "Người được phân công sẽ thấy hoạt động trong mục Công việc & MCP.", "success");
+    } catch {
+      // saveRequest already shows the server response.
+    }
+  }
+
+  async function completeActivityAssignment(activity: ActivityOccurrence, type: ActivityType, assignment: ActivityAssignment) {
+    const evidenceUrl = type.requiresEvidence ? window.prompt("Dán liên kết minh chứng để gửi duyệt:", assignment.evidenceUrl || "")?.trim() : "";
+    if (type.requiresEvidence && !evidenceUrl) return;
+    try {
+      const response = await saveRequest<{ assignment: ActivityAssignment }>("Đang gửi xác nhận hoàn thành...", `/api/activities/${activity.id}/complete`, { method: "POST", body: JSON.stringify({ evidenceUrl }) });
+      setActivityAssignments((items) => items.map((item) => item.id === response.assignment.id ? response.assignment : item));
+      pushToast("Đã gửi hoàn thành", "Hoạt động đang chờ quản trị viên duyệt quyền lợi.", "success");
+    } catch {
+      // saveRequest already shows the server response.
+    }
+  }
+
+  async function approveActivityAssignment(activity: ActivityOccurrence, assignment: ActivityAssignment) {
+    try {
+      const response = await saveRequest<{ assignment: ActivityAssignment }>("Đang duyệt quyền lợi tại HRM...", `/api/activities/${activity.id}/approve`, { method: "POST", body: JSON.stringify({ assignmentId: assignment.id }) });
+      setActivityAssignments((items) => items.map((item) => item.id === response.assignment.id ? response.assignment : item));
+      setActivityOccurrences((items) => items.map((item) => item.id === activity.id ? { ...item, status: "APPROVED" } : item));
+      pushToast("Đã duyệt", "HRM đã ghi nhận quyền lợi tiền công và/hoặc MCP theo chính sách hiện hành.", "success");
+    } catch {
+      // saveRequest already shows the server response.
+    }
+  }
+
+  function renderActivitiesPanel() {
+    const typeById = new Map(activityTypes.map((type) => [type.id, type]));
+    const myAssignmentIds = new Set(activityAssignments.filter((assignment) => assignment.teacherId === currentTeacherId).map((assignment) => assignment.activityId));
+    const visibleActivities = role === "admin" ? activityOccurrences : activityOccurrences.filter((activity) => myAssignmentIds.has(activity.id));
+    return (
+      <div className="space-y-5">
+        {role === "admin" ? (
+          <Panel title="Giao công việc & hoạt động MCP" action="Chỉ ghi nhận sau khi hoàn thành và duyệt">
+            <form className="grid gap-3 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); void createActivityFromForm(new FormData(event.currentTarget)); event.currentTarget.reset(); }}>
+              <label className="text-xs font-bold text-[var(--brand-dark)]">Loại hoạt động
+                <select name="activityTypeId" required className="mt-1 w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm">
+                  <option value="">Chọn loại hoạt động</option>
+                  {activityTypes.filter((type) => type.active).map((type) => <option key={type.id} value={type.id}>{type.name} · {type.kind === "MCP" ? "MCP" : type.kind === "OTHER_PAID" ? "Thù lao" : "Thù lao + MCP"}</option>)}
+                </select>
+              </label>
+              <label className="text-xs font-bold text-[var(--brand-dark)]">Tên hoạt động<input name="title" required className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+              <label className="text-xs font-bold text-[var(--brand-dark)]">Ngày thực hiện<input name="date" type="date" required defaultValue={currentDateKey()} className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+              <label className="text-xs font-bold text-[var(--brand-dark)]">Địa điểm hoặc đối tác<input name="location" className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+              <label className="text-xs font-bold text-[var(--brand-dark)]">Bắt đầu<input name="startTime" type="time" className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+              <label className="text-xs font-bold text-[var(--brand-dark)]">Kết thúc<input name="endTime" type="time" className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+              <label className="text-xs font-bold text-[var(--brand-dark)] md:col-span-2">Ghi chú hoặc yêu cầu minh chứng<textarea name="note" className="mt-1 min-h-20 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+              <div className="md:col-span-2 rounded-xl bg-cyan-50 p-3">
+                <p className="text-xs font-black text-[var(--brand-dark)]">Người tham gia</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {activeTeachers.map((teacher) => <label key={teacher.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-semibold"><input name="teacherId" type="checkbox" value={teacher.id} />{teacher.name}</label>)}
+                </div>
+              </div>
+              <button type="submit" disabled={isBusy} className="md:col-span-2 rounded-xl bg-[var(--brand)] px-4 py-3 text-sm font-black text-white disabled:opacity-50">Giao công việc</button>
+            </form>
+          </Panel>
+        ) : null}
+        <Panel title={role === "admin" ? "Hoạt động đã giao" : "Công việc & MCP của tôi"} action={`${visibleActivities.length} hoạt động`}>
+          <div className="space-y-3">
+            {visibleActivities.length === 0 ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-[var(--muted)]">Chưa có hoạt động phù hợp.</p> : visibleActivities.map((activity) => {
+              const type = typeById.get(activity.activityTypeId);
+              const participants = activityAssignments.filter((assignment) => assignment.activityId === activity.id);
+              return <div key={activity.id} className="rounded-xl border border-cyan-100 bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-black text-[var(--brand-dark)]">{activity.title}</p><p className="mt-1 text-xs font-semibold text-[var(--muted)]">{activity.date}{activity.startTime ? ` · ${activity.startTime}${activity.endTime ? `–${activity.endTime}` : ""}` : ""}{activity.location ? ` · ${activity.location}` : ""}</p></div><span className="rounded-full bg-fuchsia-50 px-2 py-1 text-xs font-black text-fuchsia-800">{type?.name || "Loại hoạt động"}</span></div>
+                <p className="mt-2 text-xs text-[var(--muted)]">{type?.description || activity.note || "Chờ người tham gia hoàn thành và quản trị viên duyệt."}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-bold text-[var(--brand-dark)]">Người tham gia: {participants.map((assignment) => <span key={assignment.id} className="rounded-full bg-slate-50 px-2 py-1">{teacherName(assignment.teacherId)} · {assignment.status}</span>)}</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {role !== "admin" ? participants.filter((assignment) => assignment.teacherId === currentTeacherId && assignment.status === "ASSIGNED").map((assignment) => <button key={assignment.id} type="button" onClick={() => type && void completeActivityAssignment(activity, type, assignment)} className="rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-black text-white">Xác nhận hoàn thành</button>) : null}
+                  {role === "admin" ? participants.filter((assignment) => assignment.status === "COMPLETED").map((assignment) => hrmIntegrationConfigured
+                    ? <button key={assignment.id} type="button" onClick={() => void approveActivityAssignment(activity, assignment)} className="rounded-lg bg-fuchsia-600 px-3 py-2 text-xs font-black text-white">Duyệt {teacherName(assignment.teacherId)}</button>
+                    : <span key={assignment.id} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-black text-amber-800">Chờ kết nối HRM để duyệt</span>) : null}
+                </div>
+              </div>;
+            })}
+          </div>
         </Panel>
       </div>
     );

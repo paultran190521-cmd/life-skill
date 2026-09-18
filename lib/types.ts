@@ -207,6 +207,55 @@ export type TeachingWorkLog = {
   updatedAt?: string;
 };
 
+/** A configurable non-lesson assignment that may award cash, MCP, or both. */
+export type ActivityKind = "OTHER_PAID" | "MCP" | "HYBRID";
+export type ActivityUnit = "SESSION" | "TOPIC" | "TASK" | "PERSON" | "ARTICLE";
+export type ActivityStatus = "SCHEDULED" | "COMPLETED" | "APPROVED" | "CANCELLED";
+
+export type ActivityType = {
+  id: string;
+  code: string;
+  name: string;
+  kind: ActivityKind;
+  unit: ActivityUnit;
+  requiresEvidence: boolean;
+  requiresApproval: boolean;
+  active: boolean;
+  description?: string;
+};
+
+export type ActivityOccurrence = {
+  id: string;
+  activityTypeId: string;
+  title: string;
+  date: string;
+  startTime?: string;
+  endTime?: string;
+  location?: string;
+  status: ActivityStatus;
+  note?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type ActivityAssignment = {
+  id: string;
+  activityId: string;
+  teacherId: string;
+  roleCode: string;
+  status: "ASSIGNED" | "COMPLETED" | "APPROVED" | "REJECTED" | "CANCELLED";
+  evidenceUrl?: string;
+  completedAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  approvalNote?: string;
+  integrationStatus?: "PENDING" | "CONFIRMED" | "FAILED";
+  integrationEventId?: string;
+  hrmWorkLogId?: string;
+  mcpPoints?: number;
+};
+
 export type Notification = {
   id: string;
   title: string;

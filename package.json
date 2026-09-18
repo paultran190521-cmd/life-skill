@@ -9,6 +9,7 @@
     "test:authz": "node scripts/test-authz.mjs",
     "test:attendance-grouping": "node scripts/test-attendance-grouping.mjs",
     "test:assistant-workflow": "node scripts/test-assistant-workflow.mjs",
+    "test:activity-workflow": "node scripts/test-activity-workflow.mjs",
     "test:email-template": "node scripts/test-email-template.mjs",
     "test:lessons": "node scripts/test-lessons.mjs",
     "test:lesson-progression": "node scripts/test-lesson-progression-policy.mjs",

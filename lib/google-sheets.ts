@@ -3,6 +3,9 @@ import { getAvatarUrl } from "@/lib/avatar";
 import type {
   Attendance,
   AppAnnouncement,
+  ActivityAssignment,
+  ActivityOccurrence,
+  ActivityType,
   AppAnnouncementPriority,
   AuditLog,
   ClassRoom,
@@ -40,6 +43,9 @@ type SheetName =
   | "LessonPlanAttachments"
   | "Attendance"
   | "TeachingWorkLogs"
+  | "ActivityTypes"
+  | "ActivityOccurrences"
+  | "ActivityAssignments"
   | "Notifications"
   | "AuditLogs"
   | "AppAnnouncements"
@@ -585,6 +591,9 @@ export async function getAppDataFromSheets(options: { includeHistory?: boolean }
     lessonPlans,
     attendance,
     teachingWorkLogs,
+    activityTypes,
+    activityOccurrences,
+    activityAssignments,
     notifications,
     appAnnouncements,
     auditLogs,
@@ -606,6 +615,13 @@ export async function getAppDataFromSheets(options: { includeHistory?: boolean }
     ensureSheetHeaders("TeachingWorkLogs", teachingWorkLogHeaders)
       .then(() => readSheetRows("TeachingWorkLogs").then(toTeachingWorkLogs))
       .catch(() => [] as TeachingWorkLog[]),
+    ensureActivityCatalog(),
+    ensureSheetHeaders("ActivityOccurrences", activityOccurrenceHeaders)
+      .then(() => readSheetRows("ActivityOccurrences").then(toActivityOccurrences))
+      .catch(() => [] as ActivityOccurrence[]),
+    ensureSheetHeaders("ActivityAssignments", activityAssignmentHeaders)
+      .then(() => readSheetRows("ActivityAssignments").then(toActivityAssignments))
+      .catch(() => [] as ActivityAssignment[]),
     readSheetRows("Notifications").then(toNotifications),
     ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders)
       .then(() => readSheetRows("AppAnnouncements").then(toAppAnnouncements))
@@ -631,6 +647,9 @@ export async function getAppDataFromSheets(options: { includeHistory?: boolean }
     lessonPlans,
     attendance,
     teachingWorkLogs,
+    activityTypes,
+    activityOccurrences,
+    activityAssignments,
     notifications,
     appAnnouncements,
     auditLogs,
@@ -717,6 +736,32 @@ export const teachingWorkLogHeaders = [
   "errorMessage",
   "updatedAt",
 ];
+
+export const activityTypeHeaders = ["id", "code", "name", "kind", "unit", "requiresEvidence", "requiresApproval", "active", "description", "createdAt", "updatedAt"];
+export const activityOccurrenceHeaders = ["id", "activityTypeId", "title", "date", "startTime", "endTime", "location", "status", "note", "createdBy", "createdAt", "updatedAt"];
+export const activityAssignmentHeaders = ["id", "activityId", "teacherId", "roleCode", "status", "evidenceUrl", "completedAt", "approvedAt", "approvedBy", "approvalNote", "integrationStatus", "integrationEventId", "hrmWorkLogId", "mcpPoints", "createdAt", "updatedAt"];
+
+const defaultActivityTypes: Array<Omit<ActivityType, "description"> & { description: string }> = [
+  { id: "activity-melis", code: "MELIS_SESSION", name: "Giáo viên MELIS", kind: "OTHER_PAID", unit: "SESSION", requiresEvidence: false, requiresApproval: true, active: true, description: "Phiên MELIS 1:1 hoặc theo nhóm" },
+  { id: "activity-student-topic", code: "STUDENT_TOPIC_REPORT", name: "Báo cáo chuyên đề học sinh", kind: "HYBRID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "Báo cáo chính hoặc phụ trách chính" },
+  { id: "activity-partner-topic", code: "PARTNER_FREE_TOPIC", name: "Chuyên đề miễn phí cho đối tác", kind: "OTHER_PAID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "Chuyên đề dành cho đối tác" },
+  { id: "activity-internal-sharing", code: "INTERNAL_SHARING", name: "Chia sẻ chuyên môn nội bộ", kind: "HYBRID", unit: "SESSION", requiresEvidence: true, requiresApproval: true, active: true, description: "Chia sẻ hoặc huấn luyện nghiệp vụ" },
+  { id: "activity-demo", code: "DEMO_SESSION", name: "Demo hoặc sinh hoạt chuyên môn", kind: "MCP", unit: "SESSION", requiresEvidence: false, requiresApproval: true, active: true, description: "Hoạt động chuyên môn được phân công" },
+  { id: "activity-mcs", code: "MCS_OR_OBSERVATION", name: "Nhiệm vụ MCS hoặc dự giờ", kind: "MCP", unit: "TASK", requiresEvidence: true, requiresApproval: true, active: true, description: "Cần phiếu hoặc minh chứng ghi nhận" },
+  { id: "activity-new-teacher", code: "NEW_TEACHER_SUPPORT", name: "Hỗ trợ giáo viên mới", kind: "MCP", unit: "PERSON", requiresEvidence: true, requiresApproval: true, active: true, description: "Kèm hoặc giới thiệu giáo viên mới" },
+  { id: "activity-article", code: "PROFESSIONAL_ARTICLE", name: "Bài truyền thông chuyên môn", kind: "MCP", unit: "ARTICLE", requiresEvidence: true, requiresApproval: true, active: true, description: "Chỉ ghi nhận khi METTASOUL sử dụng bài" },
+];
+
+export async function ensureActivityCatalog(): Promise<ActivityType[]> {
+  await ensureSheetHeaders("ActivityTypes", activityTypeHeaders);
+  const existing = await readSheetRows("ActivityTypes");
+  if (existing.length === 0) {
+    const now = new Date().toISOString();
+    await appendSheetRows("ActivityTypes", defaultActivityTypes.map((type) => ({ ...type, createdAt: now, updatedAt: now })));
+    return defaultActivityTypes;
+  }
+  return toActivityTypes(existing);
+}
 
 export const lessonPlanMessageHeaders = [
   "id", "lessonPlanId", "senderUserId", "senderName", "senderEmail", "senderRole", "content", "createdAt", "updatedAt",
@@ -1105,6 +1150,56 @@ function toTeachingWorkLogs(rows: SheetRow[]): TeachingWorkLog[] {
     errorCode: row.errorCode || undefined,
     errorMessage: row.errorMessage || undefined,
     updatedAt: row.updatedAt || undefined,
+  }));
+}
+
+function toActivityTypes(rows: SheetRow[]): ActivityType[] {
+  return rows.map((row) => ({
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    kind: (["OTHER_PAID", "MCP", "HYBRID"].includes(row.kind) ? row.kind : "MCP") as ActivityType["kind"],
+    unit: (["SESSION", "TOPIC", "TASK", "PERSON", "ARTICLE"].includes(row.unit) ? row.unit : "TASK") as ActivityType["unit"],
+    requiresEvidence: parseBoolean(row.requiresEvidence, false),
+    requiresApproval: parseBoolean(row.requiresApproval, true),
+    active: parseBoolean(row.active, true),
+    description: row.description || undefined,
+  }));
+}
+
+function toActivityOccurrences(rows: SheetRow[]): ActivityOccurrence[] {
+  return rows.map((row) => ({
+    id: row.id,
+    activityTypeId: row.activityTypeId,
+    title: row.title,
+    date: row.date,
+    startTime: row.startTime || undefined,
+    endTime: row.endTime || undefined,
+    location: row.location || undefined,
+    status: (["SCHEDULED", "COMPLETED", "APPROVED", "CANCELLED"].includes(row.status) ? row.status : "SCHEDULED") as ActivityOccurrence["status"],
+    note: row.note || undefined,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt || undefined,
+  }));
+}
+
+function toActivityAssignments(rows: SheetRow[]): ActivityAssignment[] {
+  return rows.map((row) => ({
+    id: row.id,
+    activityId: row.activityId,
+    teacherId: row.teacherId,
+    roleCode: row.roleCode,
+    status: (["ASSIGNED", "COMPLETED", "APPROVED", "REJECTED", "CANCELLED"].includes(row.status) ? row.status : "ASSIGNED") as ActivityAssignment["status"],
+    evidenceUrl: row.evidenceUrl || undefined,
+    completedAt: row.completedAt || undefined,
+    approvedAt: row.approvedAt || undefined,
+    approvedBy: row.approvedBy || undefined,
+    approvalNote: row.approvalNote || undefined,
+    integrationStatus: (["PENDING", "CONFIRMED", "FAILED"].includes(row.integrationStatus) ? row.integrationStatus : undefined) as ActivityAssignment["integrationStatus"],
+    integrationEventId: row.integrationEventId || undefined,
+    hrmWorkLogId: row.hrmWorkLogId || undefined,
+    mcpPoints: row.mcpPoints === "" || row.mcpPoints === undefined ? undefined : Number(row.mcpPoints),
   }));
 }
 
