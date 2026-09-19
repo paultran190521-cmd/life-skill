@@ -36,7 +36,7 @@ export async function GET(request: Request) {
         reachable: false,
         ready: false,
         code,
-        ...(code === "HRM_INVALID_RESPONSE" && integrationError?.diagnostic
+        ...(["HRM_INVALID_RESPONSE", "HRM_UNREACHABLE"].includes(code) && integrationError?.diagnostic
           ? { diagnostic: integrationError.diagnostic }
           : {}),
       });

@@ -53,7 +53,7 @@ try {
   assert.equal(hrmIntegrationConfigured(), false);
   const healthWhileWritesDisabled = await pingHrmIntegration();
   assert.equal(healthWhileWritesDisabled.code, "READY");
-  assert.equal(captured.init.redirect, "follow");
+  assert.equal(captured.init.redirect, "manual");
   assert.equal(captured.init.headers.Accept, "application/json");
   await assert.rejects(
     () => submitTeachingPeriodToHrm({ source: "METTASOUL" }),
@@ -102,6 +102,63 @@ try {
       && error.diagnostic.status === 200
       && error.diagnostic.contentType === "text/html"
       && error.diagnostic.redirected === false,
+  );
+
+  const redirectCalls = [];
+  globalThis.fetch = async (url, init) => {
+    redirectCalls.push({ url: String(url), init });
+    if (redirectCalls.length === 1) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: "https://script.googleusercontent.com/macros/echo?result=1" },
+      });
+    }
+    return new Response(JSON.stringify({ ok: true, code: "READY", schemaVersion: 1 }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  process.env.HRM_METTASOUL_WEBHOOK_URL = "https://script.google.com/macros/s/test/exec";
+  const redirectedHealth = await pingHrmIntegration();
+  assert.equal(redirectedHealth.code, "READY");
+  assert.equal(redirectCalls.length, 2);
+  assert.equal(redirectCalls[0].init.method, "POST");
+  assert.equal(redirectCalls[0].init.redirect, "manual");
+  assert.equal(redirectCalls[1].init.method, "GET");
+  assert.equal(redirectCalls[1].init.redirect, "error");
+
+  globalThis.fetch = async () => new Response(null, {
+    status: 302,
+    headers: { Location: "https://example.com/untrusted" },
+  });
+  await assert.rejects(
+    () => pingHrmIntegration(),
+    (error) => error.code === "HRM_UNREACHABLE"
+      && error.diagnostic.errorMessage === "HRM_REDIRECT_REJECTED",
+  );
+
+  let retryCount = 0;
+  globalThis.fetch = async () => {
+    retryCount += 1;
+    if (retryCount === 1) throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } });
+    return new Response(JSON.stringify({ ok: true, code: "READY", schemaVersion: 1 }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  const retriedHealth = await pingHrmIntegration();
+  assert.equal(retriedHealth.code, "READY");
+  assert.equal(retryCount, 2);
+
+  globalThis.fetch = async () => {
+    throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ENETUNREACH" } });
+  };
+  await assert.rejects(
+    () => pingHrmIntegration(),
+    (error) => error.code === "HRM_UNREACHABLE"
+      && error.diagnostic.errorName === "TypeError"
+      && error.diagnostic.errorMessage === "fetch failed"
+      && error.diagnostic.causeCode === "ENETUNREACH",
   );
 } finally {
   globalThis.fetch = previousFetch;

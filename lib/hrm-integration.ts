@@ -66,6 +66,12 @@ export type HrmResponseDiagnostic = {
   redirected: boolean;
 };
 
+export type HrmNetworkDiagnostic = {
+  errorName: string;
+  errorMessage: string;
+  causeCode?: string;
+};
+
 export function hrmIntegrationConfigured() {
   return integrationEnabled() && hrmIntegrationCredentialsConfigured();
 }
@@ -116,21 +122,16 @@ async function sendSignedPayload(
   const signature = createHmac("sha256", secret)
     .update(`${timestamp}.${nonce}.${payloadText}`)
     .digest("hex");
+  const envelopeText = JSON.stringify({ version: "1", timestamp, nonce, payload: payloadText, signature });
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ version: "1", timestamp, nonce, payload: payloadText, signature }),
-      cache: "no-store",
-      redirect: "follow",
-      signal: AbortSignal.timeout(20_000),
-    });
+    response = await fetchHrmResponse(url, envelopeText);
   } catch (error) {
-    throw integrationFailure("HRM_UNREACHABLE", error instanceof Error ? error.message : "Không thể kết nối HRM.");
+    throw integrationFailure(
+      "HRM_UNREACHABLE",
+      error instanceof Error ? error.message : "Không thể kết nối HRM.",
+      networkDiagnostic(error),
+    );
   }
   let result: HrmTeachingResponse;
   try {
@@ -146,6 +147,66 @@ async function sendSignedPayload(
     throw integrationFailure(result.code || "HRM_REJECTED", result.message || `HRM từ chối yêu cầu (${response.status}).`);
   }
   return result;
+}
+
+async function fetchHrmResponse(url: string, envelopeText: string) {
+  const initialResponse = await fetchWithSingleRetry(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: envelopeText,
+    cache: "no-store",
+    redirect: "manual",
+  });
+
+  if (![301, 302, 303, 307, 308].includes(initialResponse.status)) {
+    return initialResponse;
+  }
+
+  const location = initialResponse.headers.get("location");
+  if (!location) {
+    throw new Error("HRM_REDIRECT_MISSING_LOCATION");
+  }
+  const redirectUrl = new URL(location, url);
+  if (!isAllowedHrmRedirect(url, redirectUrl)) {
+    throw new Error("HRM_REDIRECT_REJECTED");
+  }
+
+  const preservePost = initialResponse.status === 307 || initialResponse.status === 308;
+  return fetchWithSingleRetry(redirectUrl, {
+    method: preservePost ? "POST" : "GET",
+    headers: preservePost
+      ? { Accept: "application/json", "Content-Type": "application/json" }
+      : { Accept: "application/json" },
+    body: preservePost ? envelopeText : undefined,
+    cache: "no-store",
+    redirect: "error",
+  });
+}
+
+async function fetchWithSingleRetry(url: string | URL, init: RequestInit) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+function isAllowedHrmRedirect(originalUrl: string, redirectUrl: URL) {
+  const original = new URL(originalUrl);
+  return original.protocol === "https:"
+    && original.hostname === "script.google.com"
+    && redirectUrl.protocol === "https:"
+    && redirectUrl.hostname === "script.googleusercontent.com";
 }
 
 function webhookUrl() {
@@ -168,6 +229,17 @@ function responseDiagnostic(response: Response): HrmResponseDiagnostic {
   };
 }
 
-function integrationFailure(code: string, message: string, diagnostic?: HrmResponseDiagnostic) {
+function networkDiagnostic(error: unknown): HrmNetworkDiagnostic {
+  const causeCode = error && typeof error === "object" && "cause" in error
+    ? String((error as { cause?: { code?: unknown } }).cause?.code || "")
+    : "";
+  return {
+    errorName: error instanceof Error ? error.name : "UnknownError",
+    errorMessage: error instanceof Error ? error.message : "Không thể kết nối HRM.",
+    ...(causeCode ? { causeCode } : {}),
+  };
+}
+
+function integrationFailure(code: string, message: string, diagnostic?: HrmResponseDiagnostic | HrmNetworkDiagnostic) {
   return Object.assign(new Error(message), { code, diagnostic });
 }
