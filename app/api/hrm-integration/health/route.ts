@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createRequestId } from "@/lib/api";
-import { hrmIntegrationConfigured, pingHrmIntegration } from "@/lib/hrm-integration";
+import { hrmIntegrationCredentialsConfigured, hrmIntegrationConfigured, pingHrmIntegration } from "@/lib/hrm-integration";
 import { requireSessionUser } from "@/lib/route-auth";
 
 /**
@@ -15,20 +15,21 @@ export async function GET(request: Request) {
     if (auth.user.role !== "admin") {
       return apiFailure(403, "Chỉ quản trị viên được kiểm tra kết nối HRM.", undefined, requestId);
     }
-    if (!hrmIntegrationConfigured()) {
-      return NextResponse.json({ configured: false, reachable: false, ready: false });
+    if (!hrmIntegrationCredentialsConfigured()) {
+      return NextResponse.json({ credentialsConfigured: false, workLogWritesEnabled: false, reachable: false, ready: false });
     }
     try {
       const result = await pingHrmIntegration();
       return NextResponse.json({
-        configured: true,
+        credentialsConfigured: true,
+        workLogWritesEnabled: hrmIntegrationConfigured(),
         reachable: true,
         ready: result.code === "READY",
         schemaVersion: result.schemaVersion,
       });
     } catch (error) {
       const code = String((error as { code?: string })?.code || "HRM_UNREACHABLE");
-      return NextResponse.json({ configured: true, reachable: false, ready: false, code });
+      return NextResponse.json({ credentialsConfigured: true, workLogWritesEnabled: hrmIntegrationConfigured(), reachable: false, ready: false, code });
     }
   } catch (error) {
     return apiError(error, requestId, { route: "/api/hrm-integration/health", method: "GET" });

@@ -61,7 +61,12 @@ export type HrmTeachingResponse = {
 };
 
 export function hrmIntegrationConfigured() {
-  return integrationEnabled() && Boolean(webhookUrl() && webhookSecret());
+  return integrationEnabled() && hrmIntegrationCredentialsConfigured();
+}
+
+/** Credentials permit a safe signed PING; this does not permit work-log writes. */
+export function hrmIntegrationCredentialsConfigured() {
+  return Boolean(webhookUrl() && webhookSecret());
 }
 
 export async function submitTeachingPeriodToHrm(payload: TeachingPeriodPayload) {
@@ -84,11 +89,14 @@ export async function pingHrmIntegration() {
     action: "PING",
     eventId: `MTS_PING_${nonce}`,
     idempotencyKey: `MTS_PING_${nonce}`,
-  });
+  }, { requireEnabled: false });
 }
 
-async function sendSignedPayload(payload: Record<string, unknown>): Promise<HrmTeachingResponse> {
-  if (!integrationEnabled()) {
+async function sendSignedPayload(
+  payload: Record<string, unknown>,
+  { requireEnabled = true }: { requireEnabled?: boolean } = {},
+): Promise<HrmTeachingResponse> {
+  if (requireEnabled && !integrationEnabled()) {
     throw integrationFailure("HRM_INTEGRATION_DISABLED", "Kết nối HRM đang được quản trị viên giữ ở trạng thái tắt.");
   }
   const url = webhookUrl();

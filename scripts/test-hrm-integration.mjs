@@ -18,7 +18,7 @@ new Function("module", "exports", "require", "process", compiled)(
   process,
 );
 
-const { cancelTeachingPeriodInHrm, hrmIntegrationConfigured, pingHrmIntegration, submitTeachingPeriodToHrm } = runtimeModule.exports;
+const { cancelTeachingPeriodInHrm, hrmIntegrationConfigured, hrmIntegrationCredentialsConfigured, pingHrmIntegration, submitTeachingPeriodToHrm } = runtimeModule.exports;
 const previousUrl = process.env.HRM_METTASOUL_WEBHOOK_URL;
 const previousSecret = process.env.HRM_METTASOUL_WEBHOOK_SECRET;
 const previousEnabled = process.env.HRM_METTASOUL_INTEGRATION_ENABLED;
@@ -36,7 +36,7 @@ try {
 
   process.env.HRM_METTASOUL_WEBHOOK_URL = "https://hrm.example.test/webhook";
   process.env.HRM_METTASOUL_WEBHOOK_SECRET = "0123456789abcdef0123456789abcdef";
-  process.env.HRM_METTASOUL_INTEGRATION_ENABLED = "true";
+  process.env.HRM_METTASOUL_INTEGRATION_ENABLED = "false";
   let captured;
   globalThis.fetch = async (url, init) => {
     captured = { url, init, envelope: JSON.parse(init.body) };
@@ -48,6 +48,17 @@ try {
         : { workLogId: "LOG_MTS_1", money: 80000, policyVersion: "profile:1" }),
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
+
+  assert.equal(hrmIntegrationCredentialsConfigured(), true);
+  assert.equal(hrmIntegrationConfigured(), false);
+  const healthWhileWritesDisabled = await pingHrmIntegration();
+  assert.equal(healthWhileWritesDisabled.code, "READY");
+  await assert.rejects(
+    () => submitTeachingPeriodToHrm({ source: "METTASOUL" }),
+    (error) => error.code === "HRM_INTEGRATION_DISABLED",
+  );
+
+  process.env.HRM_METTASOUL_INTEGRATION_ENABLED = "true";
 
   const payload = {
     source: "METTASOUL",
