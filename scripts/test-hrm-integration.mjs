@@ -18,7 +18,7 @@ new Function("module", "exports", "require", "process", compiled)(
   process,
 );
 
-const { hrmIntegrationConfigured, submitTeachingPeriodToHrm } = runtimeModule.exports;
+const { cancelTeachingPeriodInHrm, hrmIntegrationConfigured, pingHrmIntegration, submitTeachingPeriodToHrm } = runtimeModule.exports;
 const previousUrl = process.env.HRM_METTASOUL_WEBHOOK_URL;
 const previousSecret = process.env.HRM_METTASOUL_WEBHOOK_SECRET;
 const previousEnabled = process.env.HRM_METTASOUL_INTEGRATION_ENABLED;
@@ -40,11 +40,12 @@ try {
   let captured;
   globalThis.fetch = async (url, init) => {
     captured = { url, init, envelope: JSON.parse(init.body) };
+    const payload = JSON.parse(captured.envelope.payload);
     return new Response(JSON.stringify({
       ok: true,
-      workLogId: "LOG_MTS_1",
-      money: 80000,
-      policyVersion: "profile:1",
+      ...(payload.action === "PING"
+        ? { code: "READY", schemaVersion: 1 }
+        : { workLogId: "LOG_MTS_1", money: 80000, policyVersion: "profile:1" }),
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
 
@@ -64,6 +65,19 @@ try {
     .update(`${captured.envelope.timestamp}.${captured.envelope.nonce}.${captured.envelope.payload}`)
     .digest("hex");
   assert.equal(captured.envelope.signature, expectedSignature);
+
+  await cancelTeachingPeriodInHrm({
+    source: "METTASOUL",
+    action: "CANCEL_TEACHING_PERIOD",
+    eventId: "cancel-1",
+    idempotencyKey: "CANCEL:key-1",
+    targetIdempotencyKey: "key-1",
+  });
+  assert.equal(JSON.parse(captured.envelope.payload).action, "CANCEL_TEACHING_PERIOD");
+
+  const health = await pingHrmIntegration();
+  assert.equal(JSON.parse(captured.envelope.payload).action, "PING");
+  assert.equal(health.code, "READY");
 } finally {
   globalThis.fetch = previousFetch;
   if (previousUrl === undefined) delete process.env.HRM_METTASOUL_WEBHOOK_URL;

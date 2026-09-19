@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
+import { conflictError } from "@/lib/app-error";
 import { sendScheduleEmail } from "@/lib/email";
+import { cancelTeachingPeriodInHrm } from "@/lib/hrm-integration";
 import {
   appendSheetRows,
   readSheetRowById,
@@ -9,7 +11,6 @@ import {
   updateSheetRowById,
 } from "@/lib/google-sheets";
 import {
-  assertNoConfirmedTeachingWorkLogs,
   deleteSchedulesCascade,
   resetScheduleAssignmentData,
   type ScheduleCascadeDeleteResult,
@@ -17,7 +18,8 @@ import {
 import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 import { invalidateScheduleConflictIndex } from "@/lib/schedule-conflict-index";
 import { hasTeacherTimeConflict } from "@/lib/schedule-conflict-policy";
-import type { Notification, Schedule, ScheduleStatus, User } from "@/lib/types";
+import { deterministicTeachingCancellationEventId } from "@/lib/teaching-work-log";
+import type { Notification, Schedule, ScheduleStatus, TeachingWorkLog, User } from "@/lib/types";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -54,6 +56,7 @@ export async function PATCH(request: Request, { params }: Params) {
     let scheduleForEmail: Schedule | null = null;
     let notifications: Notification[] = [];
     let resetResult: ScheduleCascadeDeleteResult | null = null;
+    let cancelledWorkLogIds: string[] = [];
 
     if (status === "confirmed") {
       patch.confirmedAt = now;
@@ -62,7 +65,7 @@ export async function PATCH(request: Request, { params }: Params) {
       ];
       action = "schedule.confirm";
     } else if (status === "cancelled") {
-      await assertNoConfirmedTeachingWorkLogs([id]);
+      cancelledWorkLogIds = await cancelConfirmedTeachingWorkLogs(id);
       patch.cancelledAt = now;
       notifications = [
         createNotification("Lịch đã hủy", "Một lịch dạy vừa được hủy.", "all", now),
@@ -77,6 +80,7 @@ export async function PATCH(request: Request, { params }: Params) {
         return apiFailure(400, teacherError, undefined, requestId);
       }
 
+      cancelledWorkLogIds = await cancelConfirmedTeachingWorkLogs(id);
       patch.teacherId = nextTeacherId;
       patch.timeSlotId = nextTimeSlotId;
       patch.reassignedFrom = schedule.teacherId;
@@ -129,6 +133,7 @@ export async function PATCH(request: Request, { params }: Params) {
         resetLessonPlanCount: resetResult?.deletedLessonPlanIds.length || 0,
         resetLessonPlanMessageCount: resetResult?.deletedLessonPlanMessageIds.length || 0,
         resetLessonPlanAttachmentCount: resetResult?.deletedLessonPlanAttachmentIds.length || 0,
+        cancelledWorkLogIds,
       },
     });
 
@@ -136,6 +141,42 @@ export async function PATCH(request: Request, { params }: Params) {
   } catch (error) {
     return apiError(error, requestId);
   }
+}
+
+/**
+ * Reverse each confirmed HRM work log before changing a schedule. Pending
+ * submissions remain blocked because their remote outcome is unknown; retry
+ * them first so HRM's idempotency key can resolve the state safely.
+ */
+async function cancelConfirmedTeachingWorkLogs(scheduleId: string) {
+  const workLogs = await readSheetRows("TeachingWorkLogs") as unknown as TeachingWorkLog[];
+  const related = workLogs.filter((workLog) => workLog.scheduleId === scheduleId);
+  const pending = related.filter((workLog) => String(workLog.status).toUpperCase() === "PENDING");
+  if (pending.length > 0) {
+    throw conflictError("Lịch đang có chấm công chờ HRM xác nhận. Hãy đồng bộ lại để chốt trạng thái trước khi hủy hoặc chuyển lịch.");
+  }
+
+  const confirmed = related.filter((workLog) => String(workLog.status).toUpperCase() === "CONFIRMED");
+  const cancelledAt = new Date().toISOString();
+  for (const workLog of confirmed) {
+    const eventId = deterministicTeachingCancellationEventId(workLog.idempotencyKey);
+    await cancelTeachingPeriodInHrm({
+      source: "METTASOUL",
+      action: "CANCEL_TEACHING_PERIOD",
+      eventId,
+      idempotencyKey: `CANCEL:${workLog.idempotencyKey}`,
+      targetIdempotencyKey: workLog.idempotencyKey,
+    });
+    await updateSheetRowById("TeachingWorkLogs", workLog.id, {
+      ...workLog,
+      status: "CANCELLED",
+      cancelledAt,
+      errorCode: "",
+      errorMessage: "",
+      updatedAt: cancelledAt,
+    });
+  }
+  return confirmed.map((workLog) => workLog.id);
 }
 
 export async function DELETE(request: Request, { params }: Params) {

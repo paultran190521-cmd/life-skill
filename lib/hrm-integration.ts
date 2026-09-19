@@ -36,6 +36,14 @@ export type ActivityCompletionPayload = {
   evidenceUrl?: string;
 };
 
+export type TeachingPeriodCancellationPayload = {
+  source: "METTASOUL";
+  action: "CANCEL_TEACHING_PERIOD";
+  eventId: string;
+  idempotencyKey: string;
+  targetIdempotencyKey: string;
+};
+
 export type HrmTeachingResponse = {
   ok: boolean;
   code?: string;
@@ -48,6 +56,7 @@ export type HrmTeachingResponse = {
   mcpLedgerId?: string;
   currency?: string;
   policyVersion?: string;
+  schemaVersion?: number;
   idempotent?: boolean;
 };
 
@@ -61,6 +70,21 @@ export async function submitTeachingPeriodToHrm(payload: TeachingPeriodPayload) 
 
 export async function submitActivityCompletionToHrm(payload: ActivityCompletionPayload) {
   return sendSignedPayload(payload);
+}
+
+export async function cancelTeachingPeriodInHrm(payload: TeachingPeriodCancellationPayload) {
+  return sendSignedPayload(payload);
+}
+
+/** Performs a signed, read-only connectivity check. HRM does not create a work log for PING. */
+export async function pingHrmIntegration() {
+  const nonce = randomUUID();
+  return sendSignedPayload({
+    source: "METTASOUL",
+    action: "PING",
+    eventId: `MTS_PING_${nonce}`,
+    idempotencyKey: `MTS_PING_${nonce}`,
+  });
 }
 
 async function sendSignedPayload(payload: Record<string, unknown>): Promise<HrmTeachingResponse> {

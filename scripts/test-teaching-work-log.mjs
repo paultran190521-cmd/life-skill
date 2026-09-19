@@ -15,6 +15,7 @@ new Function("module", "exports", "require", compiled)(runtimeModule, runtimeMod
 
 const {
   deterministicTeachingEventId,
+  deterministicTeachingCancellationEventId,
   deterministicTeachingWorkLogId,
   resolveTeachingRole,
   schedulePeriodTimes,
@@ -57,5 +58,7 @@ assert.equal(key, "METTASOUL:schedule-main:teacher-helper:ASSISTANT");
 assert.equal(deterministicTeachingEventId(key), deterministicTeachingEventId(key));
 assert.equal(deterministicTeachingWorkLogId(key), deterministicTeachingWorkLogId(key));
 assert.notEqual(deterministicTeachingEventId(key), deterministicTeachingEventId(`${key}:other`));
+assert.equal(deterministicTeachingCancellationEventId(key), deterministicTeachingCancellationEventId(key));
+assert.notEqual(deterministicTeachingCancellationEventId(key), deterministicTeachingCancellationEventId(`${key}:other`));
 
 console.log("Teaching work-log tests passed for per-period roles, time boundaries, and idempotency.");

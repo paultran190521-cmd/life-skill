@@ -44,3 +44,7 @@ export function deterministicTeachingEventId(idempotencyKey: string) {
 export function deterministicTeachingWorkLogId(idempotencyKey: string) {
   return `twl_${createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 24)}`;
 }
+
+export function deterministicTeachingCancellationEventId(idempotencyKey: string) {
+  return `MTS_CANCEL_${createHash("sha256").update(`CANCEL:${idempotencyKey}`).digest("hex").slice(0, 24)}`;
+}
