@@ -60,6 +60,12 @@ export type HrmTeachingResponse = {
   idempotent?: boolean;
 };
 
+export type HrmResponseDiagnostic = {
+  status: number;
+  contentType: string | null;
+  redirected: boolean;
+};
+
 export function hrmIntegrationConfigured() {
   return integrationEnabled() && hrmIntegrationCredentialsConfigured();
 }
@@ -114,9 +120,13 @@ async function sendSignedPayload(
   try {
     response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ version: "1", timestamp, nonce, payload: payloadText, signature }),
       cache: "no-store",
+      redirect: "follow",
       signal: AbortSignal.timeout(20_000),
     });
   } catch (error) {
@@ -126,7 +136,11 @@ async function sendSignedPayload(
   try {
     result = await response.json() as HrmTeachingResponse;
   } catch {
-    throw integrationFailure("HRM_INVALID_RESPONSE", `HRM trả về dữ liệu không hợp lệ (${response.status}).`);
+    throw integrationFailure(
+      "HRM_INVALID_RESPONSE",
+      `HRM trả về dữ liệu không hợp lệ (${response.status}).`,
+      responseDiagnostic(response),
+    );
   }
   if (!response.ok || !result.ok) {
     throw integrationFailure(result.code || "HRM_REJECTED", result.message || `HRM từ chối yêu cầu (${response.status}).`);
@@ -146,6 +160,14 @@ function integrationEnabled() {
   return String(process.env.HRM_METTASOUL_INTEGRATION_ENABLED || "").trim().toLowerCase() === "true";
 }
 
-function integrationFailure(code: string, message: string) {
-  return Object.assign(new Error(message), { code });
+function responseDiagnostic(response: Response): HrmResponseDiagnostic {
+  return {
+    status: response.status,
+    contentType: response.headers.get("content-type"),
+    redirected: response.redirected,
+  };
+}
+
+function integrationFailure(code: string, message: string, diagnostic?: HrmResponseDiagnostic) {
+  return Object.assign(new Error(message), { code, diagnostic });
 }

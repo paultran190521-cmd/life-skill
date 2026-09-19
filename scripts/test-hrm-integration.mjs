@@ -53,6 +53,8 @@ try {
   assert.equal(hrmIntegrationConfigured(), false);
   const healthWhileWritesDisabled = await pingHrmIntegration();
   assert.equal(healthWhileWritesDisabled.code, "READY");
+  assert.equal(captured.init.redirect, "follow");
+  assert.equal(captured.init.headers.Accept, "application/json");
   await assert.rejects(
     () => submitTeachingPeriodToHrm({ source: "METTASOUL" }),
     (error) => error.code === "HRM_INTEGRATION_DISABLED",
@@ -89,6 +91,18 @@ try {
   const health = await pingHrmIntegration();
   assert.equal(JSON.parse(captured.envelope.payload).action, "PING");
   assert.equal(health.code, "READY");
+
+  globalThis.fetch = async () => new Response("<html>HRM proxy response</html>", {
+    status: 200,
+    headers: { "Content-Type": "text/html" },
+  });
+  await assert.rejects(
+    () => pingHrmIntegration(),
+    (error) => error.code === "HRM_INVALID_RESPONSE"
+      && error.diagnostic.status === 200
+      && error.diagnostic.contentType === "text/html"
+      && error.diagnostic.redirected === false,
+  );
 } finally {
   globalThis.fetch = previousFetch;
   if (previousUrl === undefined) delete process.env.HRM_METTASOUL_WEBHOOK_URL;

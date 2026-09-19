@@ -28,8 +28,18 @@ export async function GET(request: Request) {
         schemaVersion: result.schemaVersion,
       });
     } catch (error) {
-      const code = String((error as { code?: string })?.code || "HRM_UNREACHABLE");
-      return NextResponse.json({ credentialsConfigured: true, workLogWritesEnabled: hrmIntegrationConfigured(), reachable: false, ready: false, code });
+      const integrationError = error as { code?: string; diagnostic?: unknown };
+      const code = String(integrationError?.code || "HRM_UNREACHABLE");
+      return NextResponse.json({
+        credentialsConfigured: true,
+        workLogWritesEnabled: hrmIntegrationConfigured(),
+        reachable: false,
+        ready: false,
+        code,
+        ...(code === "HRM_INVALID_RESPONSE" && integrationError?.diagnostic
+          ? { diagnostic: integrationError.diagnostic }
+          : {}),
+      });
     }
   } catch (error) {
     return apiError(error, requestId, { route: "/api/hrm-integration/health", method: "GET" });
