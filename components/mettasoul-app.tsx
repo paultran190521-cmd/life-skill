@@ -4811,9 +4811,10 @@ export function MettasoulApp() {
           </div>
           <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-cyan-100 bg-white/95 px-2 py-2 shadow-[0_-18px_42px_rgba(18,46,68,0.12)] backdrop-blur-xl lg:hidden">
             <div className="app-scrollbar flex gap-2 overflow-x-auto pb-[env(safe-area-inset-bottom)]">
-              {navigationTabs.filter((item) => item.id !== "school-guide").map((item) => {
+              {navigationTabs.filter((item) => item.id !== "school-guide" && item.id !== "activities").map((item) => {
                 const Icon = item.icon;
                 const selected = activeTab === item.id;
+                const mobileLabel = item.id === "calendar" ? "Lịch" : item.id === "attendance" ? "Điểm danh" : item.label;
                 return (
                   <button
                     key={item.id}
@@ -4822,7 +4823,7 @@ export function MettasoulApp() {
                     onMouseEnter={() => preloadMenu(item.id)}
                     onFocus={() => preloadMenu(item.id)}
                     aria-current={selected ? "page" : undefined}
-                    className={`ui-nav-item flex min-w-[78px] flex-col items-center justify-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-black transition ${
+                    className={`ui-nav-item flex min-w-[72px] flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-[10px] font-black transition ${
                       selected
                         ? "bg-[var(--brand)] text-white shadow-lg shadow-cyan-900/20"
                         : "bg-cyan-50 text-[var(--brand-dark)]"
@@ -4835,7 +4836,7 @@ export function MettasoulApp() {
                       </span>
                     ) : null}
                     {item.id === "plans" && unreadLessonPlanChatCount > 0 ? <span className="grid h-4 min-w-4 place-items-center rounded-full bg-violet-600 px-1 text-[9px] font-black text-white">{unreadLessonPlanChatCount}</span> : null}
-                    <span className="whitespace-nowrap">{item.label}</span>
+                    <span className="whitespace-nowrap">{mobileLabel}</span>
                   </button>
                 );
               })}
