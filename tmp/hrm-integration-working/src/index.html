@@ -574,7 +574,7 @@
           <div class="card shadow-sm border-info mb-4">
             <div class="card-header bg-white fw-bold text-info"><i class="bi bi-person-vcard me-2"></i>Nhập hồ sơ nhân sự từ METTASOUL</div>
             <div class="card-body"><div class="small text-muted mb-2">Chỉ tạo hồ sơ HRM do METTASOUL quản lý; không tạo mật khẩu HRM và không tự gán bậc lương.</div><textarea v-model="mettasoulIdentityImportJson" class="form-control font-monospace" rows="4" placeholder='[{"name":"...","email":"...","role":"teacher","teacherId":"..."}]'></textarea></div>
-          <div class="card-footer d-flex flex-wrap justify-content-end gap-2"><button class="btn btn-outline-info" @click="syncMettasoulWorkerNames" :disabled="loading"><i class="bi bi-person-check me-1"></i>Đồng bộ tên từ METTASOUL</button><button class="btn btn-info text-white" @click="provisionMettasoulWorkers" :disabled="loading || !mettasoulIdentityImportJson.trim()"><i class="bi bi-person-plus me-1"></i>Tạo hồ sơ HRM</button></div>
+          <div class="card-footer d-flex flex-wrap justify-content-end gap-2"><button class="btn btn-outline-success" @click="grantConfiguredMettasoulTeachingTask" :disabled="loading || !teachingPayData.integration.taskId"><i class="bi bi-person-check-fill me-1"></i>Gán dạy KNS cho tất cả</button><button class="btn btn-outline-info" @click="syncMettasoulWorkerNames" :disabled="loading"><i class="bi bi-person-check me-1"></i>Đồng bộ tên từ METTASOUL</button><button class="btn btn-info text-white" @click="provisionMettasoulWorkers" :disabled="loading || !mettasoulIdentityImportJson.trim()"><i class="bi bi-person-plus me-1"></i>Tạo hồ sơ HRM</button></div>
           </div>
           <div class="card shadow-sm border-secondary mb-4">
             <div class="card-header bg-white fw-bold text-secondary"><i class="bi bi-envelope-arrow-up me-2"></i>Đính chính email METTASOUL</div>
@@ -1533,6 +1533,14 @@
           }).withFailureHandler(showTeachingPayFailure).syncMettasoulWorkerNamesFromDirectory(currentUser.value.email);
       }
 
+      function grantConfiguredMettasoulTeachingTask() {
+          loading.value = true;
+          google.script.run.withSuccessHandler(res => {
+              loading.value = false;
+              Swal.fire('Đã gán quyền dạy KNS', res.message || 'Đã cập nhật quyền công việc.', 'success');
+          }).withFailureHandler(showTeachingPayFailure).grantConfiguredMettasoulTeachingTaskToWorkers(currentUser.value.email);
+      }
+
       function reconcileMettasoulWorkerEmail() {
           let identity;
           try {
@@ -2489,7 +2497,7 @@ function submitLeaveRequest() {
         toggleUser, selectAllUsers, submitBatchAssignment, getDedLevelsByType, toggleTimekeepingGroup, getAvailableTasksInGroup, toggleConfigGroup,
         submitLog, calculatePreview, openPayslip, saveSystemConfig, saveUserDependents,
         addOption, removeOption, addRolePolicy, removeRolePolicy,
-        loadTeachingPayAdminData, saveTeachingIntegrationSettings, provisionMettasoulWorkers, syncMettasoulWorkerNames, reconcileMettasoulWorkerEmail, applyMettasoulPilotPayPolicy,
+        loadTeachingPayAdminData, saveTeachingIntegrationSettings, provisionMettasoulWorkers, syncMettasoulWorkerNames, grantConfiguredMettasoulTeachingTask, reconcileMettasoulWorkerEmail, applyMettasoulPilotPayPolicy,
         resetTeachingProfileForm, editTeachingProfile, submitTeachingProfile,
         resetTeachingContextForm, editTeachingContext, submitTeachingContext,
         resetPayAssignmentForm, editPayAssignment, submitPayAssignment, applyTeachingPayRateImport,

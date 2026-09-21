@@ -569,6 +569,53 @@ function reconcileMettasoulWorkerEmail(oldEmail, identity, actorEmail) {
   return { success: true, updatedSheets: updatedSheets, movedRecords: movedRecords, message: "Đã đồng bộ email HRM theo METTASOUL và giữ nguyên lịch sử liên quan." };
 }
 
+/**
+ * Grants the configured METTASOUL teaching task to every HRM worker managed
+ * by METTASOUL. Existing task permissions and payroll settings are preserved.
+ */
+function grantConfiguredMettasoulTeachingTaskToWorkers(actorEmail) {
+  assertHrmAdmin_(actorEmail);
+  const ss = getDatabase();
+  const taskId = String(getMettasoulRuntimeConfigValue_(ss, METTASOUL_INTEGRATION_SCHEMA_.config.taskId) || "").trim();
+  if (!taskId) {
+    throw integrationError_("TEACHING_TASK_NOT_CONFIGURED", "Chưa chọn công việc nhận dòng công từ METTASOUL.");
+  }
+  const taskSheet = ss.getSheetByName("Tasks");
+  const taskRows = taskSheet ? taskSheet.getDataRange().getValues() : [];
+  const taskName = taskRows.slice(1).filter(function(row) { return String(row[0] || "") === taskId; }).map(function(row) { return String(row[2] || ""); })[0] || taskId;
+  const userSheet = ss.getSheetByName("Users");
+  if (!userSheet) throw integrationError_("USERS_SHEET_MISSING", "HRM chưa có bảng Users.");
+  const rows = userSheet.getDataRange().getValues();
+  const changes = [];
+  rows.slice(1).forEach(function(row, index) {
+    let settings = {};
+    try {
+      settings = JSON.parse(String(row[5] || "{}"));
+      if (!settings || typeof settings !== "object" || Array.isArray(settings)) settings = {};
+    } catch (error) {
+      settings = {};
+    }
+    if (String(settings.managedBy || "").toUpperCase() !== "METTASOUL") return;
+    const allowedTasks = Array.isArray(settings.allowedTasks) ? settings.allowedTasks.filter(Boolean) : [];
+    if (allowedTasks.indexOf(taskId) >= 0) return;
+    settings.allowedTasks = allowedTasks.concat([taskId]);
+    changes.push({ row: index + 2, email: String(row[0] || "").trim(), settings: JSON.stringify(settings) });
+  });
+  changes.forEach(function(change) { userSheet.getRange(change.row, 6).setValue(change.settings); });
+  appendPolicyVersion_(ss, "METTASOUL_TEACHING_TASK_ACCESS", "METTASOUL", 1, {
+    taskId: taskId,
+    taskName: taskName,
+    granted: changes.length
+  }, "UPDATE", actorEmail);
+  return {
+    success: true,
+    taskId: taskId,
+    taskName: taskName,
+    granted: changes.length,
+    message: "Đã cấp quyền \"" + taskName + "\" cho " + changes.length + " hồ sơ METTASOUL; các quyền hiện có được giữ nguyên."
+  };
+}
+
 function provisionMettasoulWorkers_(identities, actorEmail) {
   if (!Array.isArray(identities) || identities.length === 0) {
     throw integrationError_("IDENTITY_LIST_REQUIRED", "Cần ít nhất một định danh METTASOUL để tạo hồ sơ nhân sự.");
