@@ -60,6 +60,21 @@ export type HrmTeachingResponse = {
   idempotent?: boolean;
 };
 
+export type HrmMcpLedgerEntry = {
+  id: string;
+  points: number;
+  entryType: "CREDIT" | "REVERSAL";
+  reasonCode: string;
+  reasonName: string;
+  workDate: string;
+  status: string;
+  createdAt: string;
+};
+
+export type HrmMcpLedgerResponse = HrmTeachingResponse & {
+  entries: HrmMcpLedgerEntry[];
+};
+
 export type HrmResponseDiagnostic = {
   status: number;
   contentType: string | null;
@@ -104,10 +119,22 @@ export async function pingHrmIntegration() {
   }, { requireEnabled: false });
 }
 
-async function sendSignedPayload(
+/** HRM remains the MCP authority; this obtains only the signed, current user's ledger. */
+export async function getMcpLedgerFromHrm(userEmail: string): Promise<HrmMcpLedgerResponse> {
+  const nonce = randomUUID();
+  return sendSignedPayload<HrmMcpLedgerResponse>({
+    source: "METTASOUL",
+    action: "GET_MCP_LEDGER",
+    eventId: `MTS_MCP_${nonce}`,
+    idempotencyKey: `MTS_MCP_${nonce}`,
+    userEmail,
+  }, { requireEnabled: false });
+}
+
+async function sendSignedPayload<T extends HrmTeachingResponse = HrmTeachingResponse>(
   payload: Record<string, unknown>,
   { requireEnabled = true }: { requireEnabled?: boolean } = {},
-): Promise<HrmTeachingResponse> {
+): Promise<T> {
   if (requireEnabled && !integrationEnabled()) {
     throw integrationFailure("HRM_INTEGRATION_DISABLED", "Kết nối HRM đang được quản trị viên giữ ở trạng thái tắt.");
   }
@@ -133,9 +160,9 @@ async function sendSignedPayload(
       networkDiagnostic(error),
     );
   }
-  let result: HrmTeachingResponse;
+  let result: T;
   try {
-    result = await response.json() as HrmTeachingResponse;
+    result = await response.json() as T;
   } catch {
     throw integrationFailure(
       "HRM_INVALID_RESPONSE",

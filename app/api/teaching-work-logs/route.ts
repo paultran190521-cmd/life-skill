@@ -92,6 +92,8 @@ export async function POST(request: Request) {
       status: "PENDING",
       hrmWorkLogId: "",
       money: "",
+      mcpPoints: "",
+      mcpLedgerId: "",
       policyVersion: "",
       submittedAt: "",
       cancelledAt: "",
@@ -152,6 +154,8 @@ export async function POST(request: Request) {
       status: "CONFIRMED",
       hrmWorkLogId: hrmResult.workLogId || "",
       money: hrmResult.money ?? "",
+      mcpPoints: hrmResult.mcpPoints ?? "",
+      mcpLedgerId: hrmResult.mcpLedgerId || "",
       policyVersion: hrmResult.policyVersion || "",
       submittedAt: now,
       cancelledAt: "",
@@ -190,5 +194,6 @@ function normalizeStoredWorkLog(row: Record<string, string>) {
   return {
     ...row,
     money: row.money === "" || row.money === undefined ? undefined : Number(row.money),
+    mcpPoints: row.mcpPoints === "" || row.mcpPoints === undefined ? undefined : Number(row.mcpPoints),
   };
 }

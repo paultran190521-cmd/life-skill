@@ -199,6 +199,8 @@ export type TeachingWorkLog = {
   status: "PENDING" | "CONFIRMED" | "FAILED" | "CANCELLED";
   hrmWorkLogId?: string;
   money?: number;
+  mcpPoints?: number;
+  mcpLedgerId?: string;
   policyVersion?: string;
   submittedAt: string;
   cancelledAt?: string;

@@ -272,6 +272,17 @@ type TeachingWorkLogCreateResponse = {
   idempotent: boolean;
 };
 
+type McpLedgerEntry = {
+  id: string;
+  points: number;
+  entryType: "CREDIT" | "REVERSAL";
+  reasonCode: string;
+  reasonName: string;
+  workDate: string;
+  status: string;
+  createdAt: string;
+};
+
 type ClassCreateResponse = ClassRoom | { classes: ClassRoom[] };
 
 type CalendarViewMode = "month" | "week" | "day";
@@ -562,6 +573,7 @@ export function MettasoulApp() {
   const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [teachingWorkLogs, setTeachingWorkLogs] = useState<TeachingWorkLog[]>([]);
+  const [mcpLedgerEntries, setMcpLedgerEntries] = useState<McpLedgerEntry[]>([]);
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const [activityOccurrences, setActivityOccurrences] = useState<ActivityOccurrence[]>([]);
   const [activityAssignments, setActivityAssignments] = useState<ActivityAssignment[]>([]);
@@ -997,6 +1009,22 @@ export function MettasoulApp() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (authStatus !== "signed-in" || !hrmIntegrationConfigured) {
+      setMcpLedgerEntries([]);
+      return;
+    }
+    let cancelled = false;
+    void apiRequest<{ entries: McpLedgerEntry[] }>("/api/mcp-ledger")
+      .then((result) => { if (!cancelled) setMcpLedgerEntries(result.entries ?? []); })
+      .catch((error) => {
+        // Attendance must remain usable if the optional ledger display is temporarily unavailable.
+        console.error("Không thể tải sổ MCP từ HRM", error);
+        if (!cancelled) setMcpLedgerEntries([]);
+      });
+    return () => { cancelled = true; };
+  }, [authStatus, hrmIntegrationConfigured]);
 
   useEffect(() => {
     if (authStatus !== "signed-in" || role !== "admin" || activeTab !== "assignment" || weeklyLoaded || dataStatus !== "connected") return;
@@ -2714,9 +2742,14 @@ export function MettasoulApp() {
       response.workLog,
       ...items.filter((item) => item.id !== response.workLog.id),
     ]);
+    if (typeof response.workLog.mcpPoints === "number" && response.workLog.mcpPoints !== 0) {
+      void apiRequest<{ entries: McpLedgerEntry[] }>("/api/mcp-ledger")
+        .then((result) => setMcpLedgerEntries(result.entries ?? []))
+        .catch(() => undefined);
+    }
     pushToast(
       response.idempotent ? "Đã đồng bộ trước đó" : "Đã chấm công",
-      `HRM đã ghi nhận ${teachingRoleLabel(response.workLog.roleCode).toLowerCase()} cho tiết này.`,
+      `HRM đã ghi nhận ${teachingRoleLabel(response.workLog.roleCode).toLowerCase()} cho tiết này${response.workLog.mcpPoints ? ` và ${response.workLog.mcpPoints} MCP` : ""}.`,
       "success",
     );
   }
@@ -6567,6 +6600,8 @@ export function MettasoulApp() {
     const typeById = new Map(activityTypes.map((type) => [type.id, type]));
     const myAssignmentIds = new Set(activityAssignments.filter((assignment) => assignment.teacherId === currentTeacherId).map((assignment) => assignment.activityId));
     const visibleActivities = role === "admin" ? activityOccurrences : activityOccurrences.filter((activity) => myAssignmentIds.has(activity.id));
+    const visibleMcpEntries = mcpLedgerEntries.filter((entry) => entry.status.toLowerCase() === "active");
+    const mcpBalance = visibleMcpEntries.reduce((total, entry) => total + entry.points, 0);
     return (
       <div className="space-y-5">
         {role === "admin" ? (
@@ -6594,6 +6629,19 @@ export function MettasoulApp() {
             </form>
           </Panel>
         ) : null}
+        <Panel title="MCP của tôi từ HRM" action={`${mcpBalance > 0 ? "+" : ""}${mcpBalance} MCP`}>
+          <div className="space-y-3">
+            {visibleMcpEntries.length === 0 ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-[var(--muted)]">Chưa có MCP được HRM ghi nhận. MCP sẽ xuất hiện ở đây ngay sau khi HRM xác nhận chấm công tại trường xa.</p> : visibleMcpEntries.map((entry) => (
+              <div key={entry.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-100 bg-white p-4">
+                <div>
+                  <p className="font-black text-[var(--brand-dark)]">{entry.reasonName || "MCP từ HRM"}</p>
+                  <p className="mt-1 text-xs font-semibold text-[var(--muted)]">{entry.workDate ? formatDate(entry.workDate) : formatDateTime(entry.createdAt)} · HRM là nguồn xác nhận</p>
+                </div>
+                <span className={entry.points >= 0 ? "rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-black text-emerald-700" : "rounded-full bg-rose-50 px-3 py-1.5 text-sm font-black text-rose-700"}>{entry.points > 0 ? "+" : ""}{entry.points} MCP</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
         <Panel title={role === "admin" ? "Hoạt động đã giao" : "Công việc & MCP của tôi"} action={`${visibleActivities.length} hoạt động`}>
           <div className="space-y-3">
             {visibleActivities.length === 0 ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-[var(--muted)]">Chưa có hoạt động phù hợp.</p> : visibleActivities.map((activity) => {
@@ -8677,6 +8725,7 @@ export function MettasoulApp() {
                     <p className="mt-2 text-sm font-bold text-emerald-700">
                       HRM đã ghi nhận lúc {formatDateTime(workLog.submittedAt)}
                       {typeof workLog.money === "number" ? ` · ${formatCurrency(workLog.money)}` : ""}
+                      {typeof workLog.mcpPoints === "number" && workLog.mcpPoints !== 0 ? ` · +${workLog.mcpPoints} MCP` : ""}
                     </p>
                   ) : pendingWorkLog ? (
                     <p className="mt-2 text-sm font-bold text-amber-700">

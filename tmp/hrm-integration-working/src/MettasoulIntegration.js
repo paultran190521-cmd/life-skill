@@ -409,10 +409,50 @@ function handleMettasoulWebhook_(e) {
   if (action === "PING") {
     return { ok: true, code: "READY", schemaVersion: METTASOUL_INTEGRATION_SCHEMA_.version };
   }
+  if (action === "GET_MCP_LEDGER") return getMettasoulMcpLedger_(payload);
   if (action === "SUBMIT_TEACHING_PERIOD") return submitTeachingPeriod_(payload, verified.payloadHash);
   if (action === "SUBMIT_ACTIVITY_COMPLETION") return submitActivityCompletion_(payload, verified.payloadHash);
   if (action === "CANCEL_TEACHING_PERIOD") return cancelTeachingPeriod_(payload, verified.payloadHash);
   throw integrationError_("UNSUPPORTED_ACTION", "Nghiệp vụ webhook chưa được hỗ trợ.");
+}
+
+/** Read-only, signed projection for the currently authenticated METTASOUL user.
+ *  The browser never chooses an email: METTASOUL's server supplies it after
+ *  validating its own session. Payroll policy and source rows remain in HRM. */
+function getMettasoulMcpLedger_(payload) {
+  const userEmail = String((payload || {}).userEmail || "").trim().toLowerCase();
+  if (!userEmail) throw integrationError_("MISSING_FIELD", "Thiếu email người dùng để đọc sổ MCP.");
+  const ss = getDatabase();
+  const sheet = ss.getSheetByName(METTASOUL_INTEGRATION_SCHEMA_.sheets.mcpLedger);
+  if (!sheet || sheet.getLastRow() < 2) {
+    return { ok: true, code: "MCP_LEDGER", schemaVersion: METTASOUL_INTEGRATION_SCHEMA_.version, entries: [] };
+  }
+  const entries = readSheetObjects_(sheet)
+    .filter(function(row) { return String(row.UserEmail || "").trim().toLowerCase() === userEmail; })
+    .sort(function(left, right) {
+      return String(right.CreatedAt || "").localeCompare(String(left.CreatedAt || ""));
+    })
+    .slice(0, 100)
+    .map(function(row) {
+      return {
+        id: String(row.ID || ""),
+        points: Number(row.Points || 0),
+        entryType: normalizeCode_(row.EntryType) === "REVERSAL" ? "REVERSAL" : "CREDIT",
+        reasonCode: String(row.ReasonCode || ""),
+        reasonName: String(row.ReasonName || ""),
+        workDate: formatMettasoulLedgerDate_(row.WorkDate),
+        status: String(row.Status || ""),
+        createdAt: formatMettasoulLedgerDate_(row.CreatedAt)
+      };
+    });
+  return { ok: true, code: "MCP_LEDGER", schemaVersion: METTASOUL_INTEGRATION_SCHEMA_.version, entries: entries };
+}
+
+function formatMettasoulLedgerDate_(value) {
+  if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss");
+  }
+  return String(value || "");
 }
 
 function verifyMettasoulEnvelope_(envelope, secret, nowMs) {

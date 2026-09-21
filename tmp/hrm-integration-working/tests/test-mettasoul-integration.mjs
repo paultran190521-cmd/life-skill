@@ -161,6 +161,10 @@ assert.equal(createdWorkLog[createdWorkLogHeaders.indexOf("TotalMoney")], 210000
 assert.equal(createdWorkLog[createdWorkLogHeaders.indexOf("DateLog")], "2026-09-15", "legacy work-date column is populated");
 assert.match(createdWorkLog[createdWorkLogHeaders.indexOf("InputData_JSON")], /schoolAllowance/, "calculation audit details are retained");
 assert.equal(ss.getSheetByName("MettasoulMcpLedger").getLastRow(), 2, "MCP is written to the separate ledger");
+const teacherLedger = call("getMettasoulMcpLedger_({ userEmail: 'teacher@example.com' })");
+assert.equal(teacherLedger.entries.length, 1, "only the requested teacher's MCP entries are returned");
+assert.equal(teacherLedger.entries[0].points, 5, "far-school MCP remains HRM-authoritative");
+assert.equal(teacherLedger.entries[0].reasonCode, "TEACHING_FAR_SCHOOL");
 
 const retry = call(`submitTeachingPeriod_(${JSON.stringify({ ...teacherInput, eventId: "evt-retry" })}, 'payload-hash-2')`);
 assert.equal(retry.ok, true);
