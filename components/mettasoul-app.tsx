@@ -725,6 +725,8 @@ export function MettasoulApp() {
   const [adminKpiTeacherFilter, setAdminKpiTeacherFilter] = useState("");
   const [adminKpiDateFrom, setAdminKpiDateFrom] = useState("");
   const [adminKpiDateTo, setAdminKpiDateTo] = useState("");
+  const [teacherKpiSchoolFilter, setTeacherKpiSchoolFilter] = useState("");
+  const [teacherKpiMonthFilter, setTeacherKpiMonthFilter] = useState("");
   const [feedbackDraft, setFeedbackDraft] = useState<UserFeedbackDraft>({
     upgradeTarget: "",
     menuName: "",
@@ -8596,9 +8598,24 @@ export function MettasoulApp() {
         teacher: teacherById.get(workLog.teacherId),
       }))
       .filter((row): row is { workLog: TeachingWorkLog; schedule: Schedule; teacher: Teacher | undefined } => Boolean(row.schedule));
-    const teacherConfirmedKpiRows = confirmedTeachingRows
+    const teacherAllConfirmedKpiRows = confirmedTeachingRows
       .filter((row) => row.workLog.teacherId === currentTeacherId)
       .sort((left, right) => right.workLog.submittedAt.localeCompare(left.workLog.submittedAt));
+    const teacherKpiSchoolOptions = Array.from(
+      teacherAllConfirmedKpiRows.reduce((options, row) => {
+        const school = lookupSchedule(row.schedule).school;
+        if (school) options.set(school.id, school.name);
+        return options;
+      }, new Map<string, string>()),
+    ).sort((left, right) => left[1].localeCompare(right[1], "vi-VN"));
+    const teacherKpiMonthOptions = Array.from(
+      new Set(teacherAllConfirmedKpiRows.map((row) => row.schedule.date.slice(0, 7))),
+    ).sort((left, right) => right.localeCompare(left));
+    const teacherConfirmedKpiRows = teacherAllConfirmedKpiRows.filter((row) => {
+      const schoolId = lookupSchedule(row.schedule).school?.id || "";
+      return (!teacherKpiSchoolFilter || schoolId === teacherKpiSchoolFilter)
+        && (!teacherKpiMonthFilter || row.schedule.date.startsWith(teacherKpiMonthFilter));
+    });
     const teacherConfirmedKpiTotal = teacherConfirmedKpiRows.reduce(
       (total, row) => total + (typeof row.workLog.money === "number" ? row.workLog.money : 0),
       0,
@@ -8617,6 +8634,10 @@ export function MettasoulApp() {
           )
           ? "Khớp với sổ HRM"
           : "Cần HRM đồng bộ lại";
+    const teacherKpiFilterLabel = [
+      teacherKpiSchoolFilter ? teacherKpiSchoolOptions.find(([id]) => id === teacherKpiSchoolFilter)?.[1] : "Tất cả trường",
+      teacherKpiMonthFilter ? `Tháng ${teacherKpiMonthFilter.slice(5, 7)}/${teacherKpiMonthFilter.slice(0, 4)}` : "Tất cả tháng",
+    ].join(" · ");
     const normalizedAdminKpiTeacherFilter = adminKpiTeacherFilter.trim().toLocaleLowerCase("vi-VN");
     const adminConfirmedKpiRows = confirmedTeachingRows
       .filter((row) =>
@@ -9071,6 +9092,23 @@ export function MettasoulApp() {
         </div>
       </Panel>
       <Panel title="KPI & MCP giảng dạy kỹ năng sống" action="Nguồn HRM đã xác nhận">
+        <div className="mb-4 grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3 sm:grid-cols-[1fr_1fr_auto]">
+          <label className="text-xs font-black text-[var(--brand-dark)]">
+            Trường dạy
+            <select value={teacherKpiSchoolFilter} onChange={(event) => setTeacherKpiSchoolFilter(event.target.value)} className={`${compactInputClass} mt-1 w-full`}>
+              <option value="">Tất cả trường</option>
+              {teacherKpiSchoolOptions.map(([schoolId, schoolName]) => <option key={schoolId} value={schoolId}>{schoolName}</option>)}
+            </select>
+          </label>
+          <label className="text-xs font-black text-[var(--brand-dark)]">
+            Tháng dạy
+            <select value={teacherKpiMonthFilter} onChange={(event) => setTeacherKpiMonthFilter(event.target.value)} className={`${compactInputClass} mt-1 w-full`}>
+              <option value="">Tất cả tháng</option>
+              {teacherKpiMonthOptions.map((month) => <option key={month} value={month}>Tháng {month.slice(5, 7)}/{month.slice(0, 4)}</option>)}
+            </select>
+          </label>
+          <button type="button" onClick={() => { setTeacherKpiSchoolFilter(""); setTeacherKpiMonthFilter(""); }} className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"><SlidersHorizontal size={15} /> Xóa lọc</button>
+        </div>
         <div className="mb-4 grid gap-3 sm:grid-cols-3">
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
             <p className="text-xs font-black uppercase tracking-wide text-emerald-800">Tổng tiền từ HRM</p>
@@ -9085,7 +9123,7 @@ export function MettasoulApp() {
             <p className={`mt-2 text-sm font-black ${teacherMcpReconciliation === "Khớp với sổ HRM" || teacherMcpReconciliation === "Không phát sinh MCP theo tiết" ? "text-cyan-950" : "text-amber-950"}`}>{teacherMcpReconciliation}</p>
           </div>
         </div>
-        <p className="mb-3 text-sm font-semibold text-[var(--muted)]">Mỗi dòng là một tiết đã được HRM xác nhận. Bấm vào dòng để xem chi tiết lịch; tiền và MCP được dùng nguyên vẹn từ phản hồi HRM.</p>
+        <p className="mb-3 text-sm font-semibold text-[var(--muted)]">Đang xem: {teacherKpiFilterLabel}. Tổng tiền và MCP phía trên tự tính lại theo bộ lọc. Mỗi dòng là một tiết đã được HRM xác nhận; bấm vào dòng để xem chi tiết lịch.</p>
         {teacherConfirmedKpiRows.length > 0 ? (
           <div className="app-scrollbar overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
@@ -9103,7 +9141,7 @@ export function MettasoulApp() {
               })}</tbody>
             </table>
           </div>
-        ) : <div className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 p-5 text-sm font-bold text-[var(--muted)]">Chưa có dòng chấm công giảng dạy nào được HRM xác nhận.</div>}
+        ) : <div className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 p-5 text-sm font-bold text-[var(--muted)]">Chưa có dòng chấm công giảng dạy nào được HRM xác nhận theo bộ lọc này.</div>}
       </Panel>
       </div>
     );
