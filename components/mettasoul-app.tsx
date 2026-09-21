@@ -722,6 +722,9 @@ export function MettasoulApp() {
   });
   const [attendanceAdminFocus, setAttendanceAdminFocus] = useState<AttendanceAdminFocus | null>(null);
   const [attendanceWarningFocus, setAttendanceWarningFocus] = useState<AttendanceWarningFocus | null>(null);
+  const [adminKpiTeacherFilter, setAdminKpiTeacherFilter] = useState("");
+  const [adminKpiDateFrom, setAdminKpiDateFrom] = useState("");
+  const [adminKpiDateTo, setAdminKpiDateTo] = useState("");
   const [feedbackDraft, setFeedbackDraft] = useState<UserFeedbackDraft>({
     upgradeTarget: "",
     menuName: "",
@@ -5424,6 +5427,11 @@ export function MettasoulApp() {
                   const meta = lookupSchedule(selectedScheduleDetail);
                   const assistantContactLabels = scheduleAssistantContactLabels(selectedScheduleDetail);
                   const coTeacherNames = scheduleCoTeacherNames(selectedScheduleDetail);
+                  const confirmedTeachingWorkLog = teachingWorkLogs.find((workLog) =>
+                    workLog.scheduleId === selectedScheduleDetail.id
+                    && workLog.teacherId === (role === "admin" ? selectedScheduleDetail.teacherId : currentTeacherId)
+                    && workLog.status === "CONFIRMED",
+                  );
                   const detailCards = [
                     {
                       label: "Trạng thái",
@@ -5483,6 +5491,16 @@ export function MettasoulApp() {
                       label: "Trợ giảng",
                       value: assistantContactLabels.length > 0 ? assistantContactLabels.join(", ") : "Không có",
                       tone: assistantContactLabels.length > 0 ? "violet" : "slate",
+                    },
+                    {
+                      label: "KPI / tiền công từ HRM",
+                      value: confirmedTeachingWorkLog && typeof confirmedTeachingWorkLog.money === "number" ? formatCurrency(confirmedTeachingWorkLog.money) : "Chưa được HRM xác nhận",
+                      tone: confirmedTeachingWorkLog ? "emerald" : "amber",
+                    },
+                    {
+                      label: "MCP từ HRM",
+                      value: confirmedTeachingWorkLog ? `${confirmedTeachingWorkLog.mcpPoints ?? 0} MCP` : "Chưa được HRM xác nhận",
+                      tone: confirmedTeachingWorkLog ? "violet" : "amber",
                     },
                   ] as const;
                   return (
@@ -8184,7 +8202,6 @@ export function MettasoulApp() {
     const taughtSchoolyardReportSchedules = taughtSchedules.filter(
       (schedule) => normalizeTeachingEnvironmentValue(schedule.teachingEnvironment) === "schoolyard_report",
     );
-
     const detailRows: Record<TeacherOverviewFocus, Schedule[]> = {
       taught: taughtSchedules,
       upcoming: upcomingSchedules,
@@ -8571,6 +8588,88 @@ export function MettasoulApp() {
           attendanceWarningFocus?.kind === "missing" ? "các lần chưa điểm danh" : "các lần điểm danh trễ"
         }`
       : "";
+    const confirmedTeachingRows = teachingWorkLogs
+      .filter((workLog) => workLog.status === "CONFIRMED")
+      .map((workLog) => ({
+        workLog,
+        schedule: scheduleById.get(workLog.scheduleId),
+        teacher: teacherById.get(workLog.teacherId),
+      }))
+      .filter((row): row is { workLog: TeachingWorkLog; schedule: Schedule; teacher: Teacher | undefined } => Boolean(row.schedule));
+    const teacherConfirmedKpiRows = confirmedTeachingRows
+      .filter((row) => row.workLog.teacherId === currentTeacherId)
+      .sort((left, right) => right.workLog.submittedAt.localeCompare(left.workLog.submittedAt));
+    const teacherConfirmedKpiTotal = teacherConfirmedKpiRows.reduce(
+      (total, row) => total + (typeof row.workLog.money === "number" ? row.workLog.money : 0),
+      0,
+    );
+    const teacherConfirmedMcpTotal = teacherConfirmedKpiRows.reduce(
+      (total, row) => total + (typeof row.workLog.mcpPoints === "number" ? row.workLog.mcpPoints : 0),
+      0,
+    );
+    const teacherMcpLedgerIds = new Set(teacherConfirmedKpiRows.map((row) => row.workLog.mcpLedgerId).filter(Boolean));
+    const teacherMcpReconciliation = teacherMcpLedgerIds.size === 0
+      ? "Không phát sinh MCP theo tiết"
+      : mcpLedgerEntries.length === 0
+        ? "Chưa nhận được sổ MCP từ HRM"
+        : Array.from(teacherMcpLedgerIds).every((ledgerId) =>
+            mcpLedgerEntries.some((entry) => entry.id === ledgerId && entry.status.toLowerCase() === "active"),
+          )
+          ? "Khớp với sổ HRM"
+          : "Cần HRM đồng bộ lại";
+    const normalizedAdminKpiTeacherFilter = adminKpiTeacherFilter.trim().toLocaleLowerCase("vi-VN");
+    const adminConfirmedKpiRows = confirmedTeachingRows
+      .filter((row) =>
+        isDateWithinRange(row.schedule.date, adminKpiDateFrom, adminKpiDateTo)
+        && (!normalizedAdminKpiTeacherFilter
+          || `${row.teacher?.name || ""} ${row.teacher?.email || row.workLog.userEmail || ""}`.toLocaleLowerCase("vi-VN").includes(normalizedAdminKpiTeacherFilter)),
+      )
+      .sort((left, right) => left.workLog.submittedAt.localeCompare(right.workLog.submittedAt));
+    const adminKpiMoneyTotal = adminConfirmedKpiRows.reduce(
+      (total, row) => total + (typeof row.workLog.money === "number" ? row.workLog.money : 0),
+      0,
+    );
+    const adminKpiMcpTotal = adminConfirmedKpiRows.reduce(
+      (total, row) => total + (typeof row.workLog.mcpPoints === "number" ? row.workLog.mcpPoints : 0),
+      0,
+    );
+    const adminKpiTeacherCount = new Set(adminConfirmedKpiRows.map((row) => row.workLog.teacherId)).size;
+
+    async function exportAdminTeachingKpiExcel() {
+      const XLSX = await import("xlsx-js-style");
+      const filterLabel = [adminKpiDateFrom || "Từ đầu", adminKpiDateTo || "Đến nay"].join(" - ");
+      const headers = ["Thời điểm chấm", "Ngày dạy", "Giáo viên", "Email", "Vai trò", "Trường", "Lớp", "Bài dạy", "Tiền HRM", "MCP HRM", "Mã công HRM"];
+      const rows = adminConfirmedKpiRows.map(({ workLog, schedule, teacher }) => {
+        const meta = lookupSchedule(schedule);
+        return [
+          formatDateTime(workLog.submittedAt),
+          formatDate(schedule.date),
+          teacher?.name || "Chưa xác định",
+          teacher?.email || workLog.userEmail || "",
+          teachingRoleLabel(workLog.roleCode),
+          meta.school?.name || "",
+          scheduleParticipantLabel(schedule, classes),
+          meta.lesson?.title || "",
+          typeof workLog.money === "number" ? workLog.money : 0,
+          typeof workLog.mcpPoints === "number" ? workLog.mcpPoints : 0,
+          workLog.hrmWorkLogId || "",
+        ];
+      });
+      const worksheet = XLSX.utils.aoa_to_sheet([
+        ["BÁO CÁO KPI & MCP GIẢNG DẠY KỸ NĂNG SỐNG"],
+        [`Khoảng thời gian: ${filterLabel} · Từ khóa: ${adminKpiTeacherFilter || "Tất cả nhân sự"}`],
+        [`${rows.length} dòng · ${adminKpiTeacherCount} nhân sự · Tổng tiền HRM: ${formatCurrency(adminKpiMoneyTotal)} · Tổng MCP: ${adminKpiMcpTotal}`],
+        [],
+        headers,
+        ...rows,
+      ]);
+      worksheet["!cols"] = [18, 14, 24, 28, 18, 28, 22, 38, 16, 12, 22].map((wch) => ({ wch }));
+      worksheet["!autofilter"] = { ref: `A5:K${Math.max(6, rows.length + 5)}` };
+      applyMettasoulExcelBrand(XLSX, worksheet, { titleRow: 0, summaryRow: 2, headerRow: 4, dataStartRow: 5 });
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "KPI MCP HRM");
+      XLSX.writeFile(workbook, `kpi-mcp-giang-day-${currentDateKey()}.xlsx`);
+    }
 
     if (role === "admin") {
       return (
@@ -8636,6 +8735,63 @@ export function MettasoulApp() {
                 </div>
               )) : <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-5 text-sm font-bold text-emerald-800">Không có tiết đã kết thúc cần nhắc chấm công.</div>}
             </div>
+          </Panel>
+
+          <Panel
+            title="Sổ KPI & MCP giảng dạy kỹ năng sống"
+            action={`${adminConfirmedKpiRows.length} dòng HRM xác nhận`}
+          >
+            <div className="mb-4 grid gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3 lg:grid-cols-[1.3fr_1fr_1fr_auto_auto]">
+              <input
+                value={adminKpiTeacherFilter}
+                onChange={(event) => setAdminKpiTeacherFilter(event.target.value)}
+                placeholder="Lọc tên hoặc email nhân sự"
+                className={compactInputClass}
+              />
+              <input type="date" value={adminKpiDateFrom} onChange={(event) => setAdminKpiDateFrom(event.target.value)} className={compactInputClass} aria-label="Từ ngày" />
+              <input type="date" value={adminKpiDateTo} onChange={(event) => setAdminKpiDateTo(event.target.value)} className={compactInputClass} aria-label="Đến ngày" />
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminKpiTeacherFilter("");
+                  setAdminKpiDateFrom("");
+                  setAdminKpiDateTo("");
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"
+              >
+                <SlidersHorizontal size={15} /> Xóa lọc
+              </button>
+              <button type="button" onClick={() => void exportAdminTeachingKpiExcel()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--brand-dark)] px-3 py-2 text-xs font-black text-white transition hover:brightness-110">
+                <FileSpreadsheet size={15} /> Xuất Excel
+              </button>
+            </div>
+            <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4"><p className="text-xs font-black uppercase tracking-wide text-cyan-800">Nhân sự đã chấm</p><p className="mt-2 text-2xl font-black text-cyan-950">{adminKpiTeacherCount}</p></div>
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-black uppercase tracking-wide text-emerald-800">Tổng tiền HRM</p><p className="mt-2 text-2xl font-black text-emerald-950">{formatCurrency(adminKpiMoneyTotal)}</p></div>
+              <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4"><p className="text-xs font-black uppercase tracking-wide text-violet-800">Tổng MCP HRM</p><p className="mt-2 text-2xl font-black text-violet-950">{adminKpiMcpTotal} MCP</p></div>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-black uppercase tracking-wide text-amber-800">Chấm sớm nhất</p><p className="mt-2 text-sm font-black text-amber-950">{adminConfirmedKpiRows[0] ? formatDateTime(adminConfirmedKpiRows[0].workLog.submittedAt) : "Chưa có dữ liệu"}</p></div>
+            </div>
+            <p className="mb-3 text-sm font-semibold text-[var(--muted)]">Danh sách sắp theo thời điểm chấm công tăng dần: ai chấm trước hiện trước. Tiền và MCP là số HRM đã xác nhận; METTASOUL không tự tính lại.</p>
+            {adminConfirmedKpiRows.length > 0 ? (
+              <div className="app-scrollbar overflow-x-auto">
+                <table className="w-full min-w-[1050px] text-left text-sm">
+                  <thead className="bg-cyan-50 text-xs font-black uppercase text-[var(--brand-dark)]"><tr><th className="px-3 py-3">Thời điểm chấm</th><th className="px-3 py-3">Nhân sự</th><th className="px-3 py-3">Ngày dạy</th><th className="px-3 py-3">Trường / lớp</th><th className="px-3 py-3">Bài dạy</th><th className="px-3 py-3 text-right">Tiền HRM</th><th className="px-3 py-3 text-right">MCP</th><th className="px-3 py-3">Chi tiết</th></tr></thead>
+                  <tbody>{adminConfirmedKpiRows.map(({ workLog, schedule, teacher }) => {
+                    const meta = lookupSchedule(schedule);
+                    return <tr key={workLog.id} className="border-t border-cyan-100 bg-white transition hover:bg-cyan-50">
+                      <td className="px-3 py-3 font-black text-[var(--brand-dark)]">{formatDateTime(workLog.submittedAt)}</td>
+                      <td className="px-3 py-3 font-black text-[var(--brand-dark)]">{teacher?.name || "Chưa xác định"}<span className="mt-1 block text-xs font-semibold text-[var(--muted)]">{teacher?.email || workLog.userEmail}</span></td>
+                      <td className="px-3 py-3 font-bold text-[var(--muted)]">{formatDate(schedule.date)}</td>
+                      <td className="px-3 py-3 text-xs font-bold text-[var(--muted)]">{meta.school?.name || "Chưa rõ trường"}<span className="mt-1 block">{scheduleParticipantLabel(schedule, classes)}</span></td>
+                      <td className="px-3 py-3 font-bold text-[var(--brand-dark)]">{meta.lesson?.title || "Bài dạy"}<span className="mt-1 block text-xs text-[var(--muted)]">{teachingRoleLabel(workLog.roleCode)}</span></td>
+                      <td className="px-3 py-3 text-right font-black text-emerald-700">{formatCurrency(typeof workLog.money === "number" ? workLog.money : 0)}</td>
+                      <td className="px-3 py-3 text-right font-black text-violet-700">{workLog.mcpPoints ?? 0} MCP</td>
+                      <td className="px-3 py-3"><button type="button" onClick={() => setSelectedScheduleDetail(schedule)} className="rounded-lg border border-cyan-200 bg-white px-2 py-1 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50">Xem tiết</button></td>
+                    </tr>;
+                  })}</tbody>
+                </table>
+              </div>
+            ) : <div className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 p-5 text-sm font-bold text-[var(--muted)]">Chưa có dòng chấm công giảng dạy nào được HRM xác nhận theo bộ lọc này.</div>}
           </Panel>
 
           <Panel title="Cảnh báo điểm danh" action={`${teacherWarnings.length} giáo viên cần theo dõi`}>
@@ -8913,6 +9069,41 @@ export function MettasoulApp() {
             );
           })}
         </div>
+      </Panel>
+      <Panel title="KPI & MCP giảng dạy kỹ năng sống" action="Nguồn HRM đã xác nhận">
+        <div className="mb-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-emerald-800">Tổng tiền từ HRM</p>
+            <p className="mt-2 text-2xl font-black text-emerald-950">{formatCurrency(teacherConfirmedKpiTotal)}</p>
+          </div>
+          <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-violet-800">Tổng MCP từ HRM</p>
+            <p className="mt-2 text-2xl font-black text-violet-950">{teacherConfirmedMcpTotal} MCP</p>
+          </div>
+          <div className={`rounded-2xl border p-4 ${teacherMcpReconciliation === "Khớp với sổ HRM" || teacherMcpReconciliation === "Không phát sinh MCP theo tiết" ? "border-cyan-200 bg-cyan-50" : "border-amber-200 bg-amber-50"}`}>
+            <p className={`text-xs font-black uppercase tracking-wide ${teacherMcpReconciliation === "Khớp với sổ HRM" || teacherMcpReconciliation === "Không phát sinh MCP theo tiết" ? "text-cyan-800" : "text-amber-800"}`}>Đối chiếu sổ MCP</p>
+            <p className={`mt-2 text-sm font-black ${teacherMcpReconciliation === "Khớp với sổ HRM" || teacherMcpReconciliation === "Không phát sinh MCP theo tiết" ? "text-cyan-950" : "text-amber-950"}`}>{teacherMcpReconciliation}</p>
+          </div>
+        </div>
+        <p className="mb-3 text-sm font-semibold text-[var(--muted)]">Mỗi dòng là một tiết đã được HRM xác nhận. Bấm vào dòng để xem chi tiết lịch; tiền và MCP được dùng nguyên vẹn từ phản hồi HRM.</p>
+        {teacherConfirmedKpiRows.length > 0 ? (
+          <div className="app-scrollbar overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="bg-cyan-50 text-xs font-black uppercase text-[var(--brand-dark)]"><tr><th className="px-3 py-3">Ngày dạy</th><th className="px-3 py-3">Công việc</th><th className="px-3 py-3">Trường / lớp</th><th className="px-3 py-3 text-right">Tiền từ HRM</th><th className="px-3 py-3 text-right">MCP</th><th className="px-3 py-3">Trạng thái</th></tr></thead>
+              <tbody>{teacherConfirmedKpiRows.map(({ workLog, schedule }) => {
+                const meta = lookupSchedule(schedule);
+                return <tr key={workLog.id} role="button" tabIndex={0} onClick={() => setSelectedScheduleDetail(schedule)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedScheduleDetail(schedule); } }} className="cursor-pointer border-t border-cyan-100 bg-white transition hover:bg-cyan-50">
+                  <td className="px-3 py-3 font-black text-[var(--brand-dark)]">{formatDate(schedule.date)}<span className="mt-1 block text-xs font-semibold text-[var(--muted)]">Chấm: {formatDateTime(workLog.submittedAt)}</span></td>
+                  <td className="px-3 py-3 font-black text-[var(--brand-dark)]">{meta.lesson?.title || "Bài dạy"}<span className="mt-1 block text-xs font-semibold text-[var(--muted)]">{teachingRoleLabel(workLog.roleCode)}</span></td>
+                  <td className="px-3 py-3 text-xs font-bold text-[var(--muted)]">{meta.school?.name || "Chưa rõ trường"}<span className="mt-1 block">{scheduleParticipantLabel(schedule, classes)}</span></td>
+                  <td className="px-3 py-3 text-right font-black text-emerald-700">{formatCurrency(typeof workLog.money === "number" ? workLog.money : 0)}</td>
+                  <td className="px-3 py-3 text-right font-black text-violet-700">{workLog.mcpPoints ?? 0} MCP</td>
+                  <td className="px-3 py-3"><span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-black text-emerald-700">HRM xác nhận</span></td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+        ) : <div className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 p-5 text-sm font-bold text-[var(--muted)]">Chưa có dòng chấm công giảng dạy nào được HRM xác nhận.</div>}
       </Panel>
       </div>
     );
