@@ -744,7 +744,8 @@ export const activityOccurrenceHeaders = ["id", "activityTypeId", "title", "date
 export const activityAssignmentHeaders = ["id", "activityId", "teacherId", "roleCode", "status", "evidenceUrl", "completedAt", "approvedAt", "approvedBy", "approvalNote", "integrationStatus", "integrationEventId", "hrmWorkLogId", "mcpPoints", "createdAt", "updatedAt"];
 
 const defaultActivityTypes: Array<Omit<ActivityType, "description"> & { description: string }> = [
-  { id: "activity-melis", code: "MELIS_SESSION", name: "Giáo viên MELIS", kind: "OTHER_PAID", unit: "SESSION", requiresEvidence: false, requiresApproval: true, active: true, description: "Phiên MELIS 1:1 hoặc theo nhóm" },
+  { id: "activity-melis", code: "MELIS_SESSION_1_STUDENT", name: "Giáo viên MELIS (1 học viên)", kind: "OTHER_PAID", unit: "SESSION", requiresEvidence: false, requiresApproval: true, active: true, description: "Phiên MELIS 1:1 · 270.000đ/buổi" },
+  { id: "activity-melis-pair", code: "MELIS_SESSION_2_STUDENTS", name: "Giáo viên MELIS (2 học viên)", kind: "OTHER_PAID", unit: "SESSION", requiresEvidence: false, requiresApproval: true, active: true, description: "Phiên MELIS 2 học viên · 400.000đ/buổi" },
   { id: "activity-student-topic", code: "STUDENT_TOPIC_REPORT", name: "Báo cáo chuyên đề học sinh", kind: "HYBRID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "Báo cáo chính hoặc phụ trách chính" },
   { id: "activity-partner-topic", code: "PARTNER_FREE_TOPIC", name: "Chuyên đề miễn phí cho đối tác", kind: "OTHER_PAID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "Chuyên đề dành cho đối tác" },
   { id: "activity-internal-sharing", code: "INTERNAL_SHARING", name: "Chia sẻ chuyên môn nội bộ", kind: "HYBRID", unit: "SESSION", requiresEvidence: true, requiresApproval: true, active: true, description: "Chia sẻ hoặc huấn luyện nghiệp vụ" },
@@ -762,7 +763,25 @@ export async function ensureActivityCatalog(): Promise<ActivityType[]> {
     await appendSheetRows("ActivityTypes", defaultActivityTypes.map((type) => ({ ...type, createdAt: now, updatedAt: now })));
     return defaultActivityTypes;
   }
-  return toActivityTypes(existing);
+
+  // The original MELIS catalog item covered both one-to-one and pair sessions.
+  // Migrate that stable ID to 1 learner so previously assigned MELIS work can
+  // still be approved, then add the distinct pair-session choice.
+  const now = new Date().toISOString();
+  const singleStudentMelis = defaultActivityTypes.find((type) => type.id === "activity-melis")!;
+  const pairMelis = defaultActivityTypes.find((type) => type.id === "activity-melis-pair")!;
+  const legacyMelis = existing.find((type) => type.id === "activity-melis" && type.code === "MELIS_SESSION");
+  if (legacyMelis) {
+    await updateSheetRowById("ActivityTypes", "activity-melis", {
+      ...singleStudentMelis,
+      createdAt: legacyMelis.createdAt || now,
+      updatedAt: now,
+    });
+  }
+  if (!existing.some((type) => type.id === pairMelis.id)) {
+    await appendSheetRows("ActivityTypes", [{ ...pairMelis, createdAt: now, updatedAt: now }]);
+  }
+  return toActivityTypes(await readSheetRows("ActivityTypes"));
 }
 
 export const lessonPlanMessageHeaders = [

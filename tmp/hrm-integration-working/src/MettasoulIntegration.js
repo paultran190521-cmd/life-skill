@@ -217,6 +217,31 @@ function saveMettasoulActivityPolicy(policy, actorEmail) {
 }
 
 /**
+ * Configures the approved 2026-2027 MELIS session rates. HRM stays the
+ * authority: METTASOUL submits only the completed activity type and does not
+ * send an amount or any MCP value.
+ */
+function applyMettasoulMelisActivityPolicies(actorEmail) {
+  assertHrmAdmin_(actorEmail);
+  const policies = [
+    {
+      Code: "MELIS_SESSION_1_STUDENT", Name: "Giáo viên MELIS (1 học viên)",
+      ActivityTypeCode: "MELIS_SESSION_1_STUDENT", RoleCode: "PARTICIPANT", Unit: "SESSION",
+      CashAmount: 270000, McpPoints: 0, RequiresEvidence: false, Status: "Active"
+    },
+    {
+      Code: "MELIS_SESSION_2_STUDENTS", Name: "Giáo viên MELIS (2 học viên)",
+      ActivityTypeCode: "MELIS_SESSION_2_STUDENTS", RoleCode: "PARTICIPANT", Unit: "SESSION",
+      CashAmount: 400000, McpPoints: 0, RequiresEvidence: false, Status: "Active"
+    }
+  ];
+  const saved = policies.map(function(policy) {
+    return saveMettasoulActivityPolicy(policy, actorEmail).activityPolicy;
+  });
+  return { success: true, activityPolicies: saved };
+}
+
+/**
  * Applies a visible pilot policy without changing webhook state. Only HRM
  * workers provisioned from METTASOUL are included, plus the student assistant
  * explicitly identified by the administrator. Legacy HRM accounts stay intact.

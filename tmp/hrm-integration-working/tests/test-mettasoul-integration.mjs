@@ -129,6 +129,8 @@ assert.equal(scriptProperties.get("METTASOUL_INTEGRATION_ENABLED"), "true", "mig
 call(`saveTeachingContextRate(${JSON.stringify({ ContextType: "SCHOOL", ExternalCode: "school-remote", Name: "Trường xa", Amount: 15000, McpPoints: 5, Status: "Active" })}, 'admin@example.com')`);
 call(`savePayProfileAssignment(${JSON.stringify({ UserEmail: "teacher@example.com", DefaultProfileCode: "TEACHER_A", WorkerCategory: "PROFESSIONAL_TEACHER", AssistantProfileCode: "ASSISTANT_PRO", Status: "Active" })}, 'admin@example.com')`);
 call(`savePayProfileAssignment(${JSON.stringify({ UserEmail: "student@example.com", DefaultProfileCode: "", WorkerCategory: "STUDENT_ASSISTANT", AssistantProfileCode: "", Status: "Active" })}, 'admin@example.com')`);
+const melisPolicies = call("applyMettasoulMelisActivityPolicies('admin@example.com')");
+assert.equal(melisPolicies.activityPolicies.length, 2, "both MELIS session policies are configured");
 
 const teacherInput = {
   eventId: "evt-1",
@@ -193,6 +195,22 @@ const studentAssistant = call(`submitTeachingPeriod_(${JSON.stringify(studentAss
 assert.equal(studentAssistant.money, 30000, "student assistant receives the student rate only");
 assert.equal(ss.getSheetByName("WorkLogs").getLastRow(), 4);
 
+const melisSingle = call(`submitActivityCompletion_(${JSON.stringify({
+  eventId: "activity-1", idempotencyKey: "activity-melis-single:teacher@example.com", activityId: "activity-melis-single",
+  assignmentId: "assignment-1", userEmail: "teacher@example.com", activityTypeCode: "MELIS_SESSION_1_STUDENT",
+  roleCode: "PARTICIPANT", unit: "SESSION", workDate: "2026-09-16", title: "Dạy MELIS 1 học viên", evidenceUrl: ""
+})}, 'activity-hash-1')`);
+assert.equal(melisSingle.money, 270000, "one-student MELIS session pays 270,000 VND");
+assert.equal(melisSingle.mcpPoints, 0, "MELIS pay policy does not invent MCP");
+
+const melisPair = call(`submitActivityCompletion_(${JSON.stringify({
+  eventId: "activity-2", idempotencyKey: "activity-melis-pair:teacher@example.com", activityId: "activity-melis-pair",
+  assignmentId: "assignment-2", userEmail: "teacher@example.com", activityTypeCode: "MELIS_SESSION_2_STUDENTS",
+  roleCode: "PARTICIPANT", unit: "SESSION", workDate: "2026-09-16", title: "Dạy MELIS 2 học viên", evidenceUrl: ""
+})}, 'activity-hash-2')`);
+assert.equal(melisPair.money, 400000, "two-student MELIS session pays 400,000 VND");
+assert.equal(melisPair.mcpPoints, 0, "MELIS pair policy does not invent MCP");
+
 let missingContextCode = "";
 try {
   call(`submitTeachingPeriod_(${JSON.stringify({ ...teacherInput, eventId: "evt-3", idempotencyKey: "missing-school", schoolId: "unmapped-school" })}, 'payload-hash-4')`);
@@ -200,7 +218,7 @@ try {
   missingContextCode = error.code;
 }
 assert.equal(missingContextCode, "CONTEXT_RATE_MISSING", "missing school mapping must fail closed");
-assert.equal(ss.getSheetByName("WorkLogs").getLastRow(), 4);
+assert.equal(ss.getSheetByName("WorkLogs").getLastRow(), 6, "the failed teaching request does not add a seventh WorkLog");
 
 const secret = "01234567890123456789012345678901";
 const signedPayload = JSON.stringify({ source: "METTASOUL", action: "PING" });
