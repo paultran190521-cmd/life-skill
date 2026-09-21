@@ -488,6 +488,87 @@ function syncMettasoulWorkerNamesFromDirectory(actorEmail) {
   return syncMettasoulWorkerNamesFromJson(response.getContentText(), actorEmail);
 }
 
+/**
+ * Reconciles an explicitly confirmed METTASOUL email correction without
+ * creating a second HRM worker. Historical integration records are moved to
+ * the corrected email so payroll and MCP evidence remain attached to the
+ * same person.
+ */
+function reconcileMettasoulWorkerEmail(oldEmail, identity, actorEmail) {
+  assertHrmAdmin_(actorEmail);
+  const fromEmail = String(oldEmail || "").trim().toLowerCase();
+  const toEmail = String(identity && identity.email || "").trim().toLowerCase();
+  const name = String(identity && identity.name || "").trim();
+  if (!fromEmail || !toEmail || !name || fromEmail.indexOf("@") < 1 || toEmail.indexOf("@") < 1) {
+    throw integrationError_("IDENTITY_EMAIL_INVALID", "Cần email cũ, email METTASOUL mới và họ tên hợp lệ.");
+  }
+  if (fromEmail === toEmail) return { success: true, updatedSheets: 0, movedRecords: 0, message: "Email HRM đã khớp METTASOUL." };
+
+  const ss = getDatabase();
+  const userSheet = ss.getSheetByName("Users");
+  if (!userSheet) throw integrationError_("USERS_SHEET_MISSING", "HRM chưa có bảng Users.");
+  const users = userSheet.getDataRange().getValues();
+  let sourceIndex = -1;
+  let duplicateIndex = -1;
+  for (let index = 1; index < users.length; index++) {
+    const email = String(users[index][0] || "").trim().toLowerCase();
+    if (email === fromEmail) sourceIndex = index;
+    if (email === toEmail) duplicateIndex = index;
+  }
+  if (sourceIndex < 0) throw integrationError_("USER_NOT_MAPPED", "Không tìm thấy email HRM cũ để đồng bộ.");
+  if (duplicateIndex >= 0) throw integrationError_("EMAIL_ALREADY_EXISTS", "Email METTASOUL mới đã có một hồ sơ HRM khác.");
+
+  users[sourceIndex][0] = toEmail;
+  users[sourceIndex][3] = name;
+  let settings = {};
+  try {
+    settings = JSON.parse(String(users[sourceIndex][5] || "{}"));
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) settings = {};
+  } catch (error) {
+    settings = {};
+  }
+  settings.identityProvider = "METTASOUL";
+  settings.managedBy = "METTASOUL";
+  settings.mettasoulUserId = String(identity.userId || identity.id || "").trim();
+  settings.mettasoulTeacherId = String(identity.teacherId || "").trim();
+  settings.mettasoulRole = String(identity.role || "").trim();
+  settings.reconciledAt = new Date().toISOString();
+  users[sourceIndex][5] = JSON.stringify(settings);
+  userSheet.getRange(1, 1, users.length, users[0].length).setValues(users);
+
+  let updatedSheets = 1;
+  let movedRecords = 1;
+  ss.getSheets().forEach(function(sheet) {
+    if (sheet.getName() === "Users" || sheet.getLastRow() < 2 || sheet.getLastColumn() < 1) return;
+    const values = sheet.getDataRange().getValues();
+    const headers = values[0].map(String);
+    const emailColumns = headers.map(function(header, index) {
+      return String(header).trim().toLowerCase() === "useremail" ? index : -1;
+    }).filter(function(index) { return index >= 0; });
+    if (!emailColumns.length) return;
+    let changed = false;
+    for (let rowIndex = 1; rowIndex < values.length; rowIndex++) {
+      emailColumns.forEach(function(columnIndex) {
+        if (String(values[rowIndex][columnIndex] || "").trim().toLowerCase() === fromEmail) {
+          values[rowIndex][columnIndex] = toEmail;
+          movedRecords += 1;
+          changed = true;
+        }
+      });
+    }
+    if (changed) {
+      sheet.getRange(1, 1, values.length, values[0].length).setValues(values);
+      updatedSheets += 1;
+    }
+  });
+  appendPolicyVersion_(ss, "IDENTITY_EMAIL_RECONCILIATION", toEmail, 1, {
+    fromEmail: fromEmail, toEmail: toEmail, name: name,
+    mettasoulUserId: settings.mettasoulUserId, mettasoulTeacherId: settings.mettasoulTeacherId,
+    updatedSheets: updatedSheets, movedRecords: movedRecords
+  }, "UPDATE", actorEmail);
+  return { success: true, updatedSheets: updatedSheets, movedRecords: movedRecords, message: "Đã đồng bộ email HRM theo METTASOUL và giữ nguyên lịch sử liên quan." };
+}
+
 function provisionMettasoulWorkers_(identities, actorEmail) {
   if (!Array.isArray(identities) || identities.length === 0) {
     throw integrationError_("IDENTITY_LIST_REQUIRED", "Cần ít nhất một định danh METTASOUL để tạo hồ sơ nhân sự.");
