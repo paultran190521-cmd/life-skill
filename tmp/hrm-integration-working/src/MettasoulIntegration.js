@@ -228,9 +228,25 @@ function applyTeachingPayAssignmentsFromRates(entries, effectiveFrom, effectiveT
     }
   });
 
+  const usersByEmail = {};
+  readSheetObjects_(ss.getSheetByName("Users")).forEach(function(user) {
+    const email = String(user.Email || "").trim().toLowerCase();
+    if (email) usersByEmail[email] = true;
+  });
+  const assignmentSheet = ensureIntegrationSheet_(ss, METTASOUL_INTEGRATION_SCHEMA_.sheets.assignments, PAY_PROFILE_ASSIGNMENT_HEADERS_);
+  const assignmentValues = assignmentSheet.getDataRange().getValues();
+  const assignmentHeaders = assignmentValues[0].map(String);
+  const assignmentByEmail = {};
+  assignmentValues.slice(1).forEach(function(row, index) {
+    const email = String(row[assignmentHeaders.indexOf("UserEmail")] || "").trim().toLowerCase();
+    if (email) assignmentByEmail[email] = { rowIndex: index + 1, row: row };
+  });
+
   const seenEmails = {};
   const updated = [];
   const needsReview = [];
+  const additions = [];
+  const versions = [];
   entries.forEach(function(entry, index) {
     const email = String((entry || {}).email || (entry || {}).UserEmail || "").trim().toLowerCase();
     const sourceRate = String((entry || {}).rate !== undefined ? (entry || {}).rate : (entry || {}).BaseRate || "").replace(/[^0-9]/g, "");
@@ -249,21 +265,49 @@ function applyTeachingPayAssignmentsFromRates(entries, effectiveFrom, effectiveT
       needsReview.push({ row: index + 1, email: email, rate: rate, reason: "Không có hồ sơ đơn giá HRM đang dùng khớp mức lương/tiết." });
       return;
     }
-    try {
-      const result = savePayProfileAssignment({
-        UserEmail: email,
-        DefaultProfileCode: profileCode,
-        WorkerCategory: "PROFESSIONAL_TEACHER",
-        AssistantProfileCode: "ASSISTANT_PRO",
-        EffectiveFrom: effectiveFrom,
-        EffectiveTo: effectiveTo,
-        Status: "Active"
-      }, actorEmail).assignment;
-      updated.push({ email: email, rate: rate, profileCode: result.DefaultProfileCode });
-    } catch (error) {
-      needsReview.push({ row: index + 1, email: email, rate: rate, reason: String(error && error.message || error) });
+    if (!usersByEmail[email]) {
+      needsReview.push({ row: index + 1, email: email, rate: rate, reason: "Email giáo viên chưa tồn tại trong HRM." });
+      return;
     }
+
+    const normalized = normalizePayProfileAssignment_({
+      UserEmail: email,
+      DefaultProfileCode: profileCode,
+      WorkerCategory: "PROFESSIONAL_TEACHER",
+      AssistantProfileCode: "ASSISTANT_PRO",
+      EffectiveFrom: effectiveFrom,
+      EffectiveTo: effectiveTo,
+      Status: "Active"
+    });
+    const previousRecord = assignmentByEmail[email];
+    const previous = previousRecord ? assignmentHeaders.reduce(function(object, header, column) {
+      object[header] = previousRecord.row[column];
+      return object;
+    }, {}) : null;
+    const output = Object.assign({}, previous || {}, normalized, {
+      ID: previous ? previous.ID : "PPA_" + Utilities.getUuid(),
+      Version: previous ? (Number(previous.Version) || 0) + 1 : 1,
+      UpdatedAt: new Date(),
+      UpdatedBy: actorEmail
+    });
+    const outputRow = assignmentHeaders.map(function(header) { return output[header]; });
+    if (previousRecord) assignmentValues[previousRecord.rowIndex] = outputRow;
+    else additions.push(outputRow);
+    versions.push({
+      ID: "POL_" + Utilities.getUuid(), EntityType: "PAY_ASSIGNMENT", EntityId: output.ID,
+      Version: output.Version, SnapshotJson: JSON.stringify(output),
+      ChangeType: previous ? "UPDATE" : "CREATE", ChangedAt: output.UpdatedAt, ChangedBy: actorEmail
+    });
+    updated.push({ email: email, rate: rate, profileCode: output.DefaultProfileCode });
   });
+
+  // Write each sheet only once: this keeps the Apps Script callback fast even
+  // when an administrator imports a full contract roster.
+  if (updated.length) {
+    assignmentSheet.getRange(1, 1, assignmentValues.length, assignmentHeaders.length).setValues(assignmentValues);
+    if (additions.length) assignmentSheet.getRange(assignmentValues.length + 1, 1, additions.length, assignmentHeaders.length).setValues(additions);
+    appendObjectRows_(ss.getSheetByName(METTASOUL_INTEGRATION_SCHEMA_.sheets.versions), versions);
+  }
 
   return {
     success: true,
