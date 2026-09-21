@@ -3086,7 +3086,15 @@ export function MettasoulApp() {
 
   async function sendAttendanceReminder(teacherId: string) {
     if (!teacherId) return;
-    if (!window.confirm("Gửi email nhắc chấm công cho giáo viên này? Email sẽ liệt kê toàn bộ tiết đã kết thúc nhưng chưa chấm.")) {
+    const teacher = teacherById.get(teacherId);
+    const confirmed = await openConfirmDialog({
+      title: "Gửi nhắc chấm công",
+      message: `Email nhắc chấm công sẽ được gửi đến ${teacher?.name || "giáo viên này"}. Email liệt kê toàn bộ tiết đã kết thúc nhưng chưa chấm để giáo viên kiểm tra và hoàn tất trên webapp.`,
+      confirmText: "Gửi email nhắc",
+      cancelText: "Để sau",
+      tone: "brand",
+    });
+    if (!confirmed) {
       return;
     }
     try {

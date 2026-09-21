@@ -23,10 +23,15 @@ assert.match(component, /ai chấm trước hiện trước/);
 assert.match(component, /label="Chưa chấm công"/);
 assert.match(component, /label="Đã chấm công"/);
 assert.match(component, /sendAttendanceReminder/);
+assert.match(component, /openConfirmDialog\(/);
+assert.doesNotMatch(component, /window\.confirm\("Gửi email nhắc chấm công/);
+assert.match(component, /Gửi email nhắc/);
 assert.match(reminderRoute, /admin_only_attendance_reminder/);
 assert.match(reminderRoute, /hasEnded/);
 assert.match(reminderRoute, /sendAttendanceReminderEmail/);
 assert.match(email, /renderAttendanceReminderEmail/);
 assert.match(email, /NHẮC CHẤM CÔNG/);
+assert.match(email, /Mến chào thầy \(cô\)/);
+assert.match(email, /trên webapp để hoàn tất/);
 
 console.log("Teacher details, untaught calendar, and admin attendance reminder contracts passed.");
