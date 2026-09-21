@@ -278,6 +278,7 @@ type McpLedgerEntry = {
   entryType: "CREDIT" | "REVERSAL";
   reasonCode: string;
   reasonName: string;
+  schoolName: string;
   workDate: string;
   status: string;
   createdAt: string;
@@ -6635,7 +6636,7 @@ export function MettasoulApp() {
               <div key={entry.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-100 bg-white p-4">
                 <div>
                   <p className="font-black text-[var(--brand-dark)]">{entry.reasonName || "MCP từ HRM"}</p>
-                  <p className="mt-1 text-xs font-semibold text-[var(--muted)]">{entry.workDate ? formatDate(entry.workDate) : formatDateTime(entry.createdAt)} · HRM là nguồn xác nhận</p>
+                  <p className="mt-1 text-xs font-semibold text-[var(--muted)]">{entry.schoolName || "Trường chưa có tên trong dữ liệu cũ"} · {entry.workDate ? formatDate(entry.workDate) : formatDateTime(entry.createdAt)} · HRM là nguồn xác nhận</p>
                 </div>
                 <span className={entry.points >= 0 ? "rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-black text-emerald-700" : "rounded-full bg-rose-50 px-3 py-1.5 text-sm font-black text-rose-700"}>{entry.points > 0 ? "+" : ""}{entry.points} MCP</span>
               </div>

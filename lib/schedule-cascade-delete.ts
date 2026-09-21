@@ -16,6 +16,7 @@ export type ScheduleCascadeDeleteResult = {
   deletedLessonPlanIds: string[];
   deletedLessonPlanMessageIds: string[];
   deletedLessonPlanAttachmentIds: string[];
+  deletedTeachingWorkLogIds: string[];
   trashedDriveFileIds: string[];
 };
 
@@ -65,6 +66,7 @@ async function deleteScheduleDependentData(scheduleIds: string[]): Promise<Sched
       deletedLessonPlanIds: [],
       deletedLessonPlanMessageIds: [],
       deletedLessonPlanAttachmentIds: [],
+      deletedTeachingWorkLogIds: [],
       trashedDriveFileIds: [],
     };
   }
@@ -72,7 +74,7 @@ async function deleteScheduleDependentData(scheduleIds: string[]): Promise<Sched
   await assertNoConfirmedTeachingWorkLogs(requestedIds);
 
   const rows = await readSheetRowsBatch(
-    ["Schedules", "Attendance", "LessonPlans", "LessonPlanMessages", "LessonPlanAttachments"] as const,
+    ["Schedules", "Attendance", "LessonPlans", "LessonPlanMessages", "LessonPlanAttachments", "TeachingWorkLogs"] as const,
   );
   const requestedIdSet = new Set(requestedIds);
   const targetSchedules = rows.Schedules.filter((schedule) => requestedIdSet.has(String(schedule.id || "").trim()));
@@ -118,11 +120,16 @@ async function deleteScheduleDependentData(scheduleIds: string[]): Promise<Sched
   const deletedLessonPlanIds = relatedLessonPlans.map((plan) => String(plan.id || "").trim()).filter(Boolean);
   const deletedLessonPlanMessageIds = relatedMessages.map((message) => String(message.id || "").trim()).filter(Boolean);
   const deletedLessonPlanAttachmentIds = relatedAttachments.map((attachment) => String(attachment.id || "").trim()).filter(Boolean);
+  const deletedTeachingWorkLogIds = rows.TeachingWorkLogs
+    .filter((workLog) => deletedIdSet.has(String(workLog.scheduleId || "").trim()))
+    .map((workLog) => String(workLog.id || "").trim())
+    .filter(Boolean);
   await Promise.all([
     deleteSheetRowsByIds("Attendance", deletedAttendanceIds),
     deleteSheetRowsByIds("LessonPlanMessages", deletedLessonPlanMessageIds),
     deleteSheetRowsByIds("LessonPlanAttachments", deletedLessonPlanAttachmentIds),
     deleteSheetRowsByIds("LessonPlans", deletedLessonPlanIds.filter((id) => !deletedViaGasIds.has(id))),
+    deleteSheetRowsByIds("TeachingWorkLogs", deletedTeachingWorkLogIds),
   ]);
 
   return {
@@ -131,6 +138,7 @@ async function deleteScheduleDependentData(scheduleIds: string[]): Promise<Sched
     deletedLessonPlanIds,
     deletedLessonPlanMessageIds,
     deletedLessonPlanAttachmentIds,
+    deletedTeachingWorkLogIds,
     trashedDriveFileIds: Array.from(trashedDriveFileIds),
   };
 }

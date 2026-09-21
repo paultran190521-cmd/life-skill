@@ -427,8 +427,20 @@ function getMettasoulMcpLedger_(payload) {
   if (!sheet || sheet.getLastRow() < 2) {
     return { ok: true, code: "MCP_LEDGER", schemaVersion: METTASOUL_INTEGRATION_SCHEMA_.version, entries: [] };
   }
-  const entries = readSheetObjects_(sheet)
-    .filter(function(row) { return String(row.UserEmail || "").trim().toLowerCase() === userEmail; })
+  const allEntries = readSheetObjects_(sheet)
+    .filter(function(row) { return String(row.UserEmail || "").trim().toLowerCase() === userEmail; });
+  // A deleted schedule is represented by a compensating ledger row in HRM.
+  // Keep that audit pair in HRM but hide both rows from the operational view.
+  const reversedScheduleIds = {};
+  allEntries.forEach(function(row) {
+    if (normalizeCode_(row.ReasonCode) === "TEACHING_FAR_SCHOOL_REVERSAL") {
+      reversedScheduleIds[String(row.ActivityId || "")] = true;
+    }
+  });
+  const entries = allEntries
+    .filter(function(row) {
+      return !reversedScheduleIds[String(row.ActivityId || "")];
+    })
     .sort(function(left, right) {
       return String(right.CreatedAt || "").localeCompare(String(left.CreatedAt || ""));
     })
@@ -440,12 +452,27 @@ function getMettasoulMcpLedger_(payload) {
         entryType: normalizeCode_(row.EntryType) === "REVERSAL" ? "REVERSAL" : "CREDIT",
         reasonCode: String(row.ReasonCode || ""),
         reasonName: String(row.ReasonName || ""),
+        schoolName: findMettasoulLedgerSchoolName_(ss, row),
         workDate: formatMettasoulLedgerDate_(row.WorkDate),
         status: String(row.Status || ""),
         createdAt: formatMettasoulLedgerDate_(row.CreatedAt)
       };
     });
   return { ok: true, code: "MCP_LEDGER", schemaVersion: METTASOUL_INTEGRATION_SCHEMA_.version, entries: entries };
+}
+
+function findMettasoulLedgerSchoolName_(ss, ledgerRow) {
+  const scheduleId = String((ledgerRow || {}).ActivityId || "").trim();
+  if (!scheduleId) return "";
+  const event = readSheetObjects_(ss.getSheetByName(METTASOUL_INTEGRATION_SCHEMA_.sheets.events)).find(function(item) {
+    return String(item.ScheduleId || "") === scheduleId && normalizeCode_(item.Action) === "SUBMIT_TEACHING_PERIOD";
+  });
+  if (!event || !event.WorkLogId) return "";
+  const workLog = readSheetObjects_(ss.getSheetByName("WorkLogs")).find(function(item) {
+    return String(readWorkLogField_(item, "ID") || "") === String(event.WorkLogId);
+  });
+  const input = safeParseJson_(workLog ? readWorkLogField_(workLog, "InputData") : "", {});
+  return String(input && input.school && input.school.name || "").trim();
 }
 
 function formatMettasoulLedgerDate_(value) {

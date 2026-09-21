@@ -165,6 +165,7 @@ const teacherLedger = call("getMettasoulMcpLedger_({ userEmail: 'teacher@example
 assert.equal(teacherLedger.entries.length, 1, "only the requested teacher's MCP entries are returned");
 assert.equal(teacherLedger.entries[0].points, 5, "far-school MCP remains HRM-authoritative");
 assert.equal(teacherLedger.entries[0].reasonCode, "TEACHING_FAR_SCHOOL");
+assert.equal(teacherLedger.entries[0].schoolName, "Trường xa", "MCP ledger identifies the source school");
 
 const retry = call(`submitTeachingPeriod_(${JSON.stringify({ ...teacherInput, eventId: "evt-retry" })}, 'payload-hash-2')`);
 assert.equal(retry.ok, true);
@@ -219,6 +220,7 @@ assert.equal(invalidSignatureCode, "INVALID_SIGNATURE");
 
 const cancel = call(`cancelTeachingPeriod_(${JSON.stringify({ eventId: "evt-cancel", targetIdempotencyKey: teacherInput.idempotencyKey })}, 'payload-hash-5')`);
 assert.equal(cancel.code, "WORKLOG_CANCELLED");
+assert.equal(call("getMettasoulMcpLedger_({ userEmail: 'teacher@example.com' })").entries.length, 0, "cancelled teaching leaves no active MCP in METTASOUL");
 const workLogHeaders = ss.getSheetByName("WorkLogs").rows[0];
 const statusIndex = 9; // Legacy HRM keeps Status in J but its header is blank.
 assert.equal(ss.getSheetByName("WorkLogs").rows[1][statusIndex], "Deleted");

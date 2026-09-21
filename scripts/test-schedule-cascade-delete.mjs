@@ -26,6 +26,7 @@ const fixture = {
     { id: "attachment-1", lessonPlanId: "plan-upload", driveFileId: "drive-attachment" },
     { id: "attachment-other", lessonPlanId: "plan-other", driveFileId: "drive-other" },
   ],
+  TeachingWorkLogs: [{ id: "work-log-cancelled", scheduleId: "schedule-1", status: "CANCELLED" }],
 };
 let teachingWorkLogs = [];
 
@@ -61,6 +62,8 @@ assert.deepEqual(resetResult.deletedAttendanceIds, ["attendance-1"]);
 assert.deepEqual(resetResult.deletedLessonPlanIds, ["plan-upload", "plan-link"]);
 assert.deepEqual(resetResult.deletedLessonPlanMessageIds, ["message-1", "message-2"]);
 assert.deepEqual(resetResult.deletedLessonPlanAttachmentIds, ["attachment-1"]);
+assert.deepEqual(resetResult.deletedTeachingWorkLogIds, ["work-log-cancelled"]);
+assert.deepEqual(deletedRows.find((call) => call.sheet === "TeachingWorkLogs")?.ids, ["work-log-cancelled"]);
 assert.deepEqual(new Set(trashedFiles), new Set(["drive-plan", "drive-attachment"]));
 assert.equal(deletedRows.some((call) => call.sheet === "Schedules"), false);
 

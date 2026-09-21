@@ -14,6 +14,7 @@ import {
 } from "@/lib/google-sheets";
 import { parseDateRange } from "@/lib/date-range";
 import { deleteSchedulesCascade } from "@/lib/schedule-cascade-delete";
+import { cancelConfirmedTeachingWorkLogs } from "@/lib/teaching-work-log-cancellation";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 import { canShareClassTimeSlot, hasTeacherTimeConflict, type GroupClassTimeSlot } from "@/lib/schedule-conflict-policy";
 import { classifySchedulingParticipantIds } from "@/lib/scheduling-participants";
@@ -223,9 +224,9 @@ export async function DELETE(request: Request) {
       ? Array.from(new Set(body.ids.map((id) => String(id || "").trim()).filter(Boolean)))
       : [];
     const allSchedules = requestedIds.length === 0 ? await readSheetRows("Schedules") : [];
-    const result = await deleteSchedulesCascade(
-      requestedIds.length > 0 ? requestedIds : allSchedules.map((schedule) => String(schedule.id || "").trim()),
-    );
+    const targetIds = requestedIds.length > 0 ? requestedIds : allSchedules.map((schedule) => String(schedule.id || "").trim());
+    const cancelledWorkLogIds = await cancelConfirmedTeachingWorkLogs(targetIds);
+    const result = await deleteSchedulesCascade(targetIds);
     invalidateScheduleConflictIndex();
     await appendAuditLog({
       requestId,
@@ -243,7 +244,9 @@ export async function DELETE(request: Request) {
         deletedCount: result.deletedScheduleIds.length,
         deletedAttendanceCount: result.deletedAttendanceIds.length,
         deletedLessonPlanCount: result.deletedLessonPlanIds.length,
+        deletedTeachingWorkLogCount: result.deletedTeachingWorkLogIds.length,
         trashedDriveFileCount: result.trashedDriveFileIds.length,
+        cancelledWorkLogIds,
       },
     });
     return NextResponse.json({ success: true, ...result });

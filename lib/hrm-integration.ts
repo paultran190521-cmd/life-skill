@@ -66,6 +66,7 @@ export type HrmMcpLedgerEntry = {
   entryType: "CREDIT" | "REVERSAL";
   reasonCode: string;
   reasonName: string;
+  schoolName: string;
   workDate: string;
   status: string;
   createdAt: string;
