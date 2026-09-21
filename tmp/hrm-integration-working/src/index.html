@@ -603,6 +603,7 @@
           <div class="row g-4">
             <div class="col-xl-7"><div class="card shadow-sm h-100"><div class="card-header d-flex justify-content-between"><strong>Gán bậc lương cho giáo viên</strong><button class="btn btn-sm btn-outline-primary" @click="resetPayAssignmentForm">+ Gán hồ sơ</button></div><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead class="table-light"><tr><th>Email</th><th>Bậc dạy chính</th><th>Khi trợ giảng</th><th>Nhóm người</th><th></th></tr></thead><tbody><tr v-for="assignment in teachingPayData.assignments" :key="assignment.ID"><td>{{ assignment.UserEmail }}</td><td><span class="badge bg-primary">{{ assignment.DefaultProfileCode }}</span></td><td><span class="badge bg-secondary">{{ assignment.AssistantProfileCode || 'Tự chọn theo nhóm' }}</span></td><td><small>{{ assignment.WorkerCategory }}</small></td><td><button class="btn btn-sm btn-outline-primary" @click="editPayAssignment(assignment)"><i class="bi bi-pencil"></i></button></td></tr></tbody></table></div></div></div>
             <div class="col-xl-5"><div class="card shadow-sm h-100"><div class="card-header fw-bold">{{ payAssignmentForm.ID ? 'Sửa phân công' : 'Gán hồ sơ đơn giá' }}</div><div class="card-body"><div class="row g-2"><div class="col-12"><label class="form-label small fw-bold">Tài khoản HRM/METTASOUL</label><select v-model="payAssignmentForm.UserEmail" class="form-select"><option value="">-- Chọn giáo viên --</option><option v-for="user in allUsers" :key="user.email" :value="user.email">{{ user.name }} · {{ user.email }}</option></select></div><div class="col-6"><label class="form-label small fw-bold">Bậc khi dạy chính/đồng giảng</label><select v-model="payAssignmentForm.DefaultProfileCode" class="form-select"><option value="">-- Chọn --</option><option v-for="profile in teachingPayData.profiles.filter(p => String(p.AppliesToRoles || '').includes('MAIN_TEACHER'))" :key="profile.Code" :value="profile.Code">{{ profile.Code }}</option></select></div><div class="col-6"><label class="form-label small fw-bold">Mức khi trợ giảng</label><select v-model="payAssignmentForm.AssistantProfileCode" class="form-select"><option value="">Tự chọn theo nhóm người</option><option v-for="profile in teachingPayData.profiles.filter(p => String(p.AppliesToRoles || '').includes('ASSISTANT'))" :key="profile.Code" :value="profile.Code">{{ profile.Code }}</option></select></div><div class="col-12"><label class="form-label small fw-bold">Nhóm người</label><select v-model="payAssignmentForm.WorkerCategory" class="form-select"><option value="PROFESSIONAL_TEACHER">Giáo viên/chuyên viên</option><option value="STUDENT_ASSISTANT">Sinh viên trợ giảng</option></select></div><div class="col-6"><label class="form-label small fw-bold">Hiệu lực từ</label><input v-model="payAssignmentForm.EffectiveFrom" type="date" class="form-control"></div><div class="col-6"><label class="form-label small fw-bold">Đến ngày</label><input v-model="payAssignmentForm.EffectiveTo" type="date" class="form-control"></div><div class="col-12"><label class="form-label small fw-bold">Trạng thái</label><select v-model="payAssignmentForm.Status" class="form-select"><option value="Active">Đang dùng</option><option value="Inactive">Ngừng dùng</option></select></div></div></div><div class="card-footer text-end"><button class="btn btn-success" @click="submitPayAssignment" :disabled="loading"><i class="bi bi-save me-1"></i>Lưu gán hồ sơ</button></div></div></div>
+            <div class="col-12"><div class="card border-info shadow-sm"><div class="card-header bg-info-subtle fw-bold">Áp dụng bảng lương/tiết hàng loạt</div><div class="card-body"><p class="small text-muted mb-2">Mỗi dòng gồm <code>email, lương/tiết</code>. HRM chỉ gán vào bậc đơn giá đang có; email chưa tồn tại hoặc mức lương chưa có bậc sẽ được báo để rà soát.</p><textarea v-model="payRateImportText" class="form-control font-monospace small" rows="5" placeholder="teacher@example.com, 165000"></textarea><div class="row g-2 mt-1"><div class="col-sm-4"><label class="form-label small fw-bold">Hiệu lực từ</label><input v-model="payRateImportEffectiveFrom" type="date" class="form-control"></div><div class="col-sm-4"><label class="form-label small fw-bold">Đến ngày</label><input v-model="payRateImportEffectiveTo" type="date" class="form-control"></div><div class="col-sm-4 d-flex align-items-end"><button class="btn btn-info w-100" @click="applyTeachingPayRateImport" :disabled="loading"><i class="bi bi-upload me-1"></i>Áp dụng bảng lương</button></div></div></div></div></div>
           </div>
 
           <div class="row g-4 mt-1">
@@ -1194,6 +1195,9 @@
       const teachingProfileForm = reactive({ ID: '', Code: '', Name: '', AppliesToRoles: 'MAIN_TEACHER,CO_TEACHER', WorkerCategory: 'PROFESSIONAL_TEACHER', Unit: 'Tiết', BaseRate: 0, ManagementAllowance: 0, AllowContextRates: true, EffectiveFrom: '', EffectiveTo: '', ConditionsJson: '{}', Status: 'Active' });
       const teachingContextForm = reactive({ ID: '', ContextType: 'SCHOOL', ExternalCode: '', Name: '', Amount: 0, EffectiveFrom: '', EffectiveTo: '', Status: 'Active' });
       const payAssignmentForm = reactive({ ID: '', UserEmail: '', DefaultProfileCode: '', WorkerCategory: 'PROFESSIONAL_TEACHER', AssistantProfileCode: '', EffectiveFrom: '', EffectiveTo: '', Status: 'Active' });
+      const payRateImportText = ref('');
+      const payRateImportEffectiveFrom = ref('2026-09-05');
+      const payRateImportEffectiveTo = ref('2027-09-05');
       const activityPolicyForm = reactive({ ID: '', Code: '', Name: '', ActivityTypeCode: '', RoleCode: 'PARTICIPANT', Unit: 'SESSION', CashAmount: 0, McpPoints: 0, RequiresEvidence: false, EffectiveFrom: '', EffectiveTo: '', Status: 'Active' });
       
       const loginForm = reactive({ email: '', password: '', remember: false });
@@ -1452,6 +1456,22 @@
               loadTeachingPayAdminData();
               Swal.fire('Đã lưu', 'Đã gán hồ sơ đơn giá cho tài khoản.', 'success');
           }).withFailureHandler(showTeachingPayFailure).savePayProfileAssignment(JSON.parse(JSON.stringify(payAssignmentForm)), currentUser.value.email);
+      }
+
+      function applyTeachingPayRateImport() {
+          const entries = String(payRateImportText.value || '').split(/\r?\n/).map((line) => {
+              const parts = line.split(/[\t,;|]/).map((item) => item.trim()).filter(Boolean);
+              return { email: parts[0] || '', rate: parts.slice(1).join('') };
+          }).filter((item) => item.email || item.rate);
+          if (!entries.length) return Swal.fire('Thiếu dữ liệu', 'Nhập mỗi dòng gồm email và lương/tiết.', 'warning');
+          loading.value = true;
+          google.script.run.withSuccessHandler((res) => {
+              loading.value = false;
+              loadTeachingPayAdminData();
+              const reviews = Array.isArray(res.needsReview) ? res.needsReview : [];
+              const reviewText = reviews.length ? '<br><br><b>Cần rà soát:</b><br>' + reviews.map((item) => `${item.email || 'Dòng ' + item.row}: ${item.reason}`).join('<br>') : '';
+              Swal.fire('Đã áp dụng', `${res.message || ''}${reviewText}`, reviews.length ? 'warning' : 'success');
+          }).withFailureHandler(showTeachingPayFailure).applyTeachingPayAssignmentsFromRates(entries, payRateImportEffectiveFrom.value, payRateImportEffectiveTo.value, currentUser.value.email);
       }
 
       function resetActivityPolicyForm() {
@@ -2424,7 +2444,7 @@ function submitLeaveRequest() {
         currentMonthStatus, isAccountant, isDirector, isAdmin, changeStatus, isLogLocked,
         editingGroup, editingTask, editingSalary, editingDedType, editingDedLevel, editingTax, editingLeaveType, leaveForm,
         editingLog, batchConfig, availableTasks, expandedGroups, expandedTimekeepingGroups, expandedConfigGroups,
-        teachingPayData, integrationSecret, mettasoulIdentityImportJson, teachingProfileForm, teachingContextForm, payAssignmentForm, activityPolicyForm,
+        teachingPayData, integrationSecret, mettasoulIdentityImportJson, teachingProfileForm, teachingContextForm, payAssignmentForm, payRateImportText, payRateImportEffectiveFrom, payRateImportEffectiveTo, activityPolicyForm,
         dashboardData, monthlyDeductionTypes, incidentDeductionLevels,
         
         sysConfigTab, adminNotifications, notiForm, notifications,
@@ -2447,7 +2467,7 @@ function submitLeaveRequest() {
         loadTeachingPayAdminData, saveTeachingIntegrationSettings, provisionMettasoulWorkers, syncMettasoulWorkerNames, applyMettasoulPilotPayPolicy,
         resetTeachingProfileForm, editTeachingProfile, submitTeachingProfile,
         resetTeachingContextForm, editTeachingContext, submitTeachingContext,
-        resetPayAssignmentForm, editPayAssignment, submitPayAssignment,
+        resetPayAssignmentForm, editPayAssignment, submitPayAssignment, applyTeachingPayRateImport,
         resetActivityPolicyForm, editActivityPolicy, submitActivityPolicy,
         openUserModal, saveUser, deleteUser, triggerFileUpload, handleFileUpload, handleAvatarChange,
         changeDashboardMonth, openChangePassModal, changePass, loadNotifications, 

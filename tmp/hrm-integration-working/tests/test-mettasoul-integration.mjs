@@ -137,6 +137,18 @@ assert.equal(nameSync.updated, 1, "matching HRM identity receives the METTASOUL 
 assert.equal(nameSync.unchanged, 0);
 assert.equal(nameSync.notFound, 1, "missing HRM identities are reported without being created");
 assert.equal(ss.getSheetByName("Users").rows[2][3], "Giáo viên METTASOUL", "only the HRM name column changes");
+const rateImport = call(`applyTeachingPayAssignmentsFromRates(${JSON.stringify([
+  { email: "teacher@example.com", rate: "165.000 đồng/tiết" },
+  { email: "missing@example.com", rate: 155000 },
+  { email: "student@example.com", rate: 123456 }
+])}, '2026-09-05', '2027-09-05', 'admin@example.com')`);
+assert.equal(rateImport.updated.length, 1, "a source rate maps only to an existing HRM rate profile");
+assert.equal(rateImport.updated[0].profileCode, "TEACHER_A");
+assert.equal(rateImport.needsReview.length, 2, "missing identity and unmapped rate require review instead of a zero-pay assignment");
+const importedAssignmentHeaders = ss.getSheetByName("PayProfileAssignments").rows[0];
+const importedTeacherAssignment = ss.getSheetByName("PayProfileAssignments").rows.find((row) => row[importedAssignmentHeaders.indexOf("UserEmail")] === "teacher@example.com");
+assert.equal(importedTeacherAssignment[importedAssignmentHeaders.indexOf("EffectiveFrom")], "2026-09-05");
+assert.equal(importedTeacherAssignment[importedAssignmentHeaders.indexOf("EffectiveTo")], "2027-09-05");
 const melisPolicies = call("applyMettasoulMelisActivityPolicies('admin@example.com')");
 assert.equal(melisPolicies.activityPolicies.length, 2, "both MELIS session policies are configured");
 

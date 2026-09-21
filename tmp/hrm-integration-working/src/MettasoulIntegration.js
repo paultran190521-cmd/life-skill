@@ -207,6 +207,72 @@ function savePayProfileAssignment(assignment, actorEmail) {
   return { success: true, assignment: result };
 }
 
+/**
+ * Imports the contractual teaching rate for multiple existing HRM identities.
+ * The imported rate selects an already configured HRM profile; it never
+ * creates a rate or accepts an unmapped amount as payroll input.
+ */
+function applyTeachingPayAssignmentsFromRates(entries, effectiveFrom, effectiveTo, actorEmail) {
+  assertHrmAdmin_(actorEmail);
+  if (!Array.isArray(entries) || !entries.length) {
+    throw integrationError_("RATE_IMPORT_EMPTY", "Chưa có dữ liệu lương/tiết để áp dụng.");
+  }
+
+  const ss = getDatabase();
+  ensureIntegrationSheet_(ss, METTASOUL_INTEGRATION_SCHEMA_.sheets.profiles, TEACHING_PAY_PROFILE_HEADERS_);
+  const profilesByRate = {};
+  readSheetObjects_(ss.getSheetByName(METTASOUL_INTEGRATION_SCHEMA_.sheets.profiles)).forEach(function(profile) {
+    const normalized = normalizeTeachingPayProfile_(profile);
+    if (normalized.Status === "Active" && String(normalized.AppliesToRoles).indexOf("MAIN_TEACHER") !== -1) {
+      profilesByRate[String(normalized.BaseRate)] = normalized.Code;
+    }
+  });
+
+  const seenEmails = {};
+  const updated = [];
+  const needsReview = [];
+  entries.forEach(function(entry, index) {
+    const email = String((entry || {}).email || (entry || {}).UserEmail || "").trim().toLowerCase();
+    const sourceRate = String((entry || {}).rate !== undefined ? (entry || {}).rate : (entry || {}).BaseRate || "").replace(/[^0-9]/g, "");
+    const rate = Number(sourceRate);
+    if (!email || email.indexOf("@") < 1 || !rate) {
+      needsReview.push({ row: index + 1, email: email, reason: "Thiếu email hoặc mức lương/tiết hợp lệ." });
+      return;
+    }
+    if (seenEmails[email]) {
+      needsReview.push({ row: index + 1, email: email, reason: "Email xuất hiện trùng trong dữ liệu nhập." });
+      return;
+    }
+    seenEmails[email] = true;
+    const profileCode = profilesByRate[String(rate)];
+    if (!profileCode) {
+      needsReview.push({ row: index + 1, email: email, rate: rate, reason: "Không có hồ sơ đơn giá HRM đang dùng khớp mức lương/tiết." });
+      return;
+    }
+    try {
+      const result = savePayProfileAssignment({
+        UserEmail: email,
+        DefaultProfileCode: profileCode,
+        WorkerCategory: "PROFESSIONAL_TEACHER",
+        AssistantProfileCode: "ASSISTANT_PRO",
+        EffectiveFrom: effectiveFrom,
+        EffectiveTo: effectiveTo,
+        Status: "Active"
+      }, actorEmail).assignment;
+      updated.push({ email: email, rate: rate, profileCode: result.DefaultProfileCode });
+    } catch (error) {
+      needsReview.push({ row: index + 1, email: email, rate: rate, reason: String(error && error.message || error) });
+    }
+  });
+
+  return {
+    success: true,
+    updated: updated,
+    needsReview: needsReview,
+    message: "Đã áp dụng " + updated.length + " gán bậc lương; " + needsReview.length + " dòng cần rà soát."
+  };
+}
+
 function saveMettasoulActivityPolicy(policy, actorEmail) {
   assertHrmAdmin_(actorEmail);
   const ss = getDatabase();
