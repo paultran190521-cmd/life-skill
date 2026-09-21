@@ -19,6 +19,7 @@
     "test:school-time-slots": "node scripts/test-school-time-slot-policy.mjs",
     "test:teacher-availability": "node scripts/test-teacher-availability.mjs",
     "test:teaching-work-log": "node scripts/test-teaching-work-log.mjs && node scripts/test-hrm-integration.mjs",
+    "test:teacher-attendance-experience": "node scripts/test-teacher-attendance-experience.mjs",
     "test:menu-performance": "node scripts/test-menu-performance.mjs && node scripts/test-menu-rendering.cjs && node scripts/test-menu-extraction.cjs && node scripts/test-search-index.cjs",
     "test:chat-performance": "node scripts/test-chat-retention.cjs && node scripts/test-chat-pages.cjs && node scripts/test-lesson-plan-link-form.cjs",
     "benchmark:schedules": "node scripts/benchmark-schedules.mjs",

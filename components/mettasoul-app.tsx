@@ -349,7 +349,7 @@ function applyMettasoulExcelBrand(
   worksheet["!rows"] = rows;
 }
 type LessonPlanTeacherFocus = "uploaded" | "pending" | "submitted";
-type AttendanceAdminFocus = "all-today" | "checked-today" | "missing-today" | "late-today";
+type AttendanceAdminFocus = "all-today" | "checked-today" | "missing-today" | "late-today" | "unattended-ended" | "attended-by-day";
 type AttendanceWarningFocus = {
   teacherId: string;
   kind: "missing" | "late";
@@ -3074,6 +3074,24 @@ export function MettasoulApp() {
       setDataStatus("connected");
       setSaveError("");
       pushToast("Đã gửi nhắc", `Đã gửi ${response.notifications.length} thông báo nhắc xác nhận.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function sendAttendanceReminder(teacherId: string) {
+    if (!teacherId) return;
+    if (!window.confirm("Gửi email nhắc chấm công cho giáo viên này? Email sẽ liệt kê toàn bộ tiết đã kết thúc nhưng chưa chấm.")) {
+      return;
+    }
+    try {
+      const response = await saveRequest<{ sentCount: number; skippedCount: number }>("Đang gửi email nhắc chấm công...", "/api/attendance/reminders", {
+        method: "POST",
+        body: JSON.stringify({ teacherIds: [teacherId] }),
+      });
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã gửi nhắc", response.sentCount > 0 ? "Email nhắc chấm công đã được gửi kèm danh sách tiết cần xử lý." : "Chưa gửi được email. Hãy kiểm tra email giáo viên và cấu hình gửi mail.", response.sentCount > 0 ? "success" : "warning");
     } catch (error) {
       handleSaveError(error);
     }
@@ -6680,6 +6698,15 @@ export function MettasoulApp() {
 
   function renderCalendarPanel() {
     const todayKey = currentDateKey();
+    const teacherUntaughtSchedules = role === "admin"
+      ? []
+      : schedules
+        .filter((schedule) =>
+          (schedule.teacherId === currentTeacherId || isAssistantAssignedToSchedule(schedule, currentTeacherId))
+          && schedule.status !== "cancelled"
+          && !isTeachingPeriodEnded(schedule, timeSlots),
+        )
+        .sort((left, right) => left.date.localeCompare(right.date) || (lookupSchedule(left).slot?.start || "").localeCompare(lookupSchedule(right).slot?.start || ""));
     const calendarGridClass = calendarViewMode === "day" ? "grid-cols-1" : "grid-cols-7";
     const showTeacherBadgesInCalendarCell = calendarViewMode === "day" || !isMobileViewport;
     const bulkTargets = selectedDaySchedules.filter((schedule) => selectedScheduleIds.includes(schedule.id));
@@ -7144,6 +7171,9 @@ export function MettasoulApp() {
                     }
                     selectCalendarDate(day.dateKey);
                     setSelectedScheduleIds([]);
+                    if (role !== "admin") {
+                      window.requestAnimationFrame(() => document.getElementById(`teacher-untaught-date-${day.dateKey}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+                    }
                   }}
                   className={`flex min-h-[104px] flex-col items-center justify-center rounded-2xl border p-2.5 text-center transition sm:min-h-[112px] sm:p-3 ${
                     isAvailabilityTargeted
@@ -7202,6 +7232,31 @@ export function MettasoulApp() {
             </div>
           ) : null}
         </Panel>
+
+        {role !== "admin" ? (
+          <Panel title="Lịch chưa dạy" action={`${teacherUntaughtSchedules.length} lịch`}>
+            <p className="mb-4 text-sm font-semibold text-[var(--muted)]">Danh sách luôn hiển thị các tiết chưa kết thúc. Bấm ngày trên lịch để làm nổi bật và đi thẳng đến ngày đó.</p>
+            {teacherUntaughtSchedules.length > 0 ? (
+              <div className="space-y-3">
+                {Array.from(new Set(teacherUntaughtSchedules.map((schedule) => schedule.date))).map((date) => {
+                  const dateSchedules = teacherUntaughtSchedules.filter((schedule) => schedule.date === date);
+                  const isSelectedDate = selectedCalendarDate === date;
+                  return (
+                    <section key={date} id={`teacher-untaught-date-${date}`} className={`scroll-mt-4 rounded-2xl border p-3 transition sm:p-4 ${isSelectedDate ? "border-[var(--brand)] bg-cyan-50 shadow-lg shadow-cyan-950/10" : "border-[var(--line)] bg-white"}`}>
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-black text-[var(--brand-dark)]">{formatDate(date)}</p>
+                        <span className="rounded-full bg-orange-50 px-3 py-1 text-xs font-black text-orange-800">{dateSchedules.length} tiết chưa dạy</span>
+                      </div>
+                      {renderScheduleList({ items: dateSchedules, compact: true, onOpenDetail: setSelectedScheduleDetail })}
+                    </section>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-5 text-sm font-bold text-emerald-800">Không còn lịch chưa dạy.</div>
+            )}
+          </Panel>
+        ) : null}
 
         <div ref={calendarDetailRef} />
         {selectedCalendarDate ? (
@@ -8012,6 +8067,15 @@ export function MettasoulApp() {
     const hasPlans = meta.plans.length > 0;
     return (
       <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setSelectedScheduleDetail(schedule)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setSelectedScheduleDetail(schedule);
+          }
+        }}
         className={`min-w-0 rounded-2xl border p-3 shadow-sm [overflow-wrap:anywhere] sm:p-4 ${
           hasPlans ? "border-emerald-200 bg-emerald-50/55" : "border-white/80 bg-white/90"
         }`}
@@ -8037,6 +8101,7 @@ export function MettasoulApp() {
             {meta.plans.map((plan) => (
               <div key={plan.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-100 bg-white/90 px-3 py-2">
                 <a
+                  onClick={(event) => event.stopPropagation()}
                   href={plan.driveUrl}
                   target="_blank"
                   rel="noreferrer"
@@ -8061,7 +8126,7 @@ export function MettasoulApp() {
           </div>
         ) : null}
 
-        <div className="mt-3 grid gap-2">
+        <div className="mt-3 grid gap-2" onClick={(event) => event.stopPropagation()}>
           <div className="flex flex-wrap gap-2">
             {renderLessonPlanUploadButton({ schedule: schedule })}
           </div>
@@ -8294,7 +8359,7 @@ export function MettasoulApp() {
                   <X size={18} />
                 </button>
               </div>
-              {renderScheduleList({ items: selectedRows, compact: true })}
+              {renderScheduleList({ items: selectedRows, compact: true, onOpenDetail: setSelectedScheduleDetail })}
             </div>
             </div>
           </ViewportPortal>
@@ -8338,6 +8403,7 @@ export function MettasoulApp() {
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
             {meta.plans.length} file
           </span>
+          <button type="button" onClick={() => setSelectedScheduleDetail(schedule)} className="rounded-xl bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-800 transition hover:bg-cyan-100">Xem chi tiết</button>
         </div>
       </div>
     );
@@ -8362,6 +8428,7 @@ export function MettasoulApp() {
         </div>
         <div className="flex items-center justify-between gap-2 lg:justify-end">
           <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">Chưa có giáo án</span>
+          <button type="button" onClick={() => setSelectedScheduleDetail(schedule)} className="rounded-xl bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-800 transition hover:bg-cyan-100">Xem chi tiết</button>
           {allowUpload ? renderLessonPlanUploadButton({ schedule: schedule, compact: true }) : null}
         </div>
       </div>
@@ -8450,6 +8517,23 @@ export function MettasoulApp() {
     const lateToday = checkedToday.filter((schedule) =>
       isLateAttendance(schedule, lookupSchedule(schedule).checkIn, timeSlots),
     );
+    const endedUnattendedSchedules = role === "admin"
+      ? schedules.filter((schedule) => isAttendanceTrackedSchedule(schedule) && isTeachingPeriodEnded(schedule, timeSlots) && !lookupSchedule(schedule).checkIn)
+      : [];
+    const attendedSchedulesByDate = role === "admin"
+      ? primaryTeacherAttendance
+        .map((record) => scheduleById.get(record.scheduleId))
+        .filter((schedule): schedule is Schedule => Boolean(schedule && isAttendanceTrackedSchedule(schedule)))
+        .sort((left, right) => right.date.localeCompare(left.date))
+      : [];
+    const endedUnattendedByTeacher = Array.from(
+      endedUnattendedSchedules.reduce((groups, schedule) => {
+        const items = groups.get(schedule.teacherId) ?? [];
+        items.push(schedule);
+        groups.set(schedule.teacherId, items);
+        return groups;
+      }, new Map<string, Schedule[]>()),
+    ).map(([teacherId, items]) => ({ teacher: teacherById.get(teacherId), schedules: items }));
     const selectedAttendanceRows =
       attendanceAdminFocus === "all-today"
         ? todaySchedules
@@ -8459,12 +8543,18 @@ export function MettasoulApp() {
             ? missingToday
             : attendanceAdminFocus === "late-today"
               ? lateToday
+              : attendanceAdminFocus === "unattended-ended"
+                ? endedUnattendedSchedules
+                : attendanceAdminFocus === "attended-by-day"
+                  ? attendedSchedulesByDate
               : [];
     const selectedAttendanceTitle = {
       "all-today": "Tất cả tiết hôm nay",
       "checked-today": "Đã điểm danh hôm nay",
       "missing-today": "Chưa điểm danh hôm nay",
       "late-today": "Điểm danh trễ hôm nay",
+      "unattended-ended": "Tiết đã kết thúc nhưng chưa chấm công",
+      "attended-by-day": "Giáo viên đã chấm công theo ngày",
     }[attendanceAdminFocus ?? "all-today"];
     const teacherWarnings = buildAttendanceTeacherWarnings(schedules, primaryTeacherAttendance, teachers, timeSlots);
     const selectedWarning = attendanceWarningFocus
@@ -8514,7 +8604,39 @@ export function MettasoulApp() {
               tone="orange"
               onClick={() => setAttendanceAdminFocus("late-today")}
             />
+            <Stat
+              icon={AlertTriangle}
+              label="Chưa chấm công"
+              value={endedUnattendedSchedules.length}
+              tone="rose"
+              active={attendanceAdminFocus === "unattended-ended"}
+              onClick={() => setAttendanceAdminFocus("unattended-ended")}
+            />
+            <Stat
+              icon={CheckCircle2}
+              label="Đã chấm công"
+              value={attendedSchedulesByDate.length}
+              tone="emerald"
+              active={attendanceAdminFocus === "attended-by-day"}
+              onClick={() => setAttendanceAdminFocus("attended-by-day")}
+            />
           </div>
+
+          <Panel title="Chưa chấm công" action={`${endedUnattendedSchedules.length} tiết · ${endedUnattendedByTeacher.length} giáo viên`}>
+            <p className="mb-3 text-sm font-semibold text-[var(--muted)]">Chỉ gồm các tiết đã kết thúc nhưng giáo viên chính chưa điểm danh. Mỗi email nhắc liệt kê đầy đủ các tiết còn thiếu của giáo viên đó.</p>
+            <div className="space-y-3">
+              {endedUnattendedByTeacher.length > 0 ? endedUnattendedByTeacher.map(({ teacher, schedules: teacherSchedules }) => (
+                <div key={teacher?.id || teacherSchedules[0].teacherId} className="grid gap-3 rounded-2xl border border-rose-100 bg-rose-50/60 p-4 md:grid-cols-[1fr_auto_auto]">
+                  <div>
+                    <p className="text-sm font-black text-[var(--brand-dark)]">{teacher?.name || "Chưa xác định giáo viên"}</p>
+                    <p className="mt-1 text-xs font-bold text-slate-600">{teacher?.email || "Chưa có email"}</p>
+                  </div>
+                  <button type="button" onClick={() => setAttendanceAdminFocus("unattended-ended")} className="rounded-full bg-white px-3 py-2 text-xs font-black text-rose-700 transition hover:bg-rose-100">{teacherSchedules.length} tiết chưa chấm</button>
+                  <button type="button" onClick={() => void sendAttendanceReminder(teacher?.id || teacherSchedules[0].teacherId)} disabled={!teacher?.email || isBusy} className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white transition hover:bg-rose-700 disabled:opacity-50"><Bell size={15} />Nhắc qua email</button>
+                </div>
+              )) : <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-5 text-sm font-bold text-emerald-800">Không có tiết đã kết thúc cần nhắc chấm công.</div>}
+            </div>
+          </Panel>
 
           <Panel title="Cảnh báo điểm danh" action={`${teacherWarnings.length} giáo viên cần theo dõi`}>
             <div className="space-y-3">
@@ -8588,7 +8710,16 @@ export function MettasoulApp() {
                   </button>
                 </div>
                 <div className="space-y-3">
-                  {selectedAttendanceRows.length > 0 ? (
+                  {attendanceAdminFocus === "attended-by-day" && selectedAttendanceRows.length > 0 ? (
+                    Array.from(new Set(selectedAttendanceRows.map((schedule) => schedule.date))).map((date) => (
+                      <section key={date} className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/45 p-3">
+                        <p className="text-sm font-black text-emerald-900">{formatDate(date)}</p>
+                        {selectedAttendanceRows.filter((schedule) => schedule.date === date).map((schedule) => (
+                          <Fragment key={schedule.id}>{renderAttendanceScheduleRow({ schedule: schedule, showLateDetail: true })}</Fragment>
+                        ))}
+                      </section>
+                    ))
+                  ) : selectedAttendanceRows.length > 0 ? (
                     selectedAttendanceRows.map((schedule) => (
                       <Fragment key={schedule.id}>{renderAttendanceScheduleRow({ schedule: schedule, showLateDetail: true })}</Fragment>
                     ))
@@ -8656,7 +8787,16 @@ export function MettasoulApp() {
             return (
               <div
                 key={schedule.id}
-                className="grid gap-4 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm lg:grid-cols-[1fr_auto]"
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedScheduleDetail(schedule)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedScheduleDetail(schedule);
+                  }
+                }}
+                className="grid gap-4 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm transition hover:border-cyan-300 lg:grid-cols-[1fr_auto]"
               >
                 <div>
                   <p className="text-sm font-black text-[var(--brand-dark)]">
@@ -8684,7 +8824,10 @@ export function MettasoulApp() {
                   )}
                 </div>
                 <button
-                  onClick={() => checkIn(schedule)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    checkIn(schedule);
+                  }}
                   disabled={isCheckedIn || isCancelled}
                   className={
                     isCheckedIn || isCancelled
@@ -8752,7 +8895,10 @@ export function MettasoulApp() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => submitTeachingWorkLog(schedule)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    submitTeachingWorkLog(schedule);
+                  }}
                   disabled={Boolean(workLog) || isCancelled || !ended || !hrmIntegrationConfigured || isBusy}
                   className={
                     workLog || isCancelled || !ended || !hrmIntegrationConfigured || isBusy

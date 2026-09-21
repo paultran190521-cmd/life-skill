@@ -38,6 +38,7 @@ type ScheduleDigestInput = {
   teacher: { name?: string; email?: string };
   schedules: Schedule[];
   rows: ScheduleDigestRow[];
+  kind?: "schedule" | "attendance-reminder";
 };
 
 type ResendResponse = {
@@ -99,6 +100,10 @@ export async function sendScheduleEmail(input: ScheduleEmailInput) {
   });
 }
 
+export async function sendAttendanceReminderEmail(input: Omit<ScheduleDigestInput, "kind">) {
+  return sendScheduleDigestEmail({ ...input, kind: "attendance-reminder" });
+}
+
 export async function sendScheduleDigestEmail(input: ScheduleDigestInput) {
   const requestId = createEmailRequestId();
   const from = process.env.EMAIL_FROM;
@@ -136,8 +141,12 @@ export async function sendScheduleDigestEmail(input: ScheduleDigestInput) {
     return { sent: false, reason };
   }
 
-  const subject = buildScheduleWeekSubject(input.schedules);
-  const html = renderScheduleDigestEmail(input);
+  const subject = input.kind === "attendance-reminder"
+    ? `METTASOUL | Nhắc chấm công ${input.schedules.length} tiết đã kết thúc`
+    : buildScheduleWeekSubject(input.schedules);
+  const html = input.kind === "attendance-reminder"
+    ? renderAttendanceReminderEmail(input)
+    : renderScheduleDigestEmail(input);
 
   if (process.env.EMAIL_PROVIDER === "gas") {
     return sendViaGas({ to, subject, html, from, requestId, scheduleIds, teacherId });
@@ -504,6 +513,17 @@ async function sendViaResend({
     });
     return { sent: false, reason };
   }
+}
+
+function renderAttendanceReminderEmail(input: ScheduleDigestInput) {
+  const rows = [...input.rows].sort((a, b) => a.schedule.date.localeCompare(b.schedule.date) || `${a.slot?.start || ""}`.localeCompare(`${b.slot?.start || ""}`));
+  const appUrl = buildAppUrl();
+  const rowHtml = rows.map((row) => {
+    const time = [row.slot?.label, row.slot?.start && row.slot?.end ? `${row.slot.start}-${row.slot.end}` : ""].filter(Boolean).join(" · ");
+    const className = row.participantClassNames?.join(", ") || row.classRoom?.name || "Chưa rõ lớp";
+    return `<tr><td style="padding:10px;border:1px solid #d6e7eb">${escapeHtml(row.schedule.date || "")}</td><td style="padding:10px;border:1px solid #d6e7eb">${escapeHtml(time)}</td><td style="padding:10px;border:1px solid #d6e7eb">${escapeHtml(row.school?.name || "Chưa rõ trường")}<br><span style="color:#526b77">${escapeHtml(className)}</span></td><td style="padding:10px;border:1px solid #d6e7eb">${escapeHtml(row.lesson?.title || "Chưa rõ bài học")}</td></tr>`;
+  }).join("");
+  return `<!doctype html><html lang="vi"><body style="margin:0;padding:24px;background:#f3f8fa;color:#16313a;font-family:Arial,sans-serif"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:760px;background:#fff;border:1px solid #d6e7eb;border-radius:16px"><tr><td style="padding:28px"><p style="margin:0 0 8px;color:#147f99;font-size:12px;font-weight:700;text-align:center">HỌC VIỆN METTASOUL</p><h1 style="margin:0 0 18px;color:#075f73;font-size:24px;text-align:center">NHẮC CHẤM CÔNG</h1><p style="font-size:16px;line-height:1.6">Chào <strong>${escapeHtml(input.teacher.name || "Thầy/Cô")}</strong>, hiện có <strong>${rows.length} tiết đã kết thúc</strong> chưa được chấm công. Vui lòng mở mục <strong>Điểm danh - Chấm công</strong> trên METTASOUL để hoàn tất.</p><table width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;font-size:14px"><thead><tr style="background:#e7f6fa"><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Ngày</th><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Khung giờ</th><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Trường / lớp</th><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Bài học</th></tr></thead><tbody>${rowHtml}</tbody></table><p style="margin:22px 0 0;text-align:center"><a href="${appUrl}" style="display:inline-block;border-radius:10px;background:#08788e;color:#fff;padding:12px 18px;font-weight:700;text-decoration:none">MỞ METTASOUL ĐỂ CHẤM CÔNG</a></p></td></tr></table></td></tr></table></body></html>`;
 }
 
 function renderScheduleDigestEmail(input: ScheduleDigestInput) {
