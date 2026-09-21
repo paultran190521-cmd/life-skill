@@ -574,7 +574,7 @@
           <div class="card shadow-sm border-info mb-4">
             <div class="card-header bg-white fw-bold text-info"><i class="bi bi-person-vcard me-2"></i>Nhập hồ sơ nhân sự từ METTASOUL</div>
             <div class="card-body"><div class="small text-muted mb-2">Chỉ tạo hồ sơ HRM do METTASOUL quản lý; không tạo mật khẩu HRM và không tự gán bậc lương.</div><textarea v-model="mettasoulIdentityImportJson" class="form-control font-monospace" rows="4" placeholder='[{"name":"...","email":"...","role":"teacher","teacherId":"..."}]'></textarea></div>
-          <div class="card-footer d-flex flex-wrap justify-content-end gap-2"><button class="btn btn-outline-info" @click="syncMettasoulWorkerNames" :disabled="loading || !mettasoulIdentityImportJson.trim()"><i class="bi bi-person-check me-1"></i>Đồng bộ tên HRM</button><button class="btn btn-info text-white" @click="provisionMettasoulWorkers" :disabled="loading || !mettasoulIdentityImportJson.trim()"><i class="bi bi-person-plus me-1"></i>Tạo hồ sơ HRM</button></div>
+          <div class="card-footer d-flex flex-wrap justify-content-end gap-2"><button class="btn btn-outline-info" @click="syncMettasoulWorkerNames" :disabled="loading"><i class="bi bi-person-check me-1"></i>Đồng bộ tên từ METTASOUL</button><button class="btn btn-info text-white" @click="provisionMettasoulWorkers" :disabled="loading || !mettasoulIdentityImportJson.trim()"><i class="bi bi-person-plus me-1"></i>Tạo hồ sơ HRM</button></div>
           </div>
           <div class="card shadow-sm border-warning mb-4">
             <div class="card-header bg-warning-subtle fw-bold text-dark"><i class="bi bi-beaker me-2"></i>Cấu hình thử nghiệm</div>
@@ -1503,7 +1503,7 @@
               loading.value = false;
               google.script.run.withSuccessHandler(users => allUsers.value = users).getAllUsers();
               Swal.fire('Đã đồng bộ', res.message || 'Tên HRM đã được đồng bộ từ METTASOUL.', 'success');
-          }).withFailureHandler(showTeachingPayFailure).syncMettasoulWorkerNamesFromJson(mettasoulIdentityImportJson.value, currentUser.value.email);
+          }).withFailureHandler(showTeachingPayFailure).syncMettasoulWorkerNamesFromDirectory(currentUser.value.email);
       }
 
       function applyMettasoulPilotPayPolicy() {

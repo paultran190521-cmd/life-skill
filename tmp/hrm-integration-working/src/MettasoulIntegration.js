@@ -365,6 +365,19 @@ function syncMettasoulWorkerNamesFromJson(jsonText, actorEmail) {
   };
 }
 
+/** Fetches the public METTASOUL identity directory server-to-server, so an
+ * HRM administrator does not need to copy personal data through a browser
+ * form before aligning display names. */
+function syncMettasoulWorkerNamesFromDirectory(actorEmail) {
+  assertHrmAdmin_(actorEmail);
+  const response = UrlFetchApp.fetch("https://giaovukns.mettasoul.vn/api/users", { muteHttpExceptions: true });
+  const status = response.getResponseCode();
+  if (status < 200 || status >= 300) {
+    throw integrationError_("METTASOUL_DIRECTORY_UNAVAILABLE", "Không đọc được danh sách định danh từ METTASOUL (HTTP " + status + ").");
+  }
+  return syncMettasoulWorkerNamesFromJson(response.getContentText(), actorEmail);
+}
+
 function provisionMettasoulWorkers_(identities, actorEmail) {
   if (!Array.isArray(identities) || identities.length === 0) {
     throw integrationError_("IDENTITY_LIST_REQUIRED", "Cần ít nhất một định danh METTASOUL để tạo hồ sơ nhân sự.");
