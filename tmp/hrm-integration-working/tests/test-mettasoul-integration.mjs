@@ -63,7 +63,7 @@ const ss = new MockSpreadsheet([
   ]),
   // This is the live, legacy WorkLogs schema. Payroll reads TotalMoney (G),
   // so the integration must not only support the newer Money header.
-  sheet("WorkLogs", ["LogID", "UserEmail", "TaskID", "TaskName", "InputData_JSON", "CalculatedValue", "TotalMoney", "Timestamp", "DateLog", "Status"]),
+  sheet("WorkLogs", ["LogID", "UserEmail", "TaskID", "TaskName", "InputData_JSON", "CalculatedValue", "TotalMoney", "Timestamp", "DateLog", ""]),
   sheet("SystemConfig", ["Key", "Value"])
 ]);
 
@@ -216,7 +216,7 @@ assert.equal(invalidSignatureCode, "INVALID_SIGNATURE");
 const cancel = call(`cancelTeachingPeriod_(${JSON.stringify({ eventId: "evt-cancel", targetIdempotencyKey: teacherInput.idempotencyKey })}, 'payload-hash-5')`);
 assert.equal(cancel.code, "WORKLOG_CANCELLED");
 const workLogHeaders = ss.getSheetByName("WorkLogs").rows[0];
-const statusIndex = workLogHeaders.indexOf("Status");
+const statusIndex = 9; // Legacy HRM keeps Status in J but its header is blank.
 assert.equal(ss.getSheetByName("WorkLogs").rows[1][statusIndex], "Deleted");
 
 console.log("HRM METTASOUL integration tests passed.");

@@ -1022,16 +1022,20 @@ function appendWorkLogObject_(sheet, object) {
       throw integrationError_("WORKLOG_SCHEMA_UNSUPPORTED", "WorkLogs thiếu cột bắt buộc cho " + field + ".");
     }
   });
-  sheet.appendRow(headers.map(function(header) {
-    const canonical = canonicalWorkLogField_(header);
+  sheet.appendRow(headers.map(function(header, index) {
+    const canonical = canonicalWorkLogField_(header, index, headers);
     return canonical && Object.prototype.hasOwnProperty.call(object, canonical)
       ? object[canonical]
       : (Object.prototype.hasOwnProperty.call(object, header) ? object[header] : "");
   }));
 }
 
-function canonicalWorkLogField_(header) {
+function canonicalWorkLogField_(header, index, headers) {
   const normalized = String(header || "").trim().toLowerCase();
+  // Older HRM spreadsheets store Status in column J but leave its header
+  // empty. Keep that positional contract so existing dashboard/payroll code
+  // continues to see Active/Deleted at index 9.
+  if (!normalized && index === 9 && workLogHeaderIndex_(headers, "Status") === 9) return "Status";
   return Object.keys(WORKLOG_HEADER_ALIASES_).find(function(field) {
     return WORKLOG_HEADER_ALIASES_[field].some(function(alias) {
       return String(alias).toLowerCase() === normalized;
@@ -1041,11 +1045,13 @@ function canonicalWorkLogField_(header) {
 
 function workLogHeaderIndex_(headers, canonicalField) {
   const aliases = WORKLOG_HEADER_ALIASES_[canonicalField] || [canonicalField];
-  return headers.findIndex(function(header) {
+  const explicitIndex = headers.findIndex(function(header) {
     return aliases.some(function(alias) {
       return String(alias).toLowerCase() === String(header).trim().toLowerCase();
     });
   });
+  if (explicitIndex >= 0) return explicitIndex;
+  return canonicalField === "Status" && headers.length > 9 && !String(headers[9] || "").trim() ? 9 : -1;
 }
 
 function readWorkLogField_(row, canonicalField) {
@@ -1053,6 +1059,7 @@ function readWorkLogField_(row, canonicalField) {
   for (let i = 0; i < aliases.length; i++) {
     if (Object.prototype.hasOwnProperty.call(row, aliases[i])) return row[aliases[i]];
   }
+  if (canonicalField === "Status" && Object.prototype.hasOwnProperty.call(row, "")) return row[""];
   return "";
 }
 
@@ -1307,12 +1314,12 @@ function markWorkLogDeleted_(ss, workLogId) {
   const values = sheet.getDataRange().getValues();
   const headers = values[0].map(String);
   const idIndex = workLogHeaderIndex_(headers, "ID");
-  const statusIndex = headers.indexOf("Status");
+  const statusIndex = workLogHeaderIndex_(headers, "Status");
   const externalStatusIndex = headers.indexOf("ExternalStatus");
   const updatedAtIndex = headers.indexOf("UpdatedAt");
   for (let i = 1; i < values.length; i++) {
     if (idIndex >= 0 && String(values[i][idIndex]) === String(workLogId)) {
-      sheet.getRange(i + 1, statusIndex + 1).setValue("Deleted");
+      if (statusIndex >= 0) sheet.getRange(i + 1, statusIndex + 1).setValue("Deleted");
       if (externalStatusIndex >= 0) sheet.getRange(i + 1, externalStatusIndex + 1).setValue("CANCELLED");
       if (updatedAtIndex >= 0) sheet.getRange(i + 1, updatedAtIndex + 1).setValue(new Date());
       return;
