@@ -571,7 +571,8 @@ function reconcileMettasoulWorkerEmail(oldEmail, identity, actorEmail) {
 
 /**
  * Grants the configured METTASOUL teaching task to every HRM worker managed
- * by METTASOUL. Existing task permissions and payroll settings are preserved.
+ * by METTASOUL, including established METTASOUL accounts identified by their
+ * MTS staff code. Existing task permissions and payroll settings are preserved.
  */
 function grantConfiguredMettasoulTeachingTaskToWorkers(actorEmail) {
   assertHrmAdmin_(actorEmail);
@@ -595,9 +596,12 @@ function grantConfiguredMettasoulTeachingTaskToWorkers(actorEmail) {
     } catch (error) {
       settings = {};
     }
-    if (String(settings.managedBy || "").toUpperCase() !== "METTASOUL") return;
+    const managedByMettasoul = String(settings.managedBy || "").toUpperCase() === "METTASOUL";
+    const hasMettasoulStaffCode = /^MTS-/i.test(String(row[9] || "").trim());
+    if (!managedByMettasoul && !hasMettasoulStaffCode) return;
     const allowedTasks = Array.isArray(settings.allowedTasks) ? settings.allowedTasks.filter(Boolean) : [];
     if (allowedTasks.indexOf(taskId) >= 0) return;
+    settings.managedBy = "METTASOUL";
     settings.allowedTasks = allowedTasks.concat([taskId]);
     changes.push({ row: index + 2, email: String(row[0] || "").trim(), settings: JSON.stringify(settings) });
   });
