@@ -576,6 +576,11 @@
             <div class="card-body"><div class="small text-muted mb-2">Chỉ tạo hồ sơ HRM do METTASOUL quản lý; không tạo mật khẩu HRM và không tự gán bậc lương.</div><textarea v-model="mettasoulIdentityImportJson" class="form-control font-monospace" rows="4" placeholder='[{"name":"...","email":"...","role":"teacher","teacherId":"..."}]'></textarea></div>
           <div class="card-footer d-flex flex-wrap justify-content-end gap-2"><button class="btn btn-outline-info" @click="syncMettasoulWorkerNames" :disabled="loading"><i class="bi bi-person-check me-1"></i>Đồng bộ tên từ METTASOUL</button><button class="btn btn-info text-white" @click="provisionMettasoulWorkers" :disabled="loading || !mettasoulIdentityImportJson.trim()"><i class="bi bi-person-plus me-1"></i>Tạo hồ sơ HRM</button></div>
           </div>
+          <div class="card shadow-sm border-secondary mb-4">
+            <div class="card-header bg-white fw-bold text-secondary"><i class="bi bi-envelope-arrow-up me-2"></i>Đính chính email METTASOUL</div>
+            <div class="card-body"><div class="small text-muted mb-2">Chỉ dùng khi quản trị viên đã xác nhận email mới. HRM sẽ giữ nguyên một hồ sơ nhân sự và chuyển toàn bộ công, lương, MCP gắn với email cũ sang email mới.</div><div class="row g-2"><div class="col-md-4"><input v-model="mettasoulEmailReconcileOld" type="email" class="form-control" placeholder="Email HRM cũ"></div><div class="col-md-8"><textarea v-model="mettasoulEmailReconcileJson" class="form-control font-monospace" rows="2" placeholder='{"name":"...","email":"...","role":"teacher","teacherId":"..."}'></textarea></div></div></div>
+            <div class="card-footer text-end"><button class="btn btn-outline-secondary" @click="reconcileMettasoulWorkerEmail" :disabled="loading || !mettasoulEmailReconcileOld.trim() || !mettasoulEmailReconcileJson.trim()"><i class="bi bi-arrow-left-right me-1"></i>Đính chính và giữ lịch sử</button></div>
+          </div>
           <div class="card shadow-sm border-warning mb-4">
             <div class="card-header bg-warning-subtle fw-bold text-dark"><i class="bi bi-beaker me-2"></i>Cấu hình thử nghiệm</div>
             <div class="card-body small text-muted">Gán luân phiên bậc A/B/C cho giáo viên METTASOUL đã quản lý; trợ giảng giáo viên dùng 80.000đ/tiết, riêng trợ giảng sinh viên dùng 30.000đ/tiết. Đồng thời đặt phụ cấp trường xa +15.000đ/tiết cho Tân Túc và TDTT Bình Chánh. Không bật webhook.</div>
@@ -1192,6 +1197,8 @@
       const teachingPayData = reactive({ profiles: [], contexts: [], assignments: [], activityPolicies: [], mcpLedger: [], integration: { enabled: false, taskId: '', secretConfigured: false, schemaVersion: 1 } });
       const integrationSecret = ref('');
       const mettasoulIdentityImportJson = ref('');
+      const mettasoulEmailReconcileOld = ref('');
+      const mettasoulEmailReconcileJson = ref('');
       const teachingProfileForm = reactive({ ID: '', Code: '', Name: '', AppliesToRoles: 'MAIN_TEACHER,CO_TEACHER', WorkerCategory: 'PROFESSIONAL_TEACHER', Unit: 'Tiết', BaseRate: 0, ManagementAllowance: 0, AllowContextRates: true, EffectiveFrom: '', EffectiveTo: '', ConditionsJson: '{}', Status: 'Active' });
       const teachingContextForm = reactive({ ID: '', ContextType: 'SCHOOL', ExternalCode: '', Name: '', Amount: 0, EffectiveFrom: '', EffectiveTo: '', Status: 'Active' });
       const payAssignmentForm = reactive({ ID: '', UserEmail: '', DefaultProfileCode: '', WorkerCategory: 'PROFESSIONAL_TEACHER', AssistantProfileCode: '', EffectiveFrom: '', EffectiveTo: '', Status: 'Active' });
@@ -1524,6 +1531,24 @@
               google.script.run.withSuccessHandler(users => allUsers.value = users).getAllUsers();
               Swal.fire('Đã đồng bộ', res.message || 'Tên HRM đã được đồng bộ từ METTASOUL.', 'success');
           }).withFailureHandler(showTeachingPayFailure).syncMettasoulWorkerNamesFromDirectory(currentUser.value.email);
+      }
+
+      function reconcileMettasoulWorkerEmail() {
+          let identity;
+          try {
+              identity = JSON.parse(mettasoulEmailReconcileJson.value);
+          } catch (error) {
+              return Swal.fire('Dữ liệu chưa đúng', 'Định danh METTASOUL phải là JSON hợp lệ.', 'warning');
+          }
+          loading.value = true;
+          google.script.run.withSuccessHandler(res => {
+              loading.value = false;
+              mettasoulEmailReconcileOld.value = '';
+              mettasoulEmailReconcileJson.value = '';
+              loadTeachingPayAdminData();
+              google.script.run.withSuccessHandler(users => allUsers.value = users).getAllUsers();
+              Swal.fire('Đã đính chính email', res.message || 'Hồ sơ và lịch sử liên quan đã được giữ nguyên.', 'success');
+          }).withFailureHandler(showTeachingPayFailure).reconcileMettasoulWorkerEmail(mettasoulEmailReconcileOld.value, identity, currentUser.value.email);
       }
 
       function applyMettasoulPilotPayPolicy() {
@@ -2444,7 +2469,7 @@ function submitLeaveRequest() {
         currentMonthStatus, isAccountant, isDirector, isAdmin, changeStatus, isLogLocked,
         editingGroup, editingTask, editingSalary, editingDedType, editingDedLevel, editingTax, editingLeaveType, leaveForm,
         editingLog, batchConfig, availableTasks, expandedGroups, expandedTimekeepingGroups, expandedConfigGroups,
-        teachingPayData, integrationSecret, mettasoulIdentityImportJson, teachingProfileForm, teachingContextForm, payAssignmentForm, payRateImportText, payRateImportEffectiveFrom, payRateImportEffectiveTo, activityPolicyForm,
+        teachingPayData, integrationSecret, mettasoulIdentityImportJson, mettasoulEmailReconcileOld, mettasoulEmailReconcileJson, teachingProfileForm, teachingContextForm, payAssignmentForm, payRateImportText, payRateImportEffectiveFrom, payRateImportEffectiveTo, activityPolicyForm,
         dashboardData, monthlyDeductionTypes, incidentDeductionLevels,
         
         sysConfigTab, adminNotifications, notiForm, notifications,
@@ -2464,7 +2489,7 @@ function submitLeaveRequest() {
         toggleUser, selectAllUsers, submitBatchAssignment, getDedLevelsByType, toggleTimekeepingGroup, getAvailableTasksInGroup, toggleConfigGroup,
         submitLog, calculatePreview, openPayslip, saveSystemConfig, saveUserDependents,
         addOption, removeOption, addRolePolicy, removeRolePolicy,
-        loadTeachingPayAdminData, saveTeachingIntegrationSettings, provisionMettasoulWorkers, syncMettasoulWorkerNames, applyMettasoulPilotPayPolicy,
+        loadTeachingPayAdminData, saveTeachingIntegrationSettings, provisionMettasoulWorkers, syncMettasoulWorkerNames, reconcileMettasoulWorkerEmail, applyMettasoulPilotPayPolicy,
         resetTeachingProfileForm, editTeachingProfile, submitTeachingProfile,
         resetTeachingContextForm, editTeachingContext, submitTeachingContext,
         resetPayAssignmentForm, editPayAssignment, submitPayAssignment, applyTeachingPayRateImport,
