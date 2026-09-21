@@ -3110,6 +3110,31 @@ export function MettasoulApp() {
     }
   }
 
+  async function sendAllAttendanceReminders(teacherIds: string[], unfinishedPeriodCount: number) {
+    const uniqueTeacherIds = Array.from(new Set(teacherIds.filter(Boolean)));
+    if (uniqueTeacherIds.length === 0) return;
+    const confirmed = await openConfirmDialog({
+      title: "Nhắc toàn bộ giáo viên chưa chấm công",
+      message: `Hệ thống sẽ gửi ${uniqueTeacherIds.length} email riêng đến ${uniqueTeacherIds.length} giáo viên có tổng cộng ${unfinishedPeriodCount} tiết đã kết thúc chưa chấm công. Mỗi email chỉ liệt kê các tiết của đúng giáo viên nhận thư.`,
+      confirmText: `Gửi ${uniqueTeacherIds.length} email nhắc`,
+      cancelText: "Để sau",
+      tone: "brand",
+    });
+    if (!confirmed) return;
+    try {
+      const response = await saveRequest<{ sentCount: number; skippedCount: number; failedCount: number }>("Đang gửi email nhắc chấm công hàng loạt...", "/api/attendance/reminders", {
+        method: "POST",
+        body: JSON.stringify({ teacherIds: uniqueTeacherIds }),
+      });
+      setDataStatus("connected");
+      setSaveError("");
+      const summary = `Đã gửi ${response.sentCount}/${uniqueTeacherIds.length} email nhắc${response.skippedCount ? ` · ${response.skippedCount} bỏ qua` : ""}${response.failedCount ? ` · ${response.failedCount} chưa gửi được` : ""}.`;
+      pushToast(response.sentCount > 0 ? "Đã gửi nhắc toàn bộ" : "Chưa gửi được email nhắc", summary, response.sentCount > 0 ? "success" : "warning");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
   async function loadObservability(windowHours = 48) {
     if (!hasAdminAccess) {
       return;
@@ -8751,7 +8776,10 @@ export function MettasoulApp() {
           </div>
 
           <Panel title="Chưa chấm công" action={`${endedUnattendedSchedules.length} tiết · ${endedUnattendedByTeacher.length} giáo viên`}>
-            <p className="mb-3 text-sm font-semibold text-[var(--muted)]">Chỉ gồm các tiết đã kết thúc nhưng giáo viên chính chưa điểm danh. Mỗi email nhắc liệt kê đầy đủ các tiết còn thiếu của giáo viên đó.</p>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-[var(--muted)]">Chỉ gồm các tiết đã kết thúc nhưng giáo viên chính chưa điểm danh. Mỗi email nhắc liệt kê đầy đủ các tiết còn thiếu của giáo viên đó.</p>
+              {endedUnattendedByTeacher.length > 0 ? <button type="button" onClick={() => void sendAllAttendanceReminders(endedUnattendedByTeacher.map(({ teacher, schedules: teacherSchedules }) => teacher?.id || teacherSchedules[0].teacherId), endedUnattendedSchedules.length)} disabled={isBusy} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--brand)] px-3 py-2 text-xs font-black text-white shadow-lg shadow-cyan-700/15 transition hover:bg-[var(--brand-dark)] disabled:opacity-50"><Bell size={15} />Nhắc toàn bộ</button> : null}
+            </div>
             <div className="space-y-3">
               {endedUnattendedByTeacher.length > 0 ? endedUnattendedByTeacher.map(({ teacher, schedules: teacherSchedules }) => (
                 <div key={teacher?.id || teacherSchedules[0].teacherId} className="grid gap-3 rounded-2xl border border-rose-100 bg-rose-50/60 p-4 md:grid-cols-[1fr_auto_auto]">
