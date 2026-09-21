@@ -311,7 +311,7 @@
             </td>
 
             <td>
-                <div class="fw-bold text-primary fs-5">{{ u.name }}</div> <div class="fw-bold text-dark mt-1" v-if="u.staffCode">
+                <div class="fw-bold text-primary fs-5">{{ u.name }}</div> <div class="fw-bold text-dark mt-1" v-if="u.staffCode && !isMettasoulStaffCode(u.staffCode)">
                     <i class="bi bi-upc-scan me-1"></i>{{ u.staffCode }}
                 </div>
                 <div class="text-muted mt-1">{{ u.email }}</div>
@@ -748,7 +748,7 @@
                     <label v-for="u in allUsers" :key="u.email" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
                         <div>
                             <input class="form-check-input me-2" type="checkbox" :value="u.email" :checked="batchConfig.selectedUsers.includes(u.email)" @change="toggleUser(u.email)"> 
-                            <strong>{{ u.staffCode ? u.staffCode + ' - ' : '' }}</strong> {{ u.name }}
+                            <strong v-if="u.staffCode && !isMettasoulStaffCode(u.staffCode)">{{ u.staffCode }} - </strong>{{ u.name }}
                         </div>
                         <div class="d-flex align-items-center gap-2">
                             <span class="badge bg-secondary">{{ u.role }}</span>
@@ -2176,6 +2176,11 @@ function submitLeaveRequest() {
           // 4. Trường hợp khác (ví dụ đã có sẵn data:image...) -> Giữ nguyên
           return src;
       }
+
+      // Mã MTS là khóa kỹ thuật do METTASOUL sinh; không hiển thị trước tên giáo viên.
+      function isMettasoulStaffCode(staffCode) {
+          return /^MTS-t-/i.test(String(staffCode || '').trim());
+      }
       // ======================================================
       // [MỚI] LOGIC THƯỞNG NÓNG (BONUS SYSTEM)
       // ======================================================
@@ -2456,7 +2461,7 @@ function submitLeaveRequest() {
 
         // Utils
         selectedTaskId, selectedTaskConfig, parsedFields, logData, previewQuantity, previewMoney, formatCurrency, formatDateShort, getStatusBadge, getStatusText, safeJsonParse,
-        formatDateSafe, getContractClass, getAvatarSrc,expiringContractsAlert
+        formatDateSafe, getContractClass, getAvatarSrc, isMettasoulStaffCode, expiringContractsAlert
       };
     }
   });
