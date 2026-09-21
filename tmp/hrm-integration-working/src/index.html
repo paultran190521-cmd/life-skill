@@ -771,30 +771,45 @@
     <div class="row g-3">
         <div class="col-md-4">
             <label class="form-label fw-bold">Mức Lương Cứng</label>
-            <select v-model="batchConfig.salaryLevelId" class="form-select">
+            <select v-model="batchConfig.salaryLevelId" :disabled="!batchConfig.updateSalaryLevel" class="form-select">
                 <option value="">-- Không thay đổi --</option>
                 <option v-for="s in salaryLevels" :value="s.id">{{ s.name }} - {{ formatCurrency(s.amount) }}</option>
             </select>
+            <label class="form-check small mt-2 mb-0">
+                <input class="form-check-input" type="checkbox" v-model="batchConfig.updateSalaryLevel">
+                <span class="form-check-label">Cập nhật lương cứng</span>
+            </label>
         </div>
         <div class="col-md-4">
             <label class="form-label fw-bold text-primary">Chế độ BHXH & Thuế</label>
-            <select class="form-select border-primary" v-model="batchConfig.insuranceType">
+            <select class="form-select border-primary" :disabled="!batchConfig.updateInsuranceType" v-model="batchConfig.insuranceType">
                 <option value="">-- Không thay đổi --</option>
                 <option value="1">TH 1: Tại Sunnycare (Hỗ trợ/tiết)</option>
                 <option value="2">TH 2: Đóng nơi khác (Thuế khoán)</option>
                 <option value="3">TH 3: Không đóng (Nhận đủ)</option>
             </select>
+            <label class="form-check small mt-2 mb-0">
+                <input class="form-check-input" type="checkbox" v-model="batchConfig.updateInsuranceType">
+                <span class="form-check-label">Cập nhật BHXH & thuế</span>
+            </label>
         </div>
         <div class="col-md-4">
             <label class="form-label fw-bold">Các khoản trừ cố định</label>
+            <label class="form-check small mb-2">
+                <input class="form-check-input" type="checkbox" v-model="batchConfig.updateDeductions">
+                <span class="form-check-label">Cập nhật khoản trừ</span>
+            </label>
             <div v-for="dt in monthlyDeductionTypes" :key="dt.id" class="d-flex align-items-center mb-1">
                 <span class="me-2 small text-truncate" style="width:70px" :title="dt.name">{{ dt.name }}:</span>
-                <select class="form-select form-select-sm" v-model="batchConfig.deductionAssignments[dt.id]">
+                <select class="form-select form-select-sm" :disabled="!batchConfig.updateDeductions" v-model="batchConfig.deductionAssignments[dt.id]">
                     <option value="">-- Không --</option>
                     <option v-for="dl in getDedLevelsByType(dt.id)" :value="String(dl.id)">{{ dl.name }}</option>
                 </select>
             </div>
         </div>
+    </div>
+    <div class="alert alert-info py-2 mt-3 mb-0 small">
+        <strong>Cập nhật an toàn:</strong> chỉ các mục được chọn bên dưới mới được lưu. Quyền việc, lương, khoản trừ và BHXH–thuế là các nhóm độc lập.
     </div>
 </div>
 
@@ -804,19 +819,23 @@
                     <div v-for="group in taskGroups" :key="group.id" class="mb-2">
                         <div class="group-select-header" @click="toggleGroupExpand(group.id)">
                             <div class="d-flex align-items-center">
-                                <input type="checkbox" class="form-check-input me-2" :checked="isGroupSelected(group.id)" @click.stop @change="toggleGroupSelection(group.id, $event)"> 
+                                <input type="checkbox" class="form-check-input me-2" :disabled="!batchConfig.updateAllowedTasks" :checked="isGroupSelected(group.id)" @click.stop @change="toggleGroupSelection(group.id, $event)">
                                 <strong>{{ group.name }}</strong>
                             </div>
                             <i class="bi bi-chevron-down rotate-icon" :class="{ 'open': expandedGroups.includes(group.id) }"></i>
                         </div>
                         <div v-if="expandedGroups.includes(group.id)" class="ms-4 mt-1 task-list-body">
                             <div v-for="t in getTasksByGroup(group.id)" :key="t.id" class="form-check">
-                                <input class="form-check-input" type="checkbox" :value="t.id" v-model="batchConfig.allowedTasks">
+                                <input class="form-check-input" type="checkbox" :disabled="!batchConfig.updateAllowedTasks" :value="t.id" v-model="batchConfig.allowedTasks">
                                 <label class="form-check-label">{{ t.name }}</label>
                             </div>
                         </div>
                     </div>
                 </div>
+                <label class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" v-model="batchConfig.updateAllowedTasks">
+                    <span class="form-check-label fw-semibold">Cập nhật quyền công việc đã chọn</span>
+                </label>
             </div>
 
             <button class="btn btn-success w-100 fw-bold py-2" @click="submitBatchAssignment" :disabled="loading">
@@ -1193,7 +1212,7 @@
 
       const sysConfig = reactive({ selfRelief: 11000000, dependentRelief: 4400000, directorEmail: '', accountantEmail: '', techZalo: '', accZalo: '', bhxhBase: 1760000, bhxhSubsidy: 12216, flatTaxRate: 10 });
 
-      const batchConfig = reactive({ salaryLevelId: '', allowedTasks: [], deductionAssignments: {}, selectedUsers: [], insuranceType: '' });
+      const batchConfig = reactive({ salaryLevelId: '', allowedTasks: [], deductionAssignments: {}, selectedUsers: [], insuranceType: '', updateSalaryLevel: false, updateInsuranceType: false, updateAllowedTasks: false, updateDeductions: false });
       const teachingPayData = reactive({ profiles: [], contexts: [], assignments: [], activityPolicies: [], mcpLedger: [], integration: { enabled: false, taskId: '', secretConfigured: false, schemaVersion: 1 } });
       const integrationSecret = ref('');
       const mettasoulIdentityImportJson = ref('');
@@ -2030,36 +2049,41 @@ function submitLeaveRequest() {
       function deleteDedLevel(id) { showConfirm('Xóa mức trừ này?', () => google.script.run.withSuccessHandler(loadFinanceData).deleteDeductionLevel(id)); }
       function saveTax() { google.script.run.withSuccessHandler(()=>{ bootstrap.Modal.getInstance(document.getElementById('taxModal')).hide(); loadFinanceData(); }).saveTaxConfig(editingTax.id, editingTax.min, editingTax.max, editingTax.percent); }
       function deleteTax(id) { showConfirm('Xóa bậc thuế này?', () => google.script.run.withSuccessHandler(loadFinanceData).deleteTaxConfig(id)); }
-      function submitBatchAssignment() { 
-    if (batchConfig.selectedUsers.length === 0) return Swal.fire('Chưa chọn người', '', 'warning'); 
-    
-    loading.value = true; 
-    
-    // Tạo bản sao payload
-    const payload = JSON.parse(JSON.stringify(batchConfig)); 
-    
-    // [QUAN TRỌNG] Dọn dẹp các giá trị BHXH rỗng trước khi gửi để nhẹ database
-    for (let key in payload.deductionAssignments) {
-        if (!payload.deductionAssignments[key] || payload.deductionAssignments[key] === '') {
-            delete payload.deductionAssignments[key];
-        }
-    }
+      function submitBatchAssignment() {
+        if (batchConfig.selectedUsers.length === 0) return Swal.fire('Chưa chọn người', '', 'warning');
+        const payload = JSON.parse(JSON.stringify(batchConfig));
+        const changes = [];
+        if (payload.updateAllowedTasks) changes.push('quyền công việc');
+        if (payload.updateSalaryLevel && payload.salaryLevelId) changes.push('lương cứng');
+        if (payload.updateDeductions) changes.push('khoản trừ cố định');
+        if (payload.updateInsuranceType && payload.insuranceType) changes.push('chế độ BHXH & thuế');
+        if (!changes.length) return Swal.fire('Chưa có thay đổi', 'Hãy chọn ít nhất một nhóm cấu hình cần cập nhật. Các mục để "Không thay đổi" sẽ được giữ nguyên.', 'warning');
 
-    google.script.run.withSuccessHandler(res => { 
-        loading.value = false; 
-        Swal.fire('Thành công', res.message, 'success'); 
-        
-        // Bắt buộc tải lại dữ liệu sau khi lưu
-        loadFinanceData(); 
-        
-    }).batchAssignUsers(payload.selectedUsers, { 
-        allowedTasks: payload.allowedTasks, 
-        salaryLevelId: payload.salaryLevelId, 
-        deductionAssignments: payload.deductionAssignments,
-        // [MỚI CẬP NHẬT Ở ĐÂY] Gửi thêm thông tin Chế độ BHXH & Thuế xuống Server
-        insuranceType: payload.insuranceType 
-    }); 
-}
+        const runSave = () => {
+          loading.value = true;
+          google.script.run.withSuccessHandler(res => {
+            loading.value = false;
+            Swal.fire('Đã cập nhật an toàn', res.message, 'success');
+            loadFinanceData();
+          }).withFailureHandler(err => {
+            loading.value = false;
+            Swal.fire('Không thể lưu', err && err.message ? err.message : String(err), 'error');
+          }).batchAssignUsers(payload.selectedUsers, {
+            updateAllowedTasks: payload.updateAllowedTasks,
+            allowedTasks: payload.allowedTasks,
+            updateSalaryLevel: payload.updateSalaryLevel,
+            salaryLevelId: payload.salaryLevelId,
+            updateDeductions: payload.updateDeductions,
+            deductionAssignments: payload.deductionAssignments,
+            updateInsuranceType: payload.updateInsuranceType,
+            insuranceType: payload.insuranceType
+          });
+        };
+        if (payload.updateAllowedTasks && payload.allowedTasks.length === 0) {
+          return Swal.fire({ title: 'Xóa toàn bộ quyền công việc?', text: 'Bạn đang chủ động cập nhật quyền việc thành danh sách rỗng cho ' + payload.selectedUsers.length + ' người.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Xác nhận xóa', cancelButtonText: 'Hủy' }).then(result => { if (result.isConfirmed) runSave(); });
+        }
+        runSave();
+      }
 
       function openPayslip() { showModal('payslipModal'); }
       function showModal(id) { const el = document.getElementById(id); if(el) { const modal = bootstrap.Modal.getInstance(el) || new bootstrap.Modal(el); modal.show(); } }
@@ -2103,7 +2127,11 @@ function submitLeaveRequest() {
         if (batchConfig.selectedUsers.length === 0) {
             batchConfig.salaryLevelId = '';
             batchConfig.insuranceType = ''; // Xóa trắng ô BHXH & Thuế
+            batchConfig.updateSalaryLevel = false;
+            batchConfig.updateInsuranceType = false;
             batchConfig.allowedTasks = [];
+            batchConfig.updateAllowedTasks = false;
+            batchConfig.updateDeductions = false;
             expandedGroups.value = [];
             Object.keys(batchConfig.deductionAssignments).forEach(k => delete batchConfig.deductionAssignments[k]);
         }
@@ -2153,13 +2181,28 @@ function submitLeaveRequest() {
             // Nếu chọn từ 2 người trở lên -> Trả các ô về "-- Không thay đổi --" để gán hàng loạt
             batchConfig.salaryLevelId = '';
             batchConfig.insuranceType = '';
+            batchConfig.updateSalaryLevel = false;
+            batchConfig.updateInsuranceType = false;
             batchConfig.allowedTasks = [];
+            batchConfig.updateAllowedTasks = false;
+            batchConfig.updateDeductions = false;
             expandedGroups.value = [];
             Object.keys(batchConfig.deductionAssignments).forEach(k => delete batchConfig.deductionAssignments[k]);
         }
     }
 }
-      function selectAllUsers(e) { if (e.target.checked) batchConfig.selectedUsers = allUsers.value.map(u => u.email); else batchConfig.selectedUsers = []; }
+      function selectAllUsers(e) {
+        batchConfig.selectedUsers = e.target.checked ? allUsers.value.map(u => u.email) : [];
+        batchConfig.salaryLevelId = '';
+        batchConfig.insuranceType = '';
+        batchConfig.updateSalaryLevel = false;
+        batchConfig.updateInsuranceType = false;
+        batchConfig.allowedTasks = [];
+        batchConfig.updateAllowedTasks = false;
+        batchConfig.updateDeductions = false;
+        expandedGroups.value = [];
+        Object.keys(batchConfig.deductionAssignments).forEach(k => delete batchConfig.deductionAssignments[k]);
+      }
       function addOption(fieldIdx) { if(!editingTask.fields[fieldIdx].optionsConfig) editingTask.fields[fieldIdx].optionsConfig = []; editingTask.fields[fieldIdx].optionsConfig.push({ value: '', bonus: 0 }); }
       function removeOption(fieldIdx, optIdx) { editingTask.fields[fieldIdx].optionsConfig.splice(optIdx, 1); }
       function addRolePolicy() { if(!editingTask.policy.roles) editingTask.policy.roles = []; editingTask.policy.roles.push({ tag: '', amount: 0 }); }

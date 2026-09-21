@@ -263,4 +263,36 @@ const workLogHeaders = ss.getSheetByName("WorkLogs").rows[0];
 const statusIndex = 9; // Legacy HRM keeps Status in J but its header is blank.
 assert.equal(ss.getSheetByName("WorkLogs").rows[1][statusIndex], "Deleted");
 
+// Generic HRM batch configuration must be a patch operation.  In particular,
+// applying only BHXH/tax must never erase METTASOUL task access, pay setup or
+// existing fixed deductions.
+const codeSource = fs.readFileSync(new URL("../src/Code.js", import.meta.url), "utf8");
+vm.runInContext(codeSource, context, { filename: "Code.js" });
+context.getDatabase = () => ss;
+const teacherUserRow = ss.getSheetByName("Users").rows.find((row) => row[0] === "teacher@example.com");
+teacherUserRow[5] = JSON.stringify({
+  allowedTasks: ["TSK_KNS", "TSK_OLD"],
+  salaryLevelId: "SALARY_EXISTING",
+  deductions: { DED_A: "LEVEL_A" },
+  insuranceType: "1"
+});
+
+const insuranceOnly = call("batchAssignUsers(['teacher@example.com'], { updateInsuranceType: true, insuranceType: '2' })");
+assert.equal(insuranceOnly.success, true);
+assert.deepEqual(JSON.parse(teacherUserRow[5]), {
+  allowedTasks: ["TSK_KNS", "TSK_OLD"],
+  salaryLevelId: "SALARY_EXISTING",
+  deductions: { DED_A: "LEVEL_A" },
+  insuranceType: "2"
+}, "BHXH/tax-only batch edit preserves task, salary and deductions");
+
+const tasksOnly = call("batchAssignUsers(['teacher@example.com'], { updateAllowedTasks: true, allowedTasks: ['TSK_KNS'] })");
+assert.equal(tasksOnly.success, true);
+assert.deepEqual(JSON.parse(teacherUserRow[5]), {
+  allowedTasks: ["TSK_KNS"],
+  salaryLevelId: "SALARY_EXISTING",
+  deductions: { DED_A: "LEVEL_A" },
+  insuranceType: "2"
+}, "intentional task update preserves payroll configuration");
+
 console.log("HRM METTASOUL integration tests passed.");
