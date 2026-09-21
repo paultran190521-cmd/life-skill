@@ -285,6 +285,8 @@ assert.deepEqual(JSON.parse(teacherUserRow[5]), {
   deductions: { DED_A: "LEVEL_A" },
   insuranceType: "2"
 }, "BHXH/tax-only batch edit preserves task, salary and deductions");
+assert.equal(ss.getSheetByName("UserConfigAudit").getLastRow(), 2, "a configuration edit is recorded with a header and an audit row");
+assert.equal(ss.getSheetByName("UserConfigAudit").rows[1][2], "chế độ BHXH & thuế", "audit identifies the changed group");
 
 const tasksOnly = call("batchAssignUsers(['teacher@example.com'], { updateAllowedTasks: true, allowedTasks: ['TSK_KNS'] })");
 assert.equal(tasksOnly.success, true);

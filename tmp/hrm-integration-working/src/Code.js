@@ -1453,6 +1453,7 @@ function batchAssignUsers(emails, config) {
     if (selectedEmails.includes(String(data[i][0] || "").trim().toLowerCase())) {
       let settings = {};
       try { settings = JSON.parse(data[i][5]) } catch (e) {}
+      const settingsBefore = JSON.stringify(settings);
       
       // Mỗi nhóm cấu hình được cập nhật độc lập. Tuyệt đối không ghi đè
       // quyền việc, đơn giá/bậc lương hoặc khoản trừ khi quản trị viên chưa
@@ -1465,11 +1466,33 @@ function batchAssignUsers(emails, config) {
       if (shouldUpdateInsurance) settings.insuranceType = String(config.insuranceType).trim();
       
       sheet.getRange(i + 1, 6).setValue(JSON.stringify(settings));
+      appendUserConfigAudit_(ss, {
+        userEmail: data[i][0],
+        changedFields: changedFields,
+        beforeJson: settingsBefore,
+        afterJson: JSON.stringify(settings),
+        actorEmail: config && config.actorEmail
+      });
       updated++;
     }
   }
   
   return { success: true, updated: updated, changedFields: changedFields, message: "Đã cập nhật " + changedFields.join(", ") + " cho " + updated + " nhân sự; các cấu hình khác được giữ nguyên." };
+}
+
+function appendUserConfigAudit_(ss, entry) {
+  const headers = ["Timestamp", "UserEmail", "ChangedFields", "BeforeJson", "AfterJson", "ActorEmail"];
+  let sheet = ss.getSheetByName("UserConfigAudit");
+  if (!sheet) sheet = ss.insertSheet("UserConfigAudit");
+  if (sheet.getLastRow() === 0) sheet.appendRow(headers);
+  sheet.appendRow([
+    new Date(),
+    String(entry.userEmail || "").trim().toLowerCase(),
+    (entry.changedFields || []).join(", "),
+    entry.beforeJson || "{}",
+    entry.afterJson || "{}",
+    String(entry.actorEmail || "SYSTEM").trim() || "SYSTEM"
+  ]);
 }
 
 // ======================================================

@@ -2076,7 +2076,8 @@ function submitLeaveRequest() {
             updateDeductions: payload.updateDeductions,
             deductionAssignments: payload.deductionAssignments,
             updateInsuranceType: payload.updateInsuranceType,
-            insuranceType: payload.insuranceType
+            insuranceType: payload.insuranceType,
+            actorEmail: currentUser.value.email
           });
         };
         if (payload.updateAllowedTasks && payload.allowedTasks.length === 0) {
