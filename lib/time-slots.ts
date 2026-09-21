@@ -59,6 +59,83 @@ export function getTimeSlotDurationMinutes(start: string, end: string) {
   return endMinutes - startMinutes;
 }
 
+/**
+ * Normalized text used to compare school names and the school prefix stored
+ * in a time-slot label. TimeSlots predate a `schoolId` column, so ownership
+ * is deliberately derived from their required "School - period" label.
+ */
+export function normalizeTimeSlotComparableText(value: unknown) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function schoolTimeSlotKeys(schoolName: unknown) {
+  const normalized = normalizeTimeSlotComparableText(schoolName)
+    .replace(/^(truong\s+)?(thpt|thcs|th)\s+/, "")
+    .trim();
+  const aliases: Record<string, string[]> = {
+    "nguyen thi minh khai": ["ntmk"],
+    "tan tuc": ["tt"],
+    "phong phu": ["pp"],
+    "pt nk tdtt binh chanh": ["nktdtt"],
+    "chi lang": ["cl"],
+    "nam sai gon": ["nsg"],
+    "duong van thi": ["dvt"],
+    "thu duc": ["td"],
+  };
+  return new Set([normalized, ...(aliases[normalized] ?? [])].filter(Boolean));
+}
+
+export function timeSlotSchoolPrefix(label: unknown) {
+  const text = String(label || "");
+  const dashIndex = text.indexOf(" - ");
+  return dashIndex === -1 ? "" : normalizeTimeSlotComparableText(text.slice(0, dashIndex));
+}
+
+/** A slot with no school prefix is legacy/ambiguous and is never schedulable. */
+export function timeSlotBelongsToSchool(slot: Pick<TimeSlot, "label">, schoolName: unknown) {
+  const prefix = timeSlotSchoolPrefix(slot.label);
+  if (!prefix) return false;
+  const keys = schoolTimeSlotKeys(schoolName);
+  return keys.has(prefix);
+}
+
+export function isDoubleTeachingTimeSlot(slot: Pick<TimeSlot, "label" | "start" | "end">) {
+  const label = normalizeTimeSlotComparableText(slot.label);
+  const explicitPair = /\btiet\s*\d+\s*,\s*(?:tiet\s*)?\d+\s*[sc]?\b/.test(label);
+  const namedDoubleFrame = /\bkhung\s*(?:70|90|95)\s*phut\b/.test(label);
+  return explicitPair || namedDoubleFrame;
+}
+
+/**
+ * Returns whether an active slot can be used for a new schedule at this
+ * school. Historical schedules remain readable even when a rule changes.
+ */
+export function isTimeSlotAllowedForSchool(
+  slot: Pick<TimeSlot, "label" | "start" | "end">,
+  schoolName: unknown,
+) {
+  if (!timeSlotBelongsToSchool(slot, schoolName)) return false;
+
+  const school = normalizeTimeSlotComparableText(schoolName);
+  if (school.includes("tan tuc") && isDoubleTeachingTimeSlot(slot)) return false;
+  if (school.includes("thu duc") && getTimeSlotDurationMinutes(slot.start, slot.end) === 45) return false;
+  return true;
+}
+
+export function timeSlotsAllowedForSchool<T extends Pick<TimeSlot, "label" | "start" | "end">>(
+  slots: T[],
+  schoolName: unknown,
+) {
+  return slots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolName));
+}
+
 export function isValidTimeSlotDuration(start: string, end: string) {
   const d = getTimeSlotDurationMinutes(start, end);
   return d >= MIN_TIME_SLOT_MINUTES && d <= MAX_TIME_SLOT_MINUTES && d % TIME_SLOT_STEP_MINUTES === 0;

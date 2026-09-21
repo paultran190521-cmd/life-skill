@@ -86,6 +86,7 @@ import {
   MAX_TIME_SLOT_MINUTES,
   TIME_SLOT_STEP_MINUTES,
   getTimeSlotDurationMinutes,
+  isTimeSlotAllowedForSchool,
   isValidTimeSlotDuration,
   normalizeTimeSlotLabel,
   normalizeTimeValue,
@@ -1283,7 +1284,7 @@ export function MettasoulApp() {
               classId: defaultClassId,
               classIds: defaultClassId ? [defaultClassId] : [],
               lessonId: pickLessonIdForGrade(defaultGrade, current.items[0]?.lessonId ?? "", activeLessons),
-              timeSlotId: activeTimeSlots[0]?.id ?? "",
+              timeSlotId: schedulingTimeSlotsForSchool(activeTimeSlots, schools.find((school) => school.id === defaultSchoolId)?.name ?? "")[0]?.id ?? "",
               teachingEnvironment: current.items[0]?.teachingEnvironment ?? defaultTeachingEnvironment,
             }),
           ],
@@ -2365,16 +2366,22 @@ export function MettasoulApp() {
       return;
     }
 
-    if (!validItems.every((item) => activeTimeSlots.some((slot) => slot.id === item.timeSlotId))) {
+    const hasInvalidTimeSlot = validItems.some((item) => {
+      const school = schoolById.get(item.schoolId);
+      return !schedulingTimeSlotsForSchool(activeTimeSlots, school?.name ?? "").some((slot) => slot.id === item.timeSlotId);
+    });
+    if (hasInvalidTimeSlot) {
       setDraftSchedule((current) => ({
         ...current,
-        items: current.items.map((item) =>
-          activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
+        items: current.items.map((item) => {
+          const school = schoolById.get(item.schoolId);
+          const schoolSlots = schedulingTimeSlotsForSchool(activeTimeSlots, school?.name ?? "");
+          return schoolSlots.some((slot) => slot.id === item.timeSlotId)
             ? item
-            : { ...item, timeSlotId: activeTimeSlots[0]?.id ?? item.timeSlotId },
-        ),
+            : { ...item, timeSlotId: schoolSlots[0]?.id ?? "" };
+        }),
       }));
-      pushToast("Khung giờ không hợp lệ", "Khung giờ đã chọn không còn hoạt động. Hệ thống đã tự chọn lại khung giờ hợp lệ.", "warning");
+      pushToast("Khung giờ không hợp lệ", "Khung giờ không thuộc trường đã chọn, đã tắt hoặc không còn được phép. Hệ thống đã chọn lại theo đúng trường.", "warning");
       return;
     }
 
@@ -5753,7 +5760,10 @@ export function MettasoulApp() {
                               schoolId,
                               classId,
                               lessonId: pickLessonIdForGrade(grade, prev?.lessonId ?? "", activeLessons),
-                              timeSlotId: prev?.timeSlotId ?? activeTimeSlots[0]?.id ?? "",
+                              timeSlotId: prev?.timeSlotId ?? schedulingTimeSlotsForSchool(
+                                activeTimeSlots,
+                                schoolById.get(schoolId)?.name ?? "",
+                              )[0]?.id ?? "",
                               teachingEnvironment: prev?.teachingEnvironment ?? defaultTeachingEnvironment,
                               teacherIds: prev?.teacherIds ?? [],
                             }),
@@ -5955,7 +5965,9 @@ export function MettasoulApp() {
                             onChange={(e) => updateDraftItem(item.id, { timeSlotId: e.target.value })}
                             className={inputClass}
                           >
-                            {rowTimeSlots.map((slot) => (
+                            {rowTimeSlots.length === 0 ? (
+                              <option value="">Chưa có khung giờ phù hợp cho trường này</option>
+                            ) : rowTimeSlots.map((slot) => (
                               <option key={slot.id} value={slot.id}>
                                 {formatTimeSlotDisplay(slot, activeTimeSlots)} · {slot.start}-{slot.end}
                               </option>
@@ -11189,9 +11201,11 @@ function normalizeDraftScheduleItem(
   const { participantScope, participantGrade, classIds: normalizedClassIds } = participantSelection;
   const lessonId = pickLessonIdForClass(classId, item.lessonId, context.classes, context.activeLessons);
   const lesson = context.activeLessons.find((entry) => entry.id === lessonId);
-  const timeSlotId = context.activeTimeSlots.some((slot) => slot.id === item.timeSlotId)
+  const school = context.schools.find((entry) => entry.id === schoolId);
+  const schoolSlots = schedulingTimeSlotsForSchool(context.activeTimeSlots, school?.name ?? "");
+  const timeSlotId = schoolSlots.some((slot) => slot.id === item.timeSlotId)
     ? item.timeSlotId
-    : context.activeTimeSlots[0]?.id ?? "";
+    : schoolSlots[0]?.id ?? "";
   const date = /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : currentDateKey();
   return {
     ...item,
@@ -11267,28 +11281,8 @@ function gradesForClasses(classRooms: ClassRoom[]) {
 }
 
 function timeSlotsForSchool(slots: TimeSlot[], schoolName: string): TimeSlot[] {
-  if (!schoolName) return slots;
-
-  const schoolNorm = normalizeComparableText(schoolName)
-    .replace(/^(truong\s+)?(thpt|thcs|th)\s+/, "")
-    .trim();
-
-  if (!schoolNorm) return slots;
-
-  const schoolWords = schoolNorm.split(/\s+/).filter(Boolean);
-  const schoolAbbr = schoolWords.map((w) => w[0] || "").join("");
-
-  const filtered = slots.filter((slot) => {
-    const dashIndex = slot.label.indexOf(" - ");
-    if (dashIndex === -1) return true;
-
-    const prefix = normalizeComparableText(slot.label.slice(0, dashIndex));
-    if (!prefix) return true;
-
-    return schoolNorm.includes(prefix) || prefix.includes(schoolNorm) || prefix === schoolAbbr;
-  });
-
-  return filtered.length > 0 ? filtered : slots;
+  if (!schoolName) return [];
+  return slots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolName));
 }
 
 type CompositeTimeSlotInfo = {

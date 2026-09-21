@@ -17,6 +17,7 @@ import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 import { invalidateScheduleConflictIndex } from "@/lib/schedule-conflict-index";
 import { hasTeacherTimeConflict } from "@/lib/schedule-conflict-policy";
 import { cancelConfirmedTeachingWorkLogs } from "@/lib/teaching-work-log-cancellation";
+import { isTimeSlotAllowedForSchool } from "@/lib/time-slots";
 import type { Notification, Schedule, ScheduleStatus, User } from "@/lib/types";
 
 type Params = {
@@ -73,7 +74,7 @@ export async function PATCH(request: Request, { params }: Params) {
       const nextTeacherId = String(body.teacherId || "").trim();
       const nextTimeSlotId = String(body.timeSlotId || schedule.timeSlotId || "").trim();
       const scheduleWithRestoredSlot = { ...schedule, timeSlotId: nextTimeSlotId };
-      const teacherError = await validateReplacementTeacher(nextTeacherId, scheduleWithRestoredSlot);
+      const teacherError = await validateReplacementTeacher(nextTeacherId, scheduleWithRestoredSlot, schedule.timeSlotId);
       if (teacherError) {
         return apiFailure(400, teacherError, undefined, requestId);
       }
@@ -202,7 +203,11 @@ function isAuthorized(user: User, scheduleTeacherId: string, status: ScheduleSta
   return (status === "confirmed" || status === "attended") && user.teacherId === scheduleTeacherId;
 }
 
-async function validateReplacementTeacher(nextTeacherId: string, schedule: Record<string, string>) {
+async function validateReplacementTeacher(
+  nextTeacherId: string,
+  schedule: Record<string, string>,
+  originalTimeSlotId: string,
+) {
   if (!nextTeacherId) {
     return "Thiếu giáo viên thay thế.";
   }
@@ -210,10 +215,11 @@ async function validateReplacementTeacher(nextTeacherId: string, schedule: Recor
     return "Giáo viên thay thế phải khác giáo viên hiện tại.";
   }
 
-  const [teachers, schedules, slots] = await Promise.all([
+  const [teachers, schedules, slots, schools] = await Promise.all([
     readSheetRows("Teachers"),
     readSheetRows("Schedules"),
     readSheetRows("TimeSlots"),
+    readSheetRows("Schools"),
   ]);
   const teacher = teachers.find((item) => item.id === nextTeacherId);
   if (!teacher || teacher.active === "false") {
@@ -223,6 +229,16 @@ async function validateReplacementTeacher(nextTeacherId: string, schedule: Recor
   const slot = slots.find((item) => item.id === schedule.timeSlotId);
   if (!slot) {
     return "Khung giờ của lịch không còn tồn tại. Hãy chọn khung giờ cần khôi phục trước khi chuyển lịch.";
+  }
+  if (schedule.timeSlotId !== originalTimeSlotId) {
+    const school = schools.find((item) => item.id === schedule.schoolId);
+    if (!school || !isTimeSlotAllowedForSchool({
+      label: String(slot.label || ""),
+      start: String(slot.start || ""),
+      end: String(slot.end || ""),
+    }, school.name)) {
+      return "Khung giờ thay thế không thuộc trường của lịch hoặc không được phép dùng cho trường này.";
+    }
   }
 
   const conflictingSchedule = schedules.find((item) =>

@@ -26,6 +26,7 @@ import {
   type TeacherSlotInfo,
 } from "@/lib/schedule-conflict-index";
 import { isTeacherAvailableForSlot } from "@/lib/teacher-availability";
+import { isTimeSlotAllowedForSchool } from "@/lib/time-slots";
 import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy";
 import type { LessonPeriod, Notification, Schedule, ScheduleParticipantScope, TeacherAvailability, TeachingEnvironment } from "@/lib/types";
 
@@ -741,8 +742,16 @@ function validateScheduleInput(
     if (item.teachingEnvironment === "in_class" && classRooms.some((classRoom) => normalizeComparableText(classRoom?.grade) !== normalizeComparableText(lesson.grade))) {
       return "Bài học đã chọn không đúng khối của lớp.";
     }
-    if (!findTimeSlot(data.slots, item.timeSlotId)) {
+    const slot = findTimeSlot(data.slots, item.timeSlotId);
+    if (!slot) {
       return "Khung giờ đã chọn không tồn tại hoặc đang tắt.";
+    }
+    if (!isTimeSlotAllowedForSchool({
+      label: String(slot.label || ""),
+      start: String(slot.start || ""),
+      end: String(slot.end || ""),
+    }, school.name)) {
+      return "Khung giờ không thuộc trường đã chọn hoặc không được phép dùng cho trường này.";
     }
   }
 
