@@ -129,6 +129,14 @@ assert.equal(scriptProperties.get("METTASOUL_INTEGRATION_ENABLED"), "true", "mig
 call(`saveTeachingContextRate(${JSON.stringify({ ContextType: "SCHOOL", ExternalCode: "school-remote", Name: "Trường xa", Amount: 15000, McpPoints: 5, Status: "Active" })}, 'admin@example.com')`);
 call(`savePayProfileAssignment(${JSON.stringify({ UserEmail: "teacher@example.com", DefaultProfileCode: "TEACHER_A", WorkerCategory: "PROFESSIONAL_TEACHER", AssistantProfileCode: "ASSISTANT_PRO", Status: "Active" })}, 'admin@example.com')`);
 call(`savePayProfileAssignment(${JSON.stringify({ UserEmail: "student@example.com", DefaultProfileCode: "", WorkerCategory: "STUDENT_ASSISTANT", AssistantProfileCode: "", Status: "Active" })}, 'admin@example.com')`);
+const nameSync = call(`syncMettasoulWorkerNamesFromJson(${JSON.stringify(JSON.stringify([
+  { email: "teacher@example.com", name: "Giáo viên METTASOUL", role: "teacher", teacherId: "teacher-1" },
+  { email: "not-in-hrm@example.com", name: "Chưa có HRM", role: "teacher", teacherId: "teacher-2" }
+]))}, 'admin@example.com')`);
+assert.equal(nameSync.updated, 1, "matching HRM identity receives the METTASOUL display name");
+assert.equal(nameSync.unchanged, 0);
+assert.equal(nameSync.notFound, 1, "missing HRM identities are reported without being created");
+assert.equal(ss.getSheetByName("Users").rows[2][3], "Giáo viên METTASOUL", "only the HRM name column changes");
 const melisPolicies = call("applyMettasoulMelisActivityPolicies('admin@example.com')");
 assert.equal(melisPolicies.activityPolicies.length, 2, "both MELIS session policies are configured");
 

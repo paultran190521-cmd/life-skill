@@ -295,6 +295,76 @@ function provisionMettasoulWorkersFromJson(jsonText, actorEmail) {
   return provisionMettasoulWorkers_(identities, actorEmail);
 }
 
+/**
+ * Aligns only the HRM display name with the authoritative METTASOUL identity
+ * directory. Email, role, payroll configuration, work logs and all other HRM
+ * columns are deliberately left untouched.
+ */
+function syncMettasoulWorkerNamesFromJson(jsonText, actorEmail) {
+  assertHrmAdmin_(actorEmail);
+  let identities;
+  try {
+    identities = JSON.parse(String(jsonText || "[]"));
+  } catch (error) {
+    throw integrationError_("IDENTITY_JSON_INVALID", "Danh sách định danh METTASOUL phải là JSON hợp lệ.");
+  }
+  if (!Array.isArray(identities) || identities.length === 0) {
+    throw integrationError_("IDENTITY_LIST_REQUIRED", "Cần ít nhất một định danh METTASOUL để đồng bộ tên.");
+  }
+
+  const authoritativeNames = new Map();
+  identities.forEach(function(identity) {
+    const email = String(identity && identity.email || "").trim().toLowerCase();
+    const name = String(identity && identity.name || "").trim();
+    if (email && name) authoritativeNames.set(email, name);
+  });
+  if (authoritativeNames.size === 0) {
+    throw integrationError_("IDENTITY_LIST_REQUIRED", "Danh sách METTASOUL không có email và tên hợp lệ để đồng bộ.");
+  }
+
+  const ss = getDatabase();
+  const sheet = ss.getSheetByName("Users");
+  if (!sheet) throw integrationError_("USERS_SHEET_MISSING", "HRM chưa có bảng Users.");
+  const values = sheet.getDataRange().getValues();
+  if (values.length === 0) throw integrationError_("USERS_SHEET_MISSING", "Bảng Users của HRM chưa có tiêu đề.");
+  const headers = values[0].map(String);
+  const emailColumn = headers.indexOf("Email") >= 0 ? headers.indexOf("Email") : 0;
+  const nameColumn = headers.indexOf("Name") >= 0 ? headers.indexOf("Name") : 3;
+  const matched = new Set();
+  const updated = [];
+  let unchanged = 0;
+
+  values.slice(1).forEach(function(row, index) {
+    const email = String(row[emailColumn] || "").trim().toLowerCase();
+    const authoritativeName = authoritativeNames.get(email);
+    if (!authoritativeName) return;
+    matched.add(email);
+    const currentName = String(row[nameColumn] || "").trim();
+    if (currentName === authoritativeName) {
+      unchanged += 1;
+      return;
+    }
+    sheet.getRange(index + 2, nameColumn + 1).setValue(authoritativeName);
+    updated.push({ email: email, from: currentName, to: authoritativeName });
+  });
+
+  const notFound = Array.from(authoritativeNames.keys()).filter(function(email) { return !matched.has(email); });
+  appendPolicyVersion_(ss, "IDENTITY_NAME_SYNC", "METTASOUL", 1, {
+    requested: authoritativeNames.size,
+    updated: updated.length,
+    unchanged: unchanged,
+    notFound: notFound.length
+  }, "UPDATE", actorEmail);
+  return {
+    success: true,
+    updated: updated.length,
+    unchanged: unchanged,
+    notFound: notFound.length,
+    changes: updated,
+    message: "Đã đồng bộ " + updated.length + " tên từ METTASOUL; " + unchanged + " tên đã đúng."
+  };
+}
+
 function provisionMettasoulWorkers_(identities, actorEmail) {
   if (!Array.isArray(identities) || identities.length === 0) {
     throw integrationError_("IDENTITY_LIST_REQUIRED", "Cần ít nhất một định danh METTASOUL để tạo hồ sơ nhân sự.");
