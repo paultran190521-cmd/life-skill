@@ -44,6 +44,20 @@ export type TeachingPeriodCancellationPayload = {
   targetIdempotencyKey: string;
 };
 
+/** Minimal, non-payroll identity sent only when an administrator creates a teacher in METTASOUL. */
+export type IdentityProvisionPayload = {
+  source: "METTASOUL";
+  action: "PROVISION_WORKER";
+  eventId: string;
+  idempotencyKey: string;
+  userId: string;
+  teacherId: string;
+  name: string;
+  userEmail: string;
+  role: "teacher";
+  avatarUrl?: string;
+};
+
 export type HrmTeachingResponse = {
   ok: boolean;
   code?: string;
@@ -58,6 +72,10 @@ export type HrmTeachingResponse = {
   policyVersion?: string;
   schemaVersion?: number;
   idempotent?: boolean;
+  userEmail?: string;
+  created?: boolean;
+  taskId?: string;
+  taskName?: string;
 };
 
 export type HrmMcpLedgerEntry = {
@@ -106,6 +124,11 @@ export async function submitActivityCompletionToHrm(payload: ActivityCompletionP
 }
 
 export async function cancelTeachingPeriodInHrm(payload: TeachingPeriodCancellationPayload) {
+  return sendSignedPayload(payload);
+}
+
+/** HRM creates a non-password profile and assigns only its configured KNS teaching task. */
+export async function provisionMettasoulTeacherInHrm(payload: IdentityProvisionPayload) {
   return sendSignedPayload(payload);
 }
 

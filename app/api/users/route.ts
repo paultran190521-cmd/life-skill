@@ -4,6 +4,7 @@ import { appendAuditLog } from "@/lib/audit";
 import { validationError } from "@/lib/app-error";
 import { appendSheetRow, appendSheetRows, readSheetRows } from "@/lib/google-sheets";
 import { getAvatarUrl } from "@/lib/avatar";
+import { provisionMettasoulTeacherInHrm } from "@/lib/hrm-integration";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 import type { Role } from "@/lib/types";
 
@@ -89,7 +90,8 @@ export async function POST(request: Request) {
         source: auth.source,
         after: users[0],
       });
-      return NextResponse.json(users[0]);
+      const hrmProvisioning = await provisionTeachersInHrm(users);
+      return NextResponse.json({ ...users[0], hrmProvisioning: hrmProvisioning[0] });
     }
 
     await appendSheetRows("Users", users);
@@ -111,10 +113,40 @@ export async function POST(request: Request) {
         }),
       ),
     );
-    return NextResponse.json({ users });
+    const hrmProvisioning = await provisionTeachersInHrm(users);
+    return NextResponse.json({ users, hrmProvisioning });
   } catch (error) {
     return apiError(error, requestId);
   }
+}
+
+async function provisionTeachersInHrm(users: NewUserRow[]) {
+  return Promise.all(users.map(async (user) => {
+    if (user.role !== "teacher") return { userId: user.id, status: "NOT_APPLICABLE" as const };
+    const eventId = `MTS_IDENTITY_${user.id}`;
+    try {
+      const result = await provisionMettasoulTeacherInHrm({
+        source: "METTASOUL",
+        action: "PROVISION_WORKER",
+        eventId,
+        idempotencyKey: `PROVISION:${user.id}`,
+        userId: user.id,
+        teacherId: user.teacherId,
+        name: user.name,
+        userEmail: user.email,
+        role: "teacher",
+        avatarUrl: user.avatarUrl,
+      });
+      return { userId: user.id, status: "CONFIRMED" as const, hrmUserEmail: result.userEmail || user.email, idempotent: Boolean(result.idempotent) };
+    } catch (error) {
+      return {
+        userId: user.id,
+        status: "PENDING" as const,
+        code: String((error as { code?: unknown })?.code || "HRM_UNREACHABLE"),
+        message: error instanceof Error ? error.message : "Chưa thể tạo hồ sơ HRM; có thể thử lại an toàn với cùng định danh.",
+      };
+    }
+  }));
 }
 
 function normalizeRole(role: unknown): Role {
