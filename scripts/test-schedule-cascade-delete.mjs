@@ -28,7 +28,7 @@ const fixture = {
   ],
   TeachingWorkLogs: [{ id: "work-log-cancelled", scheduleId: "schedule-1", status: "CANCELLED" }],
 };
-let teachingWorkLogs = [];
+let teachingWorkLogs = fixture.TeachingWorkLogs;
 
 const runtimeModule = { exports: {} };
 new Function("module", "exports", "require", "process", compiled)(
@@ -40,7 +40,7 @@ new Function("module", "exports", "require", "process", compiled)(
     }
     if (specifier === "@/lib/google-sheets") {
       return {
-        readSheetRowsBatch: async () => fixture,
+        readSheetRowsBatch: async () => ({ ...fixture, TeachingWorkLogs: teachingWorkLogs }),
         ensureSheetHeaders: async () => undefined,
         readSheetRows: async (sheet) => sheet === "TeachingWorkLogs" ? teachingWorkLogs : [],
         teachingWorkLogHeaders: ["id", "scheduleId", "status"],

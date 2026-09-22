@@ -71,12 +71,19 @@ async function deleteScheduleDependentData(scheduleIds: string[]): Promise<Sched
     };
   }
 
-  await assertNoConfirmedTeachingWorkLogs(requestedIds);
-
   const rows = await readSheetRowsBatch(
     ["Schedules", "Attendance", "LessonPlans", "LessonPlanMessages", "LessonPlanAttachments", "TeachingWorkLogs"] as const,
   );
   const requestedIdSet = new Set(requestedIds);
+  const protectedWorkLogs = rows.TeachingWorkLogs.filter((row) =>
+    requestedIdSet.has(String(row.scheduleId || "").trim())
+    && ["CONFIRMED", "PENDING"].includes(String(row.status || "").toUpperCase()),
+  );
+  if (protectedWorkLogs.length > 0) {
+    throw conflictError(
+      "Không thể hủy, xóa hoặc chuyển lịch đã chấm công hoặc đang chờ HRM xác nhận. Hãy xử lý dòng công trong HRM trước.",
+    );
+  }
   const targetSchedules = rows.Schedules.filter((schedule) => requestedIdSet.has(String(schedule.id || "").trim()));
   const deletedScheduleIds = targetSchedules.map((schedule) => String(schedule.id || "").trim()).filter(Boolean);
   const deletedIdSet = new Set(deletedScheduleIds);

@@ -174,9 +174,13 @@ async function sendSignedPayload<T extends HrmTeachingResponse = HrmTeachingResp
     .update(`${timestamp}.${nonce}.${payloadText}`)
     .digest("hex");
   const envelopeText = JSON.stringify({ version: "1", timestamp, nonce, payload: payloadText, signature });
+  const isCancellation = String(payload.action || "") === "CANCEL_TEACHING_PERIOD";
+  const requestOptions = isCancellation
+    ? { timeoutMs: 45_000, maxAttempts: 1 }
+    : { timeoutMs: 15_000, maxAttempts: 2 };
   let response: Response;
   try {
-    response = await fetchHrmResponse(url, envelopeText);
+    response = await fetchHrmResponse(url, envelopeText, requestOptions);
   } catch (error) {
     throw integrationFailure(
       "HRM_UNREACHABLE",
@@ -200,8 +204,12 @@ async function sendSignedPayload<T extends HrmTeachingResponse = HrmTeachingResp
   return result;
 }
 
-async function fetchHrmResponse(url: string, envelopeText: string) {
-  const initialResponse = await fetchWithSingleRetry(url, {
+async function fetchHrmResponse(
+  url: string,
+  envelopeText: string,
+  requestOptions: { timeoutMs: number; maxAttempts: number },
+) {
+  const initialResponse = await fetchWithRetry(url, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -210,7 +218,7 @@ async function fetchHrmResponse(url: string, envelopeText: string) {
     body: envelopeText,
     cache: "no-store",
     redirect: "manual",
-  });
+  }, requestOptions);
 
   if (![301, 302, 303, 307, 308].includes(initialResponse.status)) {
     return initialResponse;
@@ -226,7 +234,7 @@ async function fetchHrmResponse(url: string, envelopeText: string) {
   }
 
   const preservePost = initialResponse.status === 307 || initialResponse.status === 308;
-  return fetchWithSingleRetry(redirectUrl, {
+  return fetchWithRetry(redirectUrl, {
     method: preservePost ? "POST" : "GET",
     headers: preservePost
       ? { Accept: "application/json", "Content-Type": "application/json" }
@@ -234,16 +242,20 @@ async function fetchHrmResponse(url: string, envelopeText: string) {
     body: preservePost ? envelopeText : undefined,
     cache: "no-store",
     redirect: "error",
-  });
+  }, requestOptions);
 }
 
-async function fetchWithSingleRetry(url: string | URL, init: RequestInit) {
+async function fetchWithRetry(
+  url: string | URL,
+  init: RequestInit,
+  { timeoutMs, maxAttempts }: { timeoutMs: number; maxAttempts: number },
+) {
   let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       return await fetch(url, {
         ...init,
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       lastError = error;
