@@ -1,4 +1,4 @@
-import { conflictError } from "@/lib/app-error";
+import { conflictError, externalServiceError } from "@/lib/app-error";
 import { cancelTeachingPeriodInHrm } from "@/lib/hrm-integration";
 import { readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
 import { deterministicTeachingCancellationEventId } from "@/lib/teaching-work-log";
@@ -17,7 +17,12 @@ export async function cancelConfirmedTeachingWorkLogs(scheduleIds: string[]) {
   const cancelledAt = new Date().toISOString();
   for (const workLog of confirmed) {
     const eventId = deterministicTeachingCancellationEventId(workLog.idempotencyKey);
-    await cancelTeachingPeriodInHrm({ source: "METTASOUL", action: "CANCEL_TEACHING_PERIOD", eventId, idempotencyKey: `CANCEL:${workLog.idempotencyKey}`, targetIdempotencyKey: workLog.idempotencyKey });
+    try {
+      await cancelTeachingPeriodInHrm({ source: "METTASOUL", action: "CANCEL_TEACHING_PERIOD", eventId, idempotencyKey: `CANCEL:${workLog.idempotencyKey}`, targetIdempotencyKey: workLog.idempotencyKey });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Không nhận được phản hồi từ HRM.";
+      throw externalServiceError(`Không thể hủy dòng công HRM của lịch này: ${reason}`);
+    }
     await updateSheetRowById("TeachingWorkLogs", workLog.id, { ...workLog, status: "CANCELLED", cancelledAt, errorCode: "", errorMessage: "", updatedAt: cancelledAt });
   }
   return confirmed.map((workLog) => workLog.id);
