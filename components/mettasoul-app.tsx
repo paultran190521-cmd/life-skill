@@ -579,6 +579,7 @@ export function MettasoulApp() {
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const [activityOccurrences, setActivityOccurrences] = useState<ActivityOccurrence[]>([]);
   const [activityAssignments, setActivityAssignments] = useState<ActivityAssignment[]>([]);
+  const [activityEditDraft, setActivityEditDraft] = useState<ActivityOccurrence | null>(null);
   const [hrmIntegrationConfigured, setHrmIntegrationConfigured] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [historyLoadError, setHistoryLoadError] = useState("");
@@ -6680,6 +6681,52 @@ export function MettasoulApp() {
     }
   }
 
+  async function saveEditedActivity(formData: FormData) {
+    if (!activityEditDraft) return;
+    try {
+      const response = await saveRequest<{ activity: ActivityOccurrence }>("Đang lưu hoạt động...", `/api/activities/${activityEditDraft.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          activityTypeId: String(formData.get("activityTypeId") || ""),
+          title: String(formData.get("title") || ""),
+          date: String(formData.get("date") || ""),
+          startTime: String(formData.get("startTime") || ""),
+          endTime: String(formData.get("endTime") || ""),
+          location: String(formData.get("location") || ""),
+          note: String(formData.get("note") || ""),
+        }),
+      });
+      setActivityOccurrences((items) => items.map((item) => item.id === response.activity.id ? response.activity : item));
+      setActivityEditDraft(null);
+      pushToast("Đã cập nhật hoạt động", "Thông tin mới đã hiển thị cho người được giao.", "success");
+    } catch {
+      // saveRequest already shows the server response.
+    }
+  }
+
+  async function deleteActivity(activity: ActivityOccurrence) {
+    const participants = activityAssignments.filter((assignment) => assignment.activityId === activity.id);
+    const confirmedCount = participants.filter((assignment) => assignment.status === "APPROVED" || assignment.integrationStatus === "CONFIRMED").length;
+    const confirmed = await openConfirmDialog({
+      title: "Xóa hoạt động và quyền lợi liên quan?",
+      message: confirmedCount > 0
+        ? `Hoạt động “${activity.title}” có ${confirmedCount} quyền lợi đã ghi tại HRM. Hệ thống sẽ hủy tiền công/MCP ở HRM trước rồi mới xóa khỏi METTASOUL cho mọi người dùng.`
+        : `Hoạt động “${activity.title}” sẽ bị xóa khỏi METTASOUL cho mọi người dùng.`,
+      confirmText: "Xóa hoạt động",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    try {
+      await saveRequest<{ deleted: boolean; cancelledHrmRewards: number }>("Đang hủy quyền lợi và xóa hoạt động...", `/api/activities/${activity.id}`, { method: "DELETE" });
+      setActivityOccurrences((items) => items.filter((item) => item.id !== activity.id));
+      setActivityAssignments((items) => items.filter((item) => item.activityId !== activity.id));
+      if (activityEditDraft?.id === activity.id) setActivityEditDraft(null);
+      pushToast("Đã xóa hoạt động", "Hoạt động đã biến mất khỏi METTASOUL và quyền lợi liên quan đã được hủy tại HRM.", "success");
+    } catch {
+      // saveRequest already shows the server response; METTASOUL data stays intact on HRM failure.
+    }
+  }
+
   function renderActivitiesPanel() {
     const typeById = new Map(activityTypes.map((type) => [type.id, type]));
     const myAssignmentIds = new Set(activityAssignments.filter((assignment) => assignment.teacherId === currentTeacherId).map((assignment) => assignment.activityId));
@@ -6688,6 +6735,26 @@ export function MettasoulApp() {
     const mcpBalance = visibleMcpEntries.reduce((total, entry) => total + entry.points, 0);
     return (
       <div className="space-y-5">
+        {role === "admin" && activityEditDraft ? <ViewportPortal>
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+            <form className="w-full max-w-2xl rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl sm:p-7" onSubmit={(event) => { event.preventDefault(); void saveEditedActivity(new FormData(event.currentTarget)); }}>
+              <div className="flex items-start justify-between gap-3">
+                <div><h2 className="text-xl font-black text-[var(--brand-dark)]">Sửa hoạt động</h2><p className="mt-1 text-sm text-[var(--muted)]">Các thay đổi sẽ cập nhật cho mọi người được giao.</p></div>
+                <button type="button" aria-label="Đóng" onClick={() => setActivityEditDraft(null)} className="grid size-9 place-items-center rounded-xl border border-cyan-100 text-[var(--brand-dark)]"><X size={18} /></button>
+              </div>
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                <label className="text-xs font-bold text-[var(--brand-dark)]">Loại hoạt động<select name="activityTypeId" required defaultValue={activityEditDraft.activityTypeId} className="mt-1 w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm">{activityTypes.filter((type) => type.active || type.id === activityEditDraft.activityTypeId).map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
+                <label className="text-xs font-bold text-[var(--brand-dark)]">Tên hoạt động<input name="title" required defaultValue={activityEditDraft.title} className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+                <label className="text-xs font-bold text-[var(--brand-dark)]">Ngày thực hiện<input name="date" type="date" required defaultValue={activityEditDraft.date} className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+                <label className="text-xs font-bold text-[var(--brand-dark)]">Địa điểm hoặc đối tác<input name="location" defaultValue={activityEditDraft.location || ""} className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+                <label className="text-xs font-bold text-[var(--brand-dark)]">Bắt đầu<input name="startTime" type="time" defaultValue={activityEditDraft.startTime || ""} className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+                <label className="text-xs font-bold text-[var(--brand-dark)]">Kết thúc<input name="endTime" type="time" defaultValue={activityEditDraft.endTime || ""} className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+                <label className="text-xs font-bold text-[var(--brand-dark)] md:col-span-2">Ghi chú<textarea name="note" defaultValue={activityEditDraft.note || ""} className="mt-1 min-h-20 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+              </div>
+              <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setActivityEditDraft(null)} className={ghostButtonClass}>Hủy</button><button type="submit" disabled={isBusy} className="rounded-xl bg-[var(--brand)] px-4 py-2.5 text-sm font-black text-white disabled:opacity-50"><Save size={16} /> Lưu thay đổi</button></div>
+            </form>
+          </div>
+        </ViewportPortal> : null}
         {role === "admin" ? (
           <Panel title="Giao công việc & hoạt động MCP" action="Chỉ ghi nhận sau khi hoàn thành và duyệt">
             <form className="grid gap-3 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); void createActivityFromForm(new FormData(event.currentTarget)); event.currentTarget.reset(); }}>
@@ -6732,7 +6799,7 @@ export function MettasoulApp() {
               const type = typeById.get(activity.activityTypeId);
               const participants = activityAssignments.filter((assignment) => assignment.activityId === activity.id);
               return <div key={activity.id} className="rounded-xl border border-cyan-100 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-black text-[var(--brand-dark)]">{activity.title}</p><p className="mt-1 text-xs font-semibold text-[var(--muted)]">{activity.date}{activity.startTime ? ` · ${activity.startTime}${activity.endTime ? `–${activity.endTime}` : ""}` : ""}{activity.location ? ` · ${activity.location}` : ""}</p></div><span className="rounded-full bg-fuchsia-50 px-2 py-1 text-xs font-black text-fuchsia-800">{type?.name || "Loại hoạt động"}</span></div>
+                <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-black text-[var(--brand-dark)]">{activity.title}</p><p className="mt-1 text-xs font-semibold text-[var(--muted)]">{activity.date}{activity.startTime ? ` · ${activity.startTime}${activity.endTime ? `–${activity.endTime}` : ""}` : ""}{activity.location ? ` · ${activity.location}` : ""}</p></div><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-fuchsia-50 px-2 py-1 text-xs font-black text-fuchsia-800">{type?.name || "Loại hoạt động"}</span>{role === "admin" ? <><button type="button" onClick={() => setActivityEditDraft(activity)} className="inline-flex items-center gap-1 rounded-lg border border-cyan-200 bg-white px-2.5 py-1.5 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"><Pencil size={14} /> Sửa</button><button type="button" onClick={() => void deleteActivity(activity)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-black text-rose-700 transition hover:bg-rose-50"><Trash2 size={14} /> Xóa</button></> : null}</div></div>
                 <p className="mt-2 text-xs text-[var(--muted)]">{type?.description || activity.note || "Chờ người tham gia hoàn thành và quản trị viên duyệt."}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-bold text-[var(--brand-dark)]">Người tham gia: {participants.map((assignment) => <span key={assignment.id} className="rounded-full bg-slate-50 px-2 py-1">{teacherName(assignment.teacherId)} · {assignment.status}</span>)}</div>
                 <div className="mt-3 flex flex-wrap gap-2">

@@ -18,7 +18,7 @@ new Function("module", "exports", "require", "process", compiled)(
   process,
 );
 
-const { cancelTeachingPeriodInHrm, hrmIntegrationConfigured, hrmIntegrationCredentialsConfigured, pingHrmIntegration, provisionMettasoulTeacherInHrm, submitTeachingPeriodToHrm } = runtimeModule.exports;
+const { cancelActivityCompletionInHrm, cancelTeachingPeriodInHrm, hrmIntegrationConfigured, hrmIntegrationCredentialsConfigured, pingHrmIntegration, provisionMettasoulTeacherInHrm, submitTeachingPeriodToHrm } = runtimeModule.exports;
 const previousUrl = process.env.HRM_METTASOUL_WEBHOOK_URL;
 const previousSecret = process.env.HRM_METTASOUL_WEBHOOK_SECRET;
 const previousEnabled = process.env.HRM_METTASOUL_INTEGRATION_ENABLED;
@@ -87,6 +87,15 @@ try {
     targetIdempotencyKey: "key-1",
   });
   assert.equal(JSON.parse(captured.envelope.payload).action, "CANCEL_TEACHING_PERIOD");
+
+  await cancelActivityCompletionInHrm({
+    source: "METTASOUL",
+    action: "CANCEL_ACTIVITY_COMPLETION",
+    eventId: "activity-cancel-1",
+    idempotencyKey: "CANCEL:METTASOUL:ACTIVITY:activity-1:assignment-1",
+    targetIdempotencyKey: "METTASOUL:ACTIVITY:activity-1:assignment-1",
+  });
+  assert.equal(JSON.parse(captured.envelope.payload).action, "CANCEL_ACTIVITY_COMPLETION");
 
   await provisionMettasoulTeacherInHrm({
     source: "METTASOUL", action: "PROVISION_WORKER", eventId: "identity-1", idempotencyKey: "PROVISION:u-1",

@@ -44,6 +44,14 @@ export type TeachingPeriodCancellationPayload = {
   targetIdempotencyKey: string;
 };
 
+export type ActivityCompletionCancellationPayload = {
+  source: "METTASOUL";
+  action: "CANCEL_ACTIVITY_COMPLETION";
+  eventId: string;
+  idempotencyKey: string;
+  targetIdempotencyKey: string;
+};
+
 /** Minimal, non-payroll identity sent only when an administrator creates a teacher in METTASOUL. */
 export type IdentityProvisionPayload = {
   source: "METTASOUL";
@@ -127,6 +135,10 @@ export async function cancelTeachingPeriodInHrm(payload: TeachingPeriodCancellat
   return sendSignedPayload(payload);
 }
 
+export async function cancelActivityCompletionInHrm(payload: ActivityCompletionCancellationPayload) {
+  return sendSignedPayload(payload);
+}
+
 /** HRM creates a non-password profile and assigns only its configured KNS teaching task. */
 export async function provisionMettasoulTeacherInHrm(payload: IdentityProvisionPayload) {
   return sendSignedPayload(payload);
@@ -174,7 +186,8 @@ async function sendSignedPayload<T extends HrmTeachingResponse = HrmTeachingResp
     .update(`${timestamp}.${nonce}.${payloadText}`)
     .digest("hex");
   const envelopeText = JSON.stringify({ version: "1", timestamp, nonce, payload: payloadText, signature });
-  const isCancellation = String(payload.action || "") === "CANCEL_TEACHING_PERIOD";
+  const isCancellation = ["CANCEL_TEACHING_PERIOD", "CANCEL_ACTIVITY_COMPLETION"]
+    .includes(String(payload.action || ""));
   const requestOptions = isCancellation
     ? { timeoutMs: 45_000, maxAttempts: 1 }
     : { timeoutMs: 15_000, maxAttempts: 2 };
