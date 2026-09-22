@@ -34,6 +34,8 @@ assert.match(hrm, /CANCEL_ACTIVITY_COMPLETION/);
 assert.match(hrm, /reverseActivityMcp_/);
 assert.match(hrm, /findConfirmedActivityIntegrationEvent_/);
 assert.match(hrm, /matches\[i\]\.Status\) === "CONFIRMED"/);
+assert.match(hrm, /const workLog = readWorkLogObjects_\(ss\)\.find/);
+assert.doesNotMatch(hrm, /readWorkLogObjects_\(ss\.getSheetByName\("WorkLogs"\)\)/);
 assert.match(hrm, /MettasoulMcpLedger/);
 assert.match(hrmUi, /Chính sách Công việc khác & MCP/);
 assert.match(hrmUi, /Sổ MCP/);
