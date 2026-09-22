@@ -96,6 +96,10 @@ export async function DELETE(request: Request, { params }: Params) {
         eventId: `MTS_ACT_CANCEL_${activity.id}_${assignment.id}`,
         idempotencyKey: `CANCEL:${targetIdempotencyKey}`,
         targetIdempotencyKey,
+        activityId: activity.id,
+        assignmentId: assignment.id,
+        workLogId: assignment.hrmWorkLogId || "",
+        integrationEventId: assignment.integrationEventId || "",
       });
     }
 

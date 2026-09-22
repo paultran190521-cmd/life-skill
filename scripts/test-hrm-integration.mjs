@@ -38,7 +38,7 @@ try {
   process.env.HRM_METTASOUL_WEBHOOK_SECRET = "0123456789abcdef0123456789abcdef";
   process.env.HRM_METTASOUL_INTEGRATION_ENABLED = "false";
   let captured;
-  globalThis.fetch = async (url, init) => {
+  const captureSuccessFetch = async (url, init) => {
     captured = { url, init, envelope: JSON.parse(init.body) };
     const payload = JSON.parse(captured.envelope.payload);
     return new Response(JSON.stringify({
@@ -48,6 +48,7 @@ try {
         : { workLogId: "LOG_MTS_1", money: 80000, policyVersion: "profile:1" }),
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
+  globalThis.fetch = captureSuccessFetch;
 
   assert.equal(hrmIntegrationCredentialsConfigured(), true);
   assert.equal(hrmIntegrationConfigured(), false);
@@ -94,8 +95,33 @@ try {
     eventId: "activity-cancel-1",
     idempotencyKey: "CANCEL:METTASOUL:ACTIVITY:activity-1:assignment-1",
     targetIdempotencyKey: "METTASOUL:ACTIVITY:activity-1:assignment-1",
+    activityId: "activity-1",
+    assignmentId: "assignment-1",
+    workLogId: "LOG_MTS_ACTIVITY_1",
+    integrationEventId: "activity-event-1",
   });
   assert.equal(JSON.parse(captured.envelope.payload).action, "CANCEL_ACTIVITY_COMPLETION");
+
+  let cancellationRedirectCalls = 0;
+  process.env.HRM_METTASOUL_WEBHOOK_URL = "https://script.google.com/macros/s/test/exec";
+  globalThis.fetch = async () => {
+    cancellationRedirectCalls += 1;
+    if (cancellationRedirectCalls === 1 || cancellationRedirectCalls === 3) {
+      return new Response(null, { status: 302, headers: { Location: `https://script.googleusercontent.com/macros/echo?attempt=${cancellationRedirectCalls}` } });
+    }
+    if (cancellationRedirectCalls === 2) {
+      return new Response("<html>expired redirect</html>", { status: 404, headers: { "Content-Type": "text/html" } });
+    }
+    return new Response(JSON.stringify({ ok: true, code: "ACTIVITY_REWARD_CANCELLED" }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  await cancelActivityCompletionInHrm({
+    source: "METTASOUL", action: "CANCEL_ACTIVITY_COMPLETION", eventId: "activity-cancel-retry",
+    idempotencyKey: "CANCEL:activity-retry", targetIdempotencyKey: "activity-retry",
+    activityId: "activity-retry", assignmentId: "assignment-retry",
+  });
+  assert.equal(cancellationRedirectCalls, 4);
+  process.env.HRM_METTASOUL_WEBHOOK_URL = "https://hrm.example.test/webhook";
+  globalThis.fetch = captureSuccessFetch;
 
   await provisionMettasoulTeacherInHrm({
     source: "METTASOUL", action: "PROVISION_WORKER", eventId: "identity-1", idempotencyKey: "PROVISION:u-1",

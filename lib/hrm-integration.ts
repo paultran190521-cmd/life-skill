@@ -50,6 +50,10 @@ export type ActivityCompletionCancellationPayload = {
   eventId: string;
   idempotencyKey: string;
   targetIdempotencyKey: string;
+  activityId: string;
+  assignmentId: string;
+  workLogId?: string;
+  integrationEventId?: string;
 };
 
 /** Minimal, non-payroll identity sent only when an administrator creates a teacher in METTASOUL. */
@@ -194,6 +198,12 @@ async function sendSignedPayload<T extends HrmTeachingResponse = HrmTeachingResp
   let response: Response;
   try {
     response = await fetchHrmResponse(url, envelopeText, requestOptions);
+    // Apps Script may occasionally issue an expired/invalid one-time redirect
+    // after the POST has already reached GAS. Replaying the same signed,
+    // idempotent cancellation is safer than surfacing a false delete failure.
+    if (isCancellation && response.status === 404) {
+      response = await fetchHrmResponse(url, envelopeText, requestOptions);
+    }
   } catch (error) {
     throw integrationFailure(
       "HRM_UNREACHABLE",
