@@ -6049,7 +6049,7 @@ export function MettasoulApp() {
                               <option value="">{item.schoolId ? "Chưa có khung giờ phù hợp cho trường này" : "Chọn trường trước"}</option>
                             ) : rowTimeSlots.map((slot) => (
                               <option key={slot.id} value={slot.id}>
-                                {formatTimeSlotDisplay(slot, activeTimeSlots)} · {slot.start}-{slot.end}
+                                {formatScheduleTimeSlotOptionLabel(slot, activeTimeSlots, rowSchool?.name ?? "")}
                               </option>
                             ))}
                           </select>
@@ -11924,6 +11924,18 @@ function formatTimeSlotDisplay(slot: TimeSlot, slots: TimeSlot[]) {
   }
 
   return `${formatPeriodPair(composite.first.label, composite.second.label)} (${composite.duration}ph)`;
+}
+
+function formatScheduleTimeSlotOptionLabel(slot: TimeSlot, slots: TimeSlot[], schoolName: string) {
+  const display = formatTimeSlotDisplay(slot, slots);
+  if (!normalizeComparableText(schoolName).includes("thu duc")) {
+    return `${display} · ${slot.start}-${slot.end}`;
+  }
+
+  const periodDisplay = display
+    .replace(/^TĐ\s*-\s*/i, "")
+    .replace(/(Tiết\s*\d+),\s+(\d+[SC])/i, "$1,$2");
+  return `TĐ - ${periodDisplay}. ${slot.start} - ${slot.end}`;
 }
 
 function getLegacyCompositeTimeSlotDisplay(slot: TimeSlot, slots: TimeSlot[]) {
