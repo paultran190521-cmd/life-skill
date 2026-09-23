@@ -746,13 +746,16 @@ export const activityAssignmentHeaders = ["id", "activityId", "teacherId", "role
 const defaultActivityTypes: Array<Omit<ActivityType, "description"> & { description: string }> = [
   { id: "activity-melis", code: "MELIS_SESSION_1_STUDENT", name: "Giáo viên MELIS (1 học viên)", kind: "OTHER_PAID", unit: "SESSION", requiresEvidence: false, requiresApproval: true, active: true, description: "Phiên MELIS 1:1 · 270.000đ/buổi" },
   { id: "activity-melis-pair", code: "MELIS_SESSION_2_STUDENTS", name: "Giáo viên MELIS (2 học viên)", kind: "OTHER_PAID", unit: "SESSION", requiresEvidence: false, requiresApproval: true, active: true, description: "Phiên MELIS 2 học viên · 400.000đ/buổi" },
-  { id: "activity-student-topic", code: "STUDENT_TOPIC_REPORT", name: "Báo cáo chuyên đề học sinh", kind: "HYBRID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "Báo cáo chính hoặc phụ trách chính" },
-  { id: "activity-partner-topic", code: "PARTNER_FREE_TOPIC", name: "Chuyên đề miễn phí cho đối tác", kind: "OTHER_PAID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "Chuyên đề dành cho đối tác" },
-  { id: "activity-internal-sharing", code: "INTERNAL_SHARING", name: "Chia sẻ chuyên môn nội bộ", kind: "HYBRID", unit: "SESSION", requiresEvidence: true, requiresApproval: true, active: true, description: "Chia sẻ hoặc huấn luyện nghiệp vụ" },
-  { id: "activity-demo", code: "DEMO_SESSION", name: "Demo hoặc sinh hoạt chuyên môn", kind: "MCP", unit: "SESSION", requiresEvidence: false, requiresApproval: true, active: true, description: "Hoạt động chuyên môn được phân công" },
-  { id: "activity-mcs", code: "MCS_OR_OBSERVATION", name: "Nhiệm vụ MCS hoặc dự giờ", kind: "MCP", unit: "TASK", requiresEvidence: true, requiresApproval: true, active: true, description: "Cần phiếu hoặc minh chứng ghi nhận" },
-  { id: "activity-new-teacher", code: "NEW_TEACHER_SUPPORT", name: "Hỗ trợ giáo viên mới", kind: "MCP", unit: "PERSON", requiresEvidence: true, requiresApproval: true, active: true, description: "Kèm hoặc giới thiệu giáo viên mới" },
-  { id: "activity-article", code: "PROFESSIONAL_ARTICLE", name: "Bài truyền thông chuyên môn", kind: "MCP", unit: "ARTICLE", requiresEvidence: true, requiresApproval: true, active: true, description: "Chỉ ghi nhận khi METTASOUL sử dụng bài" },
+  { id: "activity-student-topic", code: "STUDENT_TOPIC_REPORT_SUPPORT", name: "Báo cáo chuyên đề học sinh – phối hợp", kind: "HYBRID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "Mức phối hợp: 1.000.000đ và 100 MCP/chuyên đề" },
+  { id: "activity-student-topic-lead", code: "STUDENT_TOPIC_REPORT_LEAD", name: "Báo cáo chuyên đề học sinh – chủ trì", kind: "HYBRID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "Mức chủ trì: 1.500.000đ và 100 MCP/chuyên đề" },
+  { id: "activity-partner-topic", code: "PARTNER_FREE_TOPIC", name: "Chuyên đề phụ huynh/giáo viên miễn phí cho đối tác", kind: "HYBRID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "2.500.000đ và 100 MCP/chuyên đề" },
+  { id: "activity-internal-sharing", code: "INTERNAL_SHARING", name: "Chia sẻ chuyên môn/nghiệp vụ nội bộ", kind: "HYBRID", unit: "SESSION", requiresEvidence: true, requiresApproval: true, active: true, description: "500.000đ và 100 MCP/buổi" },
+  { id: "activity-demo", code: "DEMO_SESSION", name: "Tham gia demo/sinh hoạt chuyên môn", kind: "MCP", unit: "SESSION", requiresEvidence: false, requiresApproval: true, active: true, description: "20 MCP/buổi" },
+  { id: "activity-mcs", code: "MCS_TASK", name: "Nhiệm vụ MCS", kind: "MCP", unit: "TASK", requiresEvidence: true, requiresApproval: true, active: true, description: "50 MCP/nhiệm vụ" },
+  { id: "activity-observation", code: "OBSERVATION_WITH_RECORD", name: "Dự giờ có phiếu ghi nhận", kind: "MCP", unit: "SESSION", requiresEvidence: true, requiresApproval: true, active: true, description: "50 MCP/buổi" },
+  { id: "activity-new-teacher", code: "NEW_TEACHER_SUPPORT", name: "Hỗ trợ giáo viên mới", kind: "MCP", unit: "PERSON", requiresEvidence: true, requiresApproval: true, active: true, description: "200 MCP/người" },
+  { id: "activity-new-teacher-referral", code: "NEW_TEACHER_REFERRAL", name: "Giới thiệu giáo viên mới", kind: "MCP", unit: "PERSON", requiresEvidence: true, requiresApproval: true, active: true, description: "200 MCP/người" },
+  { id: "activity-article", code: "PROFESSIONAL_ARTICLE", name: "Bài truyền thông chuyên môn có minh chứng, được METTASOUL sử dụng", kind: "MCP", unit: "ARTICLE", requiresEvidence: true, requiresApproval: true, active: true, description: "120 MCP/bài" },
 ];
 
 export async function ensureActivityCatalog(): Promise<ActivityType[]> {
@@ -764,22 +767,27 @@ export async function ensureActivityCatalog(): Promise<ActivityType[]> {
     return defaultActivityTypes;
   }
 
-  // The original MELIS catalog item covered both one-to-one and pair sessions.
-  // Migrate that stable ID to 1 learner so previously assigned MELIS work can
-  // still be approved, then add the distinct pair-session choice.
+  // Keep stable IDs for existing assignments while bringing the live catalog
+  // to the approved 2026-2027 policy. New split choices receive new IDs.
   const now = new Date().toISOString();
-  const singleStudentMelis = defaultActivityTypes.find((type) => type.id === "activity-melis")!;
-  const pairMelis = defaultActivityTypes.find((type) => type.id === "activity-melis-pair")!;
-  const legacyMelis = existing.find((type) => type.id === "activity-melis" && type.code === "MELIS_SESSION");
-  if (legacyMelis) {
-    await updateSheetRowById("ActivityTypes", "activity-melis", {
-      ...singleStudentMelis,
-      createdAt: legacyMelis.createdAt || now,
-      updatedAt: now,
-    });
-  }
-  if (!existing.some((type) => type.id === pairMelis.id)) {
-    await appendSheetRows("ActivityTypes", [{ ...pairMelis, createdAt: now, updatedAt: now }]);
+  const existingById = new Map(existing.map((type) => [String(type.id || ""), type]));
+  for (const catalogType of defaultActivityTypes) {
+    const current = existingById.get(catalogType.id);
+    if (!current) {
+      await appendSheetRows("ActivityTypes", [{ ...catalogType, createdAt: now, updatedAt: now }]);
+      continue;
+    }
+    const changed = ["code", "name", "kind", "unit", "description"].some((key) => String(current[key] || "") !== String(catalogType[key as keyof typeof catalogType] || ""))
+      || parseBoolean(current.requiresEvidence, false) !== catalogType.requiresEvidence
+      || parseBoolean(current.requiresApproval, true) !== catalogType.requiresApproval
+      || parseBoolean(current.active, true) !== catalogType.active;
+    if (changed) {
+      await updateSheetRowById("ActivityTypes", catalogType.id, {
+        ...catalogType,
+        createdAt: current.createdAt || now,
+        updatedAt: now,
+      });
+    }
   }
   return toActivityTypes(await readSheetRows("ActivityTypes"));
 }
