@@ -124,9 +124,28 @@ export function isTimeSlotAllowedForSchool(
   if (!timeSlotBelongsToSchool(slot, schoolName)) return false;
 
   const school = normalizeTimeSlotComparableText(schoolName);
-  if (school.includes("tan tuc") && isDoubleTeachingTimeSlot(slot)) return false;
-  if (school.includes("thu duc") && getTimeSlotDurationMinutes(slot.start, slot.end) === 45) return false;
+  const duration = getTimeSlotDurationMinutes(slot.start, slot.end);
+  const isDouble = isDoubleTeachingTimeSlot(slot);
+  if (school.includes("tan tuc")) return !isDouble && duration === 45;
+  if (school.includes("thu duc")) {
+    if (!isDouble || duration !== 90) return false;
+    // The former 14:45–16:15 frame is retained for existing schedules but is
+    // replaced for new assignments by the explicitly requested 14:50–16:20.
+    if (normalizeTimeValue(slot.start) === "14:45" && normalizeTimeValue(slot.end) === "16:15") return false;
+    return true;
+  }
   return true;
+}
+
+/** The approved custom Thủ Đức 3–4C double period does not follow legacy single-slot boundaries. */
+export function isConfiguredThuDucThreeFourSlot(slot: Pick<TimeSlot, "label" | "start" | "end">) {
+  const label = normalizeTimeSlotComparableText(slot.label);
+  return (
+    /^(td|thu duc)\s*-\s*tiet\s*3\s*,\s*4c(?:\s*\(\s*90\s*(?:p|phut)\s*\))?$/.test(label) &&
+    normalizeTimeValue(slot.start) === "14:50" &&
+    normalizeTimeValue(slot.end) === "16:20" &&
+    getTimeSlotDurationMinutes(slot.start, slot.end) === 90
+  );
 }
 
 export function timeSlotsAllowedForSchool<T extends Pick<TimeSlot, "label" | "start" | "end">>(

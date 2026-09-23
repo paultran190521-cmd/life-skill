@@ -86,6 +86,7 @@ import {
   MAX_TIME_SLOT_MINUTES,
   TIME_SLOT_STEP_MINUTES,
   getTimeSlotDurationMinutes,
+  isConfiguredThuDucThreeFourSlot,
   isTimeSlotAllowedForSchool,
   isValidTimeSlotDuration,
   normalizeTimeSlotLabel,
@@ -2439,6 +2440,12 @@ export function MettasoulApp() {
     }
 
     setSchedules((items) => [...created, ...items]);
+    // Sending a schedule is a completed transaction. Start the next batch with
+    // no school/class/time preselected so a previous school's choices cannot
+    // accidentally carry over into the next assignment.
+    setDraftSchedule({
+      items: [createDraftScheduleItem({ teachingEnvironment: defaultTeachingEnvironment })],
+    });
     const sentEmails = emailResults.filter((item) => item.sent).length;
     const failedEmails = emailResults.length - sentEmails;
     if (emailResults.length > 0) {
@@ -5965,6 +5972,7 @@ export function MettasoulApp() {
                             }}
                             className={inputClass}
                           >
+                            <option value="">Chọn trường</option>
                             {schools.map((school) => (
                               <option key={school.id} value={school.id}>
                                 {school.name}
@@ -5997,7 +6005,7 @@ export function MettasoulApp() {
                             className={inputClass}
                           >
                             {rowGrades.length === 0 ? (
-                              <option value="">Chưa có khối trong trường</option>
+                              <option value="">{item.schoolId ? "Chưa có khối trong trường" : "Chọn trường trước"}</option>
                             ) : (
                               rowGrades.map((grade) => (
                                 <option key={grade} value={grade}>
@@ -6022,7 +6030,7 @@ export function MettasoulApp() {
                               className={inputClass}
                             >
                               {rowGradeClasses.length === 0 ? (
-                                <option value="">Chưa có lớp trong khối</option>
+                                <option value="">{item.schoolId ? "Chưa có lớp trong khối" : "Chọn trường trước"}</option>
                               ) : (
                                 rowGradeClasses.map((cr) => (
                                   <option key={cr.id} value={cr.id}>
@@ -6038,7 +6046,7 @@ export function MettasoulApp() {
                             className={inputClass}
                           >
                             {rowTimeSlots.length === 0 ? (
-                              <option value="">Chưa có khung giờ phù hợp cho trường này</option>
+                              <option value="">{item.schoolId ? "Chưa có khung giờ phù hợp cho trường này" : "Chọn trường trước"}</option>
                             ) : rowTimeSlots.map((slot) => (
                               <option key={slot.id} value={slot.id}>
                                 {formatTimeSlotDisplay(slot, activeTimeSlots)} · {slot.start}-{slot.end}
@@ -6260,6 +6268,9 @@ export function MettasoulApp() {
                 <Send size={18} />
                 Gửi lịch và email thông báo
               </button>
+              <p className="text-center text-xs font-semibold text-[var(--muted)]">
+                Sau khi tạo lịch thành công, biểu mẫu sẽ xóa lựa chọn trường, lớp và khung giờ để bạn chọn lại cho lượt giao tiếp theo.
+              </p>
             </div>
           </Panel>
 
@@ -11660,9 +11671,12 @@ function normalizeDraftScheduleItem(
     activeTimeSlots: TimeSlot[];
   },
 ): DraftScheduleItem {
-  const schoolId = context.schools.some((school) => school.id === item.schoolId)
-    ? item.schoolId
-    : context.schools[0]?.id ?? "";
+  const requestedSchoolId = String(item.schoolId || "").trim();
+  const schoolId = !requestedSchoolId
+    ? ""
+    : context.schools.some((school) => school.id === requestedSchoolId)
+      ? requestedSchoolId
+      : context.schools[0]?.id ?? "";
   const grade = pickDefaultGradeForSchool(schoolId, item.classId, context.classes);
   const classId = pickClassIdForSchoolGrade(schoolId, grade, item.classId, context.classes);
   const classIds = Array.from(new Set((item.classIds.length > 0 ? item.classIds : [classId]).filter((selectedClassId) =>
@@ -11677,10 +11691,14 @@ function normalizeDraftScheduleItem(
     requestedClassIds: classIds,
   }, classesForSchool(context.classes, schoolId));
   const { participantScope, participantGrade, classIds: normalizedClassIds } = participantSelection;
-  const lessonId = pickLessonIdForClass(classId, item.lessonId, context.classes, context.activeLessons);
+  const lessonId = classId
+    ? pickLessonIdForClass(classId, item.lessonId, context.classes, context.activeLessons)
+    : "";
   const lesson = context.activeLessons.find((entry) => entry.id === lessonId);
   const school = context.schools.find((entry) => entry.id === schoolId);
-  const schoolSlots = schedulingTimeSlotsForSchool(context.activeTimeSlots, school?.name ?? "");
+  const schoolSlots = schoolId
+    ? schedulingTimeSlotsForSchool(context.activeTimeSlots, school?.name ?? "")
+    : [];
   const timeSlotId = schoolSlots.some((slot) => slot.id === item.timeSlotId)
     ? item.timeSlotId
     : schoolSlots[0]?.id ?? "";
@@ -11866,7 +11884,11 @@ function schedulingTimeSlotsForSchool(slots: TimeSlot[], schoolName: string): Ti
   return timeSlotsForSchool(slots, schoolName)
     .filter((slot) => {
       const duration = getTimeSlotDurationMinutes(slot.start, slot.end);
-      return !isCompositeTimeSlotCandidate(slot, duration, getTimeSlotLabelDuration(slot.label)) || Boolean(getCompositeTimeSlotInfo(slot, slots));
+      return (
+        !isCompositeTimeSlotCandidate(slot, duration, getTimeSlotLabelDuration(slot.label)) ||
+        Boolean(getCompositeTimeSlotInfo(slot, slots)) ||
+        isConfiguredThuDucThreeFourSlot(slot)
+      );
     })
     .sort((left, right) => left.start.localeCompare(right.start) || left.end.localeCompare(right.end));
 }
