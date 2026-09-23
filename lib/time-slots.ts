@@ -77,13 +77,14 @@ export function normalizeTimeSlotComparableText(value: unknown) {
 
 function schoolTimeSlotKeys(schoolName: unknown) {
   const normalized = normalizeTimeSlotComparableText(schoolName)
-    .replace(/^(truong\s+)?(thpt|thcs|th)\s+/, "")
+    .replace(/^truong\s+/, "")
+    .replace(/^(thpt|thcs|th)\s+/, "")
     .trim();
   const aliases: Record<string, string[]> = {
     "nguyen thi minh khai": ["ntmk"],
     "tan tuc": ["tt"],
     "phong phu": ["pp"],
-    "pt nk tdtt binh chanh": ["nktdtt"],
+    "pt nk tdtt binh chanh": ["nktdtt", "tdtt"],
     "chi lang": ["cl"],
     "nam sai gon": ["nsg"],
     "duong van thi": ["dvt"],
@@ -127,6 +128,7 @@ export function isTimeSlotAllowedForSchool(
   const duration = getTimeSlotDurationMinutes(slot.start, slot.end);
   const isDouble = isDoubleTeachingTimeSlot(slot);
   if (school.includes("tan tuc")) return !isDouble && duration === 45;
+  if (school.includes("tdtt")) return !isDouble && duration === 45;
   if (school.includes("thu duc")) {
     if (!isDouble || duration !== 90) return false;
     // The former 14:45–16:15 frame is retained for existing schedules but is
