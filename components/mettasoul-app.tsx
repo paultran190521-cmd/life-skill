@@ -7019,27 +7019,32 @@ export function MettasoulApp() {
           </div>
         </ViewportPortal> : null}
         {role === "admin" ? (
-          <Panel title="Giao công việc & hoạt động MCP" action="Chỉ ghi nhận sau khi hoàn thành và duyệt">
+          <Panel
+            title="Giao công việc & hoạt động MCP"
+            action="Chỉ ghi nhận sau khi hoàn thành và duyệt"
+            titleClassName="text-xl sm:text-2xl"
+            actionClassName="text-sm sm:text-base"
+          >
             <form className="grid gap-3 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); void createActivityFromForm(new FormData(event.currentTarget)); event.currentTarget.reset(); }}>
-              <label className="text-xs font-bold text-[var(--brand-dark)]">Loại hoạt động
-                <select name="activityTypeId" required className="mt-1 w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm">
+              <label className="text-base font-bold text-[var(--brand-dark)]">Loại hoạt động
+                <select name="activityTypeId" required className="mt-1 w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-lg">
                   <option value="">Chọn loại hoạt động</option>
                   {activityTypes.filter((type) => type.active).map((type) => <option key={type.id} value={type.id}>{type.name} · {type.kind === "MCP" ? "MCP" : type.kind === "OTHER_PAID" ? "Thù lao" : "Thù lao + MCP"}</option>)}
                 </select>
               </label>
-              <label className="text-xs font-bold text-[var(--brand-dark)]">Tên hoạt động<input name="title" required className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
-              <label className="text-xs font-bold text-[var(--brand-dark)]">Ngày thực hiện<input name="date" type="date" required defaultValue={currentDateKey()} className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
-              <label className="text-xs font-bold text-[var(--brand-dark)]">Địa điểm hoặc đối tác<input name="location" className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
-              <label className="text-xs font-bold text-[var(--brand-dark)]">Bắt đầu<input name="startTime" type="time" className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
-              <label className="text-xs font-bold text-[var(--brand-dark)]">Kết thúc<input name="endTime" type="time" className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
-              <label className="text-xs font-bold text-[var(--brand-dark)] md:col-span-2">Ghi chú hoặc yêu cầu minh chứng<textarea name="note" className="mt-1 min-h-20 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
+              <label className="text-base font-bold text-[var(--brand-dark)]">Tên hoạt động<input name="title" required className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-lg" /></label>
+              <label className="text-base font-bold text-[var(--brand-dark)]">Ngày thực hiện<input name="date" type="date" required defaultValue={currentDateKey()} className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-lg" /></label>
+              <label className="text-base font-bold text-[var(--brand-dark)]">Địa điểm hoặc đối tác<input name="location" className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-lg" /></label>
+              <label className="text-base font-bold text-[var(--brand-dark)]">Bắt đầu<input name="startTime" type="time" className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-lg" /></label>
+              <label className="text-base font-bold text-[var(--brand-dark)]">Kết thúc<input name="endTime" type="time" className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-lg" /></label>
+              <label className="text-base font-bold text-[var(--brand-dark)] md:col-span-2">Ghi chú hoặc yêu cầu minh chứng<textarea name="note" className="mt-1 min-h-20 w-full rounded-xl border border-cyan-100 px-3 py-2 text-lg" /></label>
               <div className="md:col-span-2 rounded-xl bg-cyan-50 p-3">
-                <p className="text-xs font-black text-[var(--brand-dark)]">Người tham gia</p>
+                <p className="text-base font-black text-[var(--brand-dark)]">Người tham gia</p>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {activeTeachers.map((teacher) => <label key={teacher.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs font-semibold"><input name="teacherId" type="checkbox" value={teacher.id} />{teacher.name}</label>)}
+                  {activeTeachers.map((teacher) => <label key={teacher.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-base font-semibold"><input name="teacherId" type="checkbox" value={teacher.id} />{teacher.name}</label>)}
                 </div>
               </div>
-              <button type="submit" disabled={isBusy} className="md:col-span-2 rounded-xl bg-[var(--brand)] px-4 py-3 text-sm font-black text-white disabled:opacity-50">Giao công việc</button>
+              <button type="submit" disabled={isBusy} className="md:col-span-2 rounded-xl bg-[var(--brand)] px-4 py-3 text-lg font-black text-white disabled:opacity-50">Giao công việc</button>
             </form>
           </Panel>
         ) : null}
