@@ -43,7 +43,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Fragment, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, startTransition, type CSSProperties, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { Panel } from "@/components/menus/panel";
@@ -528,7 +528,7 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
   { id: "teachers", label: "Giáo viên", icon: Users },
   { id: "lessons", label: "Bài học", icon: BookOpen },
   { id: "plans", label: "Giáo án", icon: FileUp },
-  { id: "attendance", label: "Điểm danh - Chấm công", icon: CheckCircle2 },
+  { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "settings", label: "Cấu hình", icon: Settings2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
@@ -538,7 +538,7 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
   { id: "calendar", label: "Lịch của tôi", icon: CalendarDays },
   { id: "activities", label: "Công việc & MCP", icon: ListChecks },
   { id: "plans", label: "Giáo án", icon: FileUp },
-  { id: "attendance", label: "Điểm danh - Chấm công", icon: CheckCircle2 },
+  { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
 
@@ -547,7 +547,7 @@ const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }
   { id: "calendar", label: "Lịch trợ giảng", icon: CalendarDays },
   { id: "activities", label: "Công việc & MCP", icon: ListChecks },
   { id: "plans", label: "Giáo án tham khảo", icon: BookOpen },
-  { id: "attendance", label: "Điểm danh - Chấm công", icon: CheckCircle2 },
+  { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
 
@@ -595,6 +595,8 @@ export function MettasoulApp() {
   const [authStatus, setAuthStatus] = useState<"checking" | "signed-in" | "signed-out">("checking");
   const [saveError, setSaveError] = useState("");
   const [pendingAction, setPendingAction] = useState("");
+  const [teachingCelebration, setTeachingCelebration] = useState(0);
+  const teachingCelebrationTimeout = useRef<number | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState("");
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const [calendarMonth, setCalendarMonth] = useState(() => currentMonthKey());
@@ -638,6 +640,7 @@ export function MettasoulApp() {
   const [lessonPlanTeacherFilter, setLessonPlanTeacherFilter] = useState("all");
   const [lessonPlanStatusFilter, setLessonPlanStatusFilter] = useState<"all" | "uploaded" | "missing">("all");
   const [lessonPlanAdminFocus, setLessonPlanAdminFocus] = useState<LessonPlanAdminFocus>("uploaded");
+  useEffect(() => () => window.clearTimeout(teachingCelebrationTimeout.current), []);
   const [lessonPlanTeacherFocus, setLessonPlanTeacherFocus] = useState<LessonPlanTeacherFocus>("uploaded");
   const lessonPlanLinkDrafts = useRef<Record<string, string>>({});
   const [lessonPlanChatPlan, setLessonPlanChatPlan] = useState<LessonPlan | null>(null);
@@ -2748,6 +2751,7 @@ export function MettasoulApp() {
 
   async function submitTeachingWorkLog(schedule: Schedule) {
     let response: TeachingWorkLogCreateResponse;
+    const startedAt = performance.now();
     try {
       response = await saveRequest<TeachingWorkLogCreateResponse>("Đang gửi chấm công sang HRM...", "/api/teaching-work-logs", {
         method: "POST",
@@ -2763,6 +2767,10 @@ export function MettasoulApp() {
       response.workLog,
       ...items.filter((item) => item.id !== response.workLog.id),
     ]);
+    recordPerformance("teaching-work-log:confirmed", performance.now() - startedAt);
+    setTeachingCelebration((current) => current + 1);
+    window.clearTimeout(teachingCelebrationTimeout.current);
+    teachingCelebrationTimeout.current = window.setTimeout(() => setTeachingCelebration(0), 1800);
     if (typeof response.workLog.mcpPoints === "number" && response.workLog.mcpPoints !== 0) {
       void apiRequest<{ entries: McpLedgerEntry[] }>("/api/mcp-ledger")
         .then((result) => setMcpLedgerEntries(result.entries ?? []))
@@ -4919,7 +4927,7 @@ export function MettasoulApp() {
               {navigationTabs.filter((item) => item.id !== "school-guide" && item.id !== "activities").map((item) => {
                 const Icon = item.icon;
                 const selected = activeTab === item.id;
-                const mobileLabel = item.id === "calendar" ? "Lịch" : item.id === "attendance" ? "Điểm danh" : item.label;
+                const mobileLabel = item.id === "calendar" ? "Lịch" : item.label;
                 return (
                   <button
                     key={item.id}
@@ -4953,6 +4961,7 @@ export function MettasoulApp() {
             toastMessages={toastMessages}
             onDismissToast={dismissToast}
           />
+          <TeachingWorkLogCelebration nonce={teachingCelebration} />
           {availabilityOverviewDate ? (
             <ViewportPortal>
               <div
@@ -10572,6 +10581,43 @@ function useClientMounted() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   return mounted;
+}
+
+const teachingCelebrationParticles = Array.from({ length: 30 }, (_, index) => {
+  const angle = (Math.PI * 2 * index) / 30;
+  const distance = 100 + (index % 5) * 22;
+  return {
+    id: index,
+    x: `${Math.round(Math.cos(angle) * distance)}px`,
+    y: `${Math.round(Math.sin(angle) * distance + 58)}px`,
+    rotation: `${120 + (index % 7) * 90}deg`,
+    color: ["#fbbf24", "#fb7185", "#38bdf8", "#34d399", "#a78bfa"][index % 5],
+    delay: `${(index % 6) * 24}ms`,
+  };
+});
+
+function TeachingWorkLogCelebration({ nonce }: { nonce: number }) {
+  if (!nonce) return null;
+
+  return (
+    <ViewportPortal>
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-[90] overflow-hidden">
+        {teachingCelebrationParticles.map((particle) => (
+          <span
+            key={`${nonce}-${particle.id}`}
+            className="teaching-confetti-particle absolute left-1/2 top-[42%] h-2.5 w-2.5 rounded-sm"
+            style={{
+              backgroundColor: particle.color,
+              animationDelay: particle.delay,
+              "--burst-x": particle.x,
+              "--burst-y": particle.y,
+              "--burst-rotation": particle.rotation,
+            } as CSSProperties}
+          />
+        ))}
+      </div>
+    </ViewportPortal>
+  );
 }
 
 function SystemFeedbackLayer({

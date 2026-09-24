@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { apiError, apiFailure, createRequestId } from "@/lib/api";
 import { appendAuditLogs } from "@/lib/audit";
 import { ErrorCodes } from "@/lib/error-codes";
@@ -165,11 +165,12 @@ export async function POST(request: Request) {
     };
     await updateSheetRowById("TeachingWorkLogs", workLogId, workLog);
     // HRM and the local confirmation above are the durable business result.
-    // An auxiliary audit write must never make the teacher see a 500 after a
-    // period has already been accepted, otherwise a retry looks like a failed
-    // attendance even though HRM has created the work log.
-    try {
-      await appendAuditLogs([{
+    // Keep the non-critical audit write off the response path: teachers get
+    // their confirmed result as soon as the two authoritative writes finish,
+    // while Next.js completes the audit work after sending that response.
+    after(async () => {
+      try {
+        await appendAuditLogs([{
         requestId,
         actor: auth.user,
         action: "teaching_work_log.create",
@@ -188,10 +189,11 @@ export async function POST(request: Request) {
           roleCode,
           hrmWorkLogId: workLog.hrmWorkLogId,
         },
-      }]);
-    } catch (auditError) {
-      console.error(`[teaching-work-log-audit-failed][${requestId}]`, auditError);
-    }
+        }]);
+      } catch (auditError) {
+        console.error(`[teaching-work-log-audit-failed][${requestId}]`, auditError);
+      }
+    });
     return NextResponse.json({ workLog, idempotent: Boolean(hrmResult.idempotent) });
   } catch (error) {
     return apiError(error, requestId, { route: "/api/teaching-work-logs", method: "POST" });

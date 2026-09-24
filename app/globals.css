@@ -131,6 +131,27 @@ button:disabled {
   }
 }
 
+@keyframes teaching-confetti-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.35) rotate(0deg);
+  }
+  12% { opacity: 1; }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--burst-x)), calc(-50% + var(--burst-y))) scale(1) rotate(var(--burst-rotation));
+  }
+}
+
+.teaching-confetti-particle {
+  animation: teaching-confetti-burst 1.45s cubic-bezier(0.15, 0.8, 0.3, 1) both;
+  box-shadow: 0 2px 8px rgba(0, 64, 80, 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .teaching-confetti-particle { animation: none; }
+}
+
 .ui-polish {
   background-image:
     radial-gradient(1100px 520px at -10% -5%, rgba(224, 160, 32, 0.16), transparent 55%),
