@@ -20,6 +20,9 @@ import {
 } from "@/lib/teaching-work-log";
 import type { Schedule, TeachingEnvironment, TimeSlot } from "@/lib/types";
 
+export const runtime = "nodejs";
+export const maxDuration = 30;
+
 const environmentNames: Record<TeachingEnvironment, string> = {
   in_class: "Trong lớp",
   outdoor: "Ngoài sân",
@@ -30,6 +33,7 @@ const environmentNames: Record<TeachingEnvironment, string> = {
 
 export async function POST(request: Request) {
   const requestId = createRequestId("teaching-work-log");
+  const startedAt = performance.now();
   try {
     const auth = await requireSessionUser(request, { allowHeaderFallback: false });
     const body = await request.json();
@@ -101,12 +105,15 @@ export async function POST(request: Request) {
       errorMessage: "",
       updatedAt: pendingAt,
     };
-    if (existing) {
+    if (existing && String(existing.status || "").toUpperCase() !== "PENDING") {
       await updateSheetRowById("TeachingWorkLogs", workLogId, pendingWorkLog);
     } else {
-      await appendSheetRows("TeachingWorkLogs", [pendingWorkLog]);
+      if (!existing) {
+        await appendSheetRows("TeachingWorkLogs", [pendingWorkLog]);
+      }
     }
     let hrmResult;
+    const hrmStartedAt = performance.now();
     try {
       hrmResult = await submitTeachingPeriodToHrm({
         source: "METTASOUL",
@@ -130,9 +137,34 @@ export async function POST(request: Request) {
     } catch (error) {
       const code = String((error as { code?: string })?.code || "HRM_REJECTED");
       const message = error instanceof Error ? error.message : "HRM từ chối chấm công.";
-      const outcomeUncertain = code === "HRM_UNREACHABLE" || code === "HRM_INVALID_RESPONSE";
+      const outcomeUncertain = ["HRM_UNREACHABLE", "HRM_INVALID_RESPONSE", "SYSTEM_BUSY"].includes(code);
+      const pendingWithDiagnostic = {
+        ...pendingWorkLog,
+        errorCode: code,
+        errorMessage: message,
+        updatedAt: new Date().toISOString(),
+      };
+      if (outcomeUncertain) {
+        // The initial PENDING row is already durable. Do not delay a teacher's
+        // response with another full-Sheet lookup when the HRM outcome may have
+        // completed after our HTTP deadline; the next idempotent retry repairs it.
+        after(async () => {
+          try {
+            await updateSheetRowById("TeachingWorkLogs", workLogId, pendingWithDiagnostic);
+          } catch (updateError) {
+            console.error(`[teaching-work-log-pending-update-failed][${requestId}]`, updateError);
+          }
+        });
+        const totalMs = Math.round(performance.now() - startedAt);
+        const hrmMs = Math.round(performance.now() - hrmStartedAt);
+        console.info("[teaching-work-log-pending]", { requestId, scheduleId, participantId, roleCode, hrmMs, totalMs, code });
+        return NextResponse.json(
+          { workLog: pendingWithDiagnostic, idempotent: false, syncPending: true, retryAfterMs: 1_500 },
+          { status: 202, headers: { "Server-Timing": `hrm;dur=${hrmMs}, total;dur=${totalMs}` } },
+        );
+      }
       await updateSheetRowById("TeachingWorkLogs", workLogId, {
-        status: outcomeUncertain ? "PENDING" : "FAILED",
+        status: "FAILED",
         errorCode: code,
         errorMessage: message,
         updatedAt: new Date().toISOString(),
@@ -194,7 +226,13 @@ export async function POST(request: Request) {
         console.error(`[teaching-work-log-audit-failed][${requestId}]`, auditError);
       }
     });
-    return NextResponse.json({ workLog, idempotent: Boolean(hrmResult.idempotent) });
+    const totalMs = Math.round(performance.now() - startedAt);
+    const hrmMs = Math.round(performance.now() - hrmStartedAt);
+    console.info("[teaching-work-log-confirmed]", { requestId, scheduleId, participantId, roleCode, hrmMs, totalMs, idempotent: Boolean(hrmResult.idempotent) });
+    return NextResponse.json(
+      { workLog, idempotent: Boolean(hrmResult.idempotent) },
+      { headers: { "Server-Timing": `hrm;dur=${hrmMs}, total;dur=${totalMs}` } },
+    );
   } catch (error) {
     return apiError(error, requestId, { route: "/api/teaching-work-logs", method: "POST" });
   }

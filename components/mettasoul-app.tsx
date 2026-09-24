@@ -272,6 +272,8 @@ type AttendanceCreateResponse = {
 type TeachingWorkLogCreateResponse = {
   workLog: TeachingWorkLog;
   idempotent: boolean;
+  syncPending?: boolean;
+  retryAfterMs?: number;
 };
 
 type McpLedgerEntry = {
@@ -595,6 +597,7 @@ export function MettasoulApp() {
   const [authStatus, setAuthStatus] = useState<"checking" | "signed-in" | "signed-out">("checking");
   const [saveError, setSaveError] = useState("");
   const [pendingAction, setPendingAction] = useState("");
+  const [pendingTeachingSyncIds, setPendingTeachingSyncIds] = useState<string[]>([]);
   const [teachingCelebration, setTeachingCelebration] = useState(0);
   const teachingCelebrationTimeout = useRef<number | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState("");
@@ -2770,6 +2773,17 @@ export function MettasoulApp() {
       response.workLog,
       ...items.filter((item) => item.id !== response.workLog.id),
     ]);
+    if (response.syncPending) {
+      setPendingTeachingSyncIds((ids) => Array.from(new Set([...ids, schedule.id])));
+      recordPerformance("teaching-work-log:pending", performance.now() - startedAt);
+      pushToast(
+        "Đang đối chiếu với HRM",
+        "HRM đang hoàn tất phản hồi. METTASOUL sẽ tự đồng bộ lại, không tạo thêm lần chấm công.",
+        "info",
+      );
+      void reconcilePendingTeachingWorkLog(schedule, response.retryAfterMs);
+      return;
+    }
     recordPerformance("teaching-work-log:confirmed", performance.now() - startedAt);
     setTeachingCelebration((current) => current + 1);
     window.clearTimeout(teachingCelebrationTimeout.current);
@@ -2784,6 +2798,42 @@ export function MettasoulApp() {
       `HRM đã ghi nhận ${teachingRoleLabel(response.workLog.roleCode).toLowerCase()} cho tiết này${response.workLog.mcpPoints ? ` và ${response.workLog.mcpPoints} MCP` : ""}.`,
       "success",
     );
+  }
+
+  async function reconcilePendingTeachingWorkLog(schedule: Schedule, delayMs = 1_500, attempt = 1): Promise<void> {
+    window.setTimeout(async () => {
+      try {
+        const response = await apiRequest<TeachingWorkLogCreateResponse>("/api/teaching-work-logs", {
+          method: "POST",
+          body: JSON.stringify({ scheduleId: schedule.id }),
+        });
+        setTeachingWorkLogs((items) => [
+          response.workLog,
+          ...items.filter((item) => item.id !== response.workLog.id),
+        ]);
+        if (response.syncPending) {
+          if (attempt < 3) {
+            void reconcilePendingTeachingWorkLog(schedule, response.retryAfterMs ?? 2_000, attempt + 1);
+          } else {
+            setPendingTeachingSyncIds((ids) => ids.filter((id) => id !== schedule.id));
+            pushToast("Đang chờ HRM", "Chưa nhận được phản hồi cuối cùng. Hệ thống đã giữ cùng mã chấm công để bạn có thể đồng bộ lại an toàn.", "info");
+          }
+          return;
+        }
+        setPendingTeachingSyncIds((ids) => ids.filter((id) => id !== schedule.id));
+        setTeachingCelebration((current) => current + 1);
+        window.clearTimeout(teachingCelebrationTimeout.current);
+        teachingCelebrationTimeout.current = window.setTimeout(() => setTeachingCelebration(0), 1800);
+        pushToast("Đã chấm công", `HRM đã ghi nhận ${teachingRoleLabel(response.workLog.roleCode).toLowerCase()} cho tiết này.`, "success");
+      } catch {
+        if (attempt < 3) {
+          void reconcilePendingTeachingWorkLog(schedule, 2_500, attempt + 1);
+        } else {
+          setPendingTeachingSyncIds((ids) => ids.filter((id) => id !== schedule.id));
+          pushToast("Đang chờ HRM", "Chưa nhận được phản hồi cuối cùng. Hệ thống đã giữ cùng mã chấm công để bạn có thể đồng bộ lại an toàn.", "info");
+        }
+      }
+    }, delayMs);
   }
 
   async function cancelSchedule(schedule: Schedule) {
@@ -9165,6 +9215,7 @@ export function MettasoulApp() {
               && item.teacherId === currentTeacherId
               && item.status === "PENDING"
             );
+            const isTeachingSyncing = pendingTeachingSyncIds.includes(schedule.id);
             const ended = isTeachingPeriodEnded(schedule, timeSlots);
             const isCancelled = schedule.status === "cancelled";
             const roleCode = workLog?.roleCode || scheduleTeachingRoleForParticipant(schedule, currentTeacherId, schedules);
@@ -9202,15 +9253,15 @@ export function MettasoulApp() {
                     event.stopPropagation();
                     submitTeachingWorkLog(schedule);
                   }}
-                  disabled={Boolean(workLog) || isCancelled || !ended || !hrmIntegrationConfigured || isBusy}
+                  disabled={Boolean(workLog) || isTeachingSyncing || isCancelled || !ended || !hrmIntegrationConfigured || isBusy}
                   className={
-                    workLog || isCancelled || !ended || !hrmIntegrationConfigured || isBusy
+                    workLog || isTeachingSyncing || isCancelled || !ended || !hrmIntegrationConfigured || isBusy
                       ? "inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-200 px-4 py-3 text-sm font-black text-slate-500 shadow-none"
                       : primaryButtonClass
                   }
                 >
                   <ShieldCheck size={18} />
-                  {workLog ? "Đã chấm công" : isCancelled ? "Lịch đã hủy" : !hrmIntegrationConfigured ? "Chưa kết nối HRM" : pendingWorkLog ? "Đồng bộ lại HRM" : ended ? "Chấm công tiết" : "Chưa kết thúc"}
+                  {workLog ? "Đã chấm công" : isTeachingSyncing ? "Đang đối chiếu HRM" : isCancelled ? "Lịch đã hủy" : !hrmIntegrationConfigured ? "Chưa kết nối HRM" : pendingWorkLog ? "Đồng bộ lại HRM" : ended ? "Chấm công tiết" : "Chưa kết thúc"}
                 </button>
               </div>
             );

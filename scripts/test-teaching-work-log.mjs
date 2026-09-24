@@ -4,6 +4,7 @@ import fs from "node:fs";
 import ts from "typescript";
 
 const source = fs.readFileSync(new URL("../lib/teaching-work-log.ts", import.meta.url), "utf8");
+const routeSource = fs.readFileSync(new URL("../app/api/teaching-work-logs/route.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -61,4 +62,9 @@ assert.notEqual(deterministicTeachingEventId(key), deterministicTeachingEventId(
 assert.equal(deterministicTeachingCancellationEventId(key), deterministicTeachingCancellationEventId(key));
 assert.notEqual(deterministicTeachingCancellationEventId(key), deterministicTeachingCancellationEventId(`${key}:other`));
 
-console.log("Teaching work-log tests passed for per-period roles, time boundaries, and idempotency.");
+assert.match(routeSource, /export const maxDuration = 30/);
+assert.match(routeSource, /syncPending: true/);
+assert.match(routeSource, /"SYSTEM_BUSY"/);
+assert.match(routeSource, /"Server-Timing"/);
+
+console.log("Teaching work-log tests passed for per-period roles, idempotency, and pending HRM reconciliation.");

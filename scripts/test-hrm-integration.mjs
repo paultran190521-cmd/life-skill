@@ -80,6 +80,18 @@ try {
     .digest("hex");
   assert.equal(captured.envelope.signature, expectedSignature);
 
+  let teachingSubmissionAttempts = 0;
+  globalThis.fetch = async () => {
+    teachingSubmissionAttempts += 1;
+    throw Object.assign(new TypeError("fetch timed out"), { cause: { code: "ETIMEDOUT" } });
+  };
+  await assert.rejects(
+    () => submitTeachingPeriodToHrm({ ...payload, eventId: "event-timeout", idempotencyKey: "key-timeout" }),
+    (error) => error.code === "HRM_UNREACHABLE",
+  );
+  assert.equal(teachingSubmissionAttempts, 1);
+  globalThis.fetch = captureSuccessFetch;
+
   await cancelTeachingPeriodInHrm({
     source: "METTASOUL",
     action: "CANCEL_TEACHING_PERIOD",

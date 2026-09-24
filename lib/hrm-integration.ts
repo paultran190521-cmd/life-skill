@@ -192,9 +192,16 @@ async function sendSignedPayload<T extends HrmTeachingResponse = HrmTeachingResp
   const envelopeText = JSON.stringify({ version: "1", timestamp, nonce, payload: payloadText, signature });
   const isCancellation = ["CANCEL_TEACHING_PERIOD", "CANCEL_ACTIVITY_COMPLETION"]
     .includes(String(payload.action || ""));
+  const isTeachingSubmission = String(payload.action || "") === "SUBMIT_TEACHING_PERIOD";
+  // A teaching submission is idempotent, but retrying a slow Apps Script POST
+  // while its first execution still holds the script lock makes the teacher
+  // wait 30-60 seconds and can still end in a misleading timeout. Return the
+  // pending state promptly; the client will reconcile with the same key.
   const requestOptions = isCancellation
     ? { timeoutMs: 45_000, maxAttempts: 1 }
-    : { timeoutMs: 15_000, maxAttempts: 2 };
+    : isTeachingSubmission
+      ? { timeoutMs: 12_000, maxAttempts: 1 }
+      : { timeoutMs: 15_000, maxAttempts: 2 };
   let response: Response;
   try {
     response = await fetchHrmResponse(url, envelopeText, requestOptions);
