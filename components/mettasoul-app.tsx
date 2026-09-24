@@ -359,11 +359,15 @@ type AttendanceWarningFocus = {
   teacherId: string;
   kind: "missing" | "late";
 };
+type AdminOverviewFocus = "all-schedules" | "confirmed" | "plan-submitted" | "attended";
 type TeacherOverviewFocus =
   | "taught"
   | "upcoming"
   | "late"
   | "missing-attendance"
+  | "worklog-confirmed"
+  | "worklog-missing"
+  | "assistant-schedules"
   | "plan-submitted"
   | "plan-missing"
   | "env-in-class"
@@ -661,6 +665,7 @@ export function MettasoulApp() {
   const [teacherOverviewDateFrom, setTeacherOverviewDateFrom] = useState("");
   const [teacherOverviewDateTo, setTeacherOverviewDateTo] = useState("");
   const [teacherOverviewFocus, setTeacherOverviewFocus] = useState<TeacherOverviewFocus | null>(null);
+  const [adminOverviewFocus, setAdminOverviewFocus] = useState<AdminOverviewFocus | null>(null);
   const [assignmentPreviewTeacherId, setAssignmentPreviewTeacherId] = useState("all");
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
     items: [createDraftScheduleItem()],
@@ -5796,14 +5801,29 @@ export function MettasoulApp() {
     const confirmed = schedules.filter((item) => item.status === "confirmed").length;
     const uploaded = lessonPlans.length;
     const attended = primaryTeacherAttendance.length;
+    const uploadedScheduleIds = new Set(lessonPlans.map((plan) => plan.scheduleId));
+    const attendedScheduleIds = new Set(primaryTeacherAttendance.map((record) => record.scheduleId));
+    const detailRows: Record<AdminOverviewFocus, Schedule[]> = {
+      "all-schedules": schedules,
+      confirmed: schedules.filter((schedule) => schedule.status === "confirmed"),
+      "plan-submitted": schedules.filter((schedule) => uploadedScheduleIds.has(schedule.id)),
+      attended: schedules.filter((schedule) => attendedScheduleIds.has(schedule.id)),
+    };
+    const detailTitles: Record<AdminOverviewFocus, string> = {
+      "all-schedules": "Toàn bộ lịch trong hệ thống",
+      confirmed: "Lịch đã nhận",
+      "plan-submitted": "Lịch đã nộp giáo án",
+      attended: "Lịch đã điểm danh",
+    };
+    const selectedRows = adminOverviewFocus ? detailRows[adminOverviewFocus] : [];
 
     return (
       <div className="space-y-6">
         <SpotlightGrid className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <Stat icon={CalendarDays} label="Lịch trong hệ thống" value={schedules.length} tone="cyan" />
-          <Stat icon={CheckCircle2} label="Đã nhận lịch" value={confirmed} tone="emerald" />
-          <Stat icon={UploadCloud} label="Giáo án đã nộp" value={uploaded} tone="blue" />
-          <Stat icon={ShieldCheck} label="Đã điểm danh" value={attended} tone="orange" />
+          <Stat icon={CalendarDays} label="Lịch trong hệ thống" value={schedules.length} tone="cyan" active={adminOverviewFocus === "all-schedules"} onClick={() => setAdminOverviewFocus("all-schedules")} />
+          <Stat icon={CheckCircle2} label="Đã nhận lịch" value={confirmed} tone="emerald" active={adminOverviewFocus === "confirmed"} onClick={() => setAdminOverviewFocus("confirmed")} />
+          <Stat icon={UploadCloud} label="Giáo án đã nộp" value={uploaded} tone="blue" active={adminOverviewFocus === "plan-submitted"} onClick={() => setAdminOverviewFocus("plan-submitted")} />
+          <Stat icon={ShieldCheck} label="Đã điểm danh" value={attended} tone="orange" active={adminOverviewFocus === "attended"} onClick={() => setAdminOverviewFocus("attended")} />
         </SpotlightGrid>
 
         <div className="grid gap-5 xl:grid-cols-[1.5fr_0.85fr]">
@@ -5821,6 +5841,24 @@ export function MettasoulApp() {
             </div>
           </Panel>
         </div>
+        {adminOverviewFocus ? (
+          <ViewportPortal>
+            <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
+              <div data-modal-scroll="true" className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-5xl overflow-y-auto overscroll-contain rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl ring-1 ring-orange-100">
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-black text-[var(--brand-dark)]">{detailTitles[adminOverviewFocus]}</h2>
+                    <p className="mt-1 text-sm font-bold text-[var(--muted)]">{selectedRows.length} lịch</p>
+                  </div>
+                  <button type="button" title="Đóng" onClick={() => setAdminOverviewFocus(null)} className="grid h-10 w-10 place-items-center rounded-xl bg-slate-50 text-[var(--brand-dark)] transition hover:bg-slate-100">
+                    <X size={18} />
+                  </button>
+                </div>
+                {renderScheduleList({ items: selectedRows, compact: true, onOpenDetail: setSelectedScheduleDetail })}
+              </div>
+            </div>
+          </ViewportPortal>
+        ) : null}
       </div>
     );
   }
@@ -8371,6 +8409,15 @@ export function MettasoulApp() {
         schedule.status !== "cancelled" &&
         isDateWithinRange(schedule.date, teacherOverviewDateFrom, teacherOverviewDateTo),
     );
+    const assistantSchedules = schedules.filter(
+      (schedule) =>
+        isAssistantAssignedToSchedule(schedule, currentTeacherId) &&
+        schedule.status !== "cancelled" &&
+        isDateWithinRange(schedule.date, teacherOverviewDateFrom, teacherOverviewDateTo),
+    );
+    const teachingParticipantSchedules = Array.from(
+      new Map([...scopedSchedules, ...assistantSchedules].map((schedule) => [schedule.id, schedule] as const)).values(),
+    );
     const attendanceBySchedule = new Map(
       attendance
         .filter((record) => record.teacherId === currentTeacherId)
@@ -8387,6 +8434,23 @@ export function MettasoulApp() {
       isLateAttendance(schedule, attendanceBySchedule.get(schedule.id), timeSlots),
     );
     const missingAttendanceSchedules = pastTrackedSchedules.filter((schedule) => !attendanceBySchedule.has(schedule.id));
+    const confirmedWorkLogScheduleIds = new Set(
+      teachingWorkLogs
+        .filter((workLog) => workLog.teacherId === currentTeacherId && workLog.status === "CONFIRMED")
+        .map((workLog) => workLog.scheduleId),
+    );
+    const pendingWorkLogScheduleIds = new Set(
+      teachingWorkLogs
+        .filter((workLog) => workLog.teacherId === currentTeacherId && workLog.status === "PENDING")
+        .map((workLog) => workLog.scheduleId),
+    );
+    const confirmedWorkLogSchedules = teachingParticipantSchedules.filter((schedule) => confirmedWorkLogScheduleIds.has(schedule.id));
+    const missingWorkLogSchedules = teachingParticipantSchedules.filter(
+      (schedule) =>
+        isTeachingPeriodEnded(schedule, timeSlots) &&
+        !confirmedWorkLogScheduleIds.has(schedule.id) &&
+        !pendingWorkLogScheduleIds.has(schedule.id),
+    );
     const submittedPlanScheduleIds = new Set(
       lessonPlans.filter((plan) => plan.teacherId === currentTeacherId).map((plan) => plan.scheduleId),
     );
@@ -8409,6 +8473,9 @@ export function MettasoulApp() {
       upcoming: upcomingSchedules,
       late: lateAttendanceSchedules,
       "missing-attendance": missingAttendanceSchedules,
+      "worklog-confirmed": confirmedWorkLogSchedules,
+      "worklog-missing": missingWorkLogSchedules,
+      "assistant-schedules": assistantSchedules,
       "plan-submitted": submittedPlanSchedules,
       "plan-missing": missingPlanSchedules,
       "env-in-class": taughtInClassSchedules,
@@ -8421,6 +8488,9 @@ export function MettasoulApp() {
       upcoming: "Các tiết sắp dạy",
       late: "Các lần điểm danh trễ",
       "missing-attendance": "Các lịch chưa điểm danh",
+      "worklog-confirmed": "Các tiết HRM đã xác nhận chấm công",
+      "worklog-missing": "Các tiết đã kết thúc chưa chấm công",
+      "assistant-schedules": "Lịch trợ giảng",
       "plan-submitted": "Các lịch đã gửi giáo án",
       "plan-missing": "Các lịch chưa gửi giáo án",
       "env-in-class": "Tiết đã dạy: Trong lớp",
@@ -8497,6 +8567,30 @@ export function MettasoulApp() {
                   tone="rose"
                   active={teacherOverviewFocus === "missing-attendance"}
                   onClick={() => setTeacherOverviewFocus("missing-attendance")}
+                />
+                <Stat
+                  icon={CheckCircle2}
+                  label="Đã chấm công"
+                  value={confirmedWorkLogSchedules.length}
+                  tone="emerald"
+                  active={teacherOverviewFocus === "worklog-confirmed"}
+                  onClick={() => setTeacherOverviewFocus("worklog-confirmed")}
+                />
+                <Stat
+                  icon={AlertTriangle}
+                  label="Chưa chấm công"
+                  value={missingWorkLogSchedules.length}
+                  tone="rose"
+                  active={teacherOverviewFocus === "worklog-missing"}
+                  onClick={() => setTeacherOverviewFocus("worklog-missing")}
+                />
+                <Stat
+                  icon={Users}
+                  label="Lịch trợ giảng"
+                  value={assistantSchedules.length}
+                  tone="violet"
+                  active={teacherOverviewFocus === "assistant-schedules"}
+                  onClick={() => setTeacherOverviewFocus("assistant-schedules")}
                 />
                 <Stat
                   icon={FileUp}

@@ -29,6 +29,12 @@ assert.match(app, /Bạn không cần bấm lại/);
 assert.match(app, /role === "assistant" \? "Trợ giảng" : "Giáo viên"/);
 assert.match(app, /const expectedTeacherFilter = "all"/);
 assert.match(app, /schedule\.teacherId === currentTeacherId \|\| isAssistantAssignedToSchedule\(schedule, currentTeacherId\)/);
+assert.match(app, /label="Đã chấm công"/);
+assert.match(app, /label="Chưa chấm công"/);
+assert.match(app, /label="Lịch trợ giảng"/);
+assert.match(app, /"assistant-schedules": assistantSchedules/);
+assert.match(app, /type AdminOverviewFocus = "all-schedules" \| "confirmed" \| "plan-submitted" \| "attended"/);
+assert.match(app, /setAdminOverviewFocus\("all-schedules"\)/);
 assert.match(app, /function scheduleAssistantContactLabels/);
 assert.match(app, /\$\{assistant\.name \|\| "Chưa rõ"\} - \$\{assistant\.phone \|\| "Chưa cập nhật"\}/);
 
