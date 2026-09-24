@@ -7,9 +7,12 @@ const service = readFileSync(new URL("../lib/teaching-reminders.ts", import.meta
 const email = readFileSync(new URL("../lib/email.ts", import.meta.url), "utf8");
 const sheets = readFileSync(new URL("../lib/google-sheets.ts", import.meta.url), "utf8");
 const app = readFileSync(new URL("../components/mettasoul-app.tsx", import.meta.url), "utf8");
-const vercel = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+const scheduler = readFileSync(new URL("../.github/workflows/teaching-reminders.yml", import.meta.url), "utf8");
 
-assert.deepEqual(vercel.crons, [{ path: "/api/cron/teaching-reminders", schedule: "0 */5 * * *" }]);
+assert.match(scheduler, /cron: "0 \* \* \* \*"/);
+assert.match(scheduler, /secrets\.CRON_SECRET/);
+assert.match(scheduler, /https:\/\/giaovukns\.mettasoul\.vn\/api\/cron\/teaching-reminders/);
+assert.match(scheduler, /Authorization: Bearer \$CRON_SECRET/);
 assert.match(route, /request\.headers\.get\("authorization"\) !== `Bearer \$\{cronSecret\}`/);
 assert.match(route, /runTeachingReminders\("system:cron"\)/);
 assert.match(service, /const reminderIntervalHours = 5/);
