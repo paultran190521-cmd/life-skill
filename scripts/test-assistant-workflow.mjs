@@ -24,6 +24,8 @@ assert.match(app, /Vai trò của bạn: \{teachingRoleLabel\(myTeachingRole\)\}
 assert.match(app, /Trợ giảng không thể tải lên, sửa hoặc xóa giáo án/);
 assert.match(app, /Đang đối chiếu với HRM/);
 assert.match(app, /reconcilePendingTeachingWorkLog/);
+assert.match(app, /MAX_PENDING_TEACHING_RECONCILIATION_ATTEMPTS = 6/);
+assert.match(app, /Bạn không cần bấm lại/);
 assert.match(app, /role === "assistant" \? "Trợ giảng" : "Giáo viên"/);
 assert.match(app, /const expectedTeacherFilter = "all"/);
 assert.match(app, /schedule\.teacherId === currentTeacherId \|\| isAssistantAssignedToSchedule\(schedule, currentTeacherId\)/);

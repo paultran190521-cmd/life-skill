@@ -276,6 +276,8 @@ type TeachingWorkLogCreateResponse = {
   retryAfterMs?: number;
 };
 
+const MAX_PENDING_TEACHING_RECONCILIATION_ATTEMPTS = 6;
+
 type McpLedgerEntry = {
   id: string;
   points: number;
@@ -598,6 +600,7 @@ export function MettasoulApp() {
   const [saveError, setSaveError] = useState("");
   const [pendingAction, setPendingAction] = useState("");
   const [pendingTeachingSyncIds, setPendingTeachingSyncIds] = useState<string[]>([]);
+  const pendingTeachingReconciliationIds = useRef(new Set<string>());
   const [teachingCelebration, setTeachingCelebration] = useState(0);
   const teachingCelebrationTimeout = useRef<number | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState("");
@@ -1199,6 +1202,21 @@ export function MettasoulApp() {
       setCurrentUserId(activeUsers[0]?.id ?? "");
     }
   }, [activeUsers, currentUserId]);
+
+  useEffect(() => {
+    if (authStatus !== "signed-in" || dataStatus !== "connected" || !currentTeacherId) {
+      return;
+    }
+    // A reload must not turn a safely queued work log into a second task for
+    // the teacher. Resume the same idempotent reconciliation automatically.
+    teachingWorkLogs
+      .filter((workLog) => workLog.teacherId === currentTeacherId && workLog.status === "PENDING")
+      .flatMap((workLog) => {
+        const schedule = schedules.find((item) => item.id === workLog.scheduleId);
+        return schedule && schedule.status !== "cancelled" ? [schedule] : [];
+      })
+      .forEach((schedule) => void reconcilePendingTeachingWorkLog(schedule, 300));
+  }, [authStatus, currentTeacherId, dataStatus, schedules, teachingWorkLogs]);
 
   useEffect(() => {
     const allowedTabs = role === "admin" ? adminTabs : role === "assistant" ? assistantTabs : teacherTabs;
@@ -2801,36 +2819,45 @@ export function MettasoulApp() {
   }
 
   async function reconcilePendingTeachingWorkLog(schedule: Schedule, delayMs = 1_500, attempt = 1): Promise<void> {
+    if (attempt === 1) {
+      if (pendingTeachingReconciliationIds.current.has(schedule.id)) return;
+      pendingTeachingReconciliationIds.current.add(schedule.id);
+      setPendingTeachingSyncIds((ids) => Array.from(new Set([...ids, schedule.id])));
+    }
+
     window.setTimeout(async () => {
+      const resumeInBackground = () => {
+        pendingTeachingReconciliationIds.current.delete(schedule.id);
+        window.setTimeout(() => void reconcilePendingTeachingWorkLog(schedule, 12_000), 12_000);
+      };
+      const nextDelayMs = Math.min(10_000, Math.max(1_500, delayMs) * 2);
       try {
         const response = await apiRequest<TeachingWorkLogCreateResponse>("/api/teaching-work-logs", {
           method: "POST",
           body: JSON.stringify({ scheduleId: schedule.id }),
         });
-        setTeachingWorkLogs((items) => [
-          response.workLog,
-          ...items.filter((item) => item.id !== response.workLog.id),
-        ]);
+        setTeachingWorkLogs((items) => [response.workLog, ...items.filter((item) => item.id !== response.workLog.id)]);
         if (response.syncPending) {
-          if (attempt < 3) {
-            void reconcilePendingTeachingWorkLog(schedule, response.retryAfterMs ?? 2_000, attempt + 1);
+          if (attempt < MAX_PENDING_TEACHING_RECONCILIATION_ATTEMPTS) {
+            void reconcilePendingTeachingWorkLog(schedule, Math.min(nextDelayMs, response.retryAfterMs ?? nextDelayMs), attempt + 1);
           } else {
-            setPendingTeachingSyncIds((ids) => ids.filter((id) => id !== schedule.id));
-            pushToast("Đang chờ HRM", "Chưa nhận được phản hồi cuối cùng. Hệ thống đã giữ cùng mã chấm công để bạn có thể đồng bộ lại an toàn.", "info");
+            pushToast("Vẫn đang đối chiếu HRM", "Bạn không cần bấm lại. Hệ thống sẽ tiếp tục đồng bộ tự động bằng cùng mã chấm công.", "info");
+            resumeInBackground();
           }
           return;
         }
+        pendingTeachingReconciliationIds.current.delete(schedule.id);
         setPendingTeachingSyncIds((ids) => ids.filter((id) => id !== schedule.id));
         setTeachingCelebration((current) => current + 1);
         window.clearTimeout(teachingCelebrationTimeout.current);
         teachingCelebrationTimeout.current = window.setTimeout(() => setTeachingCelebration(0), 1800);
         pushToast("Đã chấm công", `HRM đã ghi nhận ${teachingRoleLabel(response.workLog.roleCode).toLowerCase()} cho tiết này.`, "success");
       } catch {
-        if (attempt < 3) {
-          void reconcilePendingTeachingWorkLog(schedule, 2_500, attempt + 1);
+        if (attempt < MAX_PENDING_TEACHING_RECONCILIATION_ATTEMPTS) {
+          void reconcilePendingTeachingWorkLog(schedule, nextDelayMs, attempt + 1);
         } else {
-          setPendingTeachingSyncIds((ids) => ids.filter((id) => id !== schedule.id));
-          pushToast("Đang chờ HRM", "Chưa nhận được phản hồi cuối cùng. Hệ thống đã giữ cùng mã chấm công để bạn có thể đồng bộ lại an toàn.", "info");
+          pushToast("Vẫn đang đối chiếu HRM", "Bạn không cần bấm lại. Hệ thống sẽ tiếp tục đồng bộ tự động bằng cùng mã chấm công.", "info");
+          resumeInBackground();
         }
       }
     }, delayMs);
@@ -9215,7 +9242,7 @@ export function MettasoulApp() {
               && item.teacherId === currentTeacherId
               && item.status === "PENDING"
             );
-            const isTeachingSyncing = pendingTeachingSyncIds.includes(schedule.id);
+            const isTeachingSyncing = pendingTeachingSyncIds.includes(schedule.id) || Boolean(pendingWorkLog);
             const ended = isTeachingPeriodEnded(schedule, timeSlots);
             const isCancelled = schedule.status === "cancelled";
             const roleCode = workLog?.roleCode || scheduleTeachingRoleForParticipant(schedule, currentTeacherId, schedules);
@@ -9239,7 +9266,7 @@ export function MettasoulApp() {
                     </p>
                   ) : pendingWorkLog ? (
                     <p className="mt-2 text-sm font-bold text-amber-700">
-                      Chưa xác định được kết quả từ HRM. Có thể bấm đồng bộ lại an toàn, hệ thống không tạo công trùng.
+                      METTASOUL đang tự đối chiếu kết quả từ HRM. Bạn không cần bấm lại; hệ thống dùng cùng mã chấm công nên không tạo công trùng.
                     </p>
                   ) : ended ? (
                     <p className="mt-2 text-sm font-bold text-orange-700">Tiết đã kết thúc, có thể chấm công.</p>
@@ -9261,7 +9288,7 @@ export function MettasoulApp() {
                   }
                 >
                   <ShieldCheck size={18} />
-                  {workLog ? "Đã chấm công" : isTeachingSyncing ? "Đang đối chiếu HRM" : isCancelled ? "Lịch đã hủy" : !hrmIntegrationConfigured ? "Chưa kết nối HRM" : pendingWorkLog ? "Đồng bộ lại HRM" : ended ? "Chấm công tiết" : "Chưa kết thúc"}
+                  {workLog ? "Đã chấm công" : isTeachingSyncing ? "Đang đối chiếu HRM" : isCancelled ? "Lịch đã hủy" : !hrmIntegrationConfigured ? "Chưa kết nối HRM" : ended ? "Chấm công tiết" : "Chưa kết thúc"}
                 </button>
               </div>
             );
