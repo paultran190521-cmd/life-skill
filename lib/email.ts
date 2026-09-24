@@ -38,7 +38,8 @@ type ScheduleDigestInput = {
   teacher: { name?: string; email?: string };
   schedules: Schedule[];
   rows: ScheduleDigestRow[];
-  kind?: "schedule" | "attendance-reminder";
+  participantId?: string;
+  kind?: "schedule" | "schedule-reminder" | "attendance-reminder";
 };
 
 type ResendResponse = {
@@ -104,12 +105,16 @@ export async function sendAttendanceReminderEmail(input: Omit<ScheduleDigestInpu
   return sendScheduleDigestEmail({ ...input, kind: "attendance-reminder" });
 }
 
+export async function sendScheduleReminderEmail(input: Omit<ScheduleDigestInput, "kind">) {
+  return sendScheduleDigestEmail({ ...input, kind: "schedule-reminder" });
+}
+
 export async function sendScheduleDigestEmail(input: ScheduleDigestInput) {
   const requestId = createEmailRequestId();
   const from = process.env.EMAIL_FROM;
   const to = normalizeEmailAddress(input.teacher.email);
   const scheduleIds = input.schedules.map((schedule) => schedule.id);
-  const teacherId = input.schedules[0]?.teacherId || "";
+  const teacherId = input.participantId || input.schedules[0]?.teacherId || "";
 
   if (!to) {
     await logMailDebug({
@@ -143,7 +148,9 @@ export async function sendScheduleDigestEmail(input: ScheduleDigestInput) {
 
   const subject = input.kind === "attendance-reminder"
     ? `METTASOUL | Nhắc chấm công ${input.schedules.length} tiết đã kết thúc`
-    : buildScheduleWeekSubject(input.schedules);
+    : input.kind === "schedule-reminder"
+      ? `METTASOUL | Nhắc xác nhận ${input.schedules.length} lịch dạy`
+      : buildScheduleWeekSubject(input.schedules);
   const html = input.kind === "attendance-reminder"
     ? renderAttendanceReminderEmail(input)
     : renderScheduleDigestEmail(input);
@@ -523,7 +530,7 @@ function renderAttendanceReminderEmail(input: ScheduleDigestInput) {
     const className = row.participantClassNames?.join(", ") || row.classRoom?.name || "Chưa rõ lớp";
     return `<tr><td style="padding:10px;border:1px solid #d6e7eb">${escapeHtml(row.schedule.date || "")}</td><td style="padding:10px;border:1px solid #d6e7eb">${escapeHtml(time)}</td><td style="padding:10px;border:1px solid #d6e7eb">${escapeHtml(row.school?.name || "Chưa rõ trường")}<br><span style="color:#526b77">${escapeHtml(className)}</span></td><td style="padding:10px;border:1px solid #d6e7eb">${escapeHtml(row.lesson?.title || "Chưa rõ bài học")}</td></tr>`;
   }).join("");
-  return `<!doctype html><html lang="vi"><body style="margin:0;padding:24px;background:#f3f8fa;color:#16313a;font-family:Arial,sans-serif"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:760px;background:#fff;border:1px solid #d6e7eb;border-radius:16px"><tr><td style="padding:28px"><p style="margin:0 0 8px;color:#147f99;font-size:12px;font-weight:700;text-align:center">HỌC VIỆN METTASOUL</p><h1 style="margin:0 0 18px;color:#075f73;font-size:24px;text-align:center">NHẮC CHẤM CÔNG</h1><p style="font-size:16px;line-height:1.6">Mến chào thầy (cô) <strong>${escapeHtml(input.teacher.name || "Thầy/Cô")}</strong>, hiện có <strong>${rows.length} tiết đã kết thúc</strong> chưa được chấm công. Thầy (cô) vui lòng mở mục <strong>Điểm danh - Chấm công</strong> trên webapp để hoàn tất. Xin chân thành cảm ơn thầy (cô).</p><table width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;font-size:14px"><thead><tr style="background:#e7f6fa"><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Ngày</th><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Khung giờ</th><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Trường / lớp</th><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Bài học</th></tr></thead><tbody>${rowHtml}</tbody></table><p style="margin:22px 0 0;text-align:center"><a href="${appUrl}" style="display:inline-block;border-radius:10px;background:#08788e;color:#fff;padding:12px 18px;font-weight:700;text-decoration:none">MỞ WEBAPP ĐỂ CHẤM CÔNG</a></p></td></tr></table></td></tr></table></body></html>`;
+  return `<!doctype html><html lang="vi"><body style="margin:0;padding:24px;background:#f3f8fa;color:#16313a;font-family:Arial,sans-serif"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:760px;background:#fff;border:1px solid #d6e7eb;border-radius:16px"><tr><td style="padding:28px"><p style="margin:0 0 8px;color:#147f99;font-size:12px;font-weight:700;text-align:center">HỌC VIỆN METTASOUL</p><h1 style="margin:0 0 18px;color:#075f73;font-size:24px;text-align:center">NHẮC CHẤM CÔNG</h1><p style="font-size:16px;line-height:1.6">Mến chào thầy (cô) <strong>${escapeHtml(input.teacher.name || "Thầy/Cô")}</strong>, hiện có <strong>${rows.length} tiết đã kết thúc</strong> chưa được chấm công. Thầy (cô) vui lòng mở mục <strong>Điểm danh - Chấm công</strong> trên webapp để hoàn tất. Nếu tiết chưa được điểm danh, hệ thống sẽ đưa Thầy/Cô đến đúng ô điểm danh trước. Xin chân thành cảm ơn thầy (cô).</p><table width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;font-size:14px"><thead><tr style="background:#e7f6fa"><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Ngày</th><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Khung giờ</th><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Trường / lớp</th><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Bài học</th></tr></thead><tbody>${rowHtml}</tbody></table><p style="margin:22px 0 0;text-align:center"><a href="${appUrl}" style="display:inline-block;border-radius:10px;background:#08788e;color:#fff;padding:12px 18px;font-weight:700;text-decoration:none">MỞ WEBAPP ĐỂ CHẤM CÔNG</a></p></td></tr></table></td></tr></table></body></html>`;
 }
 
 function renderScheduleDigestEmail(input: ScheduleDigestInput) {
@@ -538,6 +545,7 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
   const weekText = buildWeekLabel(input.schedules);
   const confirmAllUrl = buildConfirmAllUrl(rows.map((row) => row.schedule));
   const appUrl = buildAppUrl();
+  const isReminder = input.kind === "schedule-reminder";
   return `
     <!doctype html>
     <html lang="vi">
@@ -573,8 +581,8 @@ function renderScheduleDigestEmail(input: ScheduleDigestInput) {
                 <tr>
                   <td class="email-shell" style="padding:28px 24px;color:#16313a">
                     <p style="margin:0 0 10px;font-size:12px;line-height:1.5;color:#147f99;font-weight:700;text-align:center;text-transform:uppercase;letter-spacing:.3px">HỆ THỐNG THÔNG BÁO LỊCH DẠY KỸ NĂNG SỐNG | HỌC VIỆN METTASOUL</p>
-                    <h1 class="email-title" style="margin:0 0 18px;font-size:26px;line-height:1.25;color:#075f73;text-align:center;text-transform:uppercase">BẠN CÓ LỊCH DẠY MỚI</h1>
-                    <p style="margin:0 0 10px;font-size:16px;line-height:1.55;color:#16313a">Chào <strong>${escapeHtml(input.teacher.name || "Thầy/Cô")}</strong>, giáo vụ vừa giao lịch dạy cho ${escapeHtml(weekText)}.</p>
+                    <h1 class="email-title" style="margin:0 0 18px;font-size:26px;line-height:1.25;color:#075f73;text-align:center;text-transform:uppercase">${isReminder ? "NHẮC XÁC NHẬN LỊCH DẠY" : "BẠN CÓ LỊCH DẠY MỚI"}</h1>
+                    <p style="margin:0 0 10px;font-size:16px;line-height:1.55;color:#16313a">Chào <strong>${escapeHtml(input.teacher.name || "Thầy/Cô")}</strong>, ${isReminder ? `các lịch dạy của ${escapeHtml(weekText)} vẫn đang chờ Thầy/Cô xác nhận.` : `giáo vụ vừa giao lịch dạy cho ${escapeHtml(weekText)}.`}</p>
                     <p style="margin:0 0 8px;font-size:14px;line-height:1.55;color:#526b77">Thầy/Cô có thể xác nhận ngay trên từng thẻ lịch, hoặc xác nhận toàn bộ ở cuối email.</p>
                     <p style="margin:0 0 22px;font-size:14px;line-height:1.55;color:#526b77">Xem đầy đủ thông tin tại <a href="${appUrl}" style="color:#075f73;font-weight:700;text-decoration:underline">ứng dụng METTASOUL</a>.</p>
 

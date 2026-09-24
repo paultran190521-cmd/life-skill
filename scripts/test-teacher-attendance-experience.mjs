@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 const component = readFileSync(new URL("../components/mettasoul-app.tsx", import.meta.url), "utf8");
 const reminderRoute = readFileSync(new URL("../app/api/attendance/reminders/route.ts", import.meta.url), "utf8");
+const workLogRoute = readFileSync(new URL("../app/api/teaching-work-logs/route.ts", import.meta.url), "utf8");
 const email = readFileSync(new URL("../lib/email.ts", import.meta.url), "utf8");
 
 assert.match(component, /title="Lịch chưa dạy"/);
@@ -29,6 +30,10 @@ assert.match(component, /Mỗi email chỉ liệt kê các tiết của đúng g
 assert.match(component, /openConfirmDialog\(/);
 assert.doesNotMatch(component, /window\.confirm\("Gửi email nhắc chấm công/);
 assert.match(component, /Gửi email nhắc/);
+assert.match(component, /focusAttendanceBeforeWorkLog/);
+assert.match(component, /attendanceButtonRefs\.current\.get\(schedule\.id\)/);
+assert.match(component, /Cần điểm danh buổi trước khi chấm công tiết/);
+assert.match(component, /teachingWorkLogButtonClass/);
 assert.match(reminderRoute, /admin_only_attendance_reminder/);
 assert.match(reminderRoute, /hasEnded/);
 assert.match(reminderRoute, /sendAttendanceReminderEmail/);
@@ -36,5 +41,7 @@ assert.match(email, /renderAttendanceReminderEmail/);
 assert.match(email, /NHẮC CHẤM CÔNG/);
 assert.match(email, /Mến chào thầy \(cô\)/);
 assert.match(email, /trên webapp để hoàn tất/);
+assert.match(workLogRoute, /"Attendance"/);
+assert.match(workLogRoute, /Bạn cần điểm danh tiết này trước khi chấm công/);
 
 console.log("Teacher details, untaught calendar, and admin attendance reminder contracts passed.");

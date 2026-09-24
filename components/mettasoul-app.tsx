@@ -644,6 +644,8 @@ export function MettasoulApp() {
   const calendarDetailRef = useRef<HTMLDivElement | null>(null);
   const selectedCalendarDayRef = useRef<HTMLButtonElement | null>(null);
   const shouldScrollCalendarDetailRef = useRef(false);
+  const attendanceButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const [attendanceRequiredScheduleId, setAttendanceRequiredScheduleId] = useState("");
   const [lessonSearchTerm, setLessonSearchTerm] = useState("");
   const deferredLessonSearchTerm = useDeferredValue(lessonSearchTerm);
   const [lessonGradeFilter, setLessonGradeFilter] = useState("all");
@@ -2769,6 +2771,9 @@ export function MettasoulApp() {
     }
 
     setAttendance((items) => [...response.attendance, ...items]);
+    if (response.attendance.some((item) => item.scheduleId === attendanceRequiredScheduleId)) {
+      setAttendanceRequiredScheduleId("");
+    }
     const schedulesById = new Map(response.schedules.map((item) => [item.id, item]));
     setSchedules((items) =>
       items.map((item) => schedulesById.has(item.id) ? { ...item, ...schedulesById.get(item.id) } : item),
@@ -2778,7 +2783,28 @@ export function MettasoulApp() {
     });
   }
 
+  function focusAttendanceBeforeWorkLog(schedule: Schedule) {
+    setAttendanceRequiredScheduleId(schedule.id);
+    pushToast(
+      "Cần điểm danh trước",
+      "Hệ thống đã đưa bạn đến đúng tiết. Hãy bấm Điểm danh buổi rồi chấm công.",
+      "warning",
+    );
+    window.setTimeout(() => {
+      const button = attendanceButtonRefs.current.get(schedule.id);
+      button?.scrollIntoView({ behavior: "smooth", block: "center" });
+      button?.focus({ preventScroll: true });
+    }, 50);
+  }
+
   async function submitTeachingWorkLog(schedule: Schedule) {
+    const hasAttendance = attendance.some(
+      (item) => item.scheduleId === schedule.id && item.teacherId === currentTeacherId,
+    );
+    if (!hasAttendance) {
+      focusAttendanceBeforeWorkLog(schedule);
+      return;
+    }
     let response: TeachingWorkLogCreateResponse;
     const startedAt = performance.now();
     try {
@@ -9270,7 +9296,11 @@ export function MettasoulApp() {
                     setSelectedScheduleDetail(schedule);
                   }
                 }}
-                className="grid gap-4 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm transition hover:border-cyan-300 lg:grid-cols-[1fr_auto]"
+                className={`grid gap-4 rounded-2xl border bg-white p-4 shadow-sm transition lg:grid-cols-[1fr_auto] ${
+                  attendanceRequiredScheduleId === schedule.id
+                    ? "border-amber-400 ring-4 ring-amber-200/80"
+                    : "border-[var(--line)] hover:border-cyan-300"
+                }`}
               >
                 <div>
                   <p className="text-sm font-black text-[var(--brand-dark)]">
@@ -9298,6 +9328,10 @@ export function MettasoulApp() {
                   )}
                 </div>
                 <button
+                  ref={(element) => {
+                    if (element) attendanceButtonRefs.current.set(schedule.id, element);
+                    else attendanceButtonRefs.current.delete(schedule.id);
+                  }}
                   onClick={(event) => {
                     event.stopPropagation();
                     checkIn(schedule);
@@ -9339,6 +9373,7 @@ export function MettasoulApp() {
             const isTeachingSyncing = pendingTeachingSyncIds.includes(schedule.id) || Boolean(pendingWorkLog);
             const ended = isTeachingPeriodEnded(schedule, timeSlots);
             const isCancelled = schedule.status === "cancelled";
+            const hasAttendance = Boolean(meta.checkIn);
             const roleCode = workLog?.roleCode || scheduleTeachingRoleForParticipant(schedule, currentTeacherId, schedules);
             return (
               <div key={`work-log-${schedule.id}`} className="grid gap-4 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm lg:grid-cols-[1fr_auto]">
@@ -9362,8 +9397,10 @@ export function MettasoulApp() {
                     <p className="mt-2 text-sm font-bold text-amber-700">
                       METTASOUL đang tự đối chiếu kết quả từ HRM. Bạn không cần bấm lại; hệ thống dùng cùng mã chấm công nên không tạo công trùng.
                     </p>
+                  ) : ended && !hasAttendance ? (
+                    <p className="mt-2 text-sm font-bold text-amber-700">Cần điểm danh buổi trước khi chấm công tiết.</p>
                   ) : ended ? (
-                    <p className="mt-2 text-sm font-bold text-orange-700">Tiết đã kết thúc, có thể chấm công.</p>
+                    <p className="mt-2 text-sm font-bold text-indigo-700">Tiết đã kết thúc, có thể chấm công.</p>
                   ) : (
                     <p className="mt-2 text-sm font-bold text-slate-500">Chưa đến giờ kết thúc tiết.</p>
                   )}
@@ -9378,7 +9415,7 @@ export function MettasoulApp() {
                   className={
                     workLog || isTeachingSyncing || isCancelled || !ended || !hrmIntegrationConfigured || isBusy
                       ? "inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-200 px-4 py-3 text-sm font-black text-slate-500 shadow-none"
-                      : primaryButtonClass
+                      : teachingWorkLogButtonClass
                   }
                 >
                   <ShieldCheck size={18} />
@@ -12327,6 +12364,9 @@ const compactInputClass =
 
 const primaryButtonClass =
   "ui-primary-gradient inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-black text-white transition hover:-translate-y-0.5";
+
+const teachingWorkLogButtonClass =
+  "inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-indigo-600/20 transition hover:-translate-y-0.5 hover:brightness-110";
 
 const ghostButtonClass =
   "inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-white/90 px-3 py-2 text-xs font-black text-[var(--brand-dark)] shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:bg-sky-50";

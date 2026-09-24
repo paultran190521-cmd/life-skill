@@ -49,6 +49,7 @@ export async function POST(request: Request) {
       "TimeSlots",
       "Schools",
       "Classes",
+      "Attendance",
       "TeachingWorkLogs",
     ] as const);
     const schedule = rows.Schedules.find((item) => item.id === scheduleId) as Schedule | undefined;
@@ -76,6 +77,12 @@ export async function POST(request: Request) {
     const existing = rows.TeachingWorkLogs.find((item) => item.idempotencyKey === idempotencyKey);
     if (existing && String(existing.status || "").toUpperCase() === "CONFIRMED") {
       return NextResponse.json({ workLog: normalizeStoredWorkLog(existing), idempotent: true });
+    }
+    const hasAttendance = rows.Attendance.some(
+      (item) => String(item.scheduleId || "").trim() === schedule.id && String(item.teacherId || "").trim() === participantId,
+    );
+    if (!hasAttendance) {
+      return apiFailure(409, "Bạn cần điểm danh tiết này trước khi chấm công.", ErrorCodes.conflict, requestId);
     }
 
     const school = rows.Schools.find((item) => item.id === schedule.schoolId);

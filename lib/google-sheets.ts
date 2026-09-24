@@ -51,6 +51,7 @@ type SheetName =
   | "AppAnnouncements"
   | "WeeklyUpdates"
   | "TeacherAvailability"
+  | "ReminderRuns"
   | "MailDebug";
 
 export type { SheetName };
@@ -747,6 +748,16 @@ export const teachingWorkLogHeaders = [
   "errorCode",
   "errorMessage",
   "updatedAt",
+];
+
+export const reminderRunHeaders = [
+  "id",
+  "reminderType",
+  "scheduleId",
+  "teacherId",
+  "reminderIndex",
+  "emailId",
+  "createdAt",
 ];
 
 export const activityTypeHeaders = ["id", "code", "name", "kind", "unit", "requiresEvidence", "requiresApproval", "active", "description", "createdAt", "updatedAt"];
