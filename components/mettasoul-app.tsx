@@ -220,6 +220,31 @@ type ObservabilitySnapshot = {
   alerts: Array<{ level: "warning" | "critical"; message: string }>;
 };
 
+type TeachingReminderSettings = {
+  id: "teaching-reminders";
+  scheduleConfirmationEnabled: boolean;
+  workLogReminderEnabled: boolean;
+  intervalHours: number;
+  lastRunAt: string;
+  lastRunStatus: "never" | "success" | "partial" | "failed" | "disabled";
+  lastCandidateCount: number;
+  lastSentEmailCount: number;
+  lastFailedEmailCount: number;
+  updatedAt: string;
+  updatedBy: string;
+};
+
+type TeachingReminderRunResult = {
+  ok: boolean;
+  scannedAt: string;
+  status: TeachingReminderSettings["lastRunStatus"];
+  candidateCount: number;
+  sentEmailCount: number;
+  recordedReminderCount: number;
+  failedEmailCount: number;
+  settings: TeachingReminderSettings;
+};
+
 type UserFeedbackDraft = {
   upgradeTarget: string;
   menuName: string;
@@ -709,6 +734,7 @@ export function MettasoulApp() {
   });
   const [selectedSlotIds, setSelectedSlotIds] = useState<string[]>([]);
   const [collapsedSettingsSections, setCollapsedSettingsSections] = useState({
+    reminders: false,
     announcements: false,
     schools: true,
     classes: true,
@@ -778,6 +804,9 @@ export function MettasoulApp() {
   const [observability, setObservability] = useState<ObservabilitySnapshot | null>(null);
   const [observabilityLoading, setObservabilityLoading] = useState(false);
   const [observabilityError, setObservabilityError] = useState("");
+  const [reminderSettings, setReminderSettings] = useState<TeachingReminderSettings | null>(null);
+  const [reminderSettingsLoading, setReminderSettingsLoading] = useState(false);
+  const [reminderSettingsError, setReminderSettingsError] = useState("");
   const notificationPanelRef = useRef<HTMLDivElement | null>(null);
   const mobileCalendarInitRef = useRef(false);
 
@@ -931,7 +960,7 @@ export function MettasoulApp() {
 
   useEffect(() => {
     if (activeTab === "settings") {
-      setCollapsedSettingsSections({ announcements: false, schools: true, classes: true, slots: true });
+      setCollapsedSettingsSections({ reminders: false, announcements: false, schools: true, classes: true, slots: true });
     }
   }, [activeTab]);
 
@@ -939,7 +968,7 @@ export function MettasoulApp() {
     if (activeTab !== "settings" || authStatus !== "signed-in" || !hasAdminAccess) {
       return;
     }
-    void loadObservability();
+    void Promise.all([loadObservability(), loadReminderSettings()]);
   }, [activeTab, authStatus, hasAdminAccess]);
 
   useEffect(() => {
@@ -3277,6 +3306,76 @@ export function MettasoulApp() {
       setObservabilityError(error instanceof Error ? error.message : "Không tải được dashboard observability.");
     } finally {
       setObservabilityLoading(false);
+    }
+  }
+
+  async function loadReminderSettings() {
+    if (!hasAdminAccess) {
+      return;
+    }
+
+    try {
+      setReminderSettingsLoading(true);
+      setReminderSettingsError("");
+      const settings = await apiRequest<TeachingReminderSettings>("/api/reminder-settings");
+      setReminderSettings(settings);
+    } catch (error) {
+      console.error(error);
+      setReminderSettingsError(error instanceof Error ? error.message : "Không tải được cấu hình bộ nhắc.");
+    } finally {
+      setReminderSettingsLoading(false);
+    }
+  }
+
+  async function updateReminderSetting(
+    key: "scheduleConfirmationEnabled" | "workLogReminderEnabled",
+    value: boolean,
+  ) {
+    try {
+      const settings = await saveRequest<TeachingReminderSettings>(
+        value ? "Đang bật bộ nhắc..." : "Đang tắt bộ nhắc...",
+        "/api/reminder-settings",
+        {
+          method: "PATCH",
+          body: JSON.stringify({ [key]: value }),
+        },
+      );
+      setReminderSettings(settings);
+      setReminderSettingsError("");
+      pushToast(
+        value ? "Đã bật bộ nhắc" : "Đã tắt bộ nhắc",
+        key === "scheduleConfirmationEnabled" ? "Nhắc xác nhận lịch dạy." : "Nhắc chấm công sau tiết dạy.",
+        value ? "success" : "warning",
+      );
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function runTeachingReminderScan() {
+    if (!reminderSettings?.scheduleConfirmationEnabled && !reminderSettings?.workLogReminderEnabled) {
+      pushToast("Bộ nhắc đang tắt", "Hãy bật ít nhất một loại nhắc trước khi quét.", "warning");
+      return;
+    }
+    const confirmed = await openConfirmDialog({
+      title: "Quét và gửi nhắc ngay?",
+      message: "Hệ thống sẽ quét các lịch đủ điều kiện và gửi email thật cho giáo viên. Các lượt đã gửi trong chu kỳ 5 giờ sẽ không bị gửi trùng.",
+      confirmText: "Quét và gửi",
+      cancelText: "Hủy",
+    });
+    if (!confirmed) return;
+
+    try {
+      const result = await saveRequest<TeachingReminderRunResult>("Đang quét và gửi nhắc...", "/api/reminder-settings", {
+        method: "POST",
+        body: JSON.stringify({ action: "run-now" }),
+      });
+      setReminderSettings(result.settings);
+      setReminderSettingsError("");
+      const summary = `Phát hiện ${result.candidateCount} lịch · gửi ${result.sentEmailCount} email${result.failedEmailCount ? ` · lỗi ${result.failedEmailCount}` : ""}.`;
+      pushToast(result.failedEmailCount ? "Đã quét, còn email chưa gửi được" : "Đã quét bộ nhắc", summary, result.failedEmailCount ? "warning" : "success");
+    } catch (error) {
+      handleSaveError(error);
     }
   }
 
@@ -9933,9 +10032,132 @@ export function MettasoulApp() {
     const usageGuideUrl = "/huong-dan-su-dung/";
     const trainingChecklistUrl = "/training-14-09-2026.html";
     const upgradeUatChecklistUrl = "/uat-nang-cap-15-09-2026.html";
+    const reminderSwitches = [
+      {
+        key: "scheduleConfirmationEnabled" as const,
+        title: "Nhắc xác nhận lịch",
+        description: "Sau 5 giờ giao lịch, nhắc lại mỗi 5 giờ cho đến khi giáo viên xác nhận.",
+      },
+      {
+        key: "workLogReminderEnabled" as const,
+        title: "Nhắc chấm công",
+        description: "Sau 5 giờ kết thúc tiết, nhắc lại mỗi 5 giờ cho đến khi HRM ghi nhận chấm công.",
+      },
+    ];
+    const enabledReminderCount = reminderSwitches.filter((item) => reminderSettings?.[item.key]).length;
     return (
       <div className="space-y-5">
         <PerformanceDiagnostics />
+        <Panel
+          title="Bộ nhắc tự động"
+          action={enabledReminderCount > 0 ? `${enabledReminderCount}/2 đang bật · chu kỳ 5 giờ` : "Đã tắt"}
+          collapsed={collapsedSettingsSections.reminders}
+          onToggleCollapse={() => toggleSettingsSection("reminders")}
+        >
+          {!collapsedSettingsSections.reminders ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-cyan-50 p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-violet-100 text-violet-700">
+                      <Bell size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-[var(--brand-dark)]">Quản lý email nhắc giáo viên</h3>
+                      <p className="mt-1 max-w-3xl text-sm font-semibold text-[var(--muted)]">
+                        Công tắc được lưu vào hệ thống và áp dụng trực tiếp cho lần quét tự động tiếp theo. Tắt loại nào thì loại đó dừng gửi email.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void loadReminderSettings()}
+                    disabled={reminderSettingsLoading || isBusy}
+                    className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-xs font-black text-violet-700 transition hover:bg-violet-50 disabled:opacity-60"
+                  >
+                    <RefreshCcw size={14} className={reminderSettingsLoading ? "animate-spin" : ""} />
+                    Làm mới
+                  </button>
+                </div>
+
+                {reminderSettingsError ? (
+                  <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                    {reminderSettingsError}
+                  </div>
+                ) : null}
+
+                <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                  {reminderSwitches.map((item) => {
+                    const enabled = Boolean(reminderSettings?.[item.key]);
+                    return (
+                      <div key={item.key} className={`rounded-2xl border p-4 transition ${enabled ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-slate-50"}`}>
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-black text-[var(--brand-dark)]">{item.title}</p>
+                            <p className="mt-1 text-xs font-semibold leading-5 text-[var(--muted)]">{item.description}</p>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={enabled}
+                            aria-label={`${enabled ? "Tắt" : "Bật"} ${item.title.toLowerCase()}`}
+                            onClick={() => void updateReminderSetting(item.key, !enabled)}
+                            disabled={!reminderSettings || reminderSettingsLoading || isBusy}
+                            className={`relative h-8 w-14 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-50 ${enabled ? "bg-emerald-500" : "bg-slate-300"}`}
+                          >
+                            <span className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow-md transition-all ${enabled ? "left-7" : "left-1"}`} />
+                          </button>
+                        </div>
+                        <p className={`mt-3 text-xs font-black ${enabled ? "text-emerald-700" : "text-slate-500"}`}>
+                          {enabled ? "Đang bật" : "Đang tắt"}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4">
+                  <p className="text-xs font-black uppercase text-cyan-800">Lần quét gần nhất</p>
+                  <p className="mt-2 text-sm font-black text-cyan-950">{reminderSettings?.lastRunAt ? formatDateTime(reminderSettings.lastRunAt) : "Chưa chạy"}</p>
+                </div>
+                <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                  <p className="text-xs font-black uppercase text-violet-800">Trạng thái</p>
+                  <p className="mt-2 text-sm font-black text-violet-950">{teachingReminderStatusLabel(reminderSettings?.lastRunStatus || "never")}</p>
+                </div>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                  <p className="text-xs font-black uppercase text-emerald-800">Kết quả gửi</p>
+                  <p className="mt-2 text-sm font-black text-emerald-950">{reminderSettings?.lastSentEmailCount || 0} email</p>
+                  <p className="mt-1 text-xs font-bold text-emerald-700">{reminderSettings?.lastCandidateCount || 0} lịch đủ điều kiện</p>
+                </div>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-xs font-black uppercase text-amber-800">Chưa gửi được</p>
+                  <p className="mt-2 text-sm font-black text-amber-950">{reminderSettings?.lastFailedEmailCount || 0} email</p>
+                  <p className="mt-1 text-xs font-bold text-amber-700">Chu kỳ cố định {reminderSettings?.intervalHours || 5} giờ</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+                <div>
+                  <p className="text-sm font-black text-[var(--brand-dark)]">Kiểm tra ngay không cần chờ cron</p>
+                  <p className="mt-1 text-xs font-semibold text-[var(--muted)]">
+                    Nút này gửi email thật cho các lịch đủ điều kiện; hệ thống chống gửi trùng trong cùng chu kỳ 5 giờ.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void runTeachingReminderScan()}
+                  disabled={isBusy || reminderSettingsLoading || enabledReminderCount === 0}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-600 px-4 py-3 text-sm font-black text-white shadow-md transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Send size={16} />
+                  Quét và gửi nhắc ngay
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </Panel>
         <Panel
           title="Thông báo chạy đầu ứng dụng"
           action={`${appAnnouncements.filter((item) => item.active).length} đang chạy`}
@@ -11026,6 +11248,16 @@ function healthStatusLabel(status: "ok" | "degraded" | "down") {
     return "Suy giảm";
   }
   return "Gián đoạn";
+}
+
+function teachingReminderStatusLabel(status: TeachingReminderSettings["lastRunStatus"]) {
+  return {
+    never: "Chưa chạy",
+    success: "Hoàn tất",
+    partial: "Hoàn tất một phần",
+    failed: "Gửi lỗi",
+    disabled: "Đang tắt",
+  }[status];
 }
 
 function Stat({
