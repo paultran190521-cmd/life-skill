@@ -223,7 +223,12 @@ export async function appendSheetRow(sheetName: SheetName, row: Record<string, u
 
   await getSheetsClient().spreadsheets.values.append({
     spreadsheetId: spreadsheetId(),
-    range: quoteSheetName(sheetName),
+    // Anchor appends at A1.  Passing only the sheet name lets Sheets infer a
+    // new table after a gap in an existing row; a malformed/partially-written
+    // row can then be appended in a later column instead of column A.  The
+    // next update-by-id cannot find that row and the caller appears to fail
+    // even though an external side effect (such as HRM payroll) succeeded.
+    range: `${quoteSheetName(sheetName)}!A1`,
     valueInputOption: "RAW",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [values] },
@@ -244,7 +249,10 @@ export async function appendSheetRowWithHeaders(
 
   await getSheetsClient().spreadsheets.values.append({
     spreadsheetId: spreadsheetId(),
-    range: quoteSheetName(sheetName),
+    // Keep the append table anchored at column A.  This is especially
+    // important for durable outbox rows such as TeachingWorkLogs: a prior
+    // sparse row must not make Sheets begin the next append in a later column.
+    range: `${quoteSheetName(sheetName)}!A1`,
     valueInputOption: "RAW",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values: [values] },
@@ -326,7 +334,9 @@ export async function appendSheetRows(sheetName: SheetName, rows: Array<Record<s
 
   await getSheetsClient().spreadsheets.values.append({
     spreadsheetId: spreadsheetId(),
-    range: quoteSheetName(sheetName),
+    // Use an explicit A-column anchor so Google Sheets cannot infer a later
+    // append table from a sparse/legacy row in this sheet.
+    range: `${quoteSheetName(sheetName)}!A1`,
     valueInputOption: "RAW",
     insertDataOption: "INSERT_ROWS",
     requestBody: { values },
