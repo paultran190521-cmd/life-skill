@@ -1380,7 +1380,10 @@ export function MettasoulApp() {
     if (role === "admin" || !currentTeacherId) {
       return;
     }
-    const expectedTeacherFilter = role === "teacher" ? currentTeacherId : "all";
+    // Non-admin data is already scoped by participation (main teacher, co-teacher,
+    // or assistant). Filtering again by the schedule owner hides a teacher's
+    // assistant assignments, because their id lives in assistantIds instead.
+    const expectedTeacherFilter = "all";
     if (calendarFilters.teacherId !== expectedTeacherFilter) {
       setCalendarFilters((current) => ({ ...current, teacherId: expectedTeacherFilter }));
     }
