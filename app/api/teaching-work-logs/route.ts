@@ -164,26 +164,34 @@ export async function POST(request: Request) {
       updatedAt: now,
     };
     await updateSheetRowById("TeachingWorkLogs", workLogId, workLog);
-    await appendAuditLogs([{
-      requestId,
-      actor: auth.user,
-      action: "teaching_work_log.create",
-      entityType: "TeachingWorkLog",
-      entityId: workLog.id,
-      route: "/api/teaching-work-logs",
-      method: "POST",
-      authMode: permission.authMode,
-      decision: permission.decision,
-      reason: permission.reason,
-      source: auth.source,
-      after: {
-        scheduleId: schedule.id,
-        periodId: schedule.id,
-        participantId,
-        roleCode,
-        hrmWorkLogId: workLog.hrmWorkLogId,
-      },
-    }]);
+    // HRM and the local confirmation above are the durable business result.
+    // An auxiliary audit write must never make the teacher see a 500 after a
+    // period has already been accepted, otherwise a retry looks like a failed
+    // attendance even though HRM has created the work log.
+    try {
+      await appendAuditLogs([{
+        requestId,
+        actor: auth.user,
+        action: "teaching_work_log.create",
+        entityType: "TeachingWorkLog",
+        entityId: workLog.id,
+        route: "/api/teaching-work-logs",
+        method: "POST",
+        authMode: permission.authMode,
+        decision: permission.decision,
+        reason: permission.reason,
+        source: auth.source,
+        after: {
+          scheduleId: schedule.id,
+          periodId: schedule.id,
+          participantId,
+          roleCode,
+          hrmWorkLogId: workLog.hrmWorkLogId,
+        },
+      }]);
+    } catch (auditError) {
+      console.error(`[teaching-work-log-audit-failed][${requestId}]`, auditError);
+    }
     return NextResponse.json({ workLog, idempotent: Boolean(hrmResult.idempotent) });
   } catch (error) {
     return apiError(error, requestId, { route: "/api/teaching-work-logs", method: "POST" });
