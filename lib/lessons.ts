@@ -39,7 +39,12 @@ export function normalizeScheduledLessonPeriods(value: unknown): ScheduledLesson
     .split(",")
     .map((period) => period.trim())
     .filter((period): period is ScheduledLessonPeriod => period === "lesson1" || period === "lesson2");
-  return periods.length > 0 ? Array.from(new Set(periods)) : ["lesson1"];
+  const uniquePeriods = new Set(periods);
+  // The source payload can be sent in either checkbox order. Keep the display
+  // and all downstream lesson projections deterministic: Tiết 1 always first.
+  return uniquePeriods.size > 0
+    ? (["lesson1", "lesson2"] as const).filter((period) => uniquePeriods.has(period))
+    : ["lesson1"];
 }
 
 /** Chỉ trả về nội dung của đúng các tiết đã được giao trên lịch. */

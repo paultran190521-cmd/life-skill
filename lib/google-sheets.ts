@@ -1173,7 +1173,10 @@ function normalizeLessonPeriods(value: string | undefined) {
     .split(",")
     .map((period) => period.trim())
     .filter((period): period is LessonPeriod => period === "lesson1" || period === "lesson2");
-  return periods.length > 0 ? Array.from(new Set(periods)).join(",") : "lesson1";
+  const uniquePeriods = new Set(periods);
+  return uniquePeriods.size > 0
+    ? (["lesson1", "lesson2"] as const).filter((period) => uniquePeriods.has(period)).join(",")
+    : "lesson1";
 }
 
 function toLessonPlans(rows: SheetRow[]): LessonPlan[] {

@@ -5766,7 +5766,9 @@ export function MettasoulApp() {
                     },
                     {
                       label: "Khung giờ",
-                      value: `${meta.slot?.label || ""} ${meta.slot?.start || ""}-${meta.slot?.end || ""}`,
+                      value: meta.slot
+                        ? `${cleanTimeSlotLabel(meta.slot.label)} ${formatSlotRange(meta.slot)}`.trim()
+                        : "Chưa có khung giờ",
                       tone: "indigo",
                     },
                     {
@@ -12125,7 +12127,10 @@ function defaultLessonPeriods(lesson: Lesson | undefined): LessonPeriod[] {
 function normalizeLessonPeriods(periods: LessonPeriod[], lesson: Lesson | undefined): LessonPeriod[] {
   const allowed = new Set(lessonPeriodOptions(lesson).map((option) => option.value));
   const valid = periods.filter((period) => allowed.has(period));
-  return valid.length > 0 ? Array.from(new Set(valid)) : defaultLessonPeriods(lesson);
+  const uniquePeriods = new Set(valid);
+  return uniquePeriods.size > 0
+    ? (["lesson1", "lesson2"] as const).filter((period) => uniquePeriods.has(period))
+    : defaultLessonPeriods(lesson);
 }
 
 function buildTeacherSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "teacherId">) {
@@ -12494,7 +12499,7 @@ function schedulingTimeSlotsForSchoolGrade(slots: TimeSlot[], schoolName: string
 function formatTimeSlotDisplay(slot: TimeSlot, slots: TimeSlot[]) {
   const composite = getCompositeTimeSlotInfo(slot, slots) ?? getLegacyCompositeTimeSlotInfo(slot, slots);
   if (!composite) {
-    return getLegacyCompositeTimeSlotDisplay(slot, slots) ?? slot.label;
+    return getLegacyCompositeTimeSlotDisplay(slot, slots) ?? cleanTimeSlotLabel(slot.label);
   }
 
   const explicitPair = shortenPeriodLabel(slot.label);
@@ -12503,6 +12508,15 @@ function formatTimeSlotDisplay(slot: TimeSlot, slots: TimeSlot[]) {
   }
 
   return `${formatPeriodPair(composite.first.label, composite.second.label)} (${composite.duration}ph)`;
+}
+
+/**
+ * Some legacy labels duplicate the start time (for example “Khung 95 phút từ
+ * 15:30”). The time range is rendered separately, so omit only that redundant
+ * tail from presentation while preserving the saved label and its identifier.
+ */
+function cleanTimeSlotLabel(label: string) {
+  return String(label || "").replace(/\s+từ\s+\d{1,2}:\d{2}\s*$/i, "").trim();
 }
 
 function formatScheduleTimeSlotOptionLabel(slot: TimeSlot, slots: TimeSlot[], schoolName: string) {

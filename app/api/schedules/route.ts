@@ -601,7 +601,8 @@ function parseLessonPeriods(value: unknown): LessonPeriod[] {
   const periods = values
     .map((item) => normalizeId(item))
     .filter((item): item is LessonPeriod => item === "lesson1" || item === "lesson2");
-  return Array.from(new Set(periods));
+  const uniquePeriods = new Set(periods);
+  return (["lesson1", "lesson2"] as const).filter((period) => uniquePeriods.has(period));
 }
 
 function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: string[]): ScheduleDraftItem[] {

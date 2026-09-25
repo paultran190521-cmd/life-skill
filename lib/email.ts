@@ -760,7 +760,10 @@ function scheduledPeriods(schedule: Schedule) {
     .split(",")
     .map((value) => value.trim())
     .filter((value): value is "lesson1" | "lesson2" => value === "lesson1" || value === "lesson2");
-  return periods.length > 0 ? Array.from(new Set(periods)) : ["lesson1"];
+  const uniquePeriods = new Set(periods);
+  return uniquePeriods.size > 0
+    ? (["lesson1", "lesson2"] as const).filter((period) => uniquePeriods.has(period))
+    : ["lesson1"];
 }
 
 function renderScheduledPeriodTitles(lesson: ScheduleEmailLesson | undefined, schedule: Schedule) {

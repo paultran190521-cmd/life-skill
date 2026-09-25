@@ -25,6 +25,7 @@ const lesson = {
 };
 
 assert.deepEqual(normalizeScheduledLessonPeriods("lesson2,lesson2,invalid"), ["lesson2"]);
+assert.deepEqual(normalizeScheduledLessonPeriods("lesson2,lesson1"), ["lesson1", "lesson2"]);
 assert.deepEqual(normalizeScheduledLessonPeriods(""), ["lesson1"]);
 assert.deepEqual(scheduledLessonSections("lesson1", lesson), [{
   period: "lesson1",
@@ -38,6 +39,7 @@ assert.deepEqual(scheduledLessonSections("lesson2", lesson), [{
   title: "Điều hòa cảm xúc",
   objective: "Thực hành một kỹ thuật bình tâm.",
 }]);
+assert.deepEqual(scheduledLessonSections("lesson2,lesson1", lesson).map((section) => section.label), ["Tiết 1", "Tiết 2"]);
 
 const normalized = normalizeLessonInput({
   grade: "Khối 6",
