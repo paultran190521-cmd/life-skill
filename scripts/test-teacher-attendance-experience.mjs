@@ -24,6 +24,7 @@ assert.match(component, /applyExcelMetricCards/);
 assert.match(component, /SUBTOTAL\(109,J\$\{dataStartRow\}:J\$\{lastDataRow\}\)/);
 assert.match(component, /SUBTOTAL\(109,K\$\{dataStartRow\}:K\$\{lastDataRow\}\)/);
 assert.match(component, /Thời gian tham chiếu:/);
+assert.match(component, /\["BÁO CÁO KPI & MCP GIẢNG DẠY KỸ NĂNG SỐNG"\],\s*\[`Thời gian tham chiếu:[\s\S]*?\],\s*\[\],\s*headers,\s*\.\.\.rows,/);
 assert.match(component, /color: \{ rgb: "111827" \}/);
 assert.match(component, /ai chấm trước hiện trước/);
 assert.match(component, /label="Chưa chấm công"/);

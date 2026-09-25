@@ -9265,6 +9265,7 @@ export function MettasoulApp() {
       const worksheet = XLSX.utils.aoa_to_sheet([
         ["BÁO CÁO KPI & MCP GIẢNG DẠY KỸ NĂNG SỐNG"],
         [`Thời gian tham chiếu: ${formatDateTime(new Date().toISOString())} · Khoảng lọc: ${filterLabel} · Nhân sự: ${adminKpiTeacherFilter || "Tất cả"}`],
+        [],
         headers,
         ...rows,
       ]);
