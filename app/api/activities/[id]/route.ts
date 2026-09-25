@@ -13,6 +13,7 @@ import {
 } from "@/lib/google-sheets";
 import { cancelActivityCompletionInHrm } from "@/lib/hrm-integration";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
+import { topicReportActivity } from "@/lib/topic-report-policy";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -40,8 +41,12 @@ export async function PATCH(request: Request, { params }: Params) {
     ]);
     const activity = rows.ActivityOccurrences.find((item) => item.id === id);
     if (!activity) return apiFailure(404, "Không tìm thấy hoạt động cần sửa.", undefined, requestId);
-    if (!types.some((item) => item.id === activityTypeId && item.active)) {
+    const requestedType = types.find((item) => item.id === activityTypeId && item.active);
+    if (!requestedType) {
       return apiFailure(400, "Loại hoạt động không tồn tại hoặc đang tắt.", undefined, requestId);
+    }
+    if (topicReportActivity(requestedType.code) && activity.activityTypeId !== activityTypeId) {
+      return apiFailure(409, "Không thể chuyển hoạt động sang Báo cáo chuyên đề tại Công việc & MCP. Hãy tạo lịch trong Giao lịch → Báo cáo chuyên đề.", undefined, requestId);
     }
     const assignments = rows.ActivityAssignments.filter((item) => item.activityId === id);
     const hasConfirmedReward = assignments.some((item) => item.status === "APPROVED" || item.integrationStatus === "CONFIRMED");

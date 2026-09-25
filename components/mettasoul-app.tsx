@@ -7061,6 +7061,10 @@ export function MettasoulApp() {
 
   function renderActivitiesPanel() {
     const typeById = new Map(activityTypes.map((type) => [type.id, type]));
+    // These four types are paid teaching periods, not stand-alone work items.
+    // Keep historic occurrences visible below, but never offer them here for a
+    // new assignment: the schedule workflow owns attendance and payroll facts.
+    const manualActivityTypes = activityTypes.filter((type) => type.active && !topicReportActivity(type.code));
     const myAssignmentIds = new Set(activityAssignments.filter((assignment) => assignment.teacherId === currentTeacherId).map((assignment) => assignment.activityId));
     const visibleActivities = role === "admin" ? activityOccurrences : activityOccurrences.filter((activity) => myAssignmentIds.has(activity.id));
     const visibleMcpEntries = mcpLedgerEntries.filter((entry) => entry.status.toLowerCase() === "active");
@@ -7076,7 +7080,7 @@ export function MettasoulApp() {
                 <button type="button" aria-label="Đóng" onClick={() => setActivityEditDraft(null)} className="grid size-9 place-items-center rounded-xl border border-cyan-100 text-[var(--brand-dark)]"><X size={18} /></button>
               </div>
               <div className="mt-5 grid gap-3 md:grid-cols-2">
-                <label className="text-xs font-bold text-[var(--brand-dark)]">Loại hoạt động<select name="activityTypeId" required defaultValue={activityEditDraft.activityTypeId} className="mt-1 w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm">{activityTypes.filter((type) => type.active || type.id === activityEditDraft.activityTypeId).map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
+                <label className="text-xs font-bold text-[var(--brand-dark)]">Loại hoạt động<select name="activityTypeId" required defaultValue={activityEditDraft.activityTypeId} className="mt-1 w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm">{manualActivityTypes.filter((type) => type.id !== activityEditDraft.activityTypeId).concat(activityTypes.filter((type) => type.id === activityEditDraft.activityTypeId)).map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
                 <label className="text-xs font-bold text-[var(--brand-dark)]">Tên hoạt động<input name="title" required defaultValue={activityEditDraft.title} className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
                 <label className="text-xs font-bold text-[var(--brand-dark)]">Ngày thực hiện<input name="date" type="date" required defaultValue={activityEditDraft.date} className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
                 <label className="text-xs font-bold text-[var(--brand-dark)]">Địa điểm hoặc đối tác<input name="location" defaultValue={activityEditDraft.location || ""} className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-sm" /></label>
@@ -7099,9 +7103,10 @@ export function MettasoulApp() {
               <label className="text-base font-bold text-[var(--brand-dark)]">Loại hoạt động
                 <select name="activityTypeId" required className="mt-1 w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-lg">
                   <option value="">Chọn loại hoạt động</option>
-                  {activityTypes.filter((type) => type.active).map((type) => <option key={type.id} value={type.id}>{type.name} · {type.kind === "MCP" ? "MCP" : type.kind === "OTHER_PAID" ? "Thù lao" : "Thù lao + MCP"}</option>)}
+                  {manualActivityTypes.map((type) => <option key={type.id} value={type.id}>{type.name} · {type.kind === "MCP" ? "MCP" : type.kind === "OTHER_PAID" ? "Thù lao" : "Thù lao + MCP"}</option>)}
                 </select>
               </label>
+              <p className="md:col-span-2 -mt-1 text-sm font-semibold text-[var(--muted)]">Các hoạt động Báo cáo chuyên đề được tạo tại Giao lịch để gắn đúng điểm danh, vai trò, minh chứng và quyền lợi HRM.</p>
               <label className="text-base font-bold text-[var(--brand-dark)]">Tên hoạt động<input name="title" required className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-lg" /></label>
               <label className="text-base font-bold text-[var(--brand-dark)]">Ngày thực hiện<input name="date" type="date" required defaultValue={currentDateKey()} className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-lg" /></label>
               <label className="text-base font-bold text-[var(--brand-dark)]">Địa điểm hoặc đối tác<input name="location" className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-lg" /></label>

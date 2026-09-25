@@ -9,6 +9,7 @@ import {
   readSheetRowsBatch,
 } from "@/lib/google-sheets";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
+import { topicReportActivity } from "@/lib/topic-report-policy";
 
 export async function GET(request: Request) {
   const requestId = createRequestId("activities-list");
@@ -52,6 +53,12 @@ export async function POST(request: Request) {
     ]);
     const activityType = activityTypes.find((item) => item.id === activityTypeId && item.active);
     if (!activityType) return apiFailure(400, "Loại hoạt động không tồn tại hoặc đang tắt.", undefined, requestId);
+    // Topic-report activities are scheduled teaching. They must originate from
+    // the schedule flow so attendance, roles, evidence and HRM approval stay
+    // attached to the same immutable teaching period.
+    if (topicReportActivity(activityType.code)) {
+      return apiFailure(409, "Hoạt động Báo cáo chuyên đề chỉ được giao tại Giao lịch → Báo cáo chuyên đề.", undefined, requestId);
+    }
     const activeTeacherIds = new Set(rows.Teachers.filter((teacher) => String(teacher.active || "true").toLowerCase() !== "false").map((teacher) => String(teacher.id || "").trim()));
     const normalizedParticipants = participants.map((participant) => ({
       teacherId: String((participant as Record<string, unknown>).teacherId || "").trim(),

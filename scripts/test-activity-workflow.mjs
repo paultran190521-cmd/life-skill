@@ -12,6 +12,8 @@ const hrm = read("../../../../APP CÔNG TY/app_cham_cong/_source_sync/working-li
 const hrmUi = read("../../../../APP CÔNG TY/app_cham_cong/_source_sync/working-live/src/index.html");
 
 assert.match(activities, /admin_only_activity_create/);
+assert.match(activities, /topicReportActivity\(activityType\.code\)/);
+assert.match(activities, /chỉ được giao tại Giao lịch/);
 assert.match(activities, /ActivityOccurrences/);
 assert.match(activities, /ActivityAssignments/);
 assert.match(completion, /assigned_participant_completed_activity/);
@@ -19,6 +21,7 @@ assert.match(completion, /cần đính kèm liên kết minh chứng/);
 assert.match(approval, /admin_only_activity_approve/);
 assert.match(approval, /submitActivityCompletionToHrm/);
 assert.match(mutation, /admin_only_activity_update/);
+assert.match(mutation, /Không thể chuyển hoạt động sang Báo cáo chuyên đề/);
 assert.match(mutation, /admin_only_activity_delete/);
 assert.match(mutation, /cancelActivityCompletionInHrm/);
 assert.match(mutation, /deleteSheetRowsByIds\("ActivityAssignments"/);
@@ -30,6 +33,8 @@ assert.match(sheetSource, /OBSERVATION_WITH_RECORD/);
 assert.match(sheetSource, /NEW_TEACHER_REFERRAL/);
 assert.match(sheetSource, /ActivityTypes/);
 assert.match(app, /Công việc & MCP/);
+assert.match(app, /manualActivityTypes/);
+assert.match(app, /Các hoạt động Báo cáo chuyên đề được tạo tại Giao lịch/);
 assert.match(app, /Xác nhận hoàn thành/);
 assert.match(app, /Sửa hoạt động/);
 assert.match(app, /Xóa hoạt động và quyền lợi liên quan/);
