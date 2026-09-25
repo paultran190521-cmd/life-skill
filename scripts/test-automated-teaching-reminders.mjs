@@ -19,7 +19,7 @@ assert.match(service, /const reminderIntervalHours = 5/);
 assert.match(service, /settings\.scheduleConfirmationEnabled/);
 assert.match(service, /settings\.workLogReminderEnabled/);
 assert.match(service, /\["sent", "reassigned"\]\.includes\(schedule\.status\)/);
-assert.match(service, /\["PENDING", "CONFIRMED"\]/);
+assert.match(service, /\["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED"\]/);
 assert.match(service, /sendScheduleReminderEmail/);
 assert.match(service, /sendAttendanceReminderEmail/);
 assert.match(service, /ReminderRuns/);

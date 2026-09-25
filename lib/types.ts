@@ -126,6 +126,7 @@ export type Schedule = {
   lessonPeriods?: string;
   timeSlotId: string;
   teachingEnvironment?: TeachingEnvironment;
+  activityTypeCode?: string;
   status: ScheduleStatus;
   sentAt?: string;
   confirmedAt?: string;
@@ -196,7 +197,11 @@ export type TeachingWorkLog = {
   roleCode: TeachingRoleCode;
   idempotencyKey: string;
   eventId: string;
-  status: "PENDING" | "CONFIRMED" | "FAILED" | "CANCELLED";
+  status: "PENDING" | "CONFIRMED" | "FAILED" | "CANCELLED" | "COMPLETED";
+  activityTypeCode?: string;
+  evidenceUrl?: string;
+  approvedBy?: string;
+  approvedAt?: string;
   hrmWorkLogId?: string;
   money?: number;
   mcpPoints?: number;

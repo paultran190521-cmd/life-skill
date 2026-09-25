@@ -28,6 +28,7 @@ import {
 import { isTeacherAvailableForSlot } from "@/lib/teacher-availability";
 import { isTimeSlotAllowedForSchool } from "@/lib/time-slots";
 import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy";
+import { validateTopicReport } from "@/lib/topic-report-policy";
 import type { LessonPeriod, Notification, Schedule, ScheduleParticipantScope, TeacherAvailability, TeachingEnvironment } from "@/lib/types";
 
 type ScheduleDraftItem = {
@@ -41,6 +42,7 @@ type ScheduleDraftItem = {
   lessonPeriods: LessonPeriod[];
   timeSlotId: string;
   teachingEnvironment: TeachingEnvironment;
+  activityTypeCode?: string;
   teacherIds: string[];
   assistantIds: string[];
 };
@@ -134,6 +136,7 @@ export async function POST(request: Request) {
         lessonPeriods: item.lessonPeriods.join(","),
         timeSlotId: item.timeSlotId,
         teachingEnvironment: item.teachingEnvironment,
+        activityTypeCode: item.activityTypeCode,
         groupId,
         assistantIds: item.assistantIds.join(",") || undefined,
         teachingRole: teacherIndex === 0 ? "MAIN_TEACHER" as const : "CO_TEACHER" as const,
@@ -619,6 +622,7 @@ function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: s
           lessonPeriods: parseLessonPeriods(entry.lessonPeriods),
           timeSlotId: normalizeId(entry.timeSlotId),
           teachingEnvironment: normalizeTeachingEnvironment(entry.teachingEnvironment),
+          activityTypeCode: String(entry.activityTypeCode || "").trim(),
           teacherIds: Object.hasOwn(entry, "teacherIds") ? parseIdList(entry.teacherIds) : fallbackTeacherIds,
           assistantIds: parseIdList(entry.assistantIds),
         };
@@ -637,6 +641,7 @@ function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: s
     lessonPeriods: parseLessonPeriods(body.lessonPeriods),
     timeSlotId: normalizeId(body.timeSlotId),
     teachingEnvironment: normalizeTeachingEnvironment(body.teachingEnvironment),
+    activityTypeCode: String(body.activityTypeCode || "").trim(),
     teacherIds: fallbackTeacherIds,
     assistantIds: parseIdList(body.assistantIds),
   };
@@ -712,6 +717,8 @@ function validateScheduleInput(
   }
 
   for (const item of items) {
+    const activityError = validateTopicReport(item.teachingEnvironment, item.activityTypeCode, item.teacherIds);
+    if (activityError) return activityError;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
       return "Ngày dạy không hợp lệ.";
     }

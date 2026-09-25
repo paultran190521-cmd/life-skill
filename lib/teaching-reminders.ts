@@ -10,6 +10,8 @@ import {
   updateSheetRowById,
 } from "@/lib/google-sheets";
 import type { Schedule } from "@/lib/types";
+import { readCancellationReports, blocksParticipant } from "@/lib/schedule-cancellation-reports";
+import { canonicalParticipantSchedule } from "@/lib/topic-report-policy";
 
 const settingsId = "teaching-reminders";
 const reminderIntervalHours = 5;
@@ -133,10 +135,11 @@ export async function runTeachingReminders(updatedBy = "system:cron"): Promise<T
     "ReminderRuns",
   ] as const);
   const now = Date.now();
+  const cancellations = await readCancellationReports();
   const completedRunIds = new Set(rows.ReminderRuns.map((row) => String(row.id || "").trim()));
   const activeWorkLogKeys = new Set(
     rows.TeachingWorkLogs
-      .filter((row) => ["PENDING", "CONFIRMED"].includes(String(row.status || "").toUpperCase()))
+      .filter((row) => ["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED"].includes(String(row.status || "").toUpperCase()))
       .map((row) => `${String(row.scheduleId || "").trim()}|${String(row.teacherId || "").trim()}`),
   );
 
@@ -156,6 +159,8 @@ export async function runTeachingReminders(updatedBy = "system:cron"): Promise<T
       const reminderIndex = reminderIndexFor(scheduleEndMs(schedule, rows.TimeSlots), now);
       if (reminderIndex < 1) return [];
       return scheduleParticipantIds(schedule).flatMap((teacherId) => {
+        const canonical = canonicalParticipantSchedule(schedule, teacherId, rows.Schedules as Schedule[]);
+        if (canonical.id !== schedule.id || blocksParticipant(cancellations, schedule.id, teacherId)) return [];
         if (activeWorkLogKeys.has(`${schedule.id}|${teacherId}`)) return [];
         const id = reminderRunId("teaching-work-log", schedule.id, teacherId, reminderIndex);
         return completedRunIds.has(id) ? [] : [{ id, type: "teaching-work-log" as const, schedule, teacherId, reminderIndex }];

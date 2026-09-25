@@ -18,6 +18,11 @@ export type TeachingPeriodPayload = {
   workDate: string;
   periodStartAt: string;
   periodEndAt: string;
+  activityTypeCode?: string;
+  evidenceUrl?: string;
+  approvedBy?: string;
+  principalCount?: number;
+  policyContract?: string;
 };
 
 export type ActivityCompletionPayload = {
@@ -83,6 +88,8 @@ export type HrmTeachingResponse = {
   currency?: string;
   policyVersion?: string;
   schemaVersion?: number;
+  policyContracts?: string[];
+  cancellationReports?: boolean;
   idempotent?: boolean;
   userEmail?: string;
   created?: boolean;
@@ -128,7 +135,15 @@ export function hrmIntegrationCredentialsConfigured() {
 }
 
 export async function submitTeachingPeriodToHrm(payload: TeachingPeriodPayload) {
-  return sendSignedPayload(payload);
+  return sendSignedPayload(payload.policyContract === "TOPIC_REPORT_V1" ? { ...payload, action: "SUBMIT_SCHEDULE_COMPLETION" } : payload);
+}
+
+export async function reportCancelledPeriodToHrm(payload: Record<string, unknown>) {
+  return sendSignedPayload({ ...payload, source: "METTASOUL", action: "REPORT_CANCELLED_PERIOD" });
+}
+
+export async function getTopicReportPoliciesFromHrm() {
+  return sendSignedPayload<HrmTeachingResponse & { policies: Array<Record<string, unknown>>; assistants: Array<Record<string, unknown>> }>({ source: "METTASOUL", action: "GET_TOPIC_REPORT_POLICIES" }, { requireEnabled: false });
 }
 
 export async function submitActivityCompletionToHrm(payload: ActivityCompletionPayload) {
@@ -192,7 +207,7 @@ async function sendSignedPayload<T extends HrmTeachingResponse = HrmTeachingResp
   const envelopeText = JSON.stringify({ version: "1", timestamp, nonce, payload: payloadText, signature });
   const isCancellation = ["CANCEL_TEACHING_PERIOD", "CANCEL_ACTIVITY_COMPLETION"]
     .includes(String(payload.action || ""));
-  const isTeachingSubmission = String(payload.action || "") === "SUBMIT_TEACHING_PERIOD";
+  const isTeachingSubmission = ["SUBMIT_TEACHING_PERIOD", "SUBMIT_SCHEDULE_COMPLETION", "REPORT_CANCELLED_PERIOD"].includes(String(payload.action || ""));
   // A teaching submission is idempotent, but retrying a slow Apps Script POST
   // while its first execution still holds the script lock makes the teacher
   // wait 30-60 seconds and can still end in a misleading timeout. Return the

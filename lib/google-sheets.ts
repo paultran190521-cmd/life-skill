@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { uniqueWorkLogRows } from "@/lib/worklog-rows";
 import { getAvatarUrl } from "@/lib/avatar";
 import type {
   Attendance,
@@ -43,6 +44,7 @@ type SheetName =
   | "LessonPlanAttachments"
   | "Attendance"
   | "TeachingWorkLogs"
+  | "ScheduleCancellationReports"
   | "ActivityTypes"
   | "ActivityOccurrences"
   | "ActivityAssignments"
@@ -714,6 +716,7 @@ export const scheduleHeaders = [
   "participantScope",
   "participantGrade",
   "assistantConfirmedIds",
+  "activityTypeCode",
 ];
 
 export const notificationHeaders = [
@@ -749,6 +752,7 @@ export const teachingWorkLogHeaders = [
   "errorCode",
   "errorMessage",
   "updatedAt",
+  "activityTypeCode", "evidenceUrl", "approvedBy", "approvedAt", "submissionPayload",
 ];
 
 export const reminderRunHeaders = [
@@ -784,7 +788,7 @@ const defaultActivityTypes: Array<Omit<ActivityType, "description"> & { descript
   { id: "activity-melis-pair", code: "MELIS_SESSION_2_STUDENTS", name: "Giáo viên MELIS (2 học viên)", kind: "OTHER_PAID", unit: "SESSION", requiresEvidence: false, requiresApproval: true, active: true, description: "Phiên MELIS 2 học viên · 400.000đ/buổi" },
   { id: "activity-student-topic", code: "STUDENT_TOPIC_REPORT_SUPPORT", name: "Báo cáo chuyên đề học sinh – phối hợp", kind: "HYBRID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "Mức phối hợp: 1.000.000đ và 100 MCP/chuyên đề" },
   { id: "activity-student-topic-lead", code: "STUDENT_TOPIC_REPORT_LEAD", name: "Báo cáo chuyên đề học sinh – chủ trì", kind: "HYBRID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "Mức chủ trì: 1.500.000đ và 100 MCP/chuyên đề" },
-  { id: "activity-partner-topic", code: "PARTNER_FREE_TOPIC", name: "Chuyên đề phụ huynh/giáo viên miễn phí cho đối tác", kind: "HYBRID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "2.500.000đ và 100 MCP/chuyên đề" },
+  { id: "activity-partner-topic", code: "PARTNER_FREE_TOPIC", name: "Chuyên đề phụ huynh/giáo viên", kind: "HYBRID", unit: "TOPIC", requiresEvidence: true, requiresApproval: true, active: true, description: "2.500.000đ và 100 MCP/chuyên đề" },
   { id: "activity-internal-sharing", code: "INTERNAL_SHARING", name: "Chia sẻ chuyên môn/nghiệp vụ nội bộ", kind: "HYBRID", unit: "SESSION", requiresEvidence: true, requiresApproval: true, active: true, description: "500.000đ và 100 MCP/buổi" },
   { id: "activity-demo", code: "DEMO_SESSION", name: "Tham gia demo/sinh hoạt chuyên môn", kind: "MCP", unit: "SESSION", requiresEvidence: false, requiresApproval: true, active: true, description: "20 MCP/buổi" },
   { id: "activity-mcs", code: "MCS_TASK", name: "Nhiệm vụ MCS", kind: "MCP", unit: "TASK", requiresEvidence: true, requiresApproval: true, active: true, description: "50 MCP/nhiệm vụ" },
@@ -1152,6 +1156,7 @@ export function toSchedules(rows: SheetRow[]): Schedule[] {
     lessonPeriods: normalizeLessonPeriods(row.lessonPeriods),
     timeSlotId: row.timeSlotId,
     teachingEnvironment: parseTeachingEnvironment(row.teachingEnvironment),
+    activityTypeCode: row.activityTypeCode || undefined,
     status: (row.status || "sent") as ScheduleStatus,
     sentAt: row.sentAt || undefined,
     confirmedAt: row.confirmedAt || undefined,
@@ -1195,7 +1200,7 @@ function toAttendance(rows: SheetRow[]): Attendance[] {
 }
 
 function toTeachingWorkLogs(rows: SheetRow[]): TeachingWorkLog[] {
-  return rows.map((row) => ({
+  return uniqueWorkLogRows(rows).map((row) => ({
     id: row.id,
     scheduleId: row.scheduleId,
     periodId: row.periodId,
@@ -1204,7 +1209,11 @@ function toTeachingWorkLogs(rows: SheetRow[]): TeachingWorkLog[] {
     roleCode: row.roleCode as TeachingWorkLog["roleCode"],
     idempotencyKey: row.idempotencyKey,
     eventId: row.eventId,
-    status: (["PENDING", "CONFIRMED", "FAILED", "CANCELLED"].includes(String(row.status).toUpperCase())
+    activityTypeCode: row.activityTypeCode || undefined,
+    evidenceUrl: row.evidenceUrl || undefined,
+    approvedBy: row.approvedBy || undefined,
+    approvedAt: row.approvedAt || undefined,
+    status: (["PENDING", "CONFIRMED", "FAILED", "CANCELLED", "COMPLETED"].includes(String(row.status).toUpperCase())
       ? String(row.status).toUpperCase()
       : "FAILED") as TeachingWorkLog["status"],
     hrmWorkLogId: row.hrmWorkLogId || undefined,

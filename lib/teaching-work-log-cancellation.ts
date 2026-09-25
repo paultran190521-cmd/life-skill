@@ -1,5 +1,5 @@
 import { conflictError, externalServiceError } from "@/lib/app-error";
-import { cancelTeachingPeriodInHrm } from "@/lib/hrm-integration";
+import { cancelTeachingPeriodInHrm, reportCancelledPeriodToHrm } from "@/lib/hrm-integration";
 import { readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
 import { deterministicTeachingCancellationEventId } from "@/lib/teaching-work-log";
 import type { TeachingWorkLog } from "@/lib/types";
@@ -15,6 +15,12 @@ export async function cancelConfirmedTeachingWorkLogs(scheduleIds: string[]) {
   }
   const confirmed = related.filter((workLog) => String(workLog.status).toUpperCase() === "CONFIRMED");
   const cancelledAt = new Date().toISOString();
+  // A completed activity may race with admin approval. Persist the HRM block
+  // before deleting/reassigning it; if approval already won, stop deletion.
+  for (const workLog of related.filter((row) => ["COMPLETED", "FAILED"].includes(row.status))) {
+    await reportCancelledPeriodToHrm({ eventId: `REPORT_${deterministicTeachingCancellationEventId(workLog.idempotencyKey)}`, targetIdempotencyKey: workLog.idempotencyKey, idempotencyKey: `REPORT:${workLog.idempotencyKey}`, userEmail: workLog.userEmail, scheduleId: workLog.scheduleId, reason: "Admin hủy, xóa hoặc chuyển lịch trước khi HRM ghi nhận." });
+    await updateSheetRowById("TeachingWorkLogs", workLog.id, { status: "CANCELLED", cancelledAt, updatedAt: cancelledAt });
+  }
   for (const workLog of confirmed) {
     const eventId = deterministicTeachingCancellationEventId(workLog.idempotencyKey);
     try {

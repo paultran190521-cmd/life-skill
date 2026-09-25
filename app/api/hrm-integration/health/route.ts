@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createRequestId } from "@/lib/api";
-import { hrmIntegrationCredentialsConfigured, hrmIntegrationConfigured, pingHrmIntegration } from "@/lib/hrm-integration";
+import { hrmIntegrationCredentialsConfigured, hrmIntegrationConfigured, pingHrmIntegration, getTopicReportPoliciesFromHrm } from "@/lib/hrm-integration";
 import { requireSessionUser } from "@/lib/route-auth";
 
 /**
@@ -20,12 +20,16 @@ export async function GET(request: Request) {
     }
     try {
       const result = await pingHrmIntegration();
+      const policies = new URL(request.url).searchParams.get("topicReport") === "1" ? await getTopicReportPoliciesFromHrm() : undefined;
       return NextResponse.json({
         credentialsConfigured: true,
         workLogWritesEnabled: hrmIntegrationConfigured(),
         reachable: true,
         ready: result.code === "READY",
         schemaVersion: result.schemaVersion,
+        policyContracts: result.policyContracts || [],
+        cancellationReports: Boolean(result.cancellationReports),
+        ...(policies ? { topicReportPolicies: policies.policies.map((row) => ({ code: row.ActivityTypeCode, money: row.CashAmount, mcp: row.McpPoints, status: row.Status })), assistantProfiles: policies.assistants.map((row) => ({ code: row.Code, money: row.BaseRate, status: row.Status })) } : {}),
       });
     } catch (error) {
       const integrationError = error as { code?: string; diagnostic?: unknown };
