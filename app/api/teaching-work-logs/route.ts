@@ -120,7 +120,7 @@ export async function POST(request: Request) {
     const participantEmail = isApproval ? rows.Users.find((row) => row.teacherId === participantId)?.email : auth.user.email;
     if (!participantEmail) return apiFailure(409, "Thiếu email người tham gia.", undefined, requestId);
     const evidenceUrl = String(existing?.evidenceUrl || body.evidenceUrl || "").trim();
-    if (isTopic && topicReportActivity(schedule.activityTypeCode)?.evidence && !/^https:\/\//i.test(evidenceUrl)) return apiFailure(400, "Cần liên kết minh chứng https hợp lệ.", undefined, requestId);
+    if (evidenceUrl && !/^https:\/\//i.test(evidenceUrl)) return apiFailure(400, "Liên kết minh chứng cần bắt đầu bằng https://.", undefined, requestId);
     if (isApproval && !existing?.approvedBy && existing?.status !== "COMPLETED") return apiFailure(409, "Giáo viên chưa xác nhận hoàn thành.", undefined, requestId);
     if (isTopic && !isApproval && !existing?.approvedBy) {
       if (existing?.status === "COMPLETED") return NextResponse.json({ workLog: normalizeStoredWorkLog(existing), awaitingApproval: true });

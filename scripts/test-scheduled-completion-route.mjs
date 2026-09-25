@@ -46,9 +46,9 @@ const route = load("app/api/teaching-work-logs/route.ts", {
   "@/lib/hrm-integration": { submitTeachingPeriodToHrm: async (p) => { submitted.push(p); return { ok: true, workLogId: "hrm1", money: 1000000, mcpPoints: 100, policyVersion: "test" }; } },
 });
 const post = async (body) => { const response = await route.POST(new Request("https://local/api", { method: "POST", body: JSON.stringify(body) })); return { status: response.status, body: await response.json() }; };
-assert.equal((await post({ scheduleId: "s1" })).status, 400, "Evidence required before completing");
-let result = await post({ scheduleId: "s1", evidenceUrl: "https://example.com/evidence", money: 999999, approvedBy: "attacker", intent: "approve", teacherId: "t2" });
+let result = await post({ scheduleId: "s1", money: 999999, approvedBy: "attacker", intent: "approve", teacherId: "t2" });
 assert.equal(result.body.workLog.status, "COMPLETED");
+assert.equal(result.body.workLog.evidenceUrl, "", "Evidence is optional when completing");
 assert.equal(result.body.workLog.teacherId, "t1", "Teacher cannot approve or impersonate another participant");
 assert.equal(submitted.length, 0, "Completing is not payroll approval");
 assert.equal((await post({ scheduleId: "s1" })).body.awaitingApproval, true);
@@ -71,7 +71,7 @@ assert.equal((await post({ scheduleId: "s1", evidenceUrl: "https://example.com/e
 reports = [];
 rows.Attendance = rows.Attendance.filter((row) => row.teacherId !== "t2");
 assert.equal((await post({ scheduleId: "s1", evidenceUrl: "https://example.com/evidence" })).status, 409);
-console.log("Completion route tests passed: attendance, evidence, no client amount/approval spoofing, admin approval, idempotency, participant isolation and cancellation blocking.");
+console.log("Completion route tests passed: attendance, optional evidence, no client amount/approval spoofing, admin approval, idempotency, participant isolation and cancellation blocking.");
 
 const worker = load("lib/payroll-reconciliation.ts", {
   "@/lib/google-sheets": sheetApi, "@/lib/worklog-rows": { uniqueWorkLogRows },

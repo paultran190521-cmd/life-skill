@@ -11,7 +11,7 @@ async function request<T>(url: string, body?: unknown, method = "POST"): Promise
   return data;
 }
 
-export function ScheduleGovernancePanel({ schedules, teachers, schools, classes, timeSlots }: { schedules: Schedule[]; teachers: Teacher[]; schools: School[]; classes: ClassRoom[]; timeSlots: TimeSlot[] }) {
+export function ScheduleGovernancePanel({ schedules, teachers, schools, classes, timeSlots, onWorkLogsChange }: { schedules: Schedule[]; teachers: Teacher[]; schools: School[]; classes: ClassRoom[]; timeSlots: TimeSlot[]; onWorkLogsChange?: (logs: TeachingWorkLog[]) => void }) {
   const [reports, setReports] = useState<CancellationReport[]>([]);
   const [logs, setLogs] = useState<TeachingWorkLog[]>([]);
   const [filter, setFilter] = useState("");
@@ -27,11 +27,15 @@ export function ScheduleGovernancePanel({ schedules, teachers, schools, classes,
       running = true;
       try {
         const [cancellations, payroll] = await Promise.all([request<{ reports: CancellationReport[] }>("/api/schedule-cancellations"), request<{ workLogs: TeachingWorkLog[] }>("/api/teaching-work-logs")]);
-        if (!disposed) { setReports(cancellations.reports); setLogs(payroll.workLogs); }
+        if (!disposed) { setReports(cancellations.reports); setLogs(payroll.workLogs); onWorkLogsChange?.(payroll.workLogs); }
         // Retry approvals whose HRM result is uncertain without another admin click.
         for (const log of payroll.workLogs.filter((row) => row.activityTypeCode && row.approvedBy && row.status === "PENDING")) {
           const result = await request<{ workLog: TeachingWorkLog }>("/api/teaching-work-logs", { scheduleId: log.scheduleId, teacherId: log.teacherId, intent: "approve" });
-          if (!disposed) setLogs((items) => [result.workLog, ...items.filter((row) => row.id !== result.workLog.id)]);
+          if (!disposed) {
+            const next = [result.workLog, ...payroll.workLogs.filter((row) => row.id !== result.workLog.id)];
+            setLogs(next);
+            onWorkLogsChange?.(next);
+          }
         }
       } catch (failure) { if (!disposed) setError(failure instanceof Error ? failure.message : "Không tải được dữ liệu"); }
       finally { running = false; }
@@ -39,13 +43,17 @@ export function ScheduleGovernancePanel({ schedules, teachers, schools, classes,
     void refresh();
     const timer = window.setInterval(() => void refresh(), 15000);
     return () => { disposed = true; window.clearInterval(timer); };
-  }, []);
+  }, [onWorkLogsChange]);
   const describe = (scheduleId: string, teacherId: string) => {
     const schedule = schedules.find((row) => row.id === scheduleId);
     const slot = timeSlots.find((row) => row.id === schedule?.timeSlotId);
     return [teachers.find((row) => row.id === teacherId)?.name || teacherId, schedule?.date || "Lịch đã xóa", schools.find((row) => row.id === schedule?.schoolId)?.name, classes.find((row) => row.id === schedule?.classId)?.name, slot ? `${slot.start}–${slot.end}` : ""].filter(Boolean).join(" · ");
   };
   const stamp = (value: string) => value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : value;
+  const confirmedTopicLogs = logs.filter((row) => row.activityTypeCode && row.status === "CONFIRMED");
+  const confirmedTopicMoney = confirmedTopicLogs.reduce((total, row) => total + (row.money || 0), 0);
+  const confirmedTopicMcp = confirmedTopicLogs.reduce((total, row) => total + (row.mcpPoints || 0), 0);
+  const formatCurrency = (amount: number) => new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 }).format(amount);
   return <section className="space-y-4 rounded-3xl border border-cyan-200 bg-white p-5">
     <div className="rounded-xl border border-cyan-100 p-3">
       <button disabled={checkingHrm} className="rounded-xl border border-cyan-300 px-3 py-2 text-cyan-900 disabled:opacity-40" onClick={async () => {
@@ -65,11 +73,24 @@ export function ScheduleGovernancePanel({ schedules, teachers, schools, classes,
       <div><p className="font-bold">{describe(log.scheduleId, log.teacherId)}</p><p>{topicReportActivity(log.activityTypeCode)?.name} · {log.roleCode === "ASSISTANT" ? "Trợ giảng" : "Giáo viên chính"}</p>{log.evidenceUrl ? <a href={log.evidenceUrl} target="_blank" rel="noreferrer" className="text-blue-700 underline">Minh chứng</a> : null}</div>
       <button disabled={busy || log.status === "PENDING"} className="rounded-xl bg-emerald-700 px-4 py-2 font-bold text-white disabled:opacity-40" onClick={async () => {
         setBusy(true); setError("");
-        try { const result = await request<{ workLog: TeachingWorkLog }>("/api/teaching-work-logs", { scheduleId: log.scheduleId, teacherId: log.teacherId, intent: "approve" }); setLogs((items) => [result.workLog, ...items.filter((row) => row.id !== result.workLog.id)]); }
+        try {
+          const result = await request<{ workLog: TeachingWorkLog }>("/api/teaching-work-logs", { scheduleId: log.scheduleId, teacherId: log.teacherId, intent: "approve" });
+          const next = [result.workLog, ...logs.filter((row) => row.id !== result.workLog.id)];
+          setLogs(next);
+          onWorkLogsChange?.(next);
+        }
         catch (failure) { setError(failure instanceof Error ? failure.message : "Duyệt thất bại"); }
         finally { setBusy(false); }
       }}>{log.status === "PENDING" ? "Đang đối chiếu" : "Duyệt hoàn thành"}</button>
     </div>)}
+    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="text-lg font-bold text-emerald-950">Tổng hợp lương & MCP chuyên đề</h2><p className="mt-1 text-sm text-emerald-900">Chỉ hiển thị kết quả HRM đã xác nhận; METTASOUL không tự tính hoặc điều chỉnh tiền, MCP.</p></div>
+        <p className="rounded-full bg-white px-3 py-1 text-sm font-black text-emerald-800">{confirmedTopicLogs.length} dòng HRM xác nhận</p>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2"><div className="rounded-xl bg-white p-3"><p className="text-xs font-bold uppercase text-emerald-800">Tổng tiền HRM</p><p className="mt-1 text-xl font-black text-emerald-950">{formatCurrency(confirmedTopicMoney)}</p></div><div className="rounded-xl bg-white p-3"><p className="text-xs font-bold uppercase text-violet-800">Tổng MCP HRM</p><p className="mt-1 text-xl font-black text-violet-950">{confirmedTopicMcp} MCP</p></div></div>
+      {confirmedTopicLogs.length ? <div className="app-scrollbar mt-3 overflow-x-auto"><table className="w-full min-w-[920px] text-left text-sm"><thead className="bg-white text-xs font-black uppercase text-emerald-900"><tr><th className="px-3 py-2">Nhân sự / lịch</th><th className="px-3 py-2">Hoạt động & cách tính HRM</th><th className="px-3 py-2 text-right">Tiền HRM</th><th className="px-3 py-2 text-right">MCP HRM</th><th className="px-3 py-2">Minh chứng</th></tr></thead><tbody>{confirmedTopicLogs.map((log) => <tr key={log.id} className="border-t border-emerald-100 bg-white"><td className="px-3 py-3 font-bold text-emerald-950">{describe(log.scheduleId, log.teacherId)}</td><td className="px-3 py-3"><p className="font-bold text-emerald-950">{topicReportActivity(log.activityTypeCode)?.name || log.activityTypeCode}</p><p className="mt-1 text-xs text-slate-600">{log.roleCode === "ASSISTANT" ? "Trợ giảng" : "Giáo viên chính"} · {log.policyVersion ? `Chính sách HRM: ${log.policyVersion}` : "Chính sách HRM hiện hành"}{log.hrmWorkLogId ? ` · Mã công: ${log.hrmWorkLogId}` : ""}</p></td><td className="px-3 py-3 text-right font-black text-emerald-700">{formatCurrency(log.money || 0)}</td><td className="px-3 py-3 text-right font-black text-violet-700">{log.mcpPoints || 0} MCP</td><td className="px-3 py-3">{log.evidenceUrl ? <a href={log.evidenceUrl} target="_blank" rel="noreferrer" className="font-bold text-blue-700 underline">Mở liên kết</a> : <span className="text-slate-500">Không gửi</span>}</td></tr>)}</tbody></table></div> : <p className="mt-3 rounded-xl border border-dashed border-emerald-200 bg-white p-3 text-sm font-semibold text-slate-600">Chưa có hoạt động Báo cáo chuyên đề nào được HRM xác nhận.</p>}
+    </div>
     <h2 className="text-lg font-bold text-cyan-950">Báo cáo tiết bị hủy</h2>
     <input aria-label="Lọc báo cáo tiết bị hủy" placeholder="Tìm giáo viên, ngày hoặc lý do..." value={filter} onChange={(event) => setFilter(event.target.value)} className="w-full rounded-xl border p-3" />
     {reports.filter((row) => `${describe(row.scheduleId, row.teacherId)} ${row.reason}`.toLocaleLowerCase("vi").includes(filter.toLocaleLowerCase("vi"))).map((report) => <div key={report.id} className="rounded-xl border border-rose-100 p-3">

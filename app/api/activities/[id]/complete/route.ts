@@ -26,7 +26,7 @@ export async function POST(request: Request, { params }: Params) {
     if (["COMPLETED", "APPROVED"].includes(String(assignment.status || ""))) return NextResponse.json({ assignment, idempotent: true });
     const type = types.find((item) => item.id === activity.activityTypeId);
     if (!type) return apiFailure(409, "Loại hoạt động không còn tồn tại.", undefined, requestId);
-    if (type.requiresEvidence && !evidenceUrl) return apiFailure(400, "Hoạt động này cần đính kèm liên kết minh chứng.", undefined, requestId);
+    if (evidenceUrl && !/^https:\/\//i.test(evidenceUrl)) return apiFailure(400, "Liên kết minh chứng cần bắt đầu bằng https://.", undefined, requestId);
     const now = new Date().toISOString();
     const updated = { ...assignment, status: "COMPLETED", evidenceUrl, completedAt: now, updatedAt: now };
     await updateSheetRowById("ActivityAssignments", assignment.id, updated);

@@ -2868,9 +2868,15 @@ export function MettasoulApp() {
       return;
     }
     let evidenceUrl = "";
-    if (topicReportActivity(schedule.activityTypeCode)?.evidence) {
-      evidenceUrl = await openPromptDialog({ title: "Minh chứng hoàn thành", message: "Dán liên kết minh chứng để gửi admin duyệt.", placeholder: "https://...", confirmText: "Gửi hoàn thành" }) || "";
-      if (!evidenceUrl) return;
+    if (schedule.teachingEnvironment === "schoolyard_report") {
+      const submittedEvidence = await openPromptDialog({
+        title: "Minh chứng hoàn thành",
+        message: "Bạn có thể dán liên kết minh chứng hoặc để trống để gửi admin duyệt.",
+        placeholder: "https://... (không bắt buộc)",
+        confirmText: "Gửi hoàn thành",
+      });
+      if (submittedEvidence === null) return;
+      evidenceUrl = submittedEvidence.trim();
     }
     let response: TeachingWorkLogCreateResponse;
     const startedAt = performance.now();
@@ -6993,9 +6999,10 @@ export function MettasoulApp() {
     }
   }
 
-  async function completeActivityAssignment(activity: ActivityOccurrence, type: ActivityType, assignment: ActivityAssignment) {
-    const evidenceUrl = type.requiresEvidence ? window.prompt("Dán liên kết minh chứng để gửi duyệt:", assignment.evidenceUrl || "")?.trim() : "";
-    if (type.requiresEvidence && !evidenceUrl) return;
+  async function completeActivityAssignment(activity: ActivityOccurrence, assignment: ActivityAssignment) {
+    const submittedEvidence = window.prompt("Bạn có thể dán liên kết minh chứng hoặc để trống để gửi duyệt:", assignment.evidenceUrl || "");
+    if (submittedEvidence === null) return;
+    const evidenceUrl = submittedEvidence.trim();
     try {
       const response = await saveRequest<{ assignment: ActivityAssignment }>("Đang gửi xác nhận hoàn thành...", `/api/activities/${activity.id}/complete`, { method: "POST", body: JSON.stringify({ evidenceUrl }) });
       setActivityAssignments((items) => items.map((item) => item.id === response.assignment.id ? response.assignment : item));
@@ -7074,7 +7081,7 @@ export function MettasoulApp() {
     const mcpBalance = visibleMcpEntries.reduce((total, entry) => total + entry.points, 0);
     return (
       <div className="space-y-5">
-        {role === "admin" ? <ScheduleGovernancePanel schedules={schedules} teachers={teachers} schools={schools} classes={classes} timeSlots={timeSlots} /> : null}
+        {role === "admin" ? <ScheduleGovernancePanel schedules={schedules} teachers={teachers} schools={schools} classes={classes} timeSlots={timeSlots} onWorkLogsChange={setTeachingWorkLogs} /> : null}
         {role === "admin" && activityEditDraft ? <ViewportPortal>
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
             <form className="w-full max-w-2xl rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl sm:p-7" onSubmit={(event) => { event.preventDefault(); void saveEditedActivity(new FormData(event.currentTarget)); }}>
@@ -7149,7 +7156,7 @@ export function MettasoulApp() {
                 <p className="mt-2 text-xs text-[var(--muted)]">{type?.description || activity.note || "Chờ người tham gia hoàn thành và quản trị viên duyệt."}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-bold text-[var(--brand-dark)]">Người tham gia: {participants.map((assignment) => <span key={assignment.id} className="rounded-full bg-slate-50 px-2 py-1">{teacherName(assignment.teacherId)} · {assignment.status}</span>)}</div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {role !== "admin" ? participants.filter((assignment) => assignment.teacherId === currentTeacherId && assignment.status === "ASSIGNED").map((assignment) => <button key={assignment.id} type="button" onClick={() => type && void completeActivityAssignment(activity, type, assignment)} className="rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-black text-white">Xác nhận hoàn thành</button>) : null}
+                  {role !== "admin" ? participants.filter((assignment) => assignment.teacherId === currentTeacherId && assignment.status === "ASSIGNED").map((assignment) => <button key={assignment.id} type="button" onClick={() => void completeActivityAssignment(activity, assignment)} className="rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-black text-white">Xác nhận hoàn thành</button>) : null}
                   {role === "admin" ? participants.filter((assignment) => assignment.status === "COMPLETED").map((assignment) => hrmIntegrationConfigured
                     ? <button key={assignment.id} type="button" onClick={() => void approveActivityAssignment(activity, assignment)} className="rounded-lg bg-fuchsia-600 px-3 py-2 text-xs font-black text-white">Duyệt {teacherName(assignment.teacherId)}</button>
                     : <span key={assignment.id} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-black text-amber-800">Chờ kết nối HRM để duyệt</span>) : null}
@@ -9161,7 +9168,7 @@ export function MettasoulApp() {
     async function exportAdminTeachingKpiExcel() {
       const XLSX = await import("xlsx-js-style");
       const filterLabel = [adminKpiDateFrom || "Từ đầu", adminKpiDateTo || "Đến nay"].join(" - ");
-      const headers = ["Thời điểm chấm", "Ngày dạy", "Giáo viên", "Email", "Vai trò", "Trường", "Lớp", "Bài dạy", "Tiền HRM", "MCP HRM", "Mã công HRM"];
+      const headers = ["Thời điểm chấm", "Ngày dạy", "Giáo viên", "Email", "Vai trò", "Trường", "Lớp", "Công việc", "Cách tính HRM", "Tiền HRM", "MCP HRM", "Mã công HRM"];
       const rows = adminConfirmedKpiRows.map(({ workLog, schedule, teacher }) => {
         const meta = lookupSchedule(schedule);
         return [
@@ -9173,6 +9180,7 @@ export function MettasoulApp() {
           meta.school?.name || "",
           scheduleParticipantLabel(schedule, classes),
           meta.lesson?.title || "",
+          workLog.activityTypeCode ? `${topicReportActivity(workLog.activityTypeCode)?.name || workLog.activityTypeCode} · ${workLog.policyVersion || "Chính sách HRM"}` : `Tiết dạy · ${workLog.policyVersion || "Chính sách HRM"}`,
           typeof workLog.money === "number" ? workLog.money : 0,
           typeof workLog.mcpPoints === "number" ? workLog.mcpPoints : 0,
           workLog.hrmWorkLogId || "",
@@ -9186,8 +9194,8 @@ export function MettasoulApp() {
         headers,
         ...rows,
       ]);
-      worksheet["!cols"] = [18, 14, 24, 28, 18, 28, 22, 38, 16, 12, 22].map((wch) => ({ wch }));
-      worksheet["!autofilter"] = { ref: `A5:K${Math.max(6, rows.length + 5)}` };
+      worksheet["!cols"] = [18, 14, 24, 28, 18, 28, 22, 38, 42, 16, 12, 22].map((wch) => ({ wch }));
+      worksheet["!autofilter"] = { ref: `A5:L${Math.max(6, rows.length + 5)}` };
       applyMettasoulExcelBrand(XLSX, worksheet, { titleRow: 0, summaryRow: 2, headerRow: 4, dataStartRow: 5 });
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "KPI MCP HRM");
@@ -9297,11 +9305,11 @@ export function MettasoulApp() {
               <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4"><p className="text-xs font-black uppercase tracking-wide text-violet-800">Tổng MCP HRM</p><p className="mt-2 text-2xl font-black text-violet-950">{adminKpiMcpTotal} MCP</p></div>
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-black uppercase tracking-wide text-amber-800">Chấm sớm nhất</p><p className="mt-2 text-sm font-black text-amber-950">{adminConfirmedKpiRows[0] ? formatDateTime(adminConfirmedKpiRows[0].workLog.submittedAt) : "Chưa có dữ liệu"}</p></div>
             </div>
-            <p className="mb-3 text-sm font-semibold text-[var(--muted)]">Danh sách sắp theo thời điểm chấm công tăng dần: ai chấm trước hiện trước. Tiền và MCP là số HRM đã xác nhận; METTASOUL không tự tính lại.</p>
+            <p className="mb-3 text-sm font-semibold text-[var(--muted)]">Danh sách sắp theo thời điểm chấm công tăng dần: ai chấm trước hiện trước. Cột “Cách tính HRM” cho biết loại công việc và phiên bản chính sách đã trả kết quả; tiền và MCP luôn là số HRM xác nhận, METTASOUL không tự tính lại.</p>
             {adminConfirmedKpiRows.length > 0 ? (
               <div className="app-scrollbar overflow-x-auto">
-                <table className="w-full min-w-[1050px] text-left text-sm">
-                  <thead className="bg-cyan-50 text-xs font-black uppercase text-[var(--brand-dark)]"><tr><th className="px-3 py-3">Thời điểm chấm</th><th className="px-3 py-3">Nhân sự</th><th className="px-3 py-3">Ngày dạy</th><th className="px-3 py-3">Trường / lớp</th><th className="px-3 py-3">Bài dạy</th><th className="px-3 py-3 text-right">Tiền HRM</th><th className="px-3 py-3 text-right">MCP</th><th className="px-3 py-3">Chi tiết</th></tr></thead>
+                <table className="w-full min-w-[1180px] text-left text-sm">
+                  <thead className="bg-cyan-50 text-xs font-black uppercase text-[var(--brand-dark)]"><tr><th className="px-3 py-3">Thời điểm chấm</th><th className="px-3 py-3">Nhân sự</th><th className="px-3 py-3">Ngày dạy</th><th className="px-3 py-3">Trường / lớp</th><th className="px-3 py-3">Công việc / cách tính HRM</th><th className="px-3 py-3 text-right">Tiền HRM</th><th className="px-3 py-3 text-right">MCP</th><th className="px-3 py-3">Chi tiết</th></tr></thead>
                   <tbody>{adminConfirmedKpiRows.map(({ workLog, schedule, teacher }) => {
                     const meta = lookupSchedule(schedule);
                     return <tr key={workLog.id} className="border-t border-cyan-100 bg-white transition hover:bg-cyan-50">
@@ -9309,7 +9317,7 @@ export function MettasoulApp() {
                       <td className="px-3 py-3 font-black text-[var(--brand-dark)]">{teacher?.name || "Chưa xác định"}<span className="mt-1 block text-xs font-semibold text-[var(--muted)]">{teacher?.email || workLog.userEmail}</span></td>
                       <td className="px-3 py-3 font-bold text-[var(--muted)]">{formatDate(schedule.date)}</td>
                       <td className="px-3 py-3 text-xs font-bold text-[var(--muted)]">{meta.school?.name || "Chưa rõ trường"}<span className="mt-1 block">{scheduleParticipantLabel(schedule, classes)}</span></td>
-                      <td className="px-3 py-3 font-bold text-[var(--brand-dark)]">{meta.lesson?.title || "Bài dạy"}<span className="mt-1 block text-xs text-[var(--muted)]">{teachingRoleLabel(workLog.roleCode)}</span></td>
+                      <td className="px-3 py-3 font-bold text-[var(--brand-dark)]">{meta.lesson?.title || "Bài dạy"}<span className="mt-1 block text-xs text-[var(--muted)]">{workLog.activityTypeCode ? topicReportActivity(workLog.activityTypeCode)?.name || workLog.activityTypeCode : "Tiết dạy"} · {teachingRoleLabel(workLog.roleCode)}</span><span className="mt-1 block text-xs text-[var(--muted)]">{workLog.policyVersion ? `Chính sách HRM: ${workLog.policyVersion}` : "Chính sách HRM hiện hành"}</span></td>
                       <td className="px-3 py-3 text-right font-black text-emerald-700">{formatCurrency(typeof workLog.money === "number" ? workLog.money : 0)}</td>
                       <td className="px-3 py-3 text-right font-black text-violet-700">{workLog.mcpPoints ?? 0} MCP</td>
                       <td className="px-3 py-3"><button type="button" onClick={() => setSelectedScheduleDetail(schedule)} className="rounded-lg border border-cyan-200 bg-white px-2 py-1 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50">Xem tiết</button></td>
