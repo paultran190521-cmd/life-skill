@@ -329,14 +329,64 @@ type LessonPlanAdminFocus = "uploaded" | "submitted" | "missing" | "upcoming-mis
 type BrandedExcelOptions = {
   headerRow: number;
   titleRow?: number;
+  referenceRow?: number;
   summaryRow?: number;
   dataStartRow?: number;
 };
 
+type ExcelMetricCard = {
+  fromColumn: number;
+  toColumn: number;
+  formula: string;
+  numberFormat: string;
+  fill: string;
+};
+
+function applyExcelMetricCards(
+  XLSX: typeof import("xlsx-js-style"),
+  worksheet: import("xlsx-js-style").WorkSheet,
+  row: number,
+  cards: ExcelMetricCard[],
+) {
+  const merges = worksheet["!merges"] || [];
+  for (const card of cards) {
+    const start = XLSX.utils.encode_cell({ r: row, c: card.fromColumn });
+    worksheet[start] = {
+      t: "n",
+      f: card.formula,
+      z: card.numberFormat,
+      s: {
+        font: { name: "Aptos", sz: 13, bold: true, color: { rgb: "111827" } },
+        fill: { patternType: "solid", fgColor: { rgb: card.fill } },
+        alignment: { horizontal: "left", vertical: "center" },
+        border: {
+          top: { style: "medium", color: { rgb: card.fill } },
+          bottom: { style: "medium", color: { rgb: card.fill } },
+          left: { style: "medium", color: { rgb: card.fill } },
+          right: { style: "medium", color: { rgb: card.fill } },
+        },
+      },
+    };
+    for (let column = card.fromColumn + 1; column <= card.toColumn; column += 1) {
+      const address = XLSX.utils.encode_cell({ r: row, c: column });
+      worksheet[address] = {
+        t: "s",
+        v: "",
+        s: worksheet[start].s,
+      };
+    }
+    merges.push({ s: { r: row, c: card.fromColumn }, e: { r: row, c: card.toColumn } });
+  }
+  worksheet["!merges"] = merges;
+  const rows = worksheet["!rows"] || [];
+  rows[row] = { ...(rows[row] || {}), hpt: 30 };
+  worksheet["!rows"] = rows;
+}
+
 function applyMettasoulExcelBrand(
   XLSX: typeof import("xlsx-js-style"),
   worksheet: import("xlsx-js-style").WorkSheet,
-  { headerRow, titleRow, summaryRow, dataStartRow = headerRow + 1 }: BrandedExcelOptions,
+  { headerRow, titleRow, referenceRow, summaryRow, dataStartRow = headerRow + 1 }: BrandedExcelOptions,
 ) {
   const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1:A1");
   const brandTeal = "007C91";
@@ -359,7 +409,7 @@ function applyMettasoulExcelBrand(
           name: "Aptos",
           sz: isTitle ? 15 : isHeader ? 11 : 10,
           bold: isTitle || isHeader || isSummary,
-          color: { rgb: isTitle || isHeader ? "FFFFFF" : brandTealDark },
+          color: { rgb: isTitle || isHeader ? "FFFFFF" : "111827" },
         },
         fill: {
           patternType: "solid",
@@ -379,6 +429,7 @@ function applyMettasoulExcelBrand(
   const rows = worksheet["!rows"] || [];
   rows[headerRow] = { ...(rows[headerRow] || {}), hpt: 26 };
   if (titleRow !== undefined) rows[titleRow] = { ...(rows[titleRow] || {}), hpt: 30 };
+  if (referenceRow !== undefined) rows[referenceRow] = { ...(rows[referenceRow] || {}), hpt: 20 };
   if (summaryRow !== undefined) rows[summaryRow] = { ...(rows[summaryRow] || {}), hpt: 22 };
   worksheet["!rows"] = rows;
 }
@@ -6845,7 +6896,17 @@ export function MettasoulApp() {
             "Trợ giảng": scheduleAssistantNames(s).join(", "),
           };
         });
-        const ws = XLSX.utils.json_to_sheet(rows);
+        const scheduleHeaders = ["Ngày", "Giáo viên", "Trường", "Lớp tham gia", "Chuyên đề", "Tên tiết", "Khung giờ", "Môi trường", "Trạng thái", "Giáo viên dạy cùng", "Trợ giảng"];
+        const scheduleRows = rows.map((row) => scheduleHeaders.map((header) => row[header as keyof typeof row] || ""));
+        const scheduleDataStartRow = 5;
+        const scheduleLastDataRow = Math.max(scheduleDataStartRow, scheduleDataStartRow + scheduleRows.length - 1);
+        const ws = XLSX.utils.aoa_to_sheet([
+          ["LỊCH DẠY ĐÃ GỬI"],
+          [`Thời gian tham chiếu: ${formatDateTime(new Date().toISOString())} · Bộ lọc tháng: ${scheduleReportMonth || "Tất cả"}`],
+          [],
+          scheduleHeaders,
+          ...scheduleRows,
+        ]);
         ws["!cols"] = [
           { wch: 12 },
           { wch: 24 },
@@ -6859,8 +6920,15 @@ export function MettasoulApp() {
           { wch: 28 },
           { wch: 28 },
         ];
-        ws["!autofilter"] = { ref: `A1:K${Math.max(2, rows.length + 1)}` };
-        applyMettasoulExcelBrand(XLSX, ws, { headerRow: 0 });
+        ws["!merges"] = [
+          { s: { r: 0, c: 0 }, e: { r: 0, c: scheduleHeaders.length - 1 } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: scheduleHeaders.length - 1 } },
+        ];
+        ws["!autofilter"] = { ref: `A4:K${scheduleLastDataRow}` };
+        applyMettasoulExcelBrand(XLSX, ws, { titleRow: 0, referenceRow: 1, headerRow: 3, dataStartRow: scheduleDataStartRow - 1 });
+        applyExcelMetricCards(XLSX, ws, 2, [
+          { fromColumn: 0, toColumn: 10, formula: `SUBTOTAL(103,B${scheduleDataStartRow}:B${scheduleLastDataRow})`, numberFormat: '"Số lịch hiển thị: "#,##0', fill: "D9F2F6" },
+        ]);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Lịch đã gửi");
 
@@ -6892,15 +6960,17 @@ export function MettasoulApp() {
         });
         const kpiSheet = XLSX.utils.aoa_to_sheet([
           ["TỔNG HỢP KPI GIẢNG DẠY"],
-          ["Tổng số tiết KPI đang hiển thị"],
+          [`Thời gian tham chiếu: ${formatDateTime(new Date().toISOString())} · Bộ lọc tháng: ${scheduleReportMonth || "Tất cả"}`],
           [],
           kpiHeaders,
           ...kpiRows,
         ]);
         const firstDataRow = 5;
         const lastDataRow = Math.max(firstDataRow, firstDataRow + kpiRows.length - 1);
-        kpiSheet["B2"] = { t: "n", f: `SUBTOTAL(109,F${firstDataRow}:F${lastDataRow})` };
-        kpiSheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: kpiHeaders.length - 1 } }];
+        kpiSheet["!merges"] = [
+          { s: { r: 0, c: 0 }, e: { r: 0, c: kpiHeaders.length - 1 } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: kpiHeaders.length - 1 } },
+        ];
         kpiSheet["!autofilter"] = { ref: `A4:H${lastDataRow}` };
         kpiSheet["!cols"] = [
           { wch: 24 },
@@ -6912,7 +6982,11 @@ export function MettasoulApp() {
           { wch: 20 },
           { wch: 36 },
         ];
-        applyMettasoulExcelBrand(XLSX, kpiSheet, { titleRow: 0, summaryRow: 1, headerRow: 3, dataStartRow: firstDataRow - 1 });
+        applyMettasoulExcelBrand(XLSX, kpiSheet, { titleRow: 0, referenceRow: 1, headerRow: 3, dataStartRow: firstDataRow - 1 });
+        applyExcelMetricCards(XLSX, kpiSheet, 2, [
+          { fromColumn: 0, toColumn: 3, formula: `SUBTOTAL(103,A${firstDataRow}:A${lastDataRow})`, numberFormat: '"Số dòng KPI: "#,##0', fill: "D9F2F6" },
+          { fromColumn: 4, toColumn: 7, formula: `SUBTOTAL(109,F${firstDataRow}:F${lastDataRow})`, numberFormat: '"Tổng tiết KPI: "#,##0', fill: "FFF0C2" },
+        ]);
         XLSX.utils.book_append_sheet(wb, kpiSheet, "Tổng hợp KPI");
         XLSX.writeFile(wb, `lich-da-gui-${scheduleReportMonth || currentDateKey()}.xlsx`);
         pushToast("Xuất Excel thành công", `Đã xuất ${rows.length} lịch trong tháng đã chọn.`, "success");
@@ -9186,17 +9260,26 @@ export function MettasoulApp() {
           workLog.hrmWorkLogId || "",
         ];
       });
+      const dataStartRow = 5;
+      const lastDataRow = Math.max(dataStartRow, dataStartRow + rows.length - 1);
       const worksheet = XLSX.utils.aoa_to_sheet([
         ["BÁO CÁO KPI & MCP GIẢNG DẠY KỸ NĂNG SỐNG"],
-        [`Khoảng thời gian: ${filterLabel} · Từ khóa: ${adminKpiTeacherFilter || "Tất cả nhân sự"}`],
-        [`${rows.length} dòng · ${adminKpiTeacherCount} nhân sự · Tổng tiền HRM: ${formatCurrency(adminKpiMoneyTotal)} · Tổng MCP: ${adminKpiMcpTotal}`],
-        [],
+        [`Thời gian tham chiếu: ${formatDateTime(new Date().toISOString())} · Khoảng lọc: ${filterLabel} · Nhân sự: ${adminKpiTeacherFilter || "Tất cả"}`],
         headers,
         ...rows,
       ]);
+      worksheet["!merges"] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } },
+      ];
       worksheet["!cols"] = [18, 14, 24, 28, 18, 28, 22, 38, 42, 16, 12, 22].map((wch) => ({ wch }));
-      worksheet["!autofilter"] = { ref: `A5:L${Math.max(6, rows.length + 5)}` };
-      applyMettasoulExcelBrand(XLSX, worksheet, { titleRow: 0, summaryRow: 2, headerRow: 4, dataStartRow: 5 });
+      worksheet["!autofilter"] = { ref: `A4:L${lastDataRow}` };
+      applyMettasoulExcelBrand(XLSX, worksheet, { titleRow: 0, referenceRow: 1, headerRow: 3, dataStartRow: dataStartRow - 1 });
+      applyExcelMetricCards(XLSX, worksheet, 2, [
+        { fromColumn: 0, toColumn: 3, formula: `SUBTOTAL(103,C${dataStartRow}:C${lastDataRow})`, numberFormat: '"Số dòng HRM: "#,##0', fill: "D9F2F6" },
+        { fromColumn: 4, toColumn: 7, formula: `SUBTOTAL(109,J${dataStartRow}:J${lastDataRow})`, numberFormat: '"Tổng tiền HRM: "#,##0" ₫"', fill: "DDF7E8" },
+        { fromColumn: 8, toColumn: 11, formula: `SUBTOTAL(109,K${dataStartRow}:K${lastDataRow})`, numberFormat: '"Tổng MCP HRM: "#,##0" MCP"', fill: "EEE7FF" },
+      ]);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "KPI MCP HRM");
       XLSX.writeFile(workbook, `kpi-mcp-giang-day-${currentDateKey()}.xlsx`);
