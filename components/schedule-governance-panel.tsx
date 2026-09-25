@@ -17,6 +17,8 @@ export function ScheduleGovernancePanel({ schedules, teachers, schools, classes,
   const [filter, setFilter] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [checkingHrm, setCheckingHrm] = useState(false);
+  const [hrmHealth, setHrmHealth] = useState("");
   useEffect(() => {
     let disposed = false;
     let running = false;
@@ -45,6 +47,18 @@ export function ScheduleGovernancePanel({ schedules, teachers, schools, classes,
   };
   const stamp = (value: string) => value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : value;
   return <section className="space-y-4 rounded-3xl border border-cyan-200 bg-white p-5">
+    <div className="rounded-xl border border-cyan-100 p-3">
+      <button disabled={checkingHrm} className="rounded-xl border border-cyan-300 px-3 py-2 text-cyan-900 disabled:opacity-40" onClick={async () => {
+        setCheckingHrm(true); setHrmHealth("");
+        try {
+          const result = await request<{ ready: boolean; workLogWritesEnabled: boolean; policyContracts?: string[]; cancellationReports?: boolean; topicReportPolicies?: { status: string }[]; assistantProfiles?: { status: string }[]; code?: string }>("/api/hrm-integration/health?topicReport=1");
+          const compatible = result.ready && result.workLogWritesEnabled && result.policyContracts?.includes("TOPIC_REPORT_V1") && result.cancellationReports;
+          setHrmHealth(compatible ? `HRM sẵn sàng · Quy tắc chuyên đề V1 · ${result.topicReportPolicies?.filter((row) => row.status === "Active").length || 0} chính sách hoạt động · ${result.assistantProfiles?.filter((row) => row.status === "Active").length || 0} mức trợ giảng. Kiểm tra chỉ đọc, không tạo công/lương/MCP.` : `HRM chưa sẵn sàng cho chuyên đề: ${result.code || "cần kiểm tra phiên bản hoặc cấu hình tích hợp"}. Không tạo công/lương/MCP.`);
+        } catch (failure) { setHrmHealth(failure instanceof Error ? failure.message : "Không kiểm tra được kết nối HRM."); }
+        finally { setCheckingHrm(false); }
+      }}>{checkingHrm ? "Đang kiểm tra HRM…" : "Kiểm tra kết nối HRM (chỉ đọc)"}</button>
+      {hrmHealth ? <p role="status" className="mt-2 text-sm text-cyan-950">{hrmHealth}</p> : null}
+    </div>
     <h2 className="text-lg font-bold text-cyan-950">Duyệt hoàn thành chuyên đề</h2>
     {error ? <p role="alert" className="text-rose-700">{error}</p> : null}
     {logs.filter((row) => row.activityTypeCode && ["COMPLETED", "PENDING", "FAILED"].includes(row.status) && !reports.some((report) => report.scheduleId === row.scheduleId && report.teacherId === row.teacherId && report.status !== "REJECTED")).map((log) => <div key={log.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-cyan-50 p-3">

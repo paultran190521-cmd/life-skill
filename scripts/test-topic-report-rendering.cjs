@@ -10,6 +10,7 @@ function render() { return renderToStaticMarkup(React.createElement(App)); }
 fixture.currentUserId='admin'; fixture.activeTab='activities';
 assert.match(render(), /Duyệt hoàn thành chuyên đề/);
 assert.match(render(), /Báo cáo tiết bị hủy/);
+assert.ok(render().includes('Kiểm tra kết nối HRM (chỉ đọc)'));
 fixture.activeTab='assignment';
 assert.match(render(), /Môi trường: Báo cáo chuyên đề/);
 fixture.currentUserId='teacher'; fixture.activeTab='attendance';
