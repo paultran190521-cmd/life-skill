@@ -257,6 +257,19 @@ button:disabled {
     border-color 0.2s var(--ease-smooth);
 }
 
+/* Keep form controls calm by default; reserve the SunnyCare orange for the
+   active choice. This deliberately overrides older cyan/sky utility borders. */
+.ui-polish :is(input, select, textarea) {
+  border-color: rgba(148, 163, 184, 0.48);
+  background-color: rgba(255, 255, 255, 0.94);
+}
+
+.ui-polish :is(input, select, textarea):focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px rgba(224, 160, 32, 0.18);
+  outline: none;
+}
+
 .ui-polish button:not(:disabled):hover,
 .ui-polish a:hover {
   transform: translateY(-1px);

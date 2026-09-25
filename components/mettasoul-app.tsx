@@ -6248,11 +6248,12 @@ export function MettasoulApp() {
                                 participantGrade: teachingEnvironment === "in_class" ? "" : item.participantGrade,
                               });
                             }}
-                            className={inputClass}
+                            aria-label="Môi trường dạy"
+                            className={scheduleEnvironmentSelectClass}
                           >
                             {teachingEnvironmentOptions.map((option) => (
                               <option key={option.value} value={option.value}>
-                                Môi trường: {option.label}
+                                {option.label}
                               </option>
                             ))}
                           </select>
@@ -12681,6 +12682,9 @@ const inputClass =
 
 const compactInputClass =
   "w-full rounded-xl border border-sky-200 bg-white/90 px-3 py-2 text-base font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100 sm:text-sm";
+
+const scheduleEnvironmentSelectClass =
+  "w-full rounded-2xl border border-orange-300 bg-gradient-to-r from-orange-50 via-amber-50 to-white px-4 py-3 text-base font-black text-[var(--brand-dark)] shadow-[0_8px_20px_rgba(224,160,32,0.14)] outline-none transition hover:border-orange-400 focus:border-[var(--brand)] focus:bg-white focus:ring-4 focus:ring-orange-100 sm:text-sm";
 
 const primaryButtonClass =
   "ui-primary-gradient inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-black text-white transition hover:-translate-y-0.5";
