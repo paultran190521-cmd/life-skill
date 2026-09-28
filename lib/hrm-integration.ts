@@ -113,6 +113,13 @@ export type HrmMcpLedgerResponse = HrmTeachingResponse & {
   entries: HrmMcpLedgerEntry[];
 };
 
+export type HrmPersonnelDirectoryResponse = HrmTeachingResponse & {
+  people: Array<{
+    teacherId: string;
+    organizationStaffCode: string;
+  }>;
+};
+
 export type HrmResponseDiagnostic = {
   status: number;
   contentType: string | null;
@@ -183,6 +190,24 @@ export async function getMcpLedgerFromHrm(userEmail: string): Promise<HrmMcpLedg
     eventId: `MTS_MCP_${nonce}`,
     idempotencyKey: `MTS_MCP_${nonce}`,
     userEmail,
+  }, { requireEnabled: false });
+}
+
+/**
+ * Read-only lookup for the existing METTASOUL teacher list. The HRM endpoint
+ * returns only matched internal codes; it never exposes the HRM directory.
+ */
+export async function getMettasoulPersonnelDirectoryFromHrm(
+  teachers: Array<{ id: string; email: string; name: string }>,
+): Promise<HrmPersonnelDirectoryResponse> {
+  return sendSignedPayload<HrmPersonnelDirectoryResponse>({
+    source: "METTASOUL",
+    action: "GET_PERSONNEL_DIRECTORY",
+    teachers: teachers.map((teacher) => ({
+      teacherId: String(teacher.id || "").trim(),
+      email: String(teacher.email || "").trim().toLowerCase(),
+      name: String(teacher.name || "").trim(),
+    })).filter((teacher) => teacher.teacherId && (teacher.email || teacher.name)),
   }, { requireEnabled: false });
 }
 

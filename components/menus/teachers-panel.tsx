@@ -6,13 +6,14 @@ import type { Teacher, User, Role } from "@/lib/types";
 import type { TeacherEditDraft } from "@/components/menus/menu-types";
 export interface TeachersPanelProps {
 filteredTeachers:Teacher[]; teachers:Teacher[]; deferredSearchTerm:string; primaryButtonClass:string;
+personnelByTeacherId: Record<string, { mnv: string; cooperationYears?: number }>;
 setTeacherModalOpen:(value:boolean)=>void; userForTeacher:(id:string)=>User|undefined;
 updateTeacherRole:(teacher:Teacher,role:Role)=>void; editingTeacherId:string; teacherEditDraft:TeacherEditDraft;
 startEditTeacher:(teacher:Teacher)=>void; cancelEditTeacher:()=>void; setTeacherEditDraft:(draft:TeacherEditDraft)=>void;
 saveTeacherEdit:(id:string)=>void; toggleTeacherActive:(teacher:Teacher)=>void; deleteTeacher:(teacher:Teacher)=>void;
 }
 
-export function TeachersPanel({filteredTeachers, teachers, deferredSearchTerm, primaryButtonClass, setTeacherModalOpen, userForTeacher, updateTeacherRole, editingTeacherId, teacherEditDraft, startEditTeacher, cancelEditTeacher, setTeacherEditDraft, saveTeacherEdit, toggleTeacherActive, deleteTeacher}: TeachersPanelProps) {
+export function TeachersPanel({filteredTeachers, teachers, personnelByTeacherId, deferredSearchTerm, primaryButtonClass, setTeacherModalOpen, userForTeacher, updateTeacherRole, editingTeacherId, teacherEditDraft, startEditTeacher, cancelEditTeacher, setTeacherEditDraft, saveTeacherEdit, toggleTeacherActive, deleteTeacher}: TeachersPanelProps) {
     return (
       <Panel title="Danh sách giáo viên" action={`${filteredTeachers.length}/${teachers.length} người`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -26,11 +27,13 @@ export function TeachersPanel({filteredTeachers, teachers, deferredSearchTerm, p
           </button>
         </div>
         <div className="app-scrollbar overflow-x-auto">
-          <div className="min-w-[1120px] overflow-hidden rounded-2xl border border-[var(--line)] bg-white">
-            <div className="grid grid-cols-[2fr_150px_2fr_150px_110px_190px] gap-3 border-b border-[var(--line)] bg-cyan-50 px-4 py-3 text-xs font-black uppercase text-[var(--brand-dark)]">
+          <div className="min-w-[1400px] overflow-hidden rounded-2xl border border-[var(--line)] bg-white">
+            <div className="grid grid-cols-[2fr_150px_2fr_150px_150px_130px_110px_190px] gap-3 border-b border-[var(--line)] bg-cyan-50 px-4 py-3 text-xs font-black uppercase text-[var(--brand-dark)]">
               <span>Tên giáo viên</span>
               <span>Số điện thoại</span>
               <span>Email</span>
+              <span>MNV</span>
+              <span>Số năm hợp tác</span>
               <span>Phân quyền</span>
               <span>Trạng thái</span>
               <span>Thao tác</span>
@@ -41,6 +44,7 @@ export function TeachersPanel({filteredTeachers, teachers, deferredSearchTerm, p
                 <TeacherTableRow
                   key={teacher.id}
                   teacher={teacher}
+                  personnel={personnelByTeacherId[teacher.id]}
                   user={userForTeacher(teacher.id)}
                   onRoleChange={updateTeacherRole}
                   isEditing={editingTeacherId === teacher.id}
@@ -67,6 +71,7 @@ export function TeachersPanel({filteredTeachers, teachers, deferredSearchTerm, p
   }
 function TeacherTableRow({
   teacher,
+  personnel,
   user,
   onRoleChange,
   isEditing,
@@ -79,6 +84,7 @@ function TeacherTableRow({
   onDelete,
 }: {
   teacher: Teacher;
+  personnel?: { mnv: string; cooperationYears?: number };
   user?: User;
   onRoleChange: (teacher: Teacher, role: Role) => void;
   isEditing: boolean;
@@ -94,7 +100,7 @@ function TeacherTableRow({
 
   if (isEditing) {
     return (
-      <div className="grid grid-cols-[2fr_150px_2fr_150px_110px_190px] items-center gap-3 bg-cyan-50/40 px-4 py-3 text-sm">
+      <div className="grid grid-cols-[2fr_150px_2fr_150px_150px_130px_110px_190px] items-center gap-3 bg-cyan-50/40 px-4 py-3 text-sm">
         <div className="min-w-0 space-y-2">
           <input
             value={draft.name}
@@ -121,6 +127,8 @@ function TeacherTableRow({
           placeholder="Email"
           className="w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 font-semibold text-[var(--brand-dark)] outline-none transition focus:border-[var(--brand)]"
         />
+        <span className="truncate font-bold text-[var(--muted)]">{personnel?.mnv || "—"}</span>
+        <span className="font-bold text-[var(--muted)]">{personnel?.cooperationYears ?? "—"}</span>
         <select
           value={role}
           onChange={(event) => onRoleChange(teacher, event.target.value as Role)}
@@ -158,7 +166,7 @@ function TeacherTableRow({
   }
 
   return (
-    <div className="grid grid-cols-[2fr_150px_2fr_150px_110px_190px] items-center gap-3 px-4 py-3 text-sm transition hover:bg-cyan-50/45">
+    <div className="grid grid-cols-[2fr_150px_2fr_150px_150px_130px_110px_190px] items-center gap-3 px-4 py-3 text-sm transition hover:bg-cyan-50/45">
       <div className="flex min-w-0 items-center gap-3">
         <img alt={teacher.name} src={teacher.avatarUrl} className="h-10 w-10 rounded-xl object-cover" />
         <div className="min-w-0">
@@ -168,6 +176,8 @@ function TeacherTableRow({
       </div>
       <span className="truncate font-bold text-orange-700">{teacher.phone}</span>
       <span className="truncate font-bold text-[var(--brand-dark)]">{teacher.email}</span>
+      <span className="truncate font-bold text-[var(--brand-dark)]">{personnel?.mnv || "—"}</span>
+      <span className="font-bold text-[var(--brand-dark)]">{personnel?.cooperationYears ?? "—"}</span>
       <select
         value={role}
         onChange={(event) => onRoleChange(teacher, event.target.value as Role)}

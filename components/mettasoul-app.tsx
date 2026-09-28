@@ -200,6 +200,11 @@ type AuthSession = {
   user: User | null;
 };
 
+type TeacherPersonnel = {
+  mnv: string;
+  cooperationYears?: number;
+};
+
 type ObservabilitySnapshot = {
   checkedAt: string;
   windowHours: number;
@@ -653,6 +658,8 @@ export function MettasoulApp() {
   const [currentUserId, setCurrentUserId] = useState("");
   const [sessionUserId, setSessionUserId] = useState("");
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [teacherPersonnel, setTeacherPersonnel] = useState<Record<string, TeacherPersonnel>>({});
+  const teacherPersonnelRequestKey = useRef("");
   const [schools, setSchools] = useState<School[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -904,6 +911,28 @@ export function MettasoulApp() {
   const hasAdminAccess = sessionUser?.role === "admin";
   const currentTeacherId = currentUser.teacherId ?? "";
   const hasPendingCancellation = cancellationReports.some((row) => row.teacherId === currentTeacherId && row.status === "PENDING");
+  const personnelDirectoryKey = useMemo(
+    () => teachers.map((teacher) => `${teacher.id}\u0000${teacher.email}\u0000${teacher.name}`).sort().join("\u0001"),
+    [teachers],
+  );
+
+  useEffect(() => {
+    if (activeTab !== "teachers" || authStatus !== "signed-in" || !hasAdminAccess || !personnelDirectoryKey) return;
+    if (teacherPersonnelRequestKey.current === personnelDirectoryKey) return;
+
+    let disposed = false;
+    teacherPersonnelRequestKey.current = personnelDirectoryKey;
+    void apiRequest<{ personnelByTeacherId: Record<string, TeacherPersonnel> }>("/api/hrm-integration/personnel-directory")
+      .then((data) => {
+        if (!disposed) setTeacherPersonnel(data.personnelByTeacherId);
+      })
+      .catch(() => {
+        // Keep the teacher directory usable if HRM is temporarily unavailable.
+        teacherPersonnelRequestKey.current = "";
+      });
+
+    return () => { disposed = true; };
+  }, [activeTab, authStatus, hasAdminAccess, personnelDirectoryKey]);
 
   useEffect(() => {
     if (!currentTeacherId || activeTab !== "attendance") return;
@@ -980,7 +1009,7 @@ export function MettasoulApp() {
       appDialog,
   );
   const teacherSearchIndex = useMemo(() => buildTextSearchIndex(teachers, (teacher) =>
-    [teacher.name, teacher.email, teacher.phone, teacher.specialty]), [teachers]);
+    [teacher.name, teacher.email, teacher.phone, teacher.specialty, teacherPersonnel[teacher.id]?.mnv]), [teachers, teacherPersonnel]);
   const lessonSearchIndex = useMemo(() => buildTextSearchIndex(activeLessons, (lesson) =>
     [lesson.title, lesson.objective]), [activeLessons]);
   const filteredTeachers = useMemo(() => {
@@ -7882,7 +7911,7 @@ export function MettasoulApp() {
   }
 
   function renderTeachersPanel() {
-    return <TeachersPanel filteredTeachers={filteredTeachers} teachers={teachers} deferredSearchTerm={deferredSearchTerm} primaryButtonClass={primaryButtonClass} setTeacherModalOpen={setTeacherModalOpen} userForTeacher={userForTeacher} updateTeacherRole={updateTeacherRole} editingTeacherId={editingTeacherId} teacherEditDraft={teacherEditDraft} startEditTeacher={startEditTeacher} cancelEditTeacher={cancelEditTeacher} setTeacherEditDraft={setTeacherEditDraft} saveTeacherEdit={saveTeacherEdit} toggleTeacherActive={toggleTeacherActive} deleteTeacher={deleteTeacher} />;
+    return <TeachersPanel filteredTeachers={filteredTeachers} teachers={teachers} personnelByTeacherId={teacherPersonnel} deferredSearchTerm={deferredSearchTerm} primaryButtonClass={primaryButtonClass} setTeacherModalOpen={setTeacherModalOpen} userForTeacher={userForTeacher} updateTeacherRole={updateTeacherRole} editingTeacherId={editingTeacherId} teacherEditDraft={teacherEditDraft} startEditTeacher={startEditTeacher} cancelEditTeacher={cancelEditTeacher} setTeacherEditDraft={setTeacherEditDraft} saveTeacherEdit={saveTeacherEdit} toggleTeacherActive={toggleTeacherActive} deleteTeacher={deleteTeacher} />;
   }
 
   function renderLessonsPanel() {
