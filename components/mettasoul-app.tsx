@@ -10238,6 +10238,7 @@ export function MettasoulApp() {
     const usageGuideUrl = "/huong-dan-su-dung/";
     const trainingChecklistUrl = "/training-14-09-2026.html";
     const upgradeUatChecklistUrl = "/uat-nang-cap-15-09-2026.html";
+    const septemberTrainingChecklistUrl = "/checklist-dao-tao-tinh-nang-16-09-2026.html";
     const reminderSwitches = [
       {
         key: "scheduleConfirmationEnabled" as const,
@@ -10628,6 +10629,33 @@ export function MettasoulApp() {
                 >
                   <ExternalLink size={16} />
                   Mở checklist training
+                </a>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50 via-white to-emerald-50 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-teal-100 text-teal-700">
+                  <ListChecks size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-[var(--brand-dark)]">Checklist tính năng mới 16–28/09</h3>
+                  <p className="mt-1 text-sm font-semibold text-[var(--muted)]">
+                    Đào tạo các chức năng mới: lịch dạy, trợ giảng, điểm danh, MCP, HRM và báo cáo.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 rounded-xl border border-teal-200 bg-white p-3">
+                <p className="text-xs font-black uppercase text-teal-800">Dùng cho buổi training nghiệp vụ</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--brand-dark)]">39 mục theo 10 nhóm; mỗi người tự lưu tiến độ, ghi chú và in biên bản khi hoàn thành.</p>
+                <a
+                  href={septemberTrainingChecklistUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex items-center gap-2 rounded-xl bg-teal-600 px-3 py-2 text-sm font-black text-white transition hover:bg-teal-700"
+                >
+                  <ExternalLink size={16} />
+                  Mở checklist tính năng mới
                 </a>
               </div>
             </div>
