@@ -12,6 +12,9 @@ const { cooperationYearsFromPersonnelCode } = module.exports;
 
 assert.equal(cooperationYearsFromPersonnelCode("26122022/CTV-MS", 2026), 4);
 assert.equal(cooperationYearsFromPersonnelCode("19112025/CTVMT", 2026), 1);
+assert.equal(cooperationYearsFromPersonnelCode("06072023-05/CTVMT", 2026), 3);
+assert.equal(cooperationYearsFromPersonnelCode("010920-01/CTVMT", 2026), 6);
+assert.equal(cooperationYearsFromPersonnelCode("010321-01/CTVMT", 2026), 5);
 assert.equal(cooperationYearsFromPersonnelCode("MNV-2026", 2026), 0);
 assert.equal(cooperationYearsFromPersonnelCode("MNV-2027", 2026), undefined);
 assert.equal(cooperationYearsFromPersonnelCode("CTV-MS", 2026), undefined);

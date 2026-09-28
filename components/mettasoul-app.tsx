@@ -659,7 +659,6 @@ export function MettasoulApp() {
   const [sessionUserId, setSessionUserId] = useState("");
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [teacherPersonnel, setTeacherPersonnel] = useState<Record<string, TeacherPersonnel>>({});
-  const teacherPersonnelRequestKey = useRef("");
   const [schools, setSchools] = useState<School[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -918,17 +917,13 @@ export function MettasoulApp() {
 
   useEffect(() => {
     if (activeTab !== "teachers" || authStatus !== "signed-in" || !hasAdminAccess || !personnelDirectoryKey) return;
-    if (teacherPersonnelRequestKey.current === personnelDirectoryKey) return;
-
     let disposed = false;
-    teacherPersonnelRequestKey.current = personnelDirectoryKey;
     void apiRequest<{ personnelByTeacherId: Record<string, TeacherPersonnel> }>("/api/hrm-integration/personnel-directory")
       .then((data) => {
         if (!disposed) setTeacherPersonnel(data.personnelByTeacherId);
       })
       .catch(() => {
         // Keep the teacher directory usable if HRM is temporarily unavailable.
-        teacherPersonnelRequestKey.current = "";
       });
 
     return () => { disposed = true; };
