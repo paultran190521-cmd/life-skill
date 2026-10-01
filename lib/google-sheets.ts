@@ -39,6 +39,7 @@ type SheetName =
   | "Lessons"
   | "TimeSlots"
   | "Schedules"
+  | "SchoolTeachingNeeds"
   | "LessonPlans"
   | "LessonPlanMessages"
   | "LessonPlanAttachments"
@@ -710,6 +711,8 @@ export const scheduleHeaders = [
   "updatedAt",
   "teachingEnvironment",
   "groupId",
+  "schoolNeedId",
+  "mergedPeriodGroupId",
   "assistantIds",
   "teachingRole",
   "participantClassIds",
@@ -717,6 +720,11 @@ export const scheduleHeaders = [
   "participantGrade",
   "assistantConfirmedIds",
   "activityTypeCode",
+];
+
+export const schoolTeachingNeedHeaders = [
+  "id", "date", "schoolId", "classId", "periodLabel", "start", "end",
+  "teachingEnvironment", "sourceNote", "scheduleId", "assignedDate", "assignedStart", "assignedEnd", "status", "createdAt", "updatedAt",
 ];
 
 export const notificationHeaders = [

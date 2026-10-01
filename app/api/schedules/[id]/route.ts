@@ -4,9 +4,11 @@ import { appendAuditLog } from "@/lib/audit";
 import { sendScheduleEmail } from "@/lib/email";
 import {
   appendSheetRows,
+  ensureSheetHeaders,
   readSheetRowById,
   readSheetRows,
   updateSheetRowById,
+  schoolTeachingNeedHeaders,
 } from "@/lib/google-sheets";
 import {
   deleteSchedulesCascade,
@@ -165,6 +167,11 @@ export async function DELETE(request: Request, { params }: Params) {
 
     const cancelledWorkLogIds = await cancelConfirmedTeachingWorkLogs([id]);
     const result = await deleteSchedulesCascade([id]);
+    if (schedule.schoolNeedId) {
+      await ensureSheetHeaders("SchoolTeachingNeeds", schoolTeachingNeedHeaders);
+      const need = await readSheetRowById("SchoolTeachingNeeds", schedule.schoolNeedId);
+      if (need?.scheduleId === id) await updateSheetRowById("SchoolTeachingNeeds", need.id, { scheduleId: "", assignedDate: "", assignedStart: "", assignedEnd: "", status: "OPEN", updatedAt: new Date().toISOString() });
+    }
     invalidateScheduleConflictIndex();
     await appendAuditLog({
       requestId,

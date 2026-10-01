@@ -9,6 +9,8 @@ import {
   readSheetRowsBatch,
   readSheetRowsCached,
   scheduleHeaders,
+  schoolTeachingNeedHeaders,
+  updateSheetRowsById,
   teacherAvailabilityHeaders,
   toSchedules,
 } from "@/lib/google-sheets";
@@ -28,8 +30,9 @@ import {
 import { isTeacherAvailableForSlot } from "@/lib/teacher-availability";
 import { isTimeSlotAllowedForSchool } from "@/lib/time-slots";
 import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy";
+import { findConfiguredSchoolNeedMergeSlot } from "@/lib/school-need-merge";
 import { validateTopicReport } from "@/lib/topic-report-policy";
-import type { LessonPeriod, Notification, Schedule, ScheduleParticipantScope, TeacherAvailability, TeachingEnvironment } from "@/lib/types";
+import type { LessonPeriod, Notification, Schedule, ScheduleParticipantScope, SchoolTeachingNeed, TeacherAvailability, TeachingEnvironment } from "@/lib/types";
 
 type ScheduleDraftItem = {
   date: string;
@@ -45,6 +48,7 @@ type ScheduleDraftItem = {
   activityTypeCode?: string;
   teacherIds: string[];
   assistantIds: string[];
+  schoolNeedIds?: string[];
 };
 
 type EmailResult = {
@@ -98,6 +102,30 @@ export async function POST(request: Request) {
     const items = parseScheduleItems(body, fallbackTeacherIds);
     const { teachers, users, schools, classes, lessons, slots, teacherAvailability } = await loadReferenceData();
     const normalizedItems = normalizeScheduleItems(items, { schools, classes, lessons, slots });
+    const requestedNeedIds = normalizedItems.flatMap((item) => item.schoolNeedIds || []);
+    let sourceNeeds: SchoolTeachingNeed[] = [];
+    if (requestedNeedIds.length > 0) {
+      if (new Set(requestedNeedIds).size !== requestedNeedIds.length) return apiFailure(409, "Một tiết lịch trường được giao nhiều lần trong cùng lượt.", "CONFLICT", requestId);
+      await ensureSheetHeaders("SchoolTeachingNeeds", schoolTeachingNeedHeaders);
+      sourceNeeds = await readSheetRows("SchoolTeachingNeeds") as unknown as SchoolTeachingNeed[];
+      for (const item of normalizedItems) {
+        const needIds = item.schoolNeedIds || [];
+        if (needIds.length === 0) continue;
+        if (needIds.length > 2 || item.teacherIds.length !== 1) return apiFailure(400, "Mỗi lớp hoặc cụm tiết cần đúng một giáo viên chính.", undefined, requestId);
+        const source = needIds.map((id) => sourceNeeds.find((row) => row.id === id));
+        const slot = slots.find((row) => row.id === item.timeSlotId);
+        if (!slot || item.classIds.length !== 1 || source.some((need) => !need || need.status !== "OPEN" || need.scheduleId || need.date !== item.date || need.schoolId !== item.schoolId || need.classId !== item.classId || need.teachingEnvironment !== item.teachingEnvironment)) {
+          return apiFailure(409, "Lịch gốc đã thay đổi hoặc không khớp giờ. Hãy tải lại tuần của trường.", "CONFLICT", requestId);
+        }
+        const ordered = source as SchoolTeachingNeed[];
+        if (needIds.length === 1 && (ordered[0].start !== slot.start || ordered[0].end !== slot.end)) return apiFailure(409, "Khung giờ không khớp tiết trường.", "CONFLICT", requestId);
+        if (needIds.length === 2) {
+          const schoolName = schools.find((row) => row.id === item.schoolId)?.name || "";
+          const configured = findConfiguredSchoolNeedMergeSlot(ordered[0], ordered[1], slots.map((row) => ({ id: row.id, label: row.label, start: row.start, end: row.end, active: row.active !== "false" })), schoolName);
+          if (item.lessonPeriods.length !== 2 || configured?.id !== item.timeSlotId) return apiFailure(409, "Cụm tiết cần hai tiết liền kề, khung đôi đúng trường và chọn đủ Tiết 1, Tiết 2 của bài.", "CONFLICT", requestId);
+        }
+      }
+    }
     const teacherIds = Array.from(new Set(normalizedItems.flatMap((item) => item.teacherIds)));
     const assistantIds = Array.from(new Set(normalizedItems.flatMap((item) => item.assistantIds)));
 
@@ -123,7 +151,9 @@ export async function POST(request: Request) {
       // Lưu groupId để các luồng hiển thị/email nhận diện đúng, không suy đoán
       // từ các lịch trùng giờ độc lập.
       const groupId = item.teacherIds.length > 1 || item.classIds.length > 1 ? createId("grp") : undefined;
-      return item.teacherIds.map((teacherId, teacherIndex) => ({
+      const sourceIds = item.schoolNeedIds?.length ? item.schoolNeedIds : [""];
+      const mergedPeriodGroupId = sourceIds.length === 2 ? createId("merge") : undefined;
+      return sourceIds.flatMap((schoolNeedId, periodIndex) => item.teacherIds.map((teacherId, teacherIndex) => ({
         id: createId("sch"),
         date: item.date,
         teacherId,
@@ -133,19 +163,24 @@ export async function POST(request: Request) {
         participantScope: item.participantScope,
         participantGrade: item.participantGrade || undefined,
         lessonId: item.lessonId,
-        lessonPeriods: item.lessonPeriods.join(","),
+        lessonPeriods: mergedPeriodGroupId ? item.lessonPeriods[periodIndex] : item.lessonPeriods.join(","),
         timeSlotId: item.timeSlotId,
         teachingEnvironment: item.teachingEnvironment,
         activityTypeCode: item.activityTypeCode,
         groupId,
+        schoolNeedId: schoolNeedId || undefined,
+        mergedPeriodGroupId,
         assistantIds: item.assistantIds.join(",") || undefined,
         teachingRole: teacherIndex === 0 ? "MAIN_TEACHER" as const : "CO_TEACHER" as const,
         status: "sent",
         sentAt: now,
-      }));
+      })));
     });
 
     const existingSchedules = await readSheetRows("Schedules");
+    if (requestedNeedIds.some((id) => existingSchedules.some((row) => row.schoolNeedId === id && row.status !== "cancelled"))) {
+      return apiFailure(409, "Một tiết trường đã có lịch được gửi. Hãy tải lại tuần trước khi giao.", "CONFLICT", requestId);
+    }
     const progressionConflicts = findLessonProgressionConflicts(schedules, existingSchedules, { lookbackMonths: 5 });
     if (progressionConflicts.length > 0) {
       const sample = progressionConflicts[0];
@@ -157,9 +192,30 @@ export async function POST(request: Request) {
       );
     }
 
-    const conflicts = await detectScheduleConflictsSafe(schedules, existingSchedules);
+    const checkedMergedGroups = new Set<string>();
+    const conflictRepresentatives = schedules.filter((schedule) => {
+      if (!schedule.mergedPeriodGroupId) return true;
+      if (checkedMergedGroups.has(schedule.mergedPeriodGroupId)) return false;
+      checkedMergedGroups.add(schedule.mergedPeriodGroupId);
+      return true;
+    });
+    const conflicts = await detectScheduleConflictsSafe(conflictRepresentatives, existingSchedules);
     if (conflicts.length > 0) {
       return apiFailure(409, buildConflictMessage(conflicts), "CONFLICT", requestId);
+    }
+    const slotById = new Map(slots.map((slot) => [slot.id, slot]));
+    const activeRows = existingSchedules.filter((row) => row.status !== "cancelled");
+    for (const candidate of conflictRepresentatives.filter((row) => row.schoolNeedId)) {
+      const candidateSlot = slotById.get(candidate.timeSlotId);
+      if (!candidateSlot) continue;
+      for (const other of [...activeRows, ...conflictRepresentatives.filter((row) => row.id !== candidate.id)]) {
+        if (other.date !== candidate.date) continue;
+        const otherSlot = slotById.get(other.timeSlotId);
+        if (!otherSlot || candidateSlot.start >= otherSlot.end || otherSlot.start >= candidateSlot.end) continue;
+        if (other.teacherId === candidate.teacherId || (other.schoolId === candidate.schoolId && scheduleClassIds(other).includes(candidate.classId))) {
+          return apiFailure(409, `Trùng giờ ${candidate.date} ${candidateSlot.start}–${candidateSlot.end}: giáo viên hoặc lớp đã có lịch.`, "CONFLICT", requestId);
+        }
+      }
     }
 
     await ensureSheetHeaders("Schedules", scheduleHeaders);
@@ -172,6 +228,12 @@ export async function POST(request: Request) {
         updatedAt: now,
       })),
     );
+    if (requestedNeedIds.length > 0) {
+      await updateSheetRowsById("SchoolTeachingNeeds", schedules.filter((row) => row.schoolNeedId).map((row) => {
+        const need = sourceNeeds.find((item) => item.id === row.schoolNeedId)!;
+        return { id: need.id, patch: { scheduleId: row.id, assignedDate: need.date, assignedStart: need.start, assignedEnd: need.end, status: "ASSIGNED", updatedAt: now } };
+      }));
+    }
     addSchedulesToConflictIndex(schedules);
 
     const emailResults = await sendScheduleEmailsByTeacher(schedules, { teachers, schools, classes, lessons, slots });
@@ -231,6 +293,13 @@ export async function DELETE(request: Request) {
     const targetIds = requestedIds.length > 0 ? requestedIds : allSchedules.map((schedule) => String(schedule.id || "").trim());
     const cancelledWorkLogIds = await cancelConfirmedTeachingWorkLogs(targetIds);
     const result = await deleteSchedulesCascade(targetIds);
+    if (result.deletedScheduleIds.length > 0) {
+      await ensureSheetHeaders("SchoolTeachingNeeds", schoolTeachingNeedHeaders);
+      const needs = await readSheetRows("SchoolTeachingNeeds") as unknown as SchoolTeachingNeed[];
+      const deletedIds = new Set(result.deletedScheduleIds);
+      const affected = needs.filter((need) => need.scheduleId && deletedIds.has(need.scheduleId));
+      if (affected.length > 0) await updateSheetRowsById("SchoolTeachingNeeds", affected.map((need) => ({ id: need.id, patch: { scheduleId: "", assignedDate: "", assignedStart: "", assignedEnd: "", status: "OPEN", updatedAt: new Date().toISOString() } })));
+    }
     invalidateScheduleConflictIndex();
     await appendAuditLog({
       requestId,
@@ -626,6 +695,7 @@ function parseScheduleItems(body: Record<string, unknown>, fallbackTeacherIds: s
           activityTypeCode: String(entry.activityTypeCode || "").trim(),
           teacherIds: Object.hasOwn(entry, "teacherIds") ? parseIdList(entry.teacherIds) : fallbackTeacherIds,
           assistantIds: parseIdList(entry.assistantIds),
+          schoolNeedIds: parseIdList(entry.schoolNeedIds),
         };
       })
       .filter((item) => item.date && item.schoolId && item.classId && item.lessonId && item.timeSlotId);

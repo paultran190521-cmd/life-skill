@@ -101,6 +101,26 @@ export async function sendScheduleEmail(input: ScheduleEmailInput) {
   });
 }
 
+export async function sendScheduleCancellationEmail(input: {
+  teacher: { name?: string; email?: string };
+  schedules: Schedule[];
+  schoolName: string;
+  classNames: string[];
+  slot: { start: string; end: string };
+}) {
+  const requestId = createEmailRequestId();
+  const to = normalizeEmailAddress(input.teacher.email);
+  const scheduleIds = input.schedules.map((row) => row.id);
+  const teacherId = input.schedules[0]?.teacherId || "";
+  if (!to || !isValidEmailAddress(to)) return { sent: false, reason: "Teacher email is missing or invalid." };
+  const subject = `METTASOUL | Lịch dạy ${input.schedules[0]?.date || ""} cần giao lại`;
+  const html = `<!doctype html><html lang="vi"><body style="font-family:Arial,sans-serif;color:#16313a;padding:24px"><h1 style="color:#075f73">Thông báo thay đổi lịch dạy</h1><p>Mến chào thầy (cô) <strong>${escapeHtml(input.teacher.name || "Thầy/Cô")}</strong>, lịch dạy dưới đây đã được quản trị hủy sau khi trường cập nhật. Vui lòng kiểm tra lịch cá nhân trong ứng dụng.</p><p><strong>Ngày:</strong> ${escapeHtml(input.schedules[0]?.date || "")}<br><strong>Giờ cũ:</strong> ${escapeHtml(input.slot.start)}–${escapeHtml(input.slot.end)}<br><strong>Trường:</strong> ${escapeHtml(input.schoolName)}<br><strong>Lớp:</strong> ${escapeHtml(input.classNames.join(", "))}</p><p>Nếu có lịch thay thế, quản trị sẽ giao và gửi xác nhận riêng.</p></body></html>`;
+  const args = { to, subject, html, from: process.env.EMAIL_FROM, requestId, scheduleIds, teacherId };
+  if (process.env.EMAIL_PROVIDER === "gas") return sendViaGas(args);
+  if (process.env.EMAIL_PROVIDER === "smtp") return sendViaSmtp(args);
+  return sendViaResend(args);
+}
+
 export async function sendAttendanceReminderEmail(input: Omit<ScheduleDigestInput, "kind">) {
   return sendScheduleDigestEmail({ ...input, kind: "attendance-reminder" });
 }

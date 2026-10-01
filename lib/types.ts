@@ -132,11 +132,35 @@ export type Schedule = {
   confirmedAt?: string;
   reassignedFrom?: string;
   groupId?: string;
+  /** A merged pair has one display group and two independent payroll periods. */
+  schoolNeedId?: string;
+  mergedPeriodGroupId?: string;
   assistantIds?: string;
   /** Vai trò trả công của giáo viên đứng tên lịch. Trợ giảng được xác định theo assistantIds. */
   teachingRole?: Exclude<TeachingRoleCode, "ASSISTANT">;
   /** Các trợ giảng đã tự xác nhận lịch, lưu dạng id phân tách bằng dấu phẩy. */
   assistantConfirmedIds?: string;
+};
+
+/** A school-supplied class period waiting for the admin to assign a teacher. */
+export type SchoolTeachingNeed = {
+  id: string;
+  date: string;
+  schoolId: string;
+  classId: string;
+  periodLabel: string;
+  start: string;
+  end: string;
+  teachingEnvironment: TeachingEnvironment;
+  sourceNote?: string;
+  scheduleId?: string;
+  /** Snapshot of the school period when its teacher was last assigned. */
+  assignedDate?: string;
+  assignedStart?: string;
+  assignedEnd?: string;
+  status: "OPEN" | "ASSIGNED" | "CANCELLED" | "REVIEW";
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type LessonPlan = {

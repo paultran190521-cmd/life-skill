@@ -69,6 +69,7 @@ import {
 import { classifySchedulingParticipantIds } from "@/lib/scheduling-participants";
 import { normalizeScheduleParticipantScope, resolveScheduleParticipantSelection } from "@/lib/schedule-participant-scope";
 import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy";
+import { findConfiguredSchoolNeedMergeSlot } from "@/lib/school-need-merge";
 import { scheduledLessonSections } from "@/lib/lessons";
 import { attendanceLookupKey, groupByKey, indexById, legacyScheduleGroupKey, buildTextSearchIndex, searchTextIndex } from "@/lib/view-index";
 import {
@@ -113,6 +114,7 @@ import type {
   Role,
   Schedule,
   School,
+  SchoolTeachingNeed,
   Teacher,
   TeacherAvailability,
   TeacherAvailabilityScope,
@@ -167,10 +169,24 @@ type DraftScheduleItem = {
   teacherIds: string[];
   topicId: string;
   assistantIds: string[];
+  schoolNeedIds?: string[];
 };
 
 type DraftSchedule = {
   items: DraftScheduleItem[];
+};
+
+type SchoolNeedWorkbookRow = {
+  id?: string;
+  date: string;
+  school: string;
+  className: string;
+  session?: string;
+  periodLabel: string;
+  start: string;
+  end: string;
+  environment: string;
+  sourceNote?: string;
 };
 
 type AppData = {
@@ -761,6 +777,13 @@ export function MettasoulApp() {
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
     items: [createDraftScheduleItem()],
   });
+  const [assignmentWeekStart, setAssignmentWeekStart] = useState(() => mondayDateKey(currentDateKey()));
+  const [assignmentSchoolId, setAssignmentSchoolId] = useState("");
+  const [schoolNeeds, setSchoolNeeds] = useState<SchoolTeachingNeed[]>([]);
+  const [schoolNeedLoadError, setSchoolNeedLoadError] = useState("");
+  const [schoolNeedImport, setSchoolNeedImport] = useState<{ rows: SchoolNeedWorkbookRow[]; revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; changes: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> } | null>(null);
+  const [editingSchoolNeedId, setEditingSchoolNeedId] = useState("");
+  const [editingSchoolNeedDraft, setEditingSchoolNeedDraft] = useState<SchoolNeedWorkbookRow | null>(null);
   const [teacherDraft, setTeacherDraft] = useState({
     name: "",
     email: "",
@@ -1200,6 +1223,23 @@ export function MettasoulApp() {
   }, [activeTab, authStatus, role, weeklyLoaded, dataStatus]);
 
   useEffect(() => {
+    if (authStatus !== "signed-in" || role !== "admin" || activeTab !== "assignment" || !assignmentSchoolId) return;
+    let cancelled = false;
+    const end = addDaysToDateKey(assignmentWeekStart, 6);
+    setSchoolNeedLoadError("");
+    void apiRequest<{ needs: SchoolTeachingNeed[]; revision: string }>(`/api/school-teaching-needs?from=${assignmentWeekStart}&to=${end}&schoolId=${encodeURIComponent(assignmentSchoolId)}`)
+      .then((result) => {
+        if (cancelled) return;
+        setSchoolNeeds(result.needs);
+        const schoolName = schools.find((row) => row.id === assignmentSchoolId)?.name || "";
+        const schoolSlots = activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolName));
+        setDraftSchedule({ items: draftItemsFromSchoolNeeds(result.needs, schoolSlots) });
+      })
+      .catch((error) => { if (!cancelled) setSchoolNeedLoadError(error instanceof Error ? error.message : "Không tải được lịch trường."); });
+    return () => { cancelled = true; };
+  }, [activeTab, authStatus, role, assignmentWeekStart, assignmentSchoolId, activeTimeSlots, schools]);
+
+  useEffect(() => {
     if (authStatus !== "signed-in" || role !== "admin" || !expandedHistoryScheduleId) return;
     let cancelled = false;
     setHistoryLoadError("");
@@ -1440,6 +1480,7 @@ export function MettasoulApp() {
   useEffect(() => {
     setDraftSchedule((current) => {
       if (current.items.length === 0) {
+        if (assignmentSchoolId) return current;
         const defaultSchoolId = schools[0]?.id ?? "";
         const defaultGrade = pickDefaultGradeForSchool(defaultSchoolId, current.items[0]?.classId ?? "", classes);
         const defaultClassId = pickClassIdForSchoolGrade(
@@ -1486,7 +1527,7 @@ export function MettasoulApp() {
       }
       return { ...current, items: nextItems };
     });
-  }, [schools, classes, activeLessons, activeTimeSlots]);
+  }, [schools, classes, activeLessons, activeTimeSlots, assignmentSchoolId]);
 
   useEffect(() => {
     const activeTeacherIds = new Set(activeSchedulingTeachers.map((teacher) => teacher.id));
@@ -2496,6 +2537,11 @@ export function MettasoulApp() {
       (item) => item.date && item.schoolId && item.classId && item.lessonId && item.lessonPeriods.length > 0 && item.timeSlotId,
     );
 
+    if (validItems.length !== draftSchedule.items.length) {
+      pushToast("Lịch chưa hoàn chỉnh", "Hãy chọn bài học, tên tiết và kiểm tra khung giờ cho tất cả các lớp trước khi gửi.", "warning");
+      return;
+    }
+
     if (validItems.length === 0) {
       pushToast("Thiếu lịch dạy", "Hãy thêm ít nhất một dòng lịch dạy hợp lệ trước khi gửi.", "warning");
       return;
@@ -2594,6 +2640,7 @@ export function MettasoulApp() {
             activityTypeCode: item.activityTypeCode,
             teacherIds: item.teacherIds,
             assistantIds: item.assistantIds.length > 0 ? item.assistantIds.join(",") : undefined,
+            schoolNeedIds: item.schoolNeedIds,
           })),
           createdBy: currentUser.id,
         }),
@@ -2611,12 +2658,19 @@ export function MettasoulApp() {
     }
 
     setSchedules((items) => [...created, ...items]);
+    if (validItems.some((item) => item.schoolNeedIds?.length)) {
+      const assignedNeedIds = new Set(validItems.flatMap((item) => item.schoolNeedIds ?? []));
+      const scheduleByNeedId = new Map(created.filter((schedule) => schedule.schoolNeedId).map((schedule) => [schedule.schoolNeedId!, schedule.id]));
+      setSchoolNeeds((items) => items.map((need) => assignedNeedIds.has(need.id) ? { ...need, status: "ASSIGNED", scheduleId: scheduleByNeedId.get(need.id) || need.scheduleId, assignedDate: need.date, assignedStart: need.start, assignedEnd: need.end } : need));
+    }
     // Sending a schedule is a completed transaction. Start the next batch with
     // no school/class/time preselected so a previous school's choices cannot
     // accidentally carry over into the next assignment.
-    setDraftSchedule({
-      items: [createDraftScheduleItem({ teachingEnvironment: defaultTeachingEnvironment })],
-    });
+    if (assignmentSchoolId) {
+      setDraftSchedule({ items: [] });
+    } else {
+      setDraftSchedule({ items: [createDraftScheduleItem({ teachingEnvironment: defaultTeachingEnvironment })] });
+    }
     const sentEmails = emailResults.filter((item) => item.sent).length;
     const failedEmails = emailResults.length - sentEmails;
     if (emailResults.length > 0) {
@@ -6159,6 +6213,134 @@ export function MettasoulApp() {
   function renderAssignmentPanel() {
     const activeTopics = topics.filter((t) => t.active !== false);
 
+    const weekEnd = addDaysToDateKey(assignmentWeekStart, 6);
+    const weekNeeds = schoolNeeds.filter((need) => need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd);
+
+    async function downloadSchoolNeedWorkbook(includeCurrent: boolean) {
+      const XLSX = await import("xlsx-js-style");
+      const workbook = XLSX.utils.book_new();
+      const headers = ["Mã dòng (giữ khi sửa)", "Ngày dạy", "Trường", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Nguồn/Ghi chú"];
+      const data = includeCurrent ? weekNeeds.map((need) => [
+        need.id, need.date, schoolById.get(need.schoolId)?.name || "", classById.get(need.classId)?.name || "",
+        need.start < "12:00" ? "Sáng" : "Chiều", need.periodLabel, need.start, need.end,
+        teachingEnvironmentOptions.find((option) => option.value === need.teachingEnvironment)?.label || "Trong lớp", need.sourceNote || "",
+      ]) : [];
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+      worksheet["!cols"] = [21, 15, 28, 20, 12, 16, 14, 14, 20, 34].map((wch) => ({ wch }));
+      applyMettasoulExcelBrand(XLSX, worksheet, { headerRow: 0 });
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Lich truong");
+      const guide = XLSX.utils.aoa_to_sheet([
+        ["HƯỚNG DẪN NHẬP LỊCH TRƯỜNG"],
+        ["Mỗi dòng là một lớp, một tiết, một ngày dạy. Agent chuyển lịch theo thứ và khoảng hiệu lực thành các ngày cụ thể."],
+        ["Lần nhập đầu để trống Mã dòng. Khi sửa, tải bản hiện tại từ app rồi giữ nguyên mã của dòng cần sửa."],
+        ["Ngày dạy: YYYY-MM-DD hoặc DD/MM/YYYY. Giờ: HH:MM. Tên trường và lớp phải khớp dữ liệu trong app."],
+        ["Môi trường: Trong lớp, Ngoài sân, Nhà thi đấu, Hội trường hoặc Báo cáo chuyên đề."],
+        ["Tên bài và tên tiết học được admin chọn trên màn hình Giao lịch; không nhập vào file này."],
+        ["Dòng không có trong file sửa đổi sẽ không tự bị xóa khỏi hệ thống."],
+      ]);
+      guide["!cols"] = [{ wch: 110 }];
+      XLSX.utils.book_append_sheet(workbook, guide, "Huong dan");
+      const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = includeCurrent ? `lich-truong-${assignmentWeekStart}-${assignmentSchoolId}.xlsx` : "mau-lich-truong-mettasoul.xlsx";
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    async function previewSchoolNeedWorkbook(file: File) {
+      try {
+        if (!/\.xlsx$/i.test(file.name)) throw new Error("Hãy chọn file Excel .xlsx đúng mẫu.");
+        const XLSX = await import("xlsx-js-style");
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+        const sheet = workbook.Sheets["Lich truong"] || workbook.Sheets[workbook.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: "", raw: false });
+        if (raw.length === 0) throw new Error("File chưa có dòng lịch nào.");
+        const rows: SchoolNeedWorkbookRow[] = raw.map((row) => ({
+          id: String(row["Mã dòng (giữ khi sửa)"] || "").trim(),
+          date: String(row["Ngày dạy"] || "").trim(),
+          school: String(row["Trường"] || "").trim(),
+          className: String(row["Lớp"] || "").trim(),
+          session: String(row["Buổi"] || "").trim(),
+          periodLabel: String(row["Tiết"] || "").trim(),
+          start: String(row["Bắt đầu"] || "").trim(),
+          end: String(row["Kết thúc"] || "").trim(),
+          environment: String(row["Môi trường"] || "").trim(),
+          sourceNote: String(row["Nguồn/Ghi chú"] || "").trim(),
+        }));
+        const result = await saveRequest<{ revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; rows: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> }>("Đang đối chiếu lịch trường...", "/api/school-teaching-needs", { method: "POST", body: JSON.stringify({ mode: "preview", rows }) });
+        setSchoolNeedImport({ rows, revision: result.revision, summary: result.summary, changes: result.rows });
+      } catch (error) { handleSaveError(error); }
+    }
+
+    async function applySchoolNeedWorkbook() {
+      if (!schoolNeedImport) return;
+      try {
+        const result = await saveRequest<{ summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; needs: SchoolTeachingNeed[] }>("Đang nhập lịch trường...", "/api/school-teaching-needs", { method: "POST", body: JSON.stringify({ mode: "apply", revision: schoolNeedImport.revision, rows: schoolNeedImport.rows }) });
+        setSchoolNeedImport(null);
+        const currentWeekNeeds = result.needs.filter((need) => need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd);
+        setSchoolNeeds(currentWeekNeeds);
+        const schoolName = schoolById.get(assignmentSchoolId)?.name || "";
+        setDraftSchedule({ items: draftItemsFromSchoolNeeds(currentWeekNeeds, activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolName))) });
+        pushToast("Đã nhập lịch trường", `${result.summary.newCount} dòng mới · ${result.summary.changedCount} dòng sửa · ${result.summary.duplicateCount} dòng trùng.`, "success");
+      } catch (error) { handleSaveError(error); }
+    }
+
+    function startEditSchoolNeed(need: SchoolTeachingNeed) {
+      setEditingSchoolNeedId(need.id);
+      setEditingSchoolNeedDraft({
+        id: need.id,
+        date: need.date,
+        school: schoolById.get(need.schoolId)?.name || need.schoolId,
+        className: classById.get(need.classId)?.name || need.classId,
+        session: need.start < "12:00" ? "Sáng" : "Chiều",
+        periodLabel: need.periodLabel,
+        start: need.start,
+        end: need.end,
+        environment: teachingEnvironmentOptions.find((option) => option.value === need.teachingEnvironment)?.label || "Trong lớp",
+        sourceNote: need.sourceNote || "",
+      });
+    }
+
+    async function saveSchoolNeedEdit() {
+      if (!editingSchoolNeedDraft) return;
+      try {
+        const result = await saveRequest<{ need: SchoolTeachingNeed }>("Đang sửa lịch trường...", "/api/school-teaching-needs", { method: "PATCH", body: JSON.stringify(editingSchoolNeedDraft) });
+        const next = weekNeeds.map((need) => need.id === result.need.id ? result.need : need);
+        setSchoolNeeds(next);
+        setDraftSchedule({ items: draftItemsFromSchoolNeeds(next.filter((need) => need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd), activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || ""))) });
+        setEditingSchoolNeedId("");
+        setEditingSchoolNeedDraft(null);
+        pushToast("Đã sửa dòng lịch trường", result.need.status === "REVIEW" ? "Lịch đã giao cần admin xem lại trước khi áp dụng thay đổi." : "Danh sách cần giao đã cập nhật.", result.need.status === "REVIEW" ? "warning" : "success");
+      } catch (error) { handleSaveError(error); }
+    }
+
+    async function deleteSchoolNeed(need: SchoolTeachingNeed) {
+      if (!window.confirm(`Xóa dòng ${formatDate(need.date)} · ${classById.get(need.classId)?.name || need.classId} · ${need.start}–${need.end}?`)) return;
+      try {
+        await saveRequest<{ deletedId: string }>("Đang xóa dòng lịch trường...", "/api/school-teaching-needs", { method: "DELETE", body: JSON.stringify({ id: need.id }) });
+        setSchoolNeeds((rows) => rows.filter((row) => row.id !== need.id));
+        setDraftSchedule((current) => ({ items: current.items.filter((item) => !item.schoolNeedIds?.includes(need.id)) }));
+        pushToast("Đã xóa dòng chưa giao", "Lịch trường đã được cập nhật.", "success");
+      } catch (error) { handleSaveError(error); }
+    }
+
+    async function reconcileSchoolNeed(need: SchoolTeachingNeed) {
+      if (!window.confirm(`Đối chiếu lịch đã giao cho ${classById.get(need.classId)?.name || need.classId} ngày ${formatDate(need.date)}? Nếu ngày hoặc giờ thay đổi, lịch cũ sẽ hủy và tiết trở lại danh sách cần giao.`)) return;
+      try {
+        const result = await saveRequest<{ outcome: "KEPT" | "REASSIGN"; scheduleIds: string[]; needIds: string[]; cancellationEmails: Array<{ teacherId: string; sent: boolean }>; updateEmails: Array<{ teacherId: string; sent: boolean }> }>("Đang đối chiếu lịch đã giao...", "/api/school-teaching-needs/reconcile", { method: "POST", body: JSON.stringify({ id: need.id }) });
+        const affectedNeeds = new Set(result.needIds);
+        const affectedSchedules = new Set(result.scheduleIds);
+        const next = schoolNeeds.map((row) => affectedNeeds.has(row.id) ? { ...row, status: result.outcome === "KEPT" ? "ASSIGNED" as const : "OPEN" as const, scheduleId: result.outcome === "KEPT" ? row.scheduleId : "" } : row);
+        setSchoolNeeds(next);
+        setSchedules((rows) => rows.map((row) => affectedSchedules.has(row.id) ? result.outcome === "KEPT" ? { ...row, classId: need.classId, participantClassIds: need.classId, teachingEnvironment: need.teachingEnvironment } : { ...row, status: "cancelled" } : row));
+        if (result.outcome === "REASSIGN") setDraftSchedule({ items: draftItemsFromSchoolNeeds(next, activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || ""))) });
+        const failedEmailCount = [...result.cancellationEmails, ...result.updateEmails].filter((email) => !email.sent).length;
+        pushToast(result.outcome === "KEPT" ? "Đã giữ giáo viên" : "Cần giao lại", `${result.outcome === "KEPT" ? "Lịch đã giao được cập nhật theo lớp và môi trường mới." : "Lịch cũ đã hủy; hãy giao lại các tiết."}${failedEmailCount ? ` ${failedEmailCount} email thay đổi lịch chưa gửi được, cần thông báo giáo viên trực tiếp.` : ""}`, result.outcome === "KEPT" ? "success" : "warning");
+      } catch (error) { handleSaveError(error); }
+    }
+
     function updateDraftItem(itemId: string, patch: Partial<DraftScheduleItem>) {
       setDraftSchedule((current) => ({
         ...current,
@@ -6190,7 +6372,9 @@ export function MettasoulApp() {
         ...current,
         items: current.items.map((ci) => {
           if (ci.id !== itemId) return ci;
-          const next = checked ? Array.from(new Set([...ci.teacherIds, teacherId])) : ci.teacherIds.filter((id) => id !== teacherId);
+          const next = checked
+            ? ci.schoolNeedIds?.length ? [teacherId] : Array.from(new Set([...ci.teacherIds, teacherId]))
+            : ci.teacherIds.filter((id) => id !== teacherId);
           return { ...ci, teacherIds: next, assistantIds: checked ? ci.assistantIds.filter((id) => id !== teacherId) : ci.assistantIds };
         }),
       }));
@@ -6210,13 +6394,66 @@ export function MettasoulApp() {
     return (
       <div className="space-y-5">
         {renderAdminAvailabilityPanel()}
+        <Panel title="Lịch trường theo tuần" action={assignmentSchoolId ? `${weekNeeds.length} tiết trong tuần` : "Chọn trường để bắt đầu"}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-sm font-bold text-[var(--brand-dark)]">Tuần có ngày
+              <input type="date" value={assignmentWeekStart} onChange={(event) => setAssignmentWeekStart(mondayDateKey(event.target.value))} className={`${inputClass} mt-1 w-full`} />
+            </label>
+            <label className="text-sm font-bold text-[var(--brand-dark)]">Trường
+              <select value={assignmentSchoolId} onChange={(event) => { setAssignmentSchoolId(event.target.value); setDraftSchedule({ items: event.target.value ? [] : [createDraftScheduleItem()] }); setSchoolNeeds([]); }} className={`${inputClass} mt-1 w-full`}>
+                <option value="">Chọn trường</option>
+                {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
+              </select>
+            </label>
+          </div>
+          <p className="mt-2 text-xs font-semibold text-[var(--muted)]">Đang xem {formatDate(assignmentWeekStart)}–{formatDate(weekEnd)}. Các dòng chưa giao tự xuất hiện bên dưới theo giờ, kèm lớp và môi trường dạy.</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => void downloadSchoolNeedWorkbook(false)} className="rounded-xl border border-cyan-300 px-3 py-2 text-xs font-bold text-cyan-900">Tải mẫu Excel</button>
+            <button type="button" disabled={!assignmentSchoolId || weekNeeds.length === 0} onClick={() => void downloadSchoolNeedWorkbook(true)} className="rounded-xl border border-cyan-300 px-3 py-2 text-xs font-bold text-cyan-900 disabled:opacity-40">Tải lịch tuần để sửa</button>
+            <label className="cursor-pointer rounded-xl bg-cyan-700 px-3 py-2 text-xs font-bold text-white">Tải Excel lịch trường lên
+              <input type="file" accept=".xlsx" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void previewSchoolNeedWorkbook(file); event.target.value = ""; }} />
+            </label>
+          </div>
+          {schoolNeedImport ? <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+            <p className="font-black">Đối chiếu: {schoolNeedImport.summary.newCount} mới · {schoolNeedImport.summary.changedCount} sửa · {schoolNeedImport.summary.duplicateCount} trùng · {schoolNeedImport.summary.reviewCount} lịch đã giao cần xem lại.</p>
+            <div className="mt-2 max-h-48 space-y-1 overflow-auto">{schoolNeedImport.changes.filter((change) => change.action !== "SAME").map((change, index) => <p key={`${change.after.id || "new"}-${index}`} className="rounded-lg bg-white/80 px-2 py-1 text-xs">
+              <strong>{change.action === "NEW" ? "Mới" : change.before?.scheduleId ? "Sửa · cần xem lịch đã giao" : "Sửa"}</strong> · {formatDate(change.after.date)} · {schoolById.get(change.after.schoolId)?.name || change.after.schoolId} · {classById.get(change.after.classId)?.name || change.after.classId} · {change.after.start}–{change.after.end}
+              {change.before ? ` (cũ: ${formatDate(change.before.date)} · ${classById.get(change.before.classId)?.name || change.before.classId} · ${change.before.start}–${change.before.end})` : ""}
+            </p>)}</div>
+            <button type="button" onClick={() => void applySchoolNeedWorkbook()} className="mt-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white">Xác nhận nhập các dòng mới và sửa</button>
+          </div> : null}
+          {schoolNeedLoadError ? <p role="alert" className="mt-3 text-sm text-rose-700">{schoolNeedLoadError}</p> : null}
+          {weekNeeds.length > 0 ? <div className="mt-3 flex flex-wrap gap-2">{Array.from(new Set(weekNeeds.map((need) => need.date))).sort().map((date) => {
+            const dayNeeds = weekNeeds.filter((need) => need.date === date);
+            return <span key={date} className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-bold text-cyan-900">{formatDate(date)} · {new Set(dayNeeds.map((need) => need.classId)).size} lớp · {dayNeeds.length} tiết · {dayNeeds.filter((need) => need.status === "OPEN").length} cần giao</span>;
+          })}</div> : null}
+          {assignmentSchoolId ? <div className="mt-3 space-y-1">
+            {weekNeeds.length === 0 ? <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">Tuần này chưa có lịch trường đã nhập.</p> : weekNeeds.slice().sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start) || a.classId.localeCompare(b.classId)).map((need) => <div key={need.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs">
+              <span><strong>{formatDate(need.date)} · {need.start}–{need.end}</strong> · {classById.get(need.classId)?.name || need.classId} · {need.periodLabel}</span>
+              <span className="flex items-center gap-2"><span className={need.status === "OPEN" ? "font-bold text-amber-800" : need.status === "REVIEW" ? "font-bold text-rose-700" : "font-bold text-emerald-700"}>{need.status === "OPEN" ? "Cần giao" : need.status === "REVIEW" ? "Cần xem lại lịch đã giao" : need.status === "ASSIGNED" ? `Đã giao: ${teacherName(schedules.find((schedule) => schedule.id === need.scheduleId || schedule.schoolNeedId === need.id)?.teacherId || "")}` : "Đã hủy"}</span>{need.status === "REVIEW" ? <button type="button" onClick={() => void reconcileSchoolNeed(need)} className="font-bold text-rose-700 underline">Đối chiếu và áp dụng</button> : null}<button type="button" onClick={() => startEditSchoolNeed(need)} className="font-bold text-cyan-800 underline">Sửa</button>{!need.scheduleId ? <button type="button" onClick={() => void deleteSchoolNeed(need)} className="font-bold text-rose-700 underline">Xóa</button> : null}</span>
+            </div>)}
+          </div> : null}
+          {editingSchoolNeedDraft && editingSchoolNeedId ? <div className="mt-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3">
+            <p className="mb-2 text-sm font-black text-cyan-950">Sửa dòng lịch trường</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <label className="text-xs font-bold">Ngày<input type="date" value={editingSchoolNeedDraft.date} onChange={(event) => setEditingSchoolNeedDraft((row) => row && ({ ...row, date: event.target.value }))} className={`${inputClass} mt-1 w-full`} /></label>
+              <label className="text-xs font-bold">Lớp<select value={editingSchoolNeedDraft.className} onChange={(event) => setEditingSchoolNeedDraft((row) => row && ({ ...row, className: event.target.value }))} className={`${inputClass} mt-1 w-full`}>{classesForSchool(classes, assignmentSchoolId).map((row) => <option key={row.id} value={row.name}>{row.name}</option>)}</select></label>
+              <label className="text-xs font-bold">Tiết<input value={editingSchoolNeedDraft.periodLabel} onChange={(event) => setEditingSchoolNeedDraft((row) => row && ({ ...row, periodLabel: event.target.value }))} className={`${inputClass} mt-1 w-full`} /></label>
+              <label className="text-xs font-bold">Bắt đầu<input type="time" value={editingSchoolNeedDraft.start} onChange={(event) => setEditingSchoolNeedDraft((row) => row && ({ ...row, start: event.target.value, session: event.target.value < "12:00" ? "Sáng" : "Chiều" }))} className={`${inputClass} mt-1 w-full`} /></label>
+              <label className="text-xs font-bold">Kết thúc<input type="time" value={editingSchoolNeedDraft.end} onChange={(event) => setEditingSchoolNeedDraft((row) => row && ({ ...row, end: event.target.value }))} className={`${inputClass} mt-1 w-full`} /></label>
+              <label className="text-xs font-bold">Môi trường<select value={editingSchoolNeedDraft.environment} onChange={(event) => setEditingSchoolNeedDraft((row) => row && ({ ...row, environment: event.target.value }))} className={`${inputClass} mt-1 w-full`}>{teachingEnvironmentOptions.map((option) => <option key={option.value} value={option.label}>{option.label}</option>)}</select></label>
+              <label className="text-xs font-bold sm:col-span-3">Ghi chú<input value={editingSchoolNeedDraft.sourceNote || ""} onChange={(event) => setEditingSchoolNeedDraft((row) => row && ({ ...row, sourceNote: event.target.value }))} className={`${inputClass} mt-1 w-full`} /></label>
+            </div>
+            <div className="mt-3 flex gap-2"><button type="button" onClick={() => void saveSchoolNeedEdit()} className="rounded-lg bg-cyan-700 px-3 py-2 text-xs font-black text-white">Lưu thay đổi</button><button type="button" onClick={() => { setEditingSchoolNeedId(""); setEditingSchoolNeedDraft(null); }} className="rounded-lg border border-cyan-300 px-3 py-2 text-xs font-bold">Đóng</button></div>
+          </div> : null}
+        </Panel>
         <div className="grid gap-5 xl:grid-cols-[0.9fr_1.35fr]">
           <Panel title="Tạo lịch dạy mới" action="Email xác nhận">
             <div className="grid gap-4">
               <div className="rounded-2xl border border-cyan-100 bg-cyan-50/55 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-extrabold text-[var(--brand-dark)]">Danh sách tiết dạy cần giao</p>
-                  <button
+                  {!assignmentSchoolId ? <button
                     type="button"
                     onClick={() =>
                       setDraftSchedule((current) => {
@@ -6248,7 +6485,7 @@ export function MettasoulApp() {
                   >
                     <Plus size={14} />
                     Thêm dòng
-                  </button>
+                  </button> : null}
                 </div>
                 <div className="mt-3 grid gap-3">
                   {draftSchedule.items.map((item, index) => {
@@ -6270,6 +6507,13 @@ export function MettasoulApp() {
                       : rowLessonsAll;
                     const rowGrades = gradesForClasses(rowClasses);
                     const selectedSlot = activeTimeSlots.find((slot) => slot.id === item.timeSlotId);
+                    const sourceNeed = item.schoolNeedIds?.length === 1 ? schoolNeeds.find((need) => need.id === item.schoolNeedIds?.[0]) : undefined;
+                    const mergeCandidate = sourceNeed ? draftSchedule.items
+                      .map((candidate) => ({ draft: candidate, need: schoolNeeds.find((need) => need.id === candidate.schoolNeedIds?.[0]) }))
+                      .filter(({ draft, need }) => draft.id !== item.id && draft.schoolNeedIds?.length === 1 && need?.date === sourceNeed.date && need.schoolId === sourceNeed.schoolId && need.classId === sourceNeed.classId && need.teachingEnvironment === sourceNeed.teachingEnvironment && need.start >= sourceNeed.end)
+                      .map((candidate) => ({ ...candidate, slot: candidate.need ? findConfiguredSchoolNeedMergeSlot(sourceNeed, candidate.need, activeTimeSlots, rowSchool?.name || "") : null }))
+                      .find((candidate) => candidate.slot) : undefined;
+                    const pairSlot = mergeCandidate?.slot;
                     const rowDateTeachers = activeSchedulingTeachers.filter((teacher) =>
                       isTeacherAvailableOnDate(teacherAvailability, teacher.id, item.date),
                     );
@@ -6291,8 +6535,16 @@ export function MettasoulApp() {
                     return (
                       <div key={item.id} className="rounded-2xl border border-cyan-100 bg-white p-3 shadow-sm">
                         <div className="mb-2 flex items-center justify-between">
-                          <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Lịch #{index + 1}</p>
-                          <button
+                          <p className="text-xs font-black uppercase text-[var(--brand-dark)]">{item.schoolNeedIds?.length ? `${formatDate(item.date)} · ${rowClasses.find((row) => row.id === item.classId)?.name || "Lớp"} · ${selectedSlot?.start || "--:--"}–${selectedSlot?.end || "--:--"}` : `Lịch #${index + 1}`}</p>
+                          {pairSlot && mergeCandidate ? <button type="button" onClick={() => setDraftSchedule((current) => ({ items: current.items.filter((row) => row.id !== mergeCandidate.draft.id).map((row) => row.id === item.id ? { ...row, schoolNeedIds: [sourceNeed!.id, mergeCandidate.need!.id], timeSlotId: pairSlot.id, lessonPeriods: ["lesson1", "lesson2"], teacherIds: [], assistantIds: [] } : row) }))} className="rounded-lg bg-violet-100 px-2 py-1 text-xs font-black text-violet-800">Gộp 2 tiết · {pairSlot.start}–{pairSlot.end}</button> : null}
+                          {item.schoolNeedIds?.length === 2 ? <button type="button" onClick={() => {
+                            const source = item.schoolNeedIds!.map((id) => schoolNeeds.find((need) => need.id === id)).filter((need): need is SchoolTeachingNeed => Boolean(need));
+                            if (source.length !== 2) return;
+                            const singleSlots = activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, rowSchool?.name || ""));
+                            const split = source.map((need, periodIndex) => createDraftScheduleItem({ ...item, id: createId("draft"), schoolNeedIds: [need.id], timeSlotId: singleSlots.find((slot) => slot.start === need.start && slot.end === need.end)?.id || "", lessonPeriods: [periodIndex === 0 ? "lesson1" : "lesson2"], teacherIds: [], assistantIds: [] }));
+                            setDraftSchedule((current) => ({ items: current.items.flatMap((row) => row.id === item.id ? split : [row]) }));
+                          }} className="rounded-lg bg-violet-100 px-2 py-1 text-xs font-black text-violet-800">Đã gộp · tách lại</button> : null}
+                          {!item.schoolNeedIds?.length ? <button
                             type="button"
                             onClick={() =>
                               setDraftSchedule((current) => ({
@@ -6307,17 +6559,19 @@ export function MettasoulApp() {
                             className="grid h-8 w-8 place-items-center rounded-lg bg-rose-50 text-rose-700 disabled:opacity-50"
                           >
                             <Trash2 size={14} />
-                          </button>
+                          </button> : null}
                         </div>
                         <div className="grid gap-3 md:grid-cols-2">
                           <input
                             type="date"
                             value={item.date}
+                            disabled={Boolean(item.schoolNeedIds?.length)}
                             onChange={(e) => updateDraftItem(item.id, { date: e.target.value })}
                             className={inputClass}
                           />
                           <select
                             value={item.teachingEnvironment}
+                            disabled={Boolean(item.schoolNeedIds?.length)}
                             onChange={(e) => {
                               const teachingEnvironment = normalizeTeachingEnvironmentValue(e.target.value);
                               updateDraftItem(item.id, {
@@ -6351,6 +6605,7 @@ export function MettasoulApp() {
                           </div> : null}
                           <select
                             value={item.schoolId}
+                            disabled={Boolean(item.schoolNeedIds?.length)}
                             onChange={(e) => {
                               const schoolId = e.target.value;
                               const grade = pickDefaultGradeForSchool(schoolId, item.classId, classes);
@@ -6386,6 +6641,7 @@ export function MettasoulApp() {
                           </select>
                           <select
                             value={rowSelectedGrade}
+                            disabled={Boolean(item.schoolNeedIds?.length)}
                             onChange={(e) => {
                               const grade = e.target.value;
                               const classId = pickClassIdForSchoolGrade(item.schoolId, grade, item.classId, classes);
@@ -6422,6 +6678,7 @@ export function MettasoulApp() {
                           {item.teachingEnvironment === "in_class" ? (
                             <select
                               value={item.classId}
+                              disabled={Boolean(item.schoolNeedIds?.length)}
                               onChange={(e) => {
                                 const classId = e.target.value;
                                 updateDraftItem(item.id, {
@@ -6447,6 +6704,7 @@ export function MettasoulApp() {
                           ) : null}
                           <select
                             value={item.timeSlotId}
+                            disabled={Boolean(item.schoolNeedIds?.length)}
                             onChange={(e) => updateDraftItem(item.id, { timeSlotId: e.target.value })}
                             className={inputClass}
                           >
@@ -6490,7 +6748,7 @@ export function MettasoulApp() {
                             onChange={(e) => {
                               const lessonId = e.target.value;
                               const lesson = activeLessons.find((entry) => entry.id === lessonId);
-                              updateDraftItem(item.id, { lessonId, lessonPeriods: defaultLessonPeriods(lesson) });
+                              updateDraftItem(item.id, { lessonId, lessonPeriods: item.schoolNeedIds?.length === 2 && lesson?.lesson2Title ? ["lesson1", "lesson2"] : defaultLessonPeriods(lesson) });
                             }}
                             className={inputClass}
                           >
@@ -12248,7 +12506,26 @@ function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftSchedu
     teacherIds: seed?.teacherIds ?? [],
     topicId: seed?.topicId ?? "",
     assistantIds: seed?.assistantIds ?? [],
+    schoolNeedIds: seed?.schoolNeedIds,
   };
+}
+
+function draftItemsFromSchoolNeeds(needs: SchoolTeachingNeed[], slots: TimeSlot[]): DraftScheduleItem[] {
+  return needs.filter((need) => need.status === "OPEN" && !need.scheduleId)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start) || a.classId.localeCompare(b.classId))
+    .map((need) => createDraftScheduleItem({
+      date: need.date,
+      schoolId: need.schoolId,
+      classId: need.classId,
+      classIds: [need.classId],
+      teachingEnvironment: need.teachingEnvironment,
+      timeSlotId: slots.find((slot) => slot.start === need.start && slot.end === need.end)?.id || "",
+      lessonId: "",
+      lessonPeriods: ["lesson1"],
+      schoolNeedIds: [need.id],
+      teacherIds: [],
+      assistantIds: [],
+    }));
 }
 
 function lessonPeriodOptions(lesson: Lesson | undefined): Array<{ value: LessonPeriod; label: string }> {
@@ -12419,7 +12696,7 @@ function normalizeDraftScheduleItem(
     requestedClassIds: classIds,
   }, classesForSchool(context.classes, schoolId));
   const { participantScope, participantGrade, classIds: normalizedClassIds } = participantSelection;
-  const lessonId = classId
+  const lessonId = item.schoolNeedIds?.length && !item.lessonId ? "" : classId
     ? pickLessonIdForClass(classId, item.lessonId, context.classes, context.activeLessons)
     : "";
   const lesson = context.activeLessons.find((entry) => entry.id === lessonId);
@@ -12427,7 +12704,7 @@ function normalizeDraftScheduleItem(
   const schoolSlots = schoolId
     ? schedulingTimeSlotsForSchool(context.activeTimeSlots, school?.name ?? "")
     : [];
-  const timeSlotId = schoolSlots.some((slot) => slot.id === item.timeSlotId)
+  const timeSlotId = item.schoolNeedIds?.length && !item.timeSlotId ? "" : schoolSlots.some((slot) => slot.id === item.timeSlotId)
     ? item.timeSlotId
     : schoolSlots[0]?.id ?? "";
   const date = /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : currentDateKey();
@@ -13001,6 +13278,13 @@ function formatDateTime(value: string) {
 
 function currentDateKey() {
   return toDateKey(new Date());
+}
+
+function mondayDateKey(dateKey: string) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return currentDateKey();
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+  return toDateKey(date);
 }
 
 function dateTimeDateKey(value: string) {
