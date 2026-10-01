@@ -6217,6 +6217,24 @@ export function MettasoulApp() {
 
     const weekEnd = addDaysToDateKey(assignmentWeekStart, 6);
     const weekNeeds = schoolNeeds.filter((need) => need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd);
+    const draftNeedById = new Map(schoolNeeds.map((need) => [need.id, need]));
+    const mergeSuggestions = new Map<string, { draft: DraftScheduleItem; need: SchoolTeachingNeed; slot: TimeSlot }>();
+    for (const item of draftSchedule.items) {
+      if (item.schoolNeedIds?.length !== 1) continue;
+      const first = draftNeedById.get(item.schoolNeedIds[0]);
+      if (!first) continue;
+      const schoolName = schoolById.get(first.schoolId)?.name || "";
+      for (const candidate of draftSchedule.items) {
+        if (candidate.id === item.id || candidate.schoolNeedIds?.length !== 1) continue;
+        const second = draftNeedById.get(candidate.schoolNeedIds[0]);
+        if (!second || second.start < first.end) continue;
+        const slot = findConfiguredSchoolNeedMergeSlot(first, second, activeTimeSlots, schoolName);
+        if (slot) {
+          mergeSuggestions.set(item.id, { draft: candidate, need: second, slot });
+          break;
+        }
+      }
+    }
 
     async function downloadSchoolNeedWorkbook(includeCurrent: boolean) {
       const XLSX = await import("xlsx-js-style");
@@ -6499,8 +6517,8 @@ export function MettasoulApp() {
             <div className="mt-3 flex gap-2"><button type="button" onClick={() => void saveSchoolNeedEdit()} className="rounded-lg bg-cyan-700 px-3 py-2 text-xs font-black text-white">Lưu thay đổi</button><button type="button" onClick={() => { setEditingSchoolNeedId(""); setEditingSchoolNeedDraft(null); }} className="rounded-lg border border-cyan-300 px-3 py-2 text-xs font-bold">Đóng</button></div>
           </div> : null}
         </Panel>
-        <div className="grid gap-5 xl:grid-cols-[0.9fr_1.35fr]">
-          <Panel title="Tạo lịch dạy mới" action="Email xác nhận">
+        <div className="grid items-start gap-5 xl:grid-cols-[0.9fr_1.35fr]">
+          <Panel title="Tạo lịch dạy mới" action="Email xác nhận" className="xl:sticky xl:top-4 xl:max-h-[calc(100dvh-2rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain">
             <div className="grid gap-4">
               <div className="rounded-2xl border border-cyan-100 bg-cyan-50/55 p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -6539,6 +6557,15 @@ export function MettasoulApp() {
                     Thêm dòng
                   </button> : null}
                 </div>
+                {mergeSuggestions.size > 0 ? <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-950">
+                  <p className="font-black">Gợi ý {mergeSuggestions.size} cặp tiết có thể gộp</p>
+                  <ul className="mt-1 space-y-1">{Array.from(mergeSuggestions.entries()).map(([draftId, suggestion]) => {
+                    const first = draftNeedById.get(draftSchedule.items.find((row) => row.id === draftId)?.schoolNeedIds?.[0] || "");
+                    if (!first) return null;
+                    return <li key={draftId}>{formatDate(first.date)} · {classById.get(first.classId)?.name || "Lớp"}: {first.periodLabel} + {suggestion.need.periodLabel} → {suggestion.slot.start}–{suggestion.slot.end}</li>;
+                  })}</ul>
+                  <p className="mt-1 font-normal">Bấm “Gộp 2 tiết” ở dòng đầu của cặp. Chỉ gộp các tiết cùng trường, cùng lớp và cùng ngày.</p>
+                </div> : null}
                 <div className="mt-3 grid gap-3">
                   {draftSchedule.items.map((item, index) => {
                     const rowSchool = schoolById.get(item.schoolId);
@@ -6559,12 +6586,8 @@ export function MettasoulApp() {
                       : rowLessonsAll;
                     const rowGrades = gradesForClasses(rowClasses);
                     const selectedSlot = activeTimeSlots.find((slot) => slot.id === item.timeSlotId);
-                    const sourceNeed = item.schoolNeedIds?.length === 1 ? schoolNeeds.find((need) => need.id === item.schoolNeedIds?.[0]) : undefined;
-                    const mergeCandidate = sourceNeed ? draftSchedule.items
-                      .map((candidate) => ({ draft: candidate, need: schoolNeeds.find((need) => need.id === candidate.schoolNeedIds?.[0]) }))
-                      .filter(({ draft, need }) => draft.id !== item.id && draft.schoolNeedIds?.length === 1 && need?.date === sourceNeed.date && need.schoolId === sourceNeed.schoolId && need.classId === sourceNeed.classId && need.teachingEnvironment === sourceNeed.teachingEnvironment && need.start >= sourceNeed.end)
-                      .map((candidate) => ({ ...candidate, slot: candidate.need ? findConfiguredSchoolNeedMergeSlot(sourceNeed, candidate.need, activeTimeSlots, rowSchool?.name || "") : null }))
-                      .find((candidate) => candidate.slot) : undefined;
+                    const sourceNeed = item.schoolNeedIds?.length === 1 ? draftNeedById.get(item.schoolNeedIds[0]) : undefined;
+                    const mergeCandidate = mergeSuggestions.get(item.id);
                     const pairSlot = mergeCandidate?.slot;
                     const rowDateTeachers = activeSchedulingTeachers.filter((teacher) =>
                       isTeacherAvailableOnDate(teacherAvailability, teacher.id, item.date),
@@ -6585,7 +6608,7 @@ export function MettasoulApp() {
                       !selectedSlot || isTeacherAvailableForSlot(teacherAvailability, teacher.id, item.date, selectedSlot),
                     );
                     return (
-                      <div key={item.id} className="rounded-2xl border border-cyan-100 bg-white p-3 shadow-sm">
+                      <div key={item.id} className={`rounded-2xl border-2 bg-white p-3 shadow-sm ${assignmentCardBorderClasses[index % assignmentCardBorderClasses.length]}`}>
                         <div className="mb-2 flex items-center justify-between">
                           <p className="text-xs font-black uppercase text-[var(--brand-dark)]">{item.schoolNeedIds?.length ? `${formatDate(item.date)} · ${rowClasses.find((row) => row.id === item.classId)?.name || "Lớp"} · ${selectedSlot?.start || "--:--"}–${selectedSlot?.end || "--:--"}` : `Lịch #${index + 1}`}</p>
                           {pairSlot && mergeCandidate ? <button type="button" onClick={() => setDraftSchedule((current) => ({ items: current.items.filter((row) => row.id !== mergeCandidate.draft.id).map((row) => row.id === item.id ? { ...row, schoolNeedIds: [sourceNeed!.id, mergeCandidate.need!.id], timeSlotId: pairSlot.id, lessonPeriods: ["lesson1", "lesson2"], teacherIds: [], assistantIds: [] } : row) }))} className="rounded-lg bg-violet-100 px-2 py-1 text-xs font-black text-violet-800">Gộp 2 tiết · {pairSlot.start}–{pairSlot.end}</button> : null}
@@ -13163,6 +13186,8 @@ function inferLessonPlanLinkName(url: string) {
 function announcementPriorityLabel(priority: AppAnnouncementPriority) {
   return priority === "important_not_urgent" ? "Quan trọng - không khẩn" : "Quan trọng - khẩn";
 }
+
+const assignmentCardBorderClasses = ["border-amber-400", "border-orange-400", "border-rose-400", "border-pink-400", "border-red-400"] as const;
 
 const inputClass =
   "w-full rounded-2xl border border-sky-200 bg-white/90 px-4 py-3 text-base font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100 sm:text-sm";
