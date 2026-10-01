@@ -5,6 +5,7 @@ export type SchoolNeedInput = {
   id?: string;
   date?: string;
   school?: string;
+  grade?: string;
   className?: string;
   session?: string;
   periodLabel?: string;
@@ -51,7 +52,7 @@ export function normalizeSchoolNeedInput(input: SchoolNeedInput, schools: School
   if (!date) throw new Error("Ngày dạy phải có dạng YYYY-MM-DD hoặc DD/MM/YYYY.");
   const school = schools.find((row) => row.id === input.school || comparable(row.name) === comparable(input.school));
   if (!school) throw new Error(`Không tìm thấy trường: ${input.school || "(trống)"}.`);
-  const classRoom = classes.find((row) => row.schoolId === school.id && (row.id === input.className || comparable(row.name) === comparable(input.className)));
+  const classRoom = classes.find((row) => row.schoolId === school.id && (!input.grade || comparable(row.grade) === comparable(input.grade)) && (row.id === input.className || comparable(row.name) === comparable(input.className)));
   if (!classRoom) throw new Error(`Lớp ${input.className || "(trống)"} không thuộc ${school.name}.`);
   const start = parseTime(input.start);
   const end = parseTime(input.end);

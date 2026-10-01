@@ -91,6 +91,7 @@ import {
   TIME_SLOT_STEP_MINUTES,
   getTimeSlotDurationMinutes,
   isConfiguredThuDucThreeFourSlot,
+  isDoubleTeachingTimeSlot,
   isTimeSlotAllowedForSchool,
   isValidTimeSlotDuration,
   normalizeTimeSlotLabel,
@@ -180,6 +181,7 @@ type SchoolNeedWorkbookRow = {
   id?: string;
   date: string;
   school: string;
+  grade?: string;
   className: string;
   session?: string;
   periodLabel: string;
@@ -6218,30 +6220,59 @@ export function MettasoulApp() {
 
     async function downloadSchoolNeedWorkbook(includeCurrent: boolean) {
       const XLSX = await import("xlsx-js-style");
+      const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula } = await import("@/lib/school-need-template");
+      const catalog = buildSchoolNeedTemplateCatalog(schools, classes, activeTimeSlots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot);
+      if (catalog.schools.length === 0 || catalog.classes.length === 0 || catalog.periods.length === 0) {
+        pushToast("Chưa đủ danh mục", "Cần có trường, lớp và khung giờ đang hoạt động trước khi tải mẫu.", "warning");
+        return;
+      }
       const workbook = XLSX.utils.book_new();
-      const headers = ["Mã dòng (giữ khi sửa)", "Ngày dạy", "Trường", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Nguồn/Ghi chú"];
+      const headers = ["Mã dòng (giữ khi sửa)", "Ngày dạy", "Trường", "Khối", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Nguồn/Ghi chú"];
       const data = includeCurrent ? weekNeeds.map((need) => [
-        need.id, need.date, schoolById.get(need.schoolId)?.name || "", classById.get(need.classId)?.name || "",
+        need.id, need.date, schoolById.get(need.schoolId)?.name || "", classById.get(need.classId)?.grade || "", classById.get(need.classId)?.name || "",
         need.start < "12:00" ? "Sáng" : "Chiều", need.periodLabel, need.start, need.end,
         teachingEnvironmentOptions.find((option) => option.value === need.teachingEnvironment)?.label || "Trong lớp", need.sourceNote || "",
       ]) : [];
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
-      worksheet["!cols"] = [21, 15, 28, 20, 12, 16, 14, 14, 20, 34].map((wch) => ({ wch }));
+      worksheet["!cols"] = [21, 16, 34, 15, 20, 12, 25, 14, 14, 21, 34].map((wch) => ({ wch }));
+      worksheet["!ref"] = `A1:K${Math.max(1001, data.length + 1)}`;
+      worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
       applyMettasoulExcelBrand(XLSX, worksheet, { headerRow: 0 });
+      for (let row = 2; row <= Math.max(1001, data.length + 1); row++) {
+        const dateAddress = `B${row}`;
+        worksheet[dateAddress] ||= { t: "z" };
+        worksheet[dateAddress].s = { numFmt: "dd/mm/yyyy" };
+        const need = includeCurrent ? weekNeeds[row - 2] : undefined;
+        const schoolName = need ? schoolById.get(need.schoolId)?.name || "" : "";
+        const session = need?.start && need.start < "12:00" ? "Sáng" : "Chiều";
+        const matchingPeriod = need ? catalog.periods.find((period) => period.school === schoolName && period.session === session && period.start === need.start && period.end === need.end) : undefined;
+        if (need && !matchingPeriod) continue;
+        if (matchingPeriod) worksheet[`G${row}`] = { t: "s", v: matchingPeriod.label };
+        worksheet[`H${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "M", catalog) };
+        worksheet[`I${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "N", catalog) };
+      }
       XLSX.utils.book_append_sheet(workbook, worksheet, "Lich truong");
+      const catalogSheet = XLSX.utils.aoa_to_sheet(schoolNeedCatalogRows(catalog));
+      catalogSheet["!cols"] = [34, 3, 34, 15, 3, 44, 19, 3, 45, 24, 3, 70, 14, 14, 3, 12, 22].map((wch) => ({ wch }));
+      applyMettasoulExcelBrand(XLSX, catalogSheet, { headerRow: 0 });
+      XLSX.utils.book_append_sheet(workbook, catalogSheet, "Danh muc");
       const guide = XLSX.utils.aoa_to_sheet([
         ["HƯỚNG DẪN NHẬP LỊCH TRƯỜNG"],
         ["Mỗi dòng là một lớp, một tiết, một ngày dạy. Agent chuyển lịch theo thứ và khoảng hiệu lực thành các ngày cụ thể."],
         ["Lần nhập đầu để trống Mã dòng. Khi sửa, tải bản hiện tại từ app rồi giữ nguyên mã của dòng cần sửa."],
-        ["Ngày dạy: YYYY-MM-DD hoặc DD/MM/YYYY. Giờ: HH:MM. Tên trường và lớp phải khớp dữ liệu trong app."],
-        ["Môi trường: Trong lớp, Ngoài sân, Nhà thi đấu, Hội trường hoặc Báo cáo chuyên đề."],
+        ["Ngày dạy là ô ngày hợp lệ. Excel có thể không hiện lịch bật lên tùy phiên bản; nhập hoặc dán ngày theo DD/MM/YYYY."],
+        ["Chọn Trường → Khối → Lớp; chọn Buổi → Tiết. Giờ bắt đầu/kết thúc tự lấy theo tiết của trường."],
+        ["Danh mục trường, lớp và giờ được chụp từ app tại lúc tải mẫu. Nếu cấu hình thay đổi, hãy tải mẫu mới."],
+        ["Môi trường chọn từ danh sách. Khi đổi trường hoặc khối, nhớ chọn lại các ô phụ thuộc trên cùng dòng."],
         ["Tên bài và tên tiết học được admin chọn trên màn hình Giao lịch; không nhập vào file này."],
         ["Dòng không có trong file sửa đổi sẽ không tự bị xóa khỏi hệ thống."],
+        ["Trường chưa có lớp hoặc tiết đơn sẽ có danh sách phụ thuộc trống; hãy hoàn thiện cấu hình trong app trước khi nhập."],
       ]);
       guide["!cols"] = [{ wch: 110 }];
       XLSX.utils.book_append_sheet(workbook, guide, "Huong dan");
       const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
-      const url = URL.createObjectURL(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      const controlledBytes = addSchoolNeedTemplateControls(new Uint8Array(bytes), catalog);
+      const url = URL.createObjectURL(new Blob([Uint8Array.from(controlledBytes)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
       const link = document.createElement("a");
       link.href = url;
       link.download = includeCurrent ? `lich-truong-${assignmentWeekStart}-${assignmentSchoolId}.xlsx` : "mau-lich-truong-mettasoul.xlsx";
@@ -6253,22 +6284,42 @@ export function MettasoulApp() {
       try {
         if (!/\.xlsx$/i.test(file.name)) throw new Error("Hãy chọn file Excel .xlsx đúng mẫu.");
         const XLSX = await import("xlsx-js-style");
+        const { buildSchoolNeedTemplateCatalog } = await import("@/lib/school-need-template");
         const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
         const sheet = workbook.Sheets["Lich truong"] || workbook.Sheets[workbook.SheetNames[0]];
-        const raw = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: "", raw: false });
+        const raw = XLSX.utils.sheet_to_json<Record<string, string | number>>(sheet, { defval: "", raw: true })
+          .filter((row) => ["Ngày dạy", "Trường", "Khối", "Lớp", "Buổi", "Tiết"].some((key) => String(row[key] || "").trim()));
         if (raw.length === 0) throw new Error("File chưa có dòng lịch nào.");
-        const rows: SchoolNeedWorkbookRow[] = raw.map((row) => ({
-          id: String(row["Mã dòng (giữ khi sửa)"] || "").trim(),
-          date: String(row["Ngày dạy"] || "").trim(),
-          school: String(row["Trường"] || "").trim(),
-          className: String(row["Lớp"] || "").trim(),
-          session: String(row["Buổi"] || "").trim(),
-          periodLabel: String(row["Tiết"] || "").trim(),
-          start: String(row["Bắt đầu"] || "").trim(),
-          end: String(row["Kết thúc"] || "").trim(),
-          environment: String(row["Môi trường"] || "").trim(),
-          sourceNote: String(row["Nguồn/Ghi chú"] || "").trim(),
-        }));
+        const catalog = buildSchoolNeedTemplateCatalog(schools, classes, activeTimeSlots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot);
+        const readDate = (value: string | number) => {
+          if (typeof value !== "number") return String(value || "").trim();
+          const date = XLSX.SSF.parse_date_code(value);
+          return date ? `${date.y}-${String(date.m).padStart(2, "0")}-${String(date.d).padStart(2, "0")}` : "";
+        };
+        const readTime = (value: string | number) => {
+          if (typeof value !== "number") return String(value || "").trim();
+          const time = XLSX.SSF.parse_date_code(value);
+          return time ? `${String(time.H).padStart(2, "0")}:${String(time.M).padStart(2, "0")}` : "";
+        };
+        const rows: SchoolNeedWorkbookRow[] = raw.map((row) => {
+          const school = String(row["Trường"] || "").trim();
+          const session = String(row["Buổi"] || "").trim();
+          const periodLabel = String(row["Tiết"] || "").trim();
+          const selectedPeriod = catalog.periods.find((period) => period.school === school && period.session === session && period.label === periodLabel);
+          return {
+            id: String(row["Mã dòng (giữ khi sửa)"] || "").trim(),
+            date: readDate(row["Ngày dạy"] || ""),
+            school,
+            grade: String(row["Khối"] || "").trim(),
+            className: String(row["Lớp"] || "").trim(),
+            session,
+            periodLabel,
+            start: selectedPeriod?.start || readTime(row["Bắt đầu"] || ""),
+            end: selectedPeriod?.end || readTime(row["Kết thúc"] || ""),
+            environment: String(row["Môi trường"] || "").trim(),
+            sourceNote: String(row["Nguồn/Ghi chú"] || "").trim(),
+          };
+        });
         const result = await saveRequest<{ revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; rows: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> }>("Đang đối chiếu lịch trường...", "/api/school-teaching-needs", { method: "POST", body: JSON.stringify({ mode: "preview", rows }) });
         setSchoolNeedImport({ rows, revision: result.revision, summary: result.summary, changes: result.rows });
       } catch (error) { handleSaveError(error); }
@@ -6407,6 +6458,7 @@ export function MettasoulApp() {
             </label>
           </div>
           <p className="mt-2 text-xs font-semibold text-[var(--muted)]">Đang xem {formatDate(assignmentWeekStart)}–{formatDate(weekEnd)}. Các dòng chưa giao tự xuất hiện bên dưới theo giờ, kèm lớp và môi trường dạy.</p>
+          {assignmentSchoolId && (classesForSchool(classes, assignmentSchoolId).length === 0 || !activeTimeSlots.some((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || "") && !isDoubleTeachingTimeSlot(slot))) ? <p role="alert" className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">Trường này chưa có đủ lớp hoặc khung tiết đơn trong cấu hình. Hãy bổ sung trước khi nhập lịch theo từng tiết.</p> : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => void downloadSchoolNeedWorkbook(false)} className="rounded-xl border border-cyan-300 px-3 py-2 text-xs font-bold text-cyan-900">Tải mẫu Excel</button>
             <button type="button" disabled={!assignmentSchoolId || weekNeeds.length === 0} onClick={() => void downloadSchoolNeedWorkbook(true)} className="rounded-xl border border-cyan-300 px-3 py-2 text-xs font-bold text-cyan-900 disabled:opacity-40">Tải lịch tuần để sửa</button>

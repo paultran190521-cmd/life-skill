@@ -9,6 +9,7 @@ assert.equal(normalized.date, "2026-10-01");
 assert.equal(normalizeSchoolNeedInput({ ...row, date: "1/10/2026" }, schools, classes).date, "2026-10-01");
 assert.equal(normalized.start, "07:30");
 assert.equal(normalized.classId, "c-21");
+assert.throws(() => normalizeSchoolNeedInput({ ...row, grade: "Khối 3" }, schools, classes), /không thuộc/);
 assert.equal(normalized.teachingEnvironment, "in_class");
 assert.throws(() => normalizeSchoolNeedInput({ ...row, className: "3/9" }, schools, classes), /không thuộc/);
 assert.throws(() => normalizeSchoolNeedInput({ ...row, session: "Chiều" }, schools, classes), /không khớp/);
