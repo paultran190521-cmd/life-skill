@@ -40,8 +40,8 @@ function parseTime(value: unknown) {
 function environmentOf(value: unknown): TeachingEnvironment | null {
   const text = comparable(value);
   if (["trong lop", "in_class"].includes(text)) return "in_class";
-  if (["ngoai troi", "san truong", "outdoor"].includes(text)) return "outdoor";
-  if (["nha the chat", "gym"].includes(text)) return "gym";
+  if (["ngoai san", "ngoai troi", "san truong", "outdoor"].includes(text)) return "outdoor";
+  if (["nha thi dau", "nha the chat", "gym"].includes(text)) return "gym";
   if (["hoi truong", "hall"].includes(text)) return "hall";
   if (["bao cao chuyen de", "schoolyard_report"].includes(text)) return "schoolyard_report";
   return null;

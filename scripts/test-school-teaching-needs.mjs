@@ -11,6 +11,8 @@ assert.equal(normalized.start, "07:30");
 assert.equal(normalized.classId, "c-21");
 assert.throws(() => normalizeSchoolNeedInput({ ...row, grade: "Khối 3" }, schools, classes), /không thuộc/);
 assert.equal(normalized.teachingEnvironment, "in_class");
+assert.equal(normalizeSchoolNeedInput({ ...row, environment: "Ngoài sân" }, schools, classes).teachingEnvironment, "outdoor");
+assert.equal(normalizeSchoolNeedInput({ ...row, environment: "Nhà thi đấu" }, schools, classes).teachingEnvironment, "gym");
 assert.throws(() => normalizeSchoolNeedInput({ ...row, className: "3/9" }, schools, classes), /không thuộc/);
 assert.throws(() => normalizeSchoolNeedInput({ ...row, session: "Chiều" }, schools, classes), /không khớp/);
 assert.throws(() => normalizeSchoolNeedInput({ ...row, date: "31/02/2026" }, schools, classes), /Ngày dạy/);
