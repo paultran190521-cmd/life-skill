@@ -7045,12 +7045,12 @@ export function MettasoulApp() {
               {assignmentSchoolId ? <div role="status" className={`rounded-2xl border-2 p-4 ${assignmentProgress.remainingNeedCount === 0 && assignmentProgress.totalNeedCount > 0 ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}>
                 {assignmentProgress.totalNeedCount === 0 ? <p className="text-base font-black text-amber-950">Chưa có tiết nào của {assignmentSchoolName} trong tuần này.</p> : <>
                   <p className="text-lg font-black text-[var(--brand-dark)] sm:text-xl">
-                    {assignmentProgress.coveredNeedCount}/{assignmentProgress.totalNeedCount} tiết · {assignmentProgress.remainingNeedCount > 0
-                      ? `còn ${assignmentProgress.remainingNeedCount} tiết chưa giao`
-                      : `đã đủ lịch ${assignmentSchoolName}${canSendCompleteSchoolWeek ? " · có thể gửi lịch" : assignmentProgress.readyDraftNeedCount === 0 ? " · đã giao xong" : " · kiểm tra xung đột và thông tin bài học trước khi gửi"}`}
+                    {assignmentProgress.coveredNeedCount}/{assignmentProgress.totalNeedCount} tiết đã có giáo viên · {assignmentProgress.remainingNeedCount > 0
+                      ? `còn ${assignmentProgress.remainingNeedCount} tiết chưa chọn giáo viên`
+                      : `đã chọn đủ giáo viên cho ${assignmentSchoolName}${canSendCompleteSchoolWeek ? " · có thể gửi lịch" : assignmentProgress.selectedDraftNeedCount === 0 ? " · đã gửi hết lịch" : " · kiểm tra thông tin bài học và xung đột trước khi gửi"}`}
                   </p>
-                  <p className="mt-1 text-sm font-bold text-slate-700">Lớp đủ lịch: {assignmentProgress.completedClassCount}/{assignmentProgress.totalClassCount} · Tiết đã giao: {assignmentProgress.assignedNeedCount} · Tiết đã xếp và sẵn sàng gửi: {assignmentProgress.readyDraftNeedCount}</p>
-                  <p className="mt-1 text-xs text-slate-600">Thống kê cho toàn bộ tuần của trường, không thay đổi khi lọc theo giáo viên. Các tiết mới chỉ được lưu khi bấm gửi lịch.</p>
+                  <p className="mt-1 text-sm font-bold text-slate-700">Lớp đã chọn đủ giáo viên: {assignmentProgress.completedClassCount}/{assignmentProgress.totalClassCount} · Tiết đã gửi: {assignmentProgress.assignedNeedCount} · Tiết đã chọn giáo viên, chưa gửi: {assignmentProgress.selectedDraftNeedCount} · Đủ thông tin gửi: {assignmentProgress.readyDraftNeedCount}</p>
+                  <p className="mt-1 text-xs text-slate-600">Bộ đếm cập nhật ngay khi chọn hoặc bỏ chọn giáo viên, tính cho toàn bộ tuần của trường. Lịch mới chỉ được lưu khi bấm gửi lịch.</p>
                 </>}
               </div> : null}
               <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-3">

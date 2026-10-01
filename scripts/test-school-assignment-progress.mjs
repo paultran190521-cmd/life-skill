@@ -13,7 +13,9 @@ assert.deepEqual([partial.coveredNeedCount, partial.remainingNeedCount, partial.
 const merged = getSchoolAssignmentProgress(needs, [{ schoolNeedIds: ["one", "two"], teacherIds: ["teacher"], lessonId: "lesson", lessonPeriods: ["lesson1", "lesson2"], timeSlotId: "double-slot" }]);
 assert.deepEqual([merged.coveredNeedCount, merged.remainingNeedCount, merged.completedClassCount, merged.totalClassCount], [3, 0, 2, 2]);
 const missingLesson = getSchoolAssignmentProgress(needs, [{ schoolNeedIds: ["one", "two"], teacherIds: ["teacher"], lessonId: "", lessonPeriods: [], timeSlotId: "double-slot" }]);
-assert.equal(missingLesson.coveredNeedCount, 1);
+assert.deepEqual([missingLesson.coveredNeedCount, missingLesson.remainingNeedCount, missingLesson.selectedDraftNeedCount, missingLesson.readyDraftNeedCount], [3, 0, 2, 0]);
+const unchecked = getSchoolAssignmentProgress(needs, [{ schoolNeedIds: ["one", "two"], teacherIds: [], lessonId: "lesson", lessonPeriods: ["lesson1", "lesson2"], timeSlotId: "double-slot" }]);
+assert.deepEqual([unchecked.coveredNeedCount, unchecked.remainingNeedCount], [1, 2]);
 assert.equal(isSchoolNeedEditHighlighted(needs[0], Date.parse("2026-10-05T14:14:00+07:00")), true);
 assert.equal(isSchoolNeedEditHighlighted(needs[0], Date.parse("2026-10-05T14:15:00+07:00")), false);
 assert.equal(schoolNeedEditLabel(needs[0]), "01/10/26 - 15:00 | Mỹ Nhung");

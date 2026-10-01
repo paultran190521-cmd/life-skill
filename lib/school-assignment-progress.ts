@@ -13,11 +13,15 @@ export function getSchoolAssignmentProgress(needs: SchoolTeachingNeed[], drafts:
   const activeNeeds = needs.filter((need) => need.status !== "CANCELLED");
   const activeNeedIds = new Set(activeNeeds.map((need) => need.id));
   const assignedIds = new Set(activeNeeds.filter((need) => need.status === "ASSIGNED" && need.scheduleId).map((need) => need.id));
+  const selectedDraftIds = new Set(drafts
+    .filter((item) => item.teacherIds.length > 0)
+    .flatMap((item) => item.schoolNeedIds || [])
+    .filter((id) => activeNeedIds.has(id)));
   const readyDraftIds = new Set(drafts
     .filter((item) => item.teacherIds.length > 0 && item.lessonId && item.lessonPeriods.length > 0 && item.timeSlotId)
     .flatMap((item) => item.schoolNeedIds || [])
     .filter((id) => activeNeedIds.has(id)));
-  const coveredIds = new Set([...assignedIds, ...readyDraftIds]);
+  const coveredIds = new Set([...assignedIds, ...selectedDraftIds]);
   const classIds = new Set(activeNeeds.map((need) => need.classId));
   const completedClassCount = [...classIds].filter((classId) => activeNeeds.filter((need) => need.classId === classId).every((need) => coveredIds.has(need.id))).length;
   return {
@@ -25,6 +29,7 @@ export function getSchoolAssignmentProgress(needs: SchoolTeachingNeed[], drafts:
     coveredNeedCount: coveredIds.size,
     remainingNeedCount: activeNeeds.length - coveredIds.size,
     assignedNeedCount: assignedIds.size,
+    selectedDraftNeedCount: [...selectedDraftIds].filter((id) => !assignedIds.has(id)).length,
     readyDraftNeedCount: [...readyDraftIds].filter((id) => !assignedIds.has(id)).length,
     totalClassCount: classIds.size,
     completedClassCount,
