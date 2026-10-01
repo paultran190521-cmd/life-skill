@@ -286,6 +286,18 @@ export async function ensureSheetHeaders(sheetName: SheetName, requiredHeaders: 
   }
 
   const nextHeaders = [...headers, ...missingHeaders];
+  const metadata = await client.spreadsheets.get({
+    spreadsheetId: spreadsheetId(),
+    fields: "sheets(properties(sheetId,title,gridProperties(columnCount)))",
+  });
+  const sheetProperties = metadata.data.sheets?.find((item) => item.properties?.title === sheetName)?.properties;
+  const columnCount = sheetProperties?.gridProperties?.columnCount || 0;
+  if (sheetProperties?.sheetId !== undefined && columnCount > 0 && columnCount < nextHeaders.length) {
+    await client.spreadsheets.batchUpdate({
+      spreadsheetId: spreadsheetId(),
+      requestBody: { requests: [{ appendDimension: { sheetId: sheetProperties.sheetId, dimension: "COLUMNS", length: nextHeaders.length - columnCount } }] },
+    });
+  }
   await client.spreadsheets.values.update({
     spreadsheetId: spreadsheetId(),
     range: `${quoteSheetName(sheetName)}!A1:${columnName(nextHeaders.length)}1`,
@@ -725,6 +737,7 @@ export const scheduleHeaders = [
 export const schoolTeachingNeedHeaders = [
   "id", "date", "schoolId", "classId", "periodLabel", "start", "end",
   "teachingEnvironment", "sourceNote", "scheduleId", "assignedDate", "assignedStart", "assignedEnd", "status", "createdAt", "updatedAt",
+  "lastEditedAt", "lastEditedBy",
 ];
 
 export const notificationHeaders = [

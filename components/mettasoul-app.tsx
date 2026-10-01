@@ -70,6 +70,7 @@ import { classifySchedulingParticipantIds } from "@/lib/scheduling-participants"
 import { normalizeScheduleParticipantScope, resolveScheduleParticipantSelection } from "@/lib/schedule-participant-scope";
 import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy";
 import { findConfiguredSchoolNeedMergeSlot } from "@/lib/school-need-merge";
+import { getSchoolAssignmentProgress, isSchoolNeedEditHighlighted, schoolNeedEditLabel } from "@/lib/school-assignment-progress";
 import { scheduledLessonSections } from "@/lib/lessons";
 import { attendanceLookupKey, groupByKey, indexById, legacyScheduleGroupKey, buildTextSearchIndex, searchTextIndex } from "@/lib/view-index";
 import {
@@ -781,6 +782,7 @@ export function MettasoulApp() {
   });
   const [assignmentWeekStart, setAssignmentWeekStart] = useState(() => mondayDateKey(currentDateKey()));
   const [assignmentSchoolId, setAssignmentSchoolId] = useState("");
+  const [assignmentClockMs, setAssignmentClockMs] = useState(0);
   const [schoolNeeds, setSchoolNeeds] = useState<SchoolTeachingNeed[]>([]);
   const [schoolNeedLoadError, setSchoolNeedLoadError] = useState("");
   const [schoolNeedImport, setSchoolNeedImport] = useState<{ rows: SchoolNeedWorkbookRow[]; revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; changes: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> } | null>(null);
@@ -1223,6 +1225,13 @@ export function MettasoulApp() {
     }).catch(() => { if (!cancelled) setWeeklyLoadError("Không tải được cập nhật tuần. Hãy chuyển menu rồi quay lại để thử lại."); });
     return () => { cancelled = true; };
   }, [activeTab, authStatus, role, weeklyLoaded, dataStatus]);
+
+  useEffect(() => {
+    if (role !== "admin" || activeTab !== "assignment") return;
+    setAssignmentClockMs(Date.now());
+    const timer = window.setInterval(() => setAssignmentClockMs(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [activeTab, role]);
 
   useEffect(() => {
     if (authStatus !== "signed-in" || role !== "admin" || activeTab !== "assignment" || !assignmentSchoolId) return;
@@ -6217,6 +6226,10 @@ export function MettasoulApp() {
 
     const weekEnd = addDaysToDateKey(assignmentWeekStart, 6);
     const weekNeeds = schoolNeeds.filter((need) => need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd);
+    const assignmentProgress = getSchoolAssignmentProgress(weekNeeds, draftSchedule.items);
+    const assignmentSchoolName = schoolById.get(assignmentSchoolId)?.name || "trường đã chọn";
+    const allDraftsReady = draftSchedule.items.every((item) => item.teacherIds.length > 0 && item.lessonId && item.lessonPeriods.length > 0 && item.timeSlotId);
+    const canSendCompleteSchoolWeek = assignmentProgress.totalNeedCount > 0 && assignmentProgress.remainingNeedCount === 0 && draftSchedule.items.length > 0 && allDraftsReady && draftScheduleConflicts.length === 0 && draftLessonProgressionConflicts.length === 0;
     const draftNeedById = new Map(schoolNeeds.map((need) => [need.id, need]));
     const mergeSuggestions = new Map<string, { draft: DraftScheduleItem; need: SchoolTeachingNeed; slot: TimeSlot }>();
     for (const item of draftSchedule.items) {
@@ -6465,10 +6478,10 @@ export function MettasoulApp() {
         {renderAdminAvailabilityPanel()}
         <Panel title="Lịch trường theo tuần" action={assignmentSchoolId ? `${weekNeeds.length} tiết trong tuần` : "Chọn trường để bắt đầu"}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm font-bold text-[var(--brand-dark)]">Tuần có ngày
+            <label className="rounded-2xl border-2 border-amber-400 bg-amber-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Tuần có ngày
               <input type="date" value={assignmentWeekStart} onChange={(event) => setAssignmentWeekStart(mondayDateKey(event.target.value))} className={`${inputClass} mt-1 w-full`} />
             </label>
-            <label className="text-sm font-bold text-[var(--brand-dark)]">Trường
+            <label className="rounded-2xl border-2 border-rose-400 bg-rose-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Trường
               <select value={assignmentSchoolId} onChange={(event) => { setAssignmentSchoolId(event.target.value); setDraftSchedule({ items: event.target.value ? [] : [createDraftScheduleItem()] }); setSchoolNeeds([]); }} className={`${inputClass} mt-1 w-full`}>
                 <option value="">Chọn trường</option>
                 {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
@@ -6493,18 +6506,24 @@ export function MettasoulApp() {
             <button type="button" onClick={() => void applySchoolNeedWorkbook()} className="mt-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white">Xác nhận nhập các dòng mới và sửa</button>
           </div> : null}
           {schoolNeedLoadError ? <p role="alert" className="mt-3 text-sm text-rose-700">{schoolNeedLoadError}</p> : null}
-          {weekNeeds.length > 0 ? <div className="mt-3 flex flex-wrap gap-2">{Array.from(new Set(weekNeeds.map((need) => need.date))).sort().map((date) => {
+          {weekNeeds.length > 0 ? <div className="mt-4 flex flex-wrap gap-3">{Array.from(new Set(weekNeeds.map((need) => need.date))).sort().map((date) => {
             const dayNeeds = weekNeeds.filter((need) => need.date === date);
-            return <span key={date} className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-bold text-cyan-900">{formatDate(date)} · {new Set(dayNeeds.map((need) => need.classId)).size} lớp · {dayNeeds.length} tiết · {dayNeeds.filter((need) => need.status === "OPEN").length} cần giao</span>;
+            const editedCount = dayNeeds.filter((need) => assignmentClockMs > 0 && isSchoolNeedEditHighlighted(need, assignmentClockMs)).length;
+            return <span key={date} className="rounded-2xl bg-cyan-50 px-4 py-2 text-lg font-bold text-cyan-900 sm:text-2xl">{formatDate(date)} · {new Set(dayNeeds.map((need) => need.classId)).size} lớp · {dayNeeds.length} tiết · {dayNeeds.filter((need) => need.status === "OPEN").length} cần giao{editedCount ? <strong className="ml-2 text-rose-700">· {editedCount} lịch vừa sửa</strong> : null}</span>;
           })}</div> : null}
-          {assignmentSchoolId ? <div className="mt-3 space-y-1">
-            {weekNeeds.length === 0 ? <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">Tuần này chưa có lịch trường đã nhập.</p> : weekNeeds.slice().sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start) || a.classId.localeCompare(b.classId)).map((need) => <div key={need.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs">
-              <span><strong>{formatDate(need.date)} · {need.start}–{need.end}</strong> · {classById.get(need.classId)?.name || need.classId} · {need.periodLabel}</span>
-              <span className="flex items-center gap-2"><span className={need.status === "OPEN" ? "font-bold text-amber-800" : need.status === "REVIEW" ? "font-bold text-rose-700" : "font-bold text-emerald-700"}>{need.status === "OPEN" ? "Cần giao" : need.status === "REVIEW" ? "Cần xem lại lịch đã giao" : need.status === "ASSIGNED" ? `Đã giao: ${teacherName(schedules.find((schedule) => schedule.id === need.scheduleId || schedule.schoolNeedId === need.id)?.teacherId || "")}` : "Đã hủy"}</span>{need.status === "REVIEW" ? <button type="button" onClick={() => void reconcileSchoolNeed(need)} className="font-bold text-rose-700 underline">Đối chiếu và áp dụng</button> : null}<button type="button" onClick={() => startEditSchoolNeed(need)} className="font-bold text-cyan-800 underline">Sửa</button>{!need.scheduleId ? <button type="button" onClick={() => void deleteSchoolNeed(need)} className="font-bold text-rose-700 underline">Xóa</button> : null}</span>
-            </div>)}
+          {assignmentSchoolId ? <div className="mt-4 space-y-2">
+            {weekNeeds.length === 0 ? <p className="rounded-xl bg-slate-50 p-3 text-lg text-slate-600 sm:text-2xl">Tuần này chưa có lịch trường đã nhập.</p> : weekNeeds.slice().sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start) || a.classId.localeCompare(b.classId)).map((need) => {
+              const edited = assignmentClockMs > 0 && isSchoolNeedEditHighlighted(need, assignmentClockMs);
+              const editLabel = schoolNeedEditLabel(need);
+              return <div key={need.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 px-4 py-3 text-lg sm:text-2xl ${edited ? "border-red-400 bg-red-50" : "border-slate-200 bg-white"}`}>
+                <span className="min-w-0"><strong>{formatDate(need.date)} · {need.start}–{need.end}</strong> · {classById.get(need.classId)?.name || need.classId} · {need.periodLabel}{editLabel ? <span className={`mt-1 block text-base font-bold sm:text-xl ${edited ? "text-red-700" : "text-slate-600"}`}>Sửa lúc {editLabel}</span> : null}</span>
+                <span className="flex flex-wrap items-center gap-3"><span className={need.status === "OPEN" ? "font-bold text-amber-800" : need.status === "REVIEW" ? "font-bold text-rose-700" : "font-bold text-emerald-700"}>{need.status === "OPEN" ? "Cần giao" : need.status === "REVIEW" ? "Cần xem lại lịch đã giao" : need.status === "ASSIGNED" ? `Đã giao: ${teacherName(schedules.find((schedule) => schedule.id === need.scheduleId || schedule.schoolNeedId === need.id)?.teacherId || "")}` : "Đã hủy"}</span>{need.status === "REVIEW" ? <button type="button" onClick={() => void reconcileSchoolNeed(need)} className="font-bold text-rose-700 underline">Đối chiếu và áp dụng</button> : null}<button type="button" onClick={() => startEditSchoolNeed(need)} className="font-bold text-cyan-800 underline">Sửa</button>{!need.scheduleId ? <button type="button" onClick={() => void deleteSchoolNeed(need)} className="font-bold text-rose-700 underline">Xóa</button> : null}</span>
+              </div>;
+            })}
           </div> : null}
           {editingSchoolNeedDraft && editingSchoolNeedId ? <div className="mt-3 rounded-xl border border-cyan-200 bg-cyan-50 p-3">
             <p className="mb-2 text-sm font-black text-cyan-950">Sửa dòng lịch trường</p>
+            {schoolNeedEditLabel(schoolNeeds.find((need) => need.id === editingSchoolNeedId) || { lastEditedAt: "", lastEditedBy: "" }) ? <p className="mb-2 text-sm font-bold text-rose-700">Lần sửa trước: {schoolNeedEditLabel(schoolNeeds.find((need) => need.id === editingSchoolNeedId) || { lastEditedAt: "", lastEditedBy: "" })}</p> : null}
             <div className="grid gap-2 sm:grid-cols-3">
               <label className="text-xs font-bold">Ngày<input type="date" value={editingSchoolNeedDraft.date} onChange={(event) => setEditingSchoolNeedDraft((row) => row && ({ ...row, date: event.target.value }))} className={`${inputClass} mt-1 w-full`} /></label>
               <label className="text-xs font-bold">Lớp<select value={editingSchoolNeedDraft.className} onChange={(event) => setEditingSchoolNeedDraft((row) => row && ({ ...row, className: event.target.value }))} className={`${inputClass} mt-1 w-full`}>{classesForSchool(classes, assignmentSchoolId).map((row) => <option key={row.id} value={row.name}>{row.name}</option>)}</select></label>
@@ -6587,6 +6606,11 @@ export function MettasoulApp() {
                     const rowGrades = gradesForClasses(rowClasses);
                     const selectedSlot = activeTimeSlots.find((slot) => slot.id === item.timeSlotId);
                     const sourceNeed = item.schoolNeedIds?.length === 1 ? draftNeedById.get(item.schoolNeedIds[0]) : undefined;
+                    const cardEditedNeed = item.schoolNeedIds?.map((id) => draftNeedById.get(id)).find((need) => need?.lastEditedAt);
+                    const cardHasRecentEdit = Boolean(assignmentClockMs > 0 && item.schoolNeedIds?.some((id) => {
+                      const need = draftNeedById.get(id);
+                      return need && isSchoolNeedEditHighlighted(need, assignmentClockMs);
+                    }));
                     const mergeCandidate = mergeSuggestions.get(item.id);
                     const pairSlot = mergeCandidate?.slot;
                     const rowDateTeachers = activeSchedulingTeachers.filter((teacher) =>
@@ -6608,7 +6632,7 @@ export function MettasoulApp() {
                       !selectedSlot || isTeacherAvailableForSlot(teacherAvailability, teacher.id, item.date, selectedSlot),
                     );
                     return (
-                      <div key={item.id} className={`rounded-2xl border-2 bg-white p-3 shadow-sm ${assignmentCardBorderClasses[index % assignmentCardBorderClasses.length]}`}>
+                      <div key={item.id} className={`rounded-2xl border-2 bg-white p-3 shadow-sm ${cardHasRecentEdit ? "border-red-500" : assignmentCardBorderClasses[index % assignmentCardBorderClasses.length]}`}>
                         <div className="mb-2 flex items-center justify-between">
                           <p className="text-xs font-black uppercase text-[var(--brand-dark)]">{item.schoolNeedIds?.length ? `${formatDate(item.date)} · ${rowClasses.find((row) => row.id === item.classId)?.name || "Lớp"} · ${selectedSlot?.start || "--:--"}–${selectedSlot?.end || "--:--"}` : `Lịch #${index + 1}`}</p>
                           {pairSlot && mergeCandidate ? <button type="button" onClick={() => setDraftSchedule((current) => ({ items: current.items.filter((row) => row.id !== mergeCandidate.draft.id).map((row) => row.id === item.id ? { ...row, schoolNeedIds: [sourceNeed!.id, mergeCandidate.need!.id], timeSlotId: pairSlot.id, lessonPeriods: ["lesson1", "lesson2"], teacherIds: [], assistantIds: [] } : row) }))} className="rounded-lg bg-violet-100 px-2 py-1 text-xs font-black text-violet-800">Gộp 2 tiết · {pairSlot.start}–{pairSlot.end}</button> : null}
@@ -6636,6 +6660,7 @@ export function MettasoulApp() {
                             <Trash2 size={14} />
                           </button> : null}
                         </div>
+                        {cardEditedNeed ? <p className={`mb-2 text-xs font-bold ${cardHasRecentEdit ? "text-red-700" : "text-slate-600"}`}>Lịch đã sửa: {schoolNeedEditLabel(cardEditedNeed)}</p> : null}
                         <div className="grid gap-3 md:grid-cols-2">
                           <input
                             type="date"
@@ -7017,6 +7042,17 @@ export function MettasoulApp() {
             action={`Sẽ tạo ${filteredDraftSchedulePreview.length}/${draftSchedulePreview.length} lịch`}
           >
             <div className="space-y-3">
+              {assignmentSchoolId ? <div role="status" className={`rounded-2xl border-2 p-4 ${assignmentProgress.remainingNeedCount === 0 && assignmentProgress.totalNeedCount > 0 ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}>
+                {assignmentProgress.totalNeedCount === 0 ? <p className="text-base font-black text-amber-950">Chưa có tiết nào của {assignmentSchoolName} trong tuần này.</p> : <>
+                  <p className="text-lg font-black text-[var(--brand-dark)] sm:text-xl">
+                    {assignmentProgress.coveredNeedCount}/{assignmentProgress.totalNeedCount} tiết · {assignmentProgress.remainingNeedCount > 0
+                      ? `còn ${assignmentProgress.remainingNeedCount} tiết chưa giao`
+                      : `đã đủ lịch ${assignmentSchoolName}${canSendCompleteSchoolWeek ? " · có thể gửi lịch" : assignmentProgress.readyDraftNeedCount === 0 ? " · đã giao xong" : " · kiểm tra xung đột và thông tin bài học trước khi gửi"}`}
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-slate-700">Lớp đủ lịch: {assignmentProgress.completedClassCount}/{assignmentProgress.totalClassCount} · Tiết đã giao: {assignmentProgress.assignedNeedCount} · Tiết đã xếp và sẵn sàng gửi: {assignmentProgress.readyDraftNeedCount}</p>
+                  <p className="mt-1 text-xs text-slate-600">Thống kê cho toàn bộ tuần của trường, không thay đổi khi lọc theo giáo viên. Các tiết mới chỉ được lưu khi bấm gửi lịch.</p>
+                </>}
+              </div> : null}
               <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-3">
                 <label className="grid gap-2 text-xs font-black uppercase tracking-wide text-[var(--brand-dark)]">
                   Xem theo giáo viên

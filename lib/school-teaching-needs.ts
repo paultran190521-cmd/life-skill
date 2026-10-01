@@ -15,7 +15,7 @@ export type SchoolNeedInput = {
   sourceNote?: string;
 };
 
-export type NormalizedNeedInput = Omit<SchoolTeachingNeed, "id" | "status" | "scheduleId" | "assignedDate" | "assignedStart" | "assignedEnd" | "createdAt" | "updatedAt"> & { id?: string };
+export type NormalizedNeedInput = Omit<SchoolTeachingNeed, "id" | "status" | "scheduleId" | "assignedDate" | "assignedStart" | "assignedEnd" | "createdAt" | "updatedAt" | "lastEditedAt" | "lastEditedBy"> & { id?: string };
 
 function comparable(value: unknown) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").trim().toLowerCase().replace(/\s+/g, " ");
@@ -77,6 +77,11 @@ export function schoolNeedRequiresReview(current: SchoolTeachingNeed, next: Norm
       .some((key) => current[key] !== next[key]));
 }
 
+export function schoolNeedContentChanged(current: SchoolTeachingNeed, next: NormalizedNeedInput) {
+  return (["date", "schoolId", "classId", "periodLabel", "start", "end", "teachingEnvironment", "sourceNote"] as const)
+    .some((key) => String(current[key] || "") !== String(next[key] || ""));
+}
+
 export function schoolNeedRevision(rows: SchoolTeachingNeed[]) {
   return createHash("sha256").update(JSON.stringify(rows.map((row) => [row.id, row.updatedAt, row.date, row.classId, row.start, row.end, row.status]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))))).digest("hex");
 }
@@ -95,8 +100,7 @@ export function planSchoolNeedImport(incoming: NormalizedNeedInput[], existing: 
     if (seen.has(uniqueness)) throw new Error(`Dòng ${index + 2}: trùng một dòng khác trong file.`);
     seen.add(uniqueness);
     if (!target) return { action: "NEW" as const, row };
-    const changed = (["date", "schoolId", "classId", "periodLabel", "start", "end", "teachingEnvironment", "sourceNote"] as const)
-      .some((key) => String(target[key] || "") !== String(row[key] || ""));
+    const changed = schoolNeedContentChanged(target, row);
     return { action: changed ? "CHANGED" as const : "SAME" as const, row, target };
   });
 }

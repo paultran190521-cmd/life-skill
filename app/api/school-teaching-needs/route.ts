@@ -3,7 +3,7 @@ import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
 import { appendSheetRows, deleteSheetRowById, ensureSheetHeaders, readSheetRowsBatch, schoolTeachingNeedHeaders, updateSheetRowsById } from "@/lib/google-sheets";
 import { requireSessionUser } from "@/lib/route-auth";
-import { normalizeSchoolNeedInput, planSchoolNeedImport, schoolNeedIdentity, schoolNeedRequiresReview, schoolNeedRevision, type SchoolNeedInput } from "@/lib/school-teaching-needs";
+import { normalizeSchoolNeedInput, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedIdentity, schoolNeedRequiresReview, schoolNeedRevision, type SchoolNeedInput } from "@/lib/school-teaching-needs";
 import type { ClassRoom, School, SchoolTeachingNeed } from "@/lib/types";
 
 const sheet = "SchoolTeachingNeeds" as const;
@@ -66,12 +66,13 @@ export async function POST(request: Request) {
     if (body.mode !== "apply") return NextResponse.json({ revision, summary, rows: plan.map((item) => ({ action: item.action, before: item.target, after: item.row })) });
 
     const now = new Date().toISOString();
+    const editorName = user.name?.trim() || user.email || user.id;
     const newRows: SchoolTeachingNeed[] = plan.filter((item) => item.action === "NEW").map((item) => ({
       ...item.row, id: createId("need"), scheduleId: "", status: "OPEN", createdAt: now, updatedAt: now,
     }));
     const updates = plan.filter((item) => item.action === "CHANGED" && item.target).map((item) => ({
       id: item.target!.id,
-      patch: { ...item.row, id: item.target!.id, status: schoolNeedRequiresReview(item.target!, item.row) ? "REVIEW" : item.target!.scheduleId ? "ASSIGNED" : "OPEN", updatedAt: now },
+      patch: { ...item.row, id: item.target!.id, status: schoolNeedRequiresReview(item.target!, item.row) ? "REVIEW" : item.target!.scheduleId ? "ASSIGNED" : "OPEN", updatedAt: now, lastEditedAt: now, lastEditedBy: editorName },
     }));
     if (newRows.length) await appendSheetRows(sheet, newRows);
     if (updates.length) await updateSheetRowsById(sheet, updates);
@@ -93,7 +94,9 @@ export async function PATCH(request: Request) {
     try { next = normalizeSchoolNeedInput({ ...current, ...body, school: body.school ?? current.schoolId, className: body.className ?? current.classId, environment: body.environment ?? current.teachingEnvironment }, schools, classes); }
     catch (error) { return apiFailure(400, error instanceof Error ? error.message : "Dòng lịch không hợp lệ.", undefined, requestId); }
     if (needs.some((row) => row.id !== current.id && schoolNeedIdentity(row) === schoolNeedIdentity(next))) return apiFailure(409, "Dòng đã có trong lịch trường.", undefined, requestId);
-    const patch = { ...next, id: current.id, status: schoolNeedRequiresReview(current, next) ? "REVIEW" : current.scheduleId ? "ASSIGNED" : "OPEN", updatedAt: new Date().toISOString() };
+    if (!schoolNeedContentChanged(current, next)) return NextResponse.json({ need: current, unchanged: true });
+    const now = new Date().toISOString();
+    const patch = { ...next, id: current.id, status: schoolNeedRequiresReview(current, next) ? "REVIEW" : current.scheduleId ? "ASSIGNED" : "OPEN", updatedAt: now, lastEditedAt: now, lastEditedBy: user.name?.trim() || user.email || user.id };
     await updateSheetRowsById(sheet, [{ id: current.id, patch }]);
     await appendAuditLog({ requestId, actor: user, action: "school_need.update", entityType: "SchoolTeachingNeed", entityId: current.id, route: "/api/school-teaching-needs", method: "PATCH", authMode: "enforce", decision: "allow", reason: "admin", source, before: current, after: patch });
     return NextResponse.json({ need: { ...current, ...patch } });

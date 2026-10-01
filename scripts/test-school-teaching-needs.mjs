@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { normalizeSchoolNeedInput, planSchoolNeedImport, schoolNeedRequiresReview, schoolNeedRevision } from "../lib/school-teaching-needs.ts";
+import { normalizeSchoolNeedInput, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedRequiresReview, schoolNeedRevision } from "../lib/school-teaching-needs.ts";
 
 const schools = [{ id: "s-nsg", name: "Trường Tiểu học Nam Sài Gòn", district: "" }];
 const classes = [{ id: "c-21", schoolId: "s-nsg", name: "2/1", grade: "2" }, { id: "c-22", schoolId: "s-nsg", name: "2/2", grade: "2" }];
@@ -18,6 +18,8 @@ assert.throws(() => normalizeSchoolNeedInput({ ...row, session: "Chiều" }, sch
 assert.throws(() => normalizeSchoolNeedInput({ ...row, date: "31/02/2026" }, schools, classes), /Ngày dạy/);
 
 const existing = [{ ...normalized, id: "need-1", status: "OPEN", scheduleId: "", createdAt: "t1", updatedAt: "t1" }];
+assert.equal(schoolNeedContentChanged(existing[0], normalized), false);
+assert.equal(schoolNeedContentChanged(existing[0], { ...normalized, sourceNote: "Trường cập nhật" }), true);
 assert.equal(planSchoolNeedImport([normalized], existing)[0].action, "SAME");
 assert.equal(planSchoolNeedImport([{ ...normalized, id: "need-1", start: "08:10" }], existing)[0].action, "CHANGED");
 assert.equal(planSchoolNeedImport([{ ...normalized, classId: "c-22" }], existing)[0].action, "NEW");

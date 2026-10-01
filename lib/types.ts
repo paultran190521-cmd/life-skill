@@ -161,6 +161,9 @@ export type SchoolTeachingNeed = {
   status: "OPEN" | "ASSIGNED" | "CANCELLED" | "REVIEW";
   createdAt?: string;
   updatedAt?: string;
+  /** Last administrative content change, separate from assignment/status updates. */
+  lastEditedAt?: string;
+  lastEditedBy?: string;
 };
 
 export type LessonPlan = {
