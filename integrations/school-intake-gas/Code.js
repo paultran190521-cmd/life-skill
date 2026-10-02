@@ -14,6 +14,7 @@ const INTAKE_FIRST_DATA_ROW = 6;
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Xác nhận lịch')
     .addItem('Mở thao tác theo vai trò', 'openIntakeSidebar')
+    .addItem('Kích hoạt nút gửi / duyệt trên bảng', 'installIntakeActionTrigger')
     .addItem('Áp dụng bộ lọc đầu bảng', 'applyIntakeFilters')
     .addItem('Xóa bộ lọc', 'clearIntakeFilters')
     .addItem('Cập nhật trường, lớp và tiết từ app', 'refreshIntakeCatalog')
@@ -23,6 +24,47 @@ function onOpen() {
 
 function openIntakeSidebar() {
   SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutputFromFile('Approval').setTitle('Xác nhận lịch trường'));
+}
+
+function installIntakeActionTrigger() {
+  const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  const settings = intakeSettings_();
+  if (![settings.submitter, settings.reviewer].includes(email)) throw new Error('Email này không được giao vòng gửi hoặc duyệt lịch.');
+  const workbook = SpreadsheetApp.getActive();
+  const installed = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === 'handleIntakeActionEdit' && trigger.getTriggerSourceId() === workbook.getId());
+  if (!installed) ScriptApp.newTrigger('handleIntakeActionEdit').forSpreadsheet(workbook).onEdit().create();
+  workbook.toast(installed ? 'Nút thao tác đã được kích hoạt cho email này.' : 'Đã kích hoạt nút thao tác cho email này.', 'Xác nhận lịch', 7);
+}
+
+function handleIntakeActionEdit(e) {
+  if (!e || !e.range || e.range.getSheet().getName() !== INTAKE_INPUT || e.range.getRow() !== 3 || ![8, 9].includes(e.range.getColumn()) || e.value !== 'TRUE') return;
+  const cell = e.range, mode = cell.getColumn() === 8 ? 'submit' : 'apply';
+  const email = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase();
+  const editor = e.user && e.user.getEmail ? String(e.user.getEmail() || '').trim().toLowerCase() : '';
+  const workbook = e.source, input = cell.getSheet();
+  const settings = intakeSettings_();
+  if (email !== (mode === 'submit' ? settings.submitter : settings.reviewer) || (editor && editor !== email)) return;
+  try {
+    const weekStart = String(input.getRange('D3').getDisplayValue() || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) throw new Error('Hãy chọn một tuần cụ thể ở ô D3 trước khi thao tác.');
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(15000)) throw new Error('Đang có thao tác xác nhận khác. Vui lòng thử lại.');
+    let result;
+    try {
+      const context = intakeContextForEmail_(email);
+      const batch = mode === 'apply' ? context.pending.find(row => row.weekStart === weekStart) : null;
+      if (mode === 'apply' && !batch) throw new Error('Tuần này chưa có đợt chờ duyệt vòng 2.');
+      result = intakeActionUnlocked_({ mode, school: 'Tất cả', weekStart, batchId: batch ? batch.id : '' }, email);
+    } finally { lock.releaseLock(); }
+    const summary = result.summary || {};
+    const detail = `${mode === 'submit' ? 'Đã gửi vòng 1' : 'Đã duyệt vào app'} · ${summary.schoolCount || 0} trường · ${summary.rowCount || 0} tiết. Mới ${summary.newCount || 0}, sửa ${summary.changedCount || 0}, trùng ${summary.duplicateCount || 0}, hủy ${summary.cancelledCount || 0}.`;
+    cell.setNote(detail + (result.mail && !result.mail.sent ? '\nEmail: ' + (result.mail.reason || 'chưa gửi được') : ''));
+    workbook.toast(detail, 'Xác nhận lịch', 10);
+  } catch (error) {
+    const message = error && error.message ? error.message : 'Không xử lý được thao tác.';
+    cell.setNote('Chưa thực hiện: ' + message);
+    workbook.toast(message, 'Chưa thực hiện', 10);
+  } finally { cell.setValue(false); }
 }
 
 function doGet() {
@@ -57,6 +99,24 @@ function intakeSettings_() {
   return { submitter: values[0], reviewer: values[1], director: values[2] };
 }
 
+function protectIntakeActionCells_(settings) {
+  const sheet = SpreadsheetApp.getActive().getSheetByName(INTAKE_INPUT);
+  [{ address: 'H3', email: settings.submitter, label: 'Vòng 1 gửi lịch' },
+    { address: 'I3', email: settings.reviewer, label: 'Vòng 2 duyệt lịch' }].forEach(item => {
+    const range = sheet.getRange(item.address);
+    let protection = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE)
+      .find(rule => rule.getDescription() === 'INTAKE_ACTION:' + item.address);
+    if (!protection) protection = range.protect().setDescription('INTAKE_ACTION:' + item.address);
+    const allowed = new Set([INTAKE_OWNER, item.email]);
+    protection.addEditors([...allowed]);
+    protection.getEditors().forEach(editor => {
+      const email = String(editor.getEmail() || '').toLowerCase();
+      if (email && !allowed.has(email)) protection.removeEditor(editor);
+    });
+    if (protection.canDomainEdit()) protection.setDomainEdit(false);
+  });
+}
+
 function intakeSaveSettings(input) {
   const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
   if (email !== INTAKE_OWNER) throw new Error('Chỉ chủ Google Sheet được đổi email của các vai trò.');
@@ -75,12 +135,16 @@ function intakeSaveSettings(input) {
     const updatedAt = Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy HH:mm:ss');
     SpreadsheetApp.getActive().getSheetByName('Cấu hình duyệt').getRange('B2:E4').setValues(
       [settings.submitter, settings.reviewer, settings.director].map(value => [value, allowed.get(value), updatedAt, email]));
+    protectIntakeActionCells_(settings);
     return { settings, updatedAt };
   } finally { lock.releaseLock(); }
 }
 
 function intakeContext() {
-  const email = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  return intakeContextForEmail_(String(Session.getActiveUser().getEmail() || '').trim().toLowerCase());
+}
+
+function intakeContextForEmail_(email) {
   const settings = intakeSettings_();
   const canSubmit = email === settings.submitter, canReview = email === settings.reviewer, canConfigure = email === INTAKE_OWNER;
   if (!canSubmit && !canReview && !canConfigure) throw new Error('Tài khoản Google này không được phép xác nhận lịch.');
@@ -127,8 +191,8 @@ function intakeAction(input) {
   try { return intakeActionUnlocked_(input); } finally { lock.releaseLock(); }
 }
 
-function intakeActionUnlocked_(input) {
-  const context = intakeContext();
+function intakeActionUnlocked_(input, actorEmail) {
+  const context = actorEmail ? intakeContextForEmail_(actorEmail) : intakeContext();
   const mode = String(input.mode || '');
   if (mode === 'submit' && !context.canSubmit) throw new Error('Chỉ email được chỉ định cho vòng 1 mới có thể gửi lịch.');
   if (['apply', 'reject', 'notify', 'lockWeek', 'unlockWeek'].includes(mode) && !context.canReview) throw new Error('Chỉ email được chỉ định cho vòng 2 mới có thể duyệt hoặc khóa tuần.');
@@ -140,7 +204,7 @@ function intakeActionUnlocked_(input) {
     const sheetUrl = SpreadsheetApp.getActive().getUrl();
     if (mode === 'submit' && result.batchId) {
       MailApp.sendEmail({ to: context.settings.reviewer, subject: 'METTASOUL · Lịch trường chờ duyệt vòng 2',
-        body: context.email + ' đã gửi lịch ' + input.school + ' tuần ' + input.weekStart + '.\nMã đợt: ' + result.batchId + '\nMới: ' + result.summary.newCount + ', sửa: ' + result.summary.changedCount + ', hủy: ' + result.summary.cancelledCount + '.\nKiểm tra tại: ' + sheetUrl });
+        body: context.email + ' đã gửi lịch tuần ' + input.weekStart + ' của ' + (result.summary.schoolCount || 1) + ' trường.\nMã đợt: ' + result.batchId + '\nMới: ' + result.summary.newCount + ', sửa: ' + result.summary.changedCount + ', hủy: ' + result.summary.cancelledCount + '.\nKiểm tra tại: ' + sheetUrl });
       result.mail.sent = true;
     } else if (mode === 'apply' && result.status === 'SYNCED') {
       const notification = notifyDirector_(result.batchId, result.summary, true);

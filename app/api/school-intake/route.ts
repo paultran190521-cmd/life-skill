@@ -4,7 +4,7 @@ import { appendAuditLog } from "@/lib/audit";
 import { sendScheduleCancellationEmail } from "@/lib/email";
 import { appendSheetRows, ensureSheetHeaders, readSheetRowsBatch, schoolTeachingNeedHeaders, updateSheetRowsById } from "@/lib/google-sheets";
 import { buildSchoolNeedTemplateCatalog } from "@/lib/school-need-template";
-import { appendIntakeRows, dateKey, intakeFingerprint, intakeInputFirstDataRow, intakeInputLastRow, intakeSettingsOwner, parseIntakeBatch, parseIntakeSourceRow, readIntakeSettings, readIntakeTab, readIntakeWeekLocks, setIntakeWeekLock, snapshotSourceRow, weekStartOf, writeIntakeRanges, type IntakeSettings, type IntakeSourceRow } from "@/lib/school-intake-storage";
+import { appendIntakeRows, intakeFingerprint, intakeInputFirstDataRow, intakeInputLastRow, intakeSettingsOwner, parseIntakeBatch, parseIntakeSourceRow, readIntakeSettings, readIntakeTab, readIntakeWeekLocks, setIntakeWeekLock, snapshotSourceRow, weekStartOf, writeIntakeRanges, type IntakeSettings, type IntakeSourceRow } from "@/lib/school-intake-storage";
 import { normalizeSchoolNeedInput, planSchoolNeedImport, schoolNeedIdentity, schoolNeedRequiresReview, schoolNeedRevision, type NormalizedNeedInput } from "@/lib/school-teaching-needs";
 import { isDoubleTeachingTimeSlot, isTimeSlotAllowedForSchool } from "@/lib/time-slots";
 import type { Attendance, ClassRoom, LessonPlan, Schedule, School, SchoolTeachingNeed, TeachingWorkLog, TimeSlot } from "@/lib/types";
@@ -19,10 +19,15 @@ type IntakeBody = {
   note?: string;
 };
 
-async function selectedRows(school: string, weekStart: string) {
+async function selectedRows(school: string, weekStart: string, options: { eligibleOnly?: boolean; rowIds?: Set<string> } = {}) {
   const raw = await readIntakeTab("Nhập lịch", "T", intakeInputLastRow);
   const rows = raw.slice(intakeInputFirstDataRow - 1).map((values, index) => parseIntakeSourceRow(values, index + intakeInputFirstDataRow))
-    .filter((row) => row.school === school && (weekStartOf(row.date || "") === weekStart || !dateKey(row.date || "")));
+    .filter((row) => {
+      const values = raw[row.number - 1] || [];
+      if (options.rowIds) return options.rowIds.has(row.rowId);
+      if (weekStartOf(row.date || "") !== weekStart || (school !== "Tất cả" && row.school !== school)) return false;
+      return !options.eligibleOnly || !["Chờ duyệt vòng 2", "Chờ Nguyễn Phương duyệt", "Đã đồng bộ"].includes(values[16] || "");
+    });
   const missingIds = rows.filter((row) => !row.rowId);
   if (missingIds.length) {
     const updates = missingIds.map((row) => {
@@ -152,20 +157,20 @@ export async function POST(request: Request) {
       weekStart = batch!.weekStart;
       rows = await snapshotRows(batch!.id);
       if (rows.length !== batch!.count || intakeFingerprint(rows) !== batch!.fingerprint) return apiFailure(409, "Bản lưu chờ duyệt đã thay đổi. Không thể xác nhận.", undefined, requestId);
-      const current = await selectedRows(school, weekStart);
+      const current = await selectedRows(school, weekStart, { rowIds: new Set(rows.map((row) => row.rowId)) });
       if (intakeFingerprint(current) !== batch!.fingerprint) return apiFailure(409, "Dữ liệu đã được sửa sau vòng 1. Người nhập lịch cần gửi lại để duyệt.", undefined, requestId);
     } else {
       school = String(body.school || "").trim();
       weekStart = String(body.weekStart || "").trim();
-      if (!school || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || weekStartOf(weekStart) !== weekStart) return apiFailure(400, "Hãy chọn trường và ngày thứ Hai của tuần cần xác nhận.", undefined, requestId);
-      rows = await selectedRows(school, weekStart);
+      if (!school || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || weekStartOf(weekStart) !== weekStart) return apiFailure(400, "Hãy chọn một tuần cụ thể và trường hoặc Tất cả.", undefined, requestId);
+      rows = await selectedRows(school, weekStart, { eligibleOnly: true });
     }
     if (weekLocks.get(weekStart)?.locked && body.mode !== "preview") return apiFailure(423, "Tuần này đã khóa. Người duyệt vòng 2 cần mở khóa trước khi sửa hoặc duyệt lịch.", undefined, requestId);
     if (rows.length < 1 || rows.length > 2000) return apiFailure(400, "Tuần này cần từ 1 đến 2.000 tiết hợp lệ.", undefined, requestId);
     if (body.mode === "submit") {
       const pending = (await readIntakeTab("Đợt duyệt", "R", 1000)).slice(1).map((row, index) => parseIntakeBatch(row, index + 2))
-        .find((item) => item.school === school && item.weekStart === weekStart && item.status === "WAITING_REVIEW");
-      if (pending) return apiFailure(409, "Trường và tuần này đang chờ duyệt vòng 2. Hãy đợi kết quả hoặc trả lại trước khi gửi tiếp.", undefined, requestId);
+        .find((item) => item.weekStart === weekStart && item.status === "WAITING_REVIEW");
+      if (pending) return apiFailure(409, "Tuần này đang có một đợt chờ duyệt vòng 2. Hãy xử lý đợt đó trước khi gửi tiếp.", undefined, requestId);
     }
 
     const context = await loadContext();
@@ -223,6 +228,9 @@ export async function POST(request: Request) {
     }
     const reactivated = new Set(plan.filter((item) => item.action === "SAME" && item.target?.status === "CANCELLED").map((item) => item.target!.id));
     const summary = {
+      schoolCount: new Set(rows.map((row) => row.school).filter(Boolean)).size,
+      schools: [...new Set(rows.map((row) => row.school).filter(Boolean))].sort(),
+      rowCount: rows.length,
       newCount: plan.filter((item) => item.action === "NEW").length,
       changedCount: plan.filter((item) => item.action === "CHANGED").length + reactivated.size,
       duplicateCount: plan.filter((item) => item.action === "SAME" && !reactivated.has(item.target?.id || "")).length,
@@ -246,7 +254,7 @@ export async function POST(request: Request) {
       const batchId = createId("batch");
       const fingerprint = intakeFingerprint(rows);
       const changeByRow = new Map(changes.map((change) => [change.rowId, change]));
-      const batchValues = [batchId, school, weekStart, fingerprint, "WAITING_REVIEW", String(rows.length), String(summary.newCount), String(summary.changedCount), String(summary.duplicateCount), String(summary.cancelledCount), actor.email, now, "", "", "", "", "", revision];
+      const batchValues = [batchId, school === "Tất cả" ? `${summary.schoolCount} trường` : school, weekStart, fingerprint, "WAITING_REVIEW", String(rows.length), String(summary.newCount), String(summary.changedCount), String(summary.duplicateCount), String(summary.cancelledCount), actor.email, now, "", "", "", "", "", revision];
       const snapshots = rows.map((row) => {
         const change = changeByRow.get(row.rowId);
         return [batchId, row.rowId, row.date || "", row.school || "", row.grade || "", row.className || "", row.session || "", row.periodLabel || "", row.start || "", row.end || "", row.environment || "", row.intakeStatus, row.sourceNote || "", row.id || "", change?.action || "", now, actor.email, change?.before ? JSON.stringify(change.before) : ""];

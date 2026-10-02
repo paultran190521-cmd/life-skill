@@ -37,8 +37,8 @@
   </section>
   <section class="card hidden" id="submitter">
     <strong id="submitter-label">Vòng 1 · Gửi lịch</strong>
-    <label for="school">Trường</label><select id="school"></select>
-    <label for="week">Tuần cần gửi</label><select id="week"></select>
+    <label for="school">Phạm vi trường</label><select id="school"></select>
+    <label for="week">Tuần cần gửi (bắt buộc)</label><select id="week"></select>
     <button class="secondary" onclick="act('preview','submitter')">Kiểm tra lịch</button>
     <button onclick="act('submit','submitter')">Xác nhận nhập lịch và gửi người duyệt</button>
   </section>
@@ -102,7 +102,7 @@
       setEmailOptions('director-email',data.emailChoices,data.settings.director);
       ['submitter-email','reviewer-email'].forEach(id=>$(id).onchange=settingsWarning);settingsWarning();
     }
-    $('school').innerHTML=data.schools.map(name=>'<option>'+name.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</option>').join('');
+    $('school').innerHTML=['Tất cả',...data.schools].map(name=>'<option>'+name.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</option>').join('');
     if(data.selection.school&&data.selection.school!=='Tất cả')$('school').value=data.selection.school;
     $('week').innerHTML=data.weeks.map(item=>'<option value="'+item.value+'">'+item.label+'</option>').join('');
     if(data.selection.weekStart&&data.selection.weekStart!=='Tất cả')$('week').value=data.selection.weekStart;
@@ -117,7 +117,7 @@
     $('lock-status').textContent=week?(locked?'Đã khóa · muốn sửa cần mở lại':'Đang mở · có thể khóa sau khi tuần kết thúc'):'Chưa có tuần trong bảng';
     $('lock-button').disabled=!week||!!locked;$('unlock-button').disabled=!week||!locked;
   }
-  const confirmationText={submit:'Gửi lịch tuần này cho email duyệt vòng 2 kiểm tra?',apply:'Xác nhận lịch đúng và chuyển vào METTASOUL?',reject:'Trả lại lịch cho người nhập sửa?',notify:'Gửi thông báo lịch đã duyệt cho email giám đốc?',lockWeek:'Khóa toàn bộ lịch của tuần này sau khi đã kết thúc?',unlockWeek:'Mở lại tuần này để sửa lịch?'};
+  const confirmationText={submit:'Gửi tất cả lịch chưa gửi của tuần này cho email duyệt vòng 2?',apply:'Xác nhận lịch của các trường trong đợt này và chuyển vào METTASOUL?',reject:'Trả lại lịch cho người nhập sửa?',notify:'Gửi thông báo lịch đã duyệt cho email giám đốc?',lockWeek:'Khóa toàn bộ lịch của tuần này sau khi đã kết thúc?',unlockWeek:'Mở lại tuần này để sửa lịch?'};
   function act(mode,source){
     if(confirmationText[mode]){pendingAction={mode,source};$('confirm-message').textContent=confirmationText[mode];$('confirm-dialog').showModal();return}
     runAction(mode,source);
@@ -128,7 +128,7 @@
     const selected=context&&context.pending.find(row=>row.id===$('batch').value);
     const submitterAction=source==='submitter'||mode==='submit';
     google.script.run.withSuccessHandler(result=>{
-      const s=result.summary||{};let message='Trạng thái: '+(result.status||'Đã kiểm tra')+'\nMới: '+(s.newCount||0)+' · sửa: '+(s.changedCount||0)+' · trùng: '+(s.duplicateCount||0)+' · hủy: '+(s.cancelledCount||0);
+      const s=result.summary||{};let message='Trạng thái: '+(result.status||'Đã kiểm tra')+'\n'+(s.schoolCount||0)+' trường · '+(s.rowCount||0)+' tiết\nMới: '+(s.newCount||0)+' · sửa: '+(s.changedCount||0)+' · trùng: '+(s.duplicateCount||0)+' · hủy: '+(s.cancelledCount||0);
       if(result.mail&&!result.mail.sent&&result.mail.reason)message+='\nEmail chưa gửi được: '+result.mail.reason;
       if(result.changes&&result.changes.length)message+='\n\n'+result.changes.map(x=>x.action+' · '+x.description+(x.previous&&x.action==='CHANGED'?'\n  Trước: '+x.previous:'')).join('\n');
       show(message,false);if(result.status)load();
