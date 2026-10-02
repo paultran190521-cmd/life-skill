@@ -15,6 +15,7 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('Xác nhận lịch')
     .addItem('Mở thao tác theo vai trò', 'openIntakeSidebar')
     .addItem('Kích hoạt nút gửi / duyệt trên bảng', 'installIntakeActionTrigger')
+    .addItem('Gửi lại email thông báo của tuần đang chọn', 'retryIntakeNotification')
     .addItem('Áp dụng bộ lọc đầu bảng', 'applyIntakeFilters')
     .addItem('Xóa bộ lọc', 'clearIntakeFilters')
     .addItem('Cập nhật trường, lớp và tiết từ app', 'refreshIntakeCatalog')
@@ -35,6 +36,31 @@ function installIntakeActionTrigger() {
   const installed = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === 'handleIntakeActionEdit' && trigger.getTriggerSourceId() === workbook.getId());
   if (!installed) ScriptApp.newTrigger('handleIntakeActionEdit').forSpreadsheet(workbook).onEdit().create();
   workbook.toast(installed ? 'Nút thao tác đã được kích hoạt cho email này.' : 'Đã kích hoạt nút thao tác cho email này.', 'Xác nhận lịch', 7);
+}
+
+function retryIntakeNotification() {
+  const workbook = SpreadsheetApp.getActive();
+  const input = workbook.getSheetByName(INTAKE_INPUT);
+  const weekStart = String(input.getRange('D3').getDisplayValue() || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) throw new Error('Hãy chọn một tuần cụ thể ở ô D3.');
+  const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  const settings = intakeSettings_();
+  if (![settings.submitter, settings.reviewer].includes(email)) throw new Error('Email này không được giao vòng gửi hoặc duyệt lịch.');
+  const sheet = workbook.getSheetByName(INTAKE_BATCHES);
+  const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 18).getDisplayValues() : [];
+  const options = rows.filter(row => row[2] === weekStart).reverse().flatMap(row => {
+    if (row[4] === 'WAITING_REVIEW' && row[10] === email) return [{ event: 'submitted', batchId: row[0] }];
+    if (row[4] === 'RETURNED' && row[12] === email) return [{ event: 'returned', batchId: row[0] }];
+    if (row[4] === 'SYNCED' && !row[16] && row[12] === email) return [{ event: 'approved', batchId: row[0] }];
+    return [];
+  });
+  if (!options.length) throw new Error('Tuần này không có email cần gửi lại cho vai trò của bạn.');
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) throw new Error('Một thao tác xác nhận khác đang chạy. Vui lòng thử lại.');
+  try {
+    const result = intakeApi_('POST', options[0], '/api/school-intake/notify');
+    workbook.toast(result.alreadySent ? 'Email này đã được gửi trước đó.' : 'Đã gửi lại email từ lifeskill@mettasoul.vn.', 'Xác nhận lịch', 8);
+  } finally { lock.releaseLock(); }
 }
 
 function handleIntakeActionEdit(e) {
@@ -73,7 +99,7 @@ function doGet() {
   return HtmlService.createHtmlOutputFromFile('Approval').setTitle('METTASOUL · Xác nhận lịch');
 }
 
-function intakeApi_(method, data) {
+function intakeApi_(method, data, path) {
   const options = {
     method: method.toLowerCase(),
     contentType: 'application/json',
@@ -82,7 +108,7 @@ function intakeApi_(method, data) {
     followRedirects: false,
   };
   if (method === 'POST') options.payload = JSON.stringify(data);
-  const response = UrlFetchApp.fetch(INTAKE_API_BASE + '/api/school-intake', options);
+  const response = UrlFetchApp.fetch(INTAKE_API_BASE + (path || '/api/school-intake'), options);
   let body;
   try { body = JSON.parse(response.getContentText()); } catch (_) { body = {}; }
   if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
@@ -209,7 +235,7 @@ function intakeActionUnlocked_(input, actorEmail) {
         title: 'Lịch trường chờ duyệt vòng 2', badge: 'CẦN KIỂM TRA',
         intro: context.email + ' đã gửi lịch để bạn kiểm tra và xác nhận.',
         account: context.settings.reviewer, week: input.weekStart, batchId: result.batchId,
-        summary: result.summary, action: 'Mở bảng lịch để duyệt', url: sheetUrl,
+        summary: result.summary, action: 'Mở bảng lịch để duyệt', url: sheetUrl, event: 'submitted',
         instruction: 'Chọn đúng tuần ở đầu tab Nhập lịch, kiểm tra các dòng và bấm xác nhận vòng 2.',
       });
       result.mail.sent = true;
@@ -222,7 +248,7 @@ function intakeActionUnlocked_(input, actorEmail) {
         title: 'Lịch trường cần chỉnh sửa', badge: 'ĐƯỢC TRẢ LẠI',
         intro: context.email + ' đã trả lại đợt lịch để bạn cập nhật.',
         account: context.settings.submitter, week: input.weekStart, batchId: result.batchId,
-        summary: result.summary, note: result.note, action: 'Mở bảng lịch để sửa', url: sheetUrl,
+        summary: result.summary, note: result.note, action: 'Mở bảng lịch để sửa', url: sheetUrl, event: 'returned',
         instruction: 'Sửa các dòng cần thiết trên tab Nhập lịch, sau đó gửi lại vòng 1.',
       });
       result.mail.sent = true;
@@ -245,53 +271,20 @@ function notifyDirector_(batchId, summary, trustedSynced, actorEmail) {
       title: 'Lịch trường đã chuyển vào METTASOUL', badge: 'ĐÃ ĐỒNG BỘ',
       intro: (actorEmail || String(Session.getActiveUser().getEmail() || '')) + ' đã xác nhận lịch vòng 2. Đây là email thông tin; bạn không cần duyệt thêm.',
       account: intakeSettings_().director, week: batch[2], batchId,
-      summary: counts, note: counts.reviewCount ? 'Cần đối chiếu ' + counts.reviewCount + ' tiết đã giao giáo viên.' : '',
+      summary: counts, note: counts.reviewCount ? 'Cần đối chiếu ' + counts.reviewCount + ' tiết đã giao giáo viên.' : '', event: 'approved',
       action: 'Xem lịch đã duyệt', url: SpreadsheetApp.getActive().getUrl(),
       instruction: 'Lịch đã vào app. Giáo vụ tiếp tục chọn giáo viên và gửi lịch từ METTASOUL.',
     });
     result.mail.sent = true;
-    batches.getRange(index + 2, 17).setValue(new Date());
-    SpreadsheetApp.flush();
     result.status = 'NOTIFIED';
   } catch (error) { result.mail.reason = error && error.message ? error.message : 'Không ghi nhận được email.'; }
   return result;
 }
 
 function sendIntakeEmail_(to, subject, details) {
-  const clean = value => String(value == null ? '' : value);
-  const escapeHtml = value => clean(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  const counts = details.summary || {};
-  const number = value => value == null || value === '' ? '—' : Number(value);
-  const metrics = [
-    ['Trường', number(counts.schoolCount)], ['Tiết', number(counts.rowCount)],
-    ['Mới', number(counts.newCount)], ['Sửa', number(counts.changedCount)],
-    ['Trùng', number(counts.duplicateCount)], ['Hủy', number(counts.cancelledCount)],
-  ];
-  const sheetUrl = clean(details.url).split('#')[0] + '#gid=0';
-  const body = [
-    'METTASOUL | ' + clean(details.title), '', clean(details.intro), '',
-    'MỞ BẰNG TÀI KHOẢN GOOGLE: ' + clean(details.account),
-    'Đây là email đã được cấp quyền truy cập. Nếu đang đăng nhập nhiều tài khoản, hãy chuyển sang email này trước khi mở liên kết.', '',
-    'Tuần bắt đầu: ' + clean(details.week), 'Mã đợt: ' + clean(details.batchId),
-    metrics.map(item => item[0] + ': ' + item[1]).join(' · '),
-    details.note ? 'Ghi chú: ' + clean(details.note) : '',
-    clean(details.instruction), clean(details.action) + ': ' + sheetUrl,
-  ].filter(line => line !== '').join('\n');
-  const cards = metrics.map((item, index) => (index === 3 ? '</tr><tr>' : '') + '<td style="width:33%;padding:10px 12px;border:1px solid #dbe7ed;border-radius:10px;text-align:center;background:#f5fafb"><strong style="display:block;font-size:20px;color:#0c5269">' + escapeHtml(item[1]) + '</strong><span style="font-size:12px;color:#526672">' + escapeHtml(item[0]) + '</span></td>').join('');
-  const htmlBody = '<div style="margin:0;padding:28px 12px;background:#edf5f7;font-family:Arial,sans-serif;color:#17394a">' +
-    '<div style="max-width:640px;margin:auto;background:#ffffff;border:1px solid #d7e9ed;border-radius:18px;overflow:hidden">' +
-    '<div style="background:#0b7287;padding:22px 28px;color:#ffffff"><div style="font-size:13px;letter-spacing:2px;font-weight:bold">METTASOUL</div><div style="font-size:13px;margin-top:5px">LỊCH DẠY HẰNG TUẦN</div></div>' +
-    '<div style="padding:28px"><div style="display:inline-block;padding:6px 11px;border-radius:99px;background:#e7f6ef;color:#176b4b;font-size:11px;font-weight:bold;letter-spacing:1px">' + escapeHtml(details.badge) + '</div>' +
-    '<h1 style="font-size:23px;line-height:1.3;margin:16px 0 8px;color:#123e50">' + escapeHtml(details.title) + '</h1>' +
-    '<p style="font-size:14px;line-height:1.7;color:#465e6c;margin:0 0 20px">' + escapeHtml(details.intro) + '</p>' +
-    '<div style="padding:16px;border-radius:12px;background:#fff4d8;border:1px solid #f0d18b"><div style="font-size:11px;font-weight:bold;color:#8a5c12;letter-spacing:.5px">TÀI KHOẢN ĐƯỢC CẤP QUYỀN</div><div style="font-size:17px;font-weight:bold;color:#423110;margin:6px 0">' + escapeHtml(details.account) + '</div><div style="font-size:12px;line-height:1.5;color:#674b1d">Nếu đang đăng nhập nhiều tài khoản Google, hãy chuyển sang email này trước khi mở bảng lịch.</div></div>' +
-    '<p style="font-size:13px;line-height:1.7;margin:20px 0 12px"><strong>Tuần bắt đầu:</strong> ' + escapeHtml(details.week) + '<br><strong>Mã đợt:</strong> ' + escapeHtml(details.batchId) + '</p>' +
-    '<table role="presentation" cellspacing="5" cellpadding="0" style="width:100%;border-collapse:separate"><tr>' + cards + '</tr></table>' +
-    (details.note ? '<p style="padding:12px 14px;background:#fff4f0;border-left:3px solid #d9764e;border-radius:7px;font-size:13px;line-height:1.6"><strong>Ghi chú:</strong> ' + escapeHtml(details.note) + '</p>' : '') +
-    '<p style="font-size:13px;line-height:1.6;color:#465e6c;margin:20px 0">' + escapeHtml(details.instruction) + '</p>' +
-    '<a href="' + escapeHtml(sheetUrl) + '" style="display:inline-block;background:#0b7287;color:#ffffff;text-decoration:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:bold">' + escapeHtml(details.action) + '</a>' +
-    '<p style="font-size:11px;color:#718896;line-height:1.5;margin:24px 0 0">Email tự động từ quy trình nhập và duyệt lịch METTASOUL.</p></div></div></div>';
-  MailApp.sendEmail({ to, subject, body, htmlBody, name: 'METTASOUL Giáo vụ' });
+  // The app verifies the actor, batch state and recipient, then sends through the
+  // dedicated lifeskill@mettasoul.vn SMTP account. No SMTP secret is stored here.
+  return intakeApi_('POST', { event: details.event, batchId: details.batchId }, '/api/school-intake/notify');
 }
 
 function refreshIntakeCatalog() {

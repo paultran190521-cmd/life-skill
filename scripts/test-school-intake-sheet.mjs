@@ -36,22 +36,17 @@ assert.equal(JSON.stringify(input), before, "Rebuilding validation must not alte
 
 const gas = fs.readFileSync(new URL("../integrations/school-intake-gas/Code.js", import.meta.url), "utf8");
 let sent;
-const context = vm.createContext({ MailApp: { sendEmail(message) { sent = message; } } });
+const context = vm.createContext({});
 vm.runInContext(gas, context);
+context.intakeApi_ = (method, data, path) => { sent = { method, data, path }; return { sent: true }; };
 vm.runInContext(`sendIntakeEmail_('reviewer@example.com', 'Duyệt lịch', {
-  title: 'Chờ duyệt', badge: 'CẦN KIỂM TRA', intro: 'Lịch từ <người gửi>',
+  title: 'Chờ duyệt', badge: 'CẦN KIỂM TRA', intro: 'Lịch từ <người gửi>', event: 'submitted',
   account: 'reviewer@example.com', week: '2026-10-05', batchId: 'batch-1',
   summary: { schoolCount: 2, rowCount: 3, newCount: 1 }, note: '<xấu>',
   instruction: 'Kiểm tra rồi duyệt', action: 'Mở bảng lịch',
   url: 'https://docs.google.com/spreadsheets/d/example/edit'
 });`, context);
-assert.equal(sent.to, "reviewer@example.com");
-assert.match(sent.body, /MỞ BẰNG TÀI KHOẢN GOOGLE: reviewer@example\.com/);
-assert.match(sent.htmlBody, /TÀI KHOẢN ĐƯỢC CẤP QUYỀN/);
-assert.match(sent.htmlBody, /Lịch từ &lt;người gửi&gt;/);
-assert.match(sent.htmlBody, /&lt;xấu&gt;/);
-assert.doesNotMatch(sent.htmlBody, /<xấu>/);
-assert.match(sent.htmlBody, /#gid=0/);
+assert.deepEqual(JSON.parse(JSON.stringify(sent)), { method: "POST", data: { event: "submitted", batchId: "batch-1" }, path: "/api/school-intake/notify" });
 let repairedRules;
 const inputSheet = {
   getMaxRows: () => 8,
