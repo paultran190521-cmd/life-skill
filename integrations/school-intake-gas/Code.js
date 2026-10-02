@@ -143,7 +143,9 @@ function intakeActionUnlocked_(input) {
         body: context.email + ' đã gửi lịch ' + input.school + ' tuần ' + input.weekStart + '.\nMã đợt: ' + result.batchId + '\nMới: ' + result.summary.newCount + ', sửa: ' + result.summary.changedCount + ', hủy: ' + result.summary.cancelledCount + '.\nKiểm tra tại: ' + sheetUrl });
       result.mail.sent = true;
     } else if (mode === 'apply' && result.status === 'SYNCED') {
-      result.mail = notifyDirector_(result.batchId, result.summary).mail;
+      const notification = notifyDirector_(result.batchId, result.summary, true);
+      result.mail = notification.mail;
+      if (notification.status === 'NOTIFIED') result.status = 'NOTIFIED';
     } else if (mode === 'reject' && result.status === 'RETURNED') {
       MailApp.sendEmail({ to: context.settings.submitter, subject: 'METTASOUL · Lịch trường được trả lại để sửa',
         body: context.email + ' đã trả lại đợt ' + result.batchId + '.\nLý do: ' + result.note + '\n' + sheetUrl });
@@ -153,16 +155,12 @@ function intakeActionUnlocked_(input) {
   return result;
 }
 
-function notifyDirector_(batchId, summary) {
+function notifyDirector_(batchId, summary, trustedSynced) {
   const batches = SpreadsheetApp.getActive().getSheetByName(INTAKE_BATCHES);
-  let batch;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const rows = batches.getLastRow() > 1 ? batches.getRange(2, 1, batches.getLastRow() - 1, 18).getDisplayValues() : [];
-    batch = rows.find(row => row[0] === batchId);
-    if (batch && batch[4] === 'SYNCED') break;
-    if (attempt < 3) Utilities.sleep(350 * (attempt + 1));
-  }
-  if (!batch || batch[4] !== 'SYNCED') throw new Error('Đợt lịch chưa được đồng bộ vào app.');
+  const rows = batches.getLastRow() > 1 ? batches.getRange(2, 1, batches.getLastRow() - 1, 18).getDisplayValues() : [];
+  const index = rows.findIndex(row => row[0] === batchId);
+  const batch = rows[index];
+  if (!batch || (!trustedSynced && batch[4] !== 'SYNCED')) throw new Error('Đợt lịch chưa được đồng bộ vào app.');
   if (batch[16]) return { batchId, status: 'NOTIFIED', mail: { sent: true, reason: '' } };
   const counts = summary || { newCount: Number(batch[6] || 0), changedCount: Number(batch[7] || 0), cancelledCount: Number(batch[9] || 0) };
   const result = { batchId, status: 'SYNCED', mail: { sent: false, reason: '' } };
@@ -170,7 +168,8 @@ function notifyDirector_(batchId, summary) {
     MailApp.sendEmail({ to: intakeSettings_().director, subject: 'METTASOUL · Lịch trường đã duyệt và chuyển vào app',
       body: String(Session.getActiveUser().getEmail() || '') + ' đã xác nhận lịch và hệ thống đã đồng bộ vào app.\nMã đợt: ' + batchId + '\nMới: ' + counts.newCount + ', sửa: ' + counts.changedCount + ', hủy: ' + counts.cancelledCount + '.\n' + (counts.reviewCount ? 'Cần đối chiếu lịch giáo viên đã giao: ' + counts.reviewCount + ' tiết.\n' : '') + SpreadsheetApp.getActive().getUrl() });
     result.mail.sent = true;
-    intakeApi_('POST', { mode: 'mailSent', batchId });
+    batches.getRange(index + 2, 17).setValue(new Date());
+    SpreadsheetApp.flush();
     result.status = 'NOTIFIED';
   } catch (error) { result.mail.reason = error && error.message ? error.message : 'Không ghi nhận được email.'; }
   return result;
