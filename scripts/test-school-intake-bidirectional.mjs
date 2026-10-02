@@ -25,6 +25,7 @@ assert.deepEqual(Array.from(fields), ["05/10/2026", "Trường A", "Khối 10", 
 const effective = ["intake-1", ...fields, need.id, "batch-1", "2026-10-02T00:00:00Z"];
 const input = ["intake-1", ...fields, "", "", "SAME", "", "Đã đồng bộ", need.id, "", "batch-1"];
 assert.equal(exports.isIntakeRowDirty(input, effective), false);
+assert.equal(exports.isIntakeRowDirty(input.map((value, index) => index === 7 ? "0,2916666667" : index === 8 ? "0.3229166667" : value), effective), false);
 assert.equal(exports.appNeedDiffersFromEffective(need, effective, schools, classes), false);
 assert.equal(exports.isIntakeRowDirty(input.map((value, index) => index === 4 ? "10A2" : value), effective), true);
 assert.equal(exports.isIntakeRowDirty(input.map((value, index) => index === 16 ? "Đã sửa · cần gửi lại" : value), effective), true);

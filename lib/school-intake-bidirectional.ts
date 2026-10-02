@@ -26,7 +26,22 @@ export function needFields(need: SchoolTeachingNeed, schools: School[], classes:
 export function isIntakeRowDirty(input: string[], effective: string[]) {
   if ((input[16] || "") !== "Đã đồng bộ") return true;
   if (!effective.length || (input[0] || "") !== (effective[0] || "")) return true;
-  return Array.from({ length: 11 }, (_, index) => input[index + 1] || "").some((value, index) => value !== (effective[index + 1] || ""));
+  return Array.from({ length: 11 }, (_, index) => index + 1).some((column) => {
+    const value = input[column] || "";
+    const expected = effective[column] || "";
+    // Sheets can render a time-formatted numeric cell as a localized Excel fraction.
+    if (column === 7 || column === 8) return normalizeIntakeTime(value) !== normalizeIntakeTime(expected);
+    return value !== expected;
+  });
+}
+
+function normalizeIntakeTime(value: string) {
+  const fraction = Number(value.replace(",", "."));
+  if (value.trim() && Number.isFinite(fraction) && fraction >= 0 && fraction < 1) {
+    const minutes = Math.round(fraction * 1440);
+    return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  }
+  return value.trim();
 }
 
 export function appNeedDiffersFromEffective(need: SchoolTeachingNeed, effective: string[], schools: School[], classes: ClassRoom[]) {
