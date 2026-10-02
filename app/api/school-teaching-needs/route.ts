@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
+import { appNeedDiffersFromEffective, assertAppNeedCanEditIntake, intakeConflictMessage, mirrorAppNeedToIntake } from "@/lib/school-intake-bidirectional";
 import { appendSheetRows, deleteSheetRowsByIds, ensureSheetHeaders, readSheetRowsBatch, schoolTeachingNeedHeaders, updateSheetRowsById } from "@/lib/google-sheets";
 import { requireSessionUser } from "@/lib/route-auth";
 import { normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedIdentity, schoolNeedRequiresReview, schoolNeedRevision, type SchoolNeedInput } from "@/lib/school-teaching-needs";
@@ -94,12 +95,30 @@ export async function PATCH(request: Request) {
     try { next = normalizeSchoolNeedInput({ ...current, ...body, school: body.school ?? current.schoolId, className: body.className ?? current.classId, environment: body.environment ?? current.teachingEnvironment }, schools, classes); }
     catch (error) { return apiFailure(400, error instanceof Error ? error.message : "Dòng lịch không hợp lệ.", undefined, requestId); }
     if (needs.some((row) => row.id !== current.id && schoolNeedIdentity(row) === schoolNeedIdentity(next))) return apiFailure(409, "Dòng đã có trong lịch trường.", undefined, requestId);
-    if (!schoolNeedContentChanged(current, next)) return NextResponse.json({ need: current, unchanged: true });
+    let intakeLink;
+    try { intakeLink = await assertAppNeedCanEditIntake(current.id, [current.date, next.date]); }
+    catch (error) { return apiFailure(409, error instanceof Error ? error.message : intakeConflictMessage, undefined, requestId); }
+    if (!schoolNeedContentChanged(current, next)) {
+      if (intakeLink && !appNeedDiffersFromEffective(current, intakeLink.effective, schools, classes)) return NextResponse.json({ need: current, unchanged: true, intakeSynced: true });
+      try {
+        await mirrorAppNeedToIntake(current, current, user.name?.trim() || user.email || user.id, schools, classes);
+        return NextResponse.json({ need: current, unchanged: true, intakeSynced: true });
+      } catch (error) {
+        return NextResponse.json({ need: current, unchanged: true, intakeSynced: false, intakeWarning: error instanceof Error ? error.message : "Không cập nhật được Google Sheet nhập lịch." });
+      }
+    }
     const now = new Date().toISOString();
-    const patch = { ...next, id: current.id, status: schoolNeedRequiresReview(current, next) ? "REVIEW" : current.scheduleId ? "ASSIGNED" : "OPEN", updatedAt: now, lastEditedAt: now, lastEditedBy: user.name?.trim() || user.email || user.id };
+    const patch: Partial<SchoolTeachingNeed> = { ...next, id: current.id, status: schoolNeedRequiresReview(current, next) ? "REVIEW" : current.scheduleId ? "ASSIGNED" : "OPEN", updatedAt: now, lastEditedAt: now, lastEditedBy: user.name?.trim() || user.email || user.id };
     await updateSheetRowsById(sheet, [{ id: current.id, patch }]);
     await appendAuditLog({ requestId, actor: user, action: "school_need.update", entityType: "SchoolTeachingNeed", entityId: current.id, route: "/api/school-teaching-needs", method: "PATCH", authMode: "enforce", decision: "allow", reason: "admin", source, before: current, after: patch });
-    return NextResponse.json({ need: { ...current, ...patch } });
+    const updated: SchoolTeachingNeed = { ...current, ...patch };
+    let intakeWarning = "";
+    try { await mirrorAppNeedToIntake(updated, current, patch.lastEditedBy || "", schools, classes); }
+    catch (error) {
+      intakeWarning = error instanceof Error ? error.message : "Không cập nhật được Google Sheet nhập lịch.";
+      console.error("School need was saved but intake mirror failed", { requestId, needId: current.id, error });
+    }
+    return NextResponse.json({ need: updated, intakeSynced: !intakeWarning, intakeWarning });
   } catch (error) { return apiError(error, requestId); }
 }
 

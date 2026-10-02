@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
+import { appNeedDiffersFromEffective } from "@/lib/school-intake-bidirectional";
 import { sendScheduleCancellationEmail } from "@/lib/email";
 import { appendSheetRows, ensureSheetHeaders, readSheetRowsBatch, schoolTeachingNeedHeaders, updateSheetRowsById } from "@/lib/google-sheets";
 import { buildSchoolNeedTemplateCatalog } from "@/lib/school-need-template";
@@ -26,7 +27,7 @@ async function selectedRows(school: string, weekStart: string, options: { eligib
       const values = raw[row.number - 1] || [];
       if (options.rowIds) return options.rowIds.has(row.rowId);
       if (weekStartOf(row.date || "") !== weekStart || (school !== "Tất cả" && row.school !== school)) return false;
-      return !options.eligibleOnly || !["Chờ duyệt vòng 2", "Chờ Nguyễn Phương duyệt", "Đã đồng bộ"].includes(values[16] || "");
+      return !options.eligibleOnly || !["Chờ duyệt vòng 2", "Chờ Nguyễn Phương duyệt", "Đã đồng bộ", "Đã xóa trong app"].includes(values[16] || "");
     });
   const missingIds = rows.filter((row) => !row.rowId);
   if (missingIds.length) {
@@ -177,6 +178,24 @@ export async function POST(request: Request) {
     const revision = schoolNeedRevision(context.needs);
     const alreadyApplied = Boolean(body.mode === "apply" && context.auditLogs.some((row) => row.action === "school_intake.apply" && row.entityId === batch!.id));
     if ((body.mode === "apply" || body.mode === "preview" && batch) && batch!.revision !== revision && !alreadyApplied) return apiFailure(409, "Lịch trong app đã thay đổi từ sau vòng 1. Người nhập lịch cần gửi lại bản kiểm tra.", undefined, requestId);
+
+    const effectiveRows = await readIntakeTab("Lịch hiệu lực", "O", 1000);
+    const effectiveByRowId = new Map(effectiveRows.slice(1).filter((row) => row[0]).map((row) => [row[0], row]));
+    const appById = new Map(context.needs.map((need) => [need.id, need]));
+    const outOfSync = rows.flatMap((source, index) => {
+      if (!source.id) return [];
+      const effective = effectiveByRowId.get(source.rowId);
+      const current = appById.get(source.id);
+      if (!effective || effective[12] !== source.id || !current || appNeedDiffersFromEffective(current, effective, context.schools, context.classes)) {
+        return [{ rowId: source.rowId, index: (source as IntakeRow & { number?: number }).number || index + intakeInputFirstDataRow,
+          message: "Lịch trong app và bản đã duyệt trên Sheet khác nhau. Cần đối chiếu trước khi gửi lại; hệ thống chưa ghi đè." }];
+      }
+      return [];
+    });
+    if (outOfSync.length && !alreadyApplied) {
+      if (body.mode !== "apply" && !batch) await writeIntakeRanges(outOfSync.filter((item) => item.index >= intakeInputFirstDataRow).map((item) => ({ range: `'Nhập lịch'!P${item.index}`, values: [[item.message]] })));
+      return NextResponse.json({ error: "Có lịch đã thay đổi trong app. Vui lòng đối chiếu trước khi gửi duyệt.", errors: outOfSync }, { status: 409 });
+    }
 
     const catalog = buildSchoolNeedTemplateCatalog(context.schools, context.classes, context.slots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot, { includeDouble: true });
     const normalized: Array<{ source: IntakeRow; row: NormalizedNeedInput }> = [];

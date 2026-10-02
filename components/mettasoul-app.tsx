@@ -6394,14 +6394,32 @@ export function MettasoulApp() {
     async function saveSchoolNeedEdit() {
       if (!editingSchoolNeedDraft) return;
       try {
-        const result = await saveRequest<{ need: SchoolTeachingNeed }>("Đang sửa lịch trường...", "/api/school-teaching-needs", { method: "PATCH", body: JSON.stringify(editingSchoolNeedDraft) });
+        const result = await saveRequest<{ need: SchoolTeachingNeed; intakeSynced?: boolean; intakeWarning?: string }>("Đang sửa lịch trường...", "/api/school-teaching-needs", { method: "PATCH", body: JSON.stringify(editingSchoolNeedDraft) });
         const next = weekNeeds.map((need) => need.id === result.need.id ? result.need : need);
         setSchoolNeeds(next);
         setSelectedSchoolNeedIds((ids) => ids.filter((id) => next.some((need) => need.id === id && !need.scheduleId)));
         setDraftSchedule({ items: draftItemsFromSchoolNeeds(next.filter((need) => need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd), activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || ""))) });
         setEditingSchoolNeedId("");
         setEditingSchoolNeedDraft(null);
-        pushToast("Đã sửa dòng lịch trường", result.need.status === "REVIEW" ? "Lịch đã giao cần admin xem lại trước khi áp dụng thay đổi." : "Danh sách cần giao đã cập nhật.", result.need.status === "REVIEW" ? "warning" : "success");
+        pushToast("Đã sửa dòng lịch trường", result.intakeSynced === false ? `App đã lưu, nhưng Sheet chưa cập nhật: ${result.intakeWarning || "Cần đồng bộ lại."}` : result.need.status === "REVIEW" ? "Lịch đã giao cần admin xem lại trước khi áp dụng thay đổi. Google Sheet đã cập nhật." : "Danh sách cần giao và Google Sheet đã cập nhật.", result.intakeSynced === false || result.need.status === "REVIEW" ? "warning" : "success");
+      } catch (error) { handleSaveError(error); }
+    }
+
+    async function compareSchoolNeedWithSheet(need: SchoolTeachingNeed) {
+      try {
+        const preview = await saveRequest<{ app: string[]; sheet: string[] | null; sheetStatus: string; conflict: boolean; revision: string; appUpdatedAt: string }>(
+          "Đang đối chiếu Google Sheet...", `/api/school-teaching-needs/intake-sync?id=${encodeURIComponent(need.id)}`);
+        if (!preview.conflict && preview.sheet) {
+          pushToast("Đã đồng bộ", "Dòng lịch trong app và Google Sheet đang khớp nhau.", "success");
+          return;
+        }
+        const labels = ["Ngày", "Trường", "Khối", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Tình trạng", "Ghi chú"];
+        const differences = preview.sheet ? labels.flatMap((label, index) => preview.app[index] === preview.sheet?.[index] ? [] : [`${label}: Sheet «${preview.sheet?.[index] || "trống"}» → App «${preview.app[index] || "trống"}»`]) : ["Dòng này chưa có trên Google Sheet."];
+        if (!window.confirm(`Trạng thái Sheet: ${preview.sheetStatus}.\n${differences.join("\n")}\n\nChọn bản trong app làm chuẩn và cập nhật Google Sheet? Các thay đổi chưa gửi duyệt trên Sheet của dòng này sẽ được lưu vào lịch sử rồi thay thế.`)) return;
+        await saveRequest("Đang đồng bộ bản app sang Sheet...", "/api/school-teaching-needs/intake-sync", {
+          method: "POST", body: JSON.stringify({ id: need.id, action: "keepApp", appUpdatedAt: preview.appUpdatedAt, revision: preview.revision }),
+        });
+        pushToast("Đã đồng bộ Google Sheet", "Dòng lịch và lịch sử sửa đã cập nhật theo bản app.", "success");
       } catch (error) { handleSaveError(error); }
     }
 
@@ -6543,7 +6561,7 @@ export function MettasoulApp() {
               const editLabel = schoolNeedEditLabel(need);
               return <div key={need.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm sm:text-base ${edited ? "border-red-300 bg-red-50" : `${assignmentCardBorderClasses[index % assignmentCardBorderClasses.length]} bg-white`}`}>
                 <div className="flex min-w-0 items-center gap-3">{selectableWeekNeedIds.has(need.id) ? <input type="checkbox" aria-label={`Chọn tiết ${formatDate(need.date)} ${classById.get(need.classId)?.name || need.classId} ${need.start}–${need.end} để xóa`} checked={selectedWeekNeedIds.includes(need.id)} disabled={Boolean(pendingAction)} onChange={(event) => setSelectedSchoolNeedIds((ids) => event.target.checked ? Array.from(new Set([...ids, need.id])) : ids.filter((id) => id !== need.id))} className="h-4 w-4 shrink-0 accent-rose-600 disabled:opacity-40" /> : null}<span className="min-w-0"><strong>{formatDate(need.date)} · {need.start}–{need.end}</strong> · {classById.get(need.classId)?.name || need.classId} · {need.periodLabel}{editLabel ? <span className={`mt-1 block text-xs font-bold sm:text-sm ${edited ? "text-red-700" : "text-slate-600"}`}>Sửa lúc {editLabel}</span> : null}</span></div>
-                <span className="flex flex-wrap items-center gap-3"><span className={need.status === "OPEN" ? "font-bold text-amber-800" : need.status === "REVIEW" ? "font-bold text-rose-700" : "font-bold text-emerald-700"}>{need.status === "OPEN" ? "Cần giao" : need.status === "REVIEW" ? "Cần xem lại lịch đã giao" : need.status === "ASSIGNED" ? `Đã giao: ${teacherName(schedules.find((schedule) => schedule.id === need.scheduleId || schedule.schoolNeedId === need.id)?.teacherId || "")}` : "Đã hủy"}</span>{need.status === "REVIEW" ? <button type="button" onClick={() => void reconcileSchoolNeed(need)} className="font-bold text-rose-700 underline">Đối chiếu và áp dụng</button> : null}<button type="button" onClick={() => startEditSchoolNeed(need)} className="font-bold text-cyan-800 underline">Sửa</button>{!need.scheduleId ? <button type="button" onClick={() => void deleteSchoolNeed(need)} className="font-bold text-rose-700 underline">Xóa</button> : null}</span>
+                <span className="flex flex-wrap items-center gap-3"><span className={need.status === "OPEN" ? "font-bold text-amber-800" : need.status === "REVIEW" ? "font-bold text-rose-700" : "font-bold text-emerald-700"}>{need.status === "OPEN" ? "Cần giao" : need.status === "REVIEW" ? "Cần xem lại lịch đã giao" : need.status === "ASSIGNED" ? `Đã giao: ${teacherName(schedules.find((schedule) => schedule.id === need.scheduleId || schedule.schoolNeedId === need.id)?.teacherId || "")}` : "Đã hủy"}</span>{need.status === "REVIEW" ? <button type="button" onClick={() => void reconcileSchoolNeed(need)} className="font-bold text-rose-700 underline">Đối chiếu và áp dụng</button> : null}<button type="button" onClick={() => startEditSchoolNeed(need)} className="font-bold text-cyan-800 underline">Sửa</button><button type="button" onClick={() => void compareSchoolNeedWithSheet(need)} className="font-bold text-violet-800 underline">Đối chiếu Sheet</button>{!need.scheduleId ? <button type="button" onClick={() => void deleteSchoolNeed(need)} className="font-bold text-rose-700 underline">Xóa</button> : null}</span>
               </div>;
             })}
           </div> : null}

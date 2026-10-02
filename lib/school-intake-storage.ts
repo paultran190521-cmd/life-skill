@@ -81,7 +81,7 @@ export async function appendIntakeRows(name: string, lastColumn: string, rows: s
   });
 }
 
-export async function writeIntakeRanges(data: Array<{ range: string; values: string[][] }>) {
+export async function writeIntakeRanges(data: Array<{ range: string; values: Array<Array<string | number>> }>) {
   if (!data.length) return;
   await sheets().spreadsheets.values.batchUpdate({
     spreadsheetId: schoolIntakeSpreadsheetId,
