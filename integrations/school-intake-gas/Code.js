@@ -15,6 +15,7 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('Xác nhận lịch')
     .addItem('Mở thao tác theo vai trò', 'openIntakeSidebar')
     .addItem('Kích hoạt nút gửi / duyệt trên bảng', 'installIntakeActionTrigger')
+    .addItem('Kiểm tra địa chỉ gửi email', 'testIntakeSender')
     .addItem('Gửi lại email thông báo của tuần đang chọn', 'retryIntakeNotification')
     .addItem('Áp dụng bộ lọc đầu bảng', 'applyIntakeFilters')
     .addItem('Xóa bộ lọc', 'clearIntakeFilters')
@@ -36,6 +37,14 @@ function installIntakeActionTrigger() {
   const installed = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === 'handleIntakeActionEdit' && trigger.getTriggerSourceId() === workbook.getId());
   if (!installed) ScriptApp.newTrigger('handleIntakeActionEdit').forSpreadsheet(workbook).onEdit().create();
   workbook.toast(installed ? 'Nút thao tác đã được kích hoạt cho email này.' : 'Đã kích hoạt nút thao tác cho email này.', 'Xác nhận lịch', 7);
+}
+
+function testIntakeSender() {
+  const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  const settings = intakeSettings_();
+  if (![settings.submitter, settings.reviewer].includes(email)) throw new Error('Email này không được giao vòng gửi hoặc duyệt lịch.');
+  intakeApi_('POST', { event: 'test' }, '/api/school-intake/notify');
+  SpreadsheetApp.getActive().toast('Đã gửi email kiểm tra từ lifeskill@mettasoul.vn tới ' + email, 'Xác nhận lịch', 8);
 }
 
 function retryIntakeNotification() {

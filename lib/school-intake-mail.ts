@@ -53,21 +53,34 @@ export function intakeSmtpConfigured() {
   return Boolean(String(process.env.SCHOOL_INTAKE_SMTP_PASS || "").trim());
 }
 
-export async function sendIntakeMail(event: IntakeMailEvent, batch: IntakeBatch, settings: IntakeSettings) {
+function intakeTransport() {
   const password = String(process.env.SCHOOL_INTAKE_SMTP_PASS || "").replace(/\s/g, "");
   if (!password) throw new Error("Chưa cấu hình mật khẩu ứng dụng SMTP cho email duyệt lịch.");
   const host = String(process.env.SCHOOL_INTAKE_SMTP_HOST || "smtp.gmail.com").trim();
   const port = Number(process.env.SCHOOL_INTAKE_SMTP_PORT || 465);
   if (!host || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Cấu hình SMTP duyệt lịch không hợp lệ.");
-  const message = buildIntakeMail(event, batch, settings);
-  const transport = nodemailer.createTransport({
+  return nodemailer.createTransport({
     host, port, secure: port === 465, auth: { user: senderAddress, pass: password },
     connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 30_000,
   });
-  const result = await transport.sendMail({
+}
+
+export async function sendIntakeMail(event: IntakeMailEvent, batch: IntakeBatch, settings: IntakeSettings) {
+  const message = buildIntakeMail(event, batch, settings);
+  const result = await intakeTransport().sendMail({
     from: `"METTASOUL Giáo vụ" <${senderAddress}>`,
     to: message.to, subject: message.subject, text: message.body, html: message.html,
     messageId: `<school-intake-${event}-${batch.id}@mettasoul.vn>`,
   });
   return { to: message.to, messageId: result.messageId };
+}
+
+export async function sendIntakeTestMail(to: string) {
+  const subject = "METTASOUL · Kiểm tra email thông báo lịch";
+  const body = "Đây là email kiểm tra địa chỉ gửi lifeskill@mettasoul.vn cho quy trình duyệt lịch Google Sheet. Không có lịch nào được tạo hoặc duyệt.";
+  const result = await intakeTransport().sendMail({
+    from: `"METTASOUL Giáo vụ" <${senderAddress}>`, to, subject, text: body,
+    html: `<div style="font-family:Arial,sans-serif;padding:24px;color:#17394a"><h2 style="color:#0b7287">METTASOUL · Kiểm tra email</h2><p>${body}</p><p>Tài khoản nhận: <strong>${escapeHtml(to)}</strong></p></div>`,
+  });
+  return { to, messageId: result.messageId };
 }

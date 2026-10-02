@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
 import { readSheetRowsBatch } from "@/lib/google-sheets";
-import { canSendIntakeMail, intakeSmtpConfigured, sendIntakeMail, type IntakeMailEvent } from "@/lib/school-intake-mail";
+import { canSendIntakeMail, intakeSmtpConfigured, sendIntakeMail, sendIntakeTestMail, type IntakeMailEvent } from "@/lib/school-intake-mail";
 import { parseIntakeBatch, readIntakeSettings, readIntakeTab, writeIntakeRanges } from "@/lib/school-intake-storage";
 
 export const runtime = "nodejs";
 
-type NotifyBody = { event?: IntakeMailEvent; batchId?: string };
+type NotifyBody = { event?: IntakeMailEvent | "test"; batchId?: string };
 
 async function verifiedActor(request: Request) {
   const match = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") || "");
@@ -27,6 +27,14 @@ export async function POST(request: Request) {
     const actorEmail = await verifiedActor(request);
     if (!actorEmail || ![settings.submitter, settings.reviewer].includes(actorEmail)) return apiFailure(401, "Tài khoản Google chưa được phép gửi thông báo lịch.", undefined, requestId);
     const body = await request.json() as NotifyBody;
+    if (body.event === "test") {
+      if (!intakeSmtpConfigured()) return apiFailure(503, "Chưa cấu hình SMTP của lifeskill@mettasoul.vn trên hệ thống.", undefined, requestId);
+      let delivered: Awaited<ReturnType<typeof sendIntakeTestMail>>;
+      try { delivered = await sendIntakeTestMail(actorEmail); }
+      catch { return apiFailure(502, "SMTP chưa gửi được email kiểm tra. Hãy kiểm tra tài khoản và mật khẩu ứng dụng.", undefined, requestId); }
+      await appendAuditLog({ requestId, actor: { id: `school-intake:${actorEmail}`, email: actorEmail }, action: "school_intake.mail_test", entityType: "SchoolIntakeNotification", entityId: requestId, route: "/api/school-intake/notify", method: "POST", authMode: "enforce", decision: "allow", source: "email-token", after: delivered });
+      return NextResponse.json({ sent: true, to: actorEmail });
+    }
     if (!body.event || !["submitted", "returned", "approved"].includes(body.event) || !/^[a-zA-Z0-9_-]{12,100}$/.test(body.batchId || "")) {
       return apiFailure(400, "Loại thông báo hoặc mã đợt không hợp lệ.", undefined, requestId);
     }
