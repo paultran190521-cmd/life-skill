@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
-import { appendSheetRows, deleteSheetRowById, ensureSheetHeaders, readSheetRowsBatch, schoolTeachingNeedHeaders, updateSheetRowsById } from "@/lib/google-sheets";
+import { appendSheetRows, deleteSheetRowsByIds, ensureSheetHeaders, readSheetRowsBatch, schoolTeachingNeedHeaders, updateSheetRowsById } from "@/lib/google-sheets";
 import { requireSessionUser } from "@/lib/route-auth";
-import { normalizeSchoolNeedInput, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedIdentity, schoolNeedRequiresReview, schoolNeedRevision, type SchoolNeedInput } from "@/lib/school-teaching-needs";
+import { normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedIdentity, schoolNeedRequiresReview, schoolNeedRevision, type SchoolNeedInput } from "@/lib/school-teaching-needs";
 import type { ClassRoom, School, SchoolTeachingNeed } from "@/lib/types";
 
 const sheet = "SchoolTeachingNeeds" as const;
@@ -108,13 +108,17 @@ export async function DELETE(request: Request) {
   try {
     const { user, source } = await requireSessionUser(request, { allowHeaderFallback: false });
     if (user.role !== "admin") return apiFailure(403, "Chỉ quản trị được xóa dòng lịch trường.", undefined, requestId);
-    const { id } = await request.json() as { id?: string };
+    const body = await request.json() as { id?: string; ids?: unknown; expectedRows?: unknown };
     const { needs } = await loadRows();
-    const current = needs.find((row) => row.id === id);
-    if (!current) return apiFailure(404, "Không tìm thấy dòng lịch trường.", undefined, requestId);
-    if (current.scheduleId) return apiFailure(409, "Dòng đã giao giáo viên. Hãy xử lý lịch đã gửi trước khi xóa nguồn.", undefined, requestId);
-    await deleteSheetRowById(sheet, current.id);
-    await appendAuditLog({ requestId, actor: user, action: "school_need.delete", entityType: "SchoolTeachingNeed", entityId: current.id, route: "/api/school-teaching-needs", method: "DELETE", authMode: "enforce", decision: "allow", reason: "admin", source, before: current });
-    return NextResponse.json({ deletedId: current.id });
+    const plan = planSchoolNeedDeletion(needs, body.ids ?? (body.id ? [body.id] : []), body.expectedRows);
+    if (!plan.ok) return apiFailure(plan.status, plan.error, undefined, requestId);
+    const scheduleRows = await readSheetRowsBatch(["Schedules"] as const);
+    const selectedIds = new Set(plan.ids);
+    if (scheduleRows.Schedules.some((row) => selectedIds.has(String(row.schoolNeedId || "")) && row.status !== "cancelled")) {
+      return apiFailure(409, "Có tiết đã tạo lịch dạy. Hãy xử lý lịch đã gửi trước khi xóa nguồn.", undefined, requestId);
+    }
+    await deleteSheetRowsByIds(sheet, plan.ids, { requireAll: true });
+    await appendAuditLog({ requestId, actor: user, action: plan.ids.length > 1 ? "school_need.delete_batch" : "school_need.delete", entityType: "SchoolTeachingNeed", entityId: plan.ids.length > 1 ? "batch" : plan.ids[0], route: "/api/school-teaching-needs", method: "DELETE", authMode: "enforce", decision: "allow", reason: "admin", source, before: { rows: plan.rows.map((row) => ({ id: row.id, date: row.date, schoolId: row.schoolId, classId: row.classId, start: row.start, end: row.end })) } });
+    return NextResponse.json({ deletedId: plan.ids[0], deletedIds: plan.ids, deletedCount: plan.ids.length });
   } catch (error) { return apiError(error, requestId); }
 }

@@ -785,6 +785,7 @@ export function MettasoulApp() {
   const [assignmentSchoolId, setAssignmentSchoolId] = useState("");
   const [assignmentClockMs, setAssignmentClockMs] = useState(0);
   const [schoolNeeds, setSchoolNeeds] = useState<SchoolTeachingNeed[]>([]);
+  const [selectedSchoolNeedIds, setSelectedSchoolNeedIds] = useState<string[]>([]);
   const [schoolNeedLoadError, setSchoolNeedLoadError] = useState("");
   const [schoolNeedImport, setSchoolNeedImport] = useState<{ rows: SchoolNeedWorkbookRow[]; revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; changes: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> } | null>(null);
   const [editingSchoolNeedId, setEditingSchoolNeedId] = useState("");
@@ -6227,6 +6228,9 @@ export function MettasoulApp() {
 
     const weekEnd = addDaysToDateKey(assignmentWeekStart, 6);
     const weekNeeds = schoolNeeds.filter((need) => need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd);
+    const selectableWeekNeeds = weekNeeds.filter((need) => !need.scheduleId && need.status === "OPEN");
+    const selectableWeekNeedIds = new Set(selectableWeekNeeds.map((need) => need.id));
+    const selectedWeekNeedIds = selectedSchoolNeedIds.filter((id) => selectableWeekNeedIds.has(id));
     const assignmentProgress = getSchoolAssignmentProgress(weekNeeds, draftSchedule.items);
     const assignmentSchoolName = schoolById.get(assignmentSchoolId)?.name || "trường đã chọn";
     const allDraftsReady = draftSchedule.items.every((item) => item.teacherIds.length > 0 && item.lessonId && item.lessonPeriods.length > 0 && item.timeSlotId);
@@ -6364,6 +6368,7 @@ export function MettasoulApp() {
         setSchoolNeedImport(null);
         const currentWeekNeeds = result.needs.filter((need) => need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd);
         setSchoolNeeds(currentWeekNeeds);
+        setSelectedSchoolNeedIds([]);
         const schoolName = schoolById.get(assignmentSchoolId)?.name || "";
         setDraftSchedule({ items: draftItemsFromSchoolNeeds(currentWeekNeeds, activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolName))) });
         pushToast("Đã nhập lịch trường", `${result.summary.newCount} dòng mới · ${result.summary.changedCount} dòng sửa · ${result.summary.duplicateCount} dòng trùng.`, "success");
@@ -6392,6 +6397,7 @@ export function MettasoulApp() {
         const result = await saveRequest<{ need: SchoolTeachingNeed }>("Đang sửa lịch trường...", "/api/school-teaching-needs", { method: "PATCH", body: JSON.stringify(editingSchoolNeedDraft) });
         const next = weekNeeds.map((need) => need.id === result.need.id ? result.need : need);
         setSchoolNeeds(next);
+        setSelectedSchoolNeedIds((ids) => ids.filter((id) => next.some((need) => need.id === id && !need.scheduleId)));
         setDraftSchedule({ items: draftItemsFromSchoolNeeds(next.filter((need) => need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd), activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || ""))) });
         setEditingSchoolNeedId("");
         setEditingSchoolNeedDraft(null);
@@ -6404,8 +6410,23 @@ export function MettasoulApp() {
       try {
         await saveRequest<{ deletedId: string }>("Đang xóa dòng lịch trường...", "/api/school-teaching-needs", { method: "DELETE", body: JSON.stringify({ id: need.id }) });
         setSchoolNeeds((rows) => rows.filter((row) => row.id !== need.id));
-        setDraftSchedule((current) => ({ items: current.items.filter((item) => !item.schoolNeedIds?.includes(need.id)) }));
+        setSelectedSchoolNeedIds((ids) => ids.filter((id) => id !== need.id));
+        setDraftSchedule((current) => ({ items: draftItemsAfterSchoolNeedDeletion(current.items, new Set([need.id]), schoolNeeds, activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || ""))) }));
         pushToast("Đã xóa dòng chưa giao", "Lịch trường đã được cập nhật.", "success");
+      } catch (error) { handleSaveError(error); }
+    }
+
+    async function deleteSelectedSchoolNeeds(ids: string[]) {
+      if (ids.length === 0) return;
+      if (!window.confirm(`Xóa vĩnh viễn ${ids.length} tiết chưa giao đã chọn của ${assignmentSchoolName} trong tuần ${formatDate(assignmentWeekStart)}–${formatDate(weekEnd)}?`)) return;
+      try {
+        const expectedRows = ids.map((id) => ({ id, updatedAt: weekNeeds.find((need) => need.id === id)?.updatedAt || "" }));
+        const result = await saveRequest<{ deletedIds: string[]; deletedCount: number }>("Đang xóa các tiết đã chọn...", "/api/school-teaching-needs", { method: "DELETE", body: JSON.stringify({ ids, expectedRows }) });
+        const deletedIds = new Set(result.deletedIds);
+        setSchoolNeeds((rows) => rows.filter((row) => !deletedIds.has(row.id)));
+        setSelectedSchoolNeedIds((current) => current.filter((id) => !deletedIds.has(id)));
+        setDraftSchedule((current) => ({ items: draftItemsAfterSchoolNeedDeletion(current.items, deletedIds, schoolNeeds, activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || ""))) }));
+        pushToast("Đã xóa lịch trường", `${result.deletedCount} tiết chưa giao đã được xóa.`, "success");
       } catch (error) { handleSaveError(error); }
     }
 
@@ -6480,10 +6501,10 @@ export function MettasoulApp() {
         <Panel title="Lịch trường theo tuần" action={assignmentSchoolId ? `${weekNeeds.length} tiết trong tuần` : "Chọn trường để bắt đầu"}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="rounded-2xl border-2 border-teal-400 bg-teal-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Tuần có ngày
-              <input type="date" value={assignmentWeekStart} onChange={(event) => setAssignmentWeekStart(mondayDateKey(event.target.value))} className={`${inputClass} mt-1 w-full`} />
+              <input type="date" value={assignmentWeekStart} onChange={(event) => { setAssignmentWeekStart(mondayDateKey(event.target.value)); setSelectedSchoolNeedIds([]); }} className={`${inputClass} mt-1 w-full`} />
             </label>
             <label className="rounded-2xl border-2 border-violet-400 bg-violet-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Trường
-              <select value={assignmentSchoolId} onChange={(event) => { setAssignmentSchoolId(event.target.value); setDraftSchedule({ items: event.target.value ? [] : [createDraftScheduleItem()] }); setSchoolNeeds([]); }} className={`${inputClass} mt-1 w-full`}>
+              <select value={assignmentSchoolId} onChange={(event) => { setAssignmentSchoolId(event.target.value); setDraftSchedule({ items: event.target.value ? [] : [createDraftScheduleItem()] }); setSchoolNeeds([]); setSelectedSchoolNeedIds([]); }} className={`${inputClass} mt-1 w-full`}>
                 <option value="">Chọn trường</option>
                 {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
               </select>
@@ -6512,12 +6533,16 @@ export function MettasoulApp() {
             const editedCount = dayNeeds.filter((need) => assignmentClockMs > 0 && isSchoolNeedEditHighlighted(need, assignmentClockMs)).length;
             return <span key={date} className="rounded-2xl bg-cyan-50 px-4 py-2 text-sm font-bold text-cyan-900 sm:text-base">{formatDate(date)} · {new Set(dayNeeds.map((need) => need.classId)).size} lớp · {dayNeeds.length} tiết · {dayNeeds.filter((need) => need.status === "OPEN").length} cần giao{editedCount ? <strong className="ml-2 text-rose-700">· {editedCount} lịch vừa sửa</strong> : null}</span>;
           })}</div> : null}
+          {selectableWeekNeeds.length > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <button type="button" disabled={Boolean(pendingAction)} onClick={() => setSelectedSchoolNeedIds(selectedWeekNeedIds.length === selectableWeekNeeds.length ? [] : selectableWeekNeeds.map((need) => need.id))} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-700 disabled:opacity-40">{selectedWeekNeedIds.length === selectableWeekNeeds.length ? "Bỏ chọn tất cả" : `Chọn tất cả ${selectableWeekNeeds.length} tiết chưa giao`}</button>
+            <button type="button" disabled={selectedWeekNeedIds.length === 0 || Boolean(pendingAction)} onClick={() => void deleteSelectedSchoolNeeds(selectedWeekNeedIds)} className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 font-bold text-rose-700 disabled:cursor-not-allowed disabled:opacity-40">Xóa {selectedWeekNeedIds.length} tiết đã chọn</button>
+          </div> : null}
           {assignmentSchoolId ? <div className="mt-4 space-y-2">
             {weekNeeds.length === 0 ? <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600 sm:text-base">Tuần này chưa có lịch trường đã nhập.</p> : weekNeeds.slice().sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start) || a.classId.localeCompare(b.classId)).map((need, index) => {
               const edited = assignmentClockMs > 0 && isSchoolNeedEditHighlighted(need, assignmentClockMs);
               const editLabel = schoolNeedEditLabel(need);
-              return <div key={need.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 px-4 py-3 text-sm sm:text-base ${edited ? "border-red-500 bg-red-50" : `${assignmentCardBorderClasses[index % assignmentCardBorderClasses.length]} bg-white`}`}>
-                <span className="min-w-0"><strong>{formatDate(need.date)} · {need.start}–{need.end}</strong> · {classById.get(need.classId)?.name || need.classId} · {need.periodLabel}{editLabel ? <span className={`mt-1 block text-xs font-bold sm:text-sm ${edited ? "text-red-700" : "text-slate-600"}`}>Sửa lúc {editLabel}</span> : null}</span>
+              return <div key={need.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm sm:text-base ${edited ? "border-red-300 bg-red-50" : `${assignmentCardBorderClasses[index % assignmentCardBorderClasses.length]} bg-white`}`}>
+                <div className="flex min-w-0 items-center gap-3">{selectableWeekNeedIds.has(need.id) ? <input type="checkbox" aria-label={`Chọn tiết ${formatDate(need.date)} ${classById.get(need.classId)?.name || need.classId} ${need.start}–${need.end} để xóa`} checked={selectedWeekNeedIds.includes(need.id)} disabled={Boolean(pendingAction)} onChange={(event) => setSelectedSchoolNeedIds((ids) => event.target.checked ? Array.from(new Set([...ids, need.id])) : ids.filter((id) => id !== need.id))} className="h-4 w-4 shrink-0 accent-rose-600 disabled:opacity-40" /> : null}<span className="min-w-0"><strong>{formatDate(need.date)} · {need.start}–{need.end}</strong> · {classById.get(need.classId)?.name || need.classId} · {need.periodLabel}{editLabel ? <span className={`mt-1 block text-xs font-bold sm:text-sm ${edited ? "text-red-700" : "text-slate-600"}`}>Sửa lúc {editLabel}</span> : null}</span></div>
                 <span className="flex flex-wrap items-center gap-3"><span className={need.status === "OPEN" ? "font-bold text-amber-800" : need.status === "REVIEW" ? "font-bold text-rose-700" : "font-bold text-emerald-700"}>{need.status === "OPEN" ? "Cần giao" : need.status === "REVIEW" ? "Cần xem lại lịch đã giao" : need.status === "ASSIGNED" ? `Đã giao: ${teacherName(schedules.find((schedule) => schedule.id === need.scheduleId || schedule.schoolNeedId === need.id)?.teacherId || "")}` : "Đã hủy"}</span>{need.status === "REVIEW" ? <button type="button" onClick={() => void reconcileSchoolNeed(need)} className="font-bold text-rose-700 underline">Đối chiếu và áp dụng</button> : null}<button type="button" onClick={() => startEditSchoolNeed(need)} className="font-bold text-cyan-800 underline">Sửa</button>{!need.scheduleId ? <button type="button" onClick={() => void deleteSchoolNeed(need)} className="font-bold text-rose-700 underline">Xóa</button> : null}</span>
               </div>;
             })}
@@ -12627,6 +12652,27 @@ function nextDraftBorderColorIndex(items: DraftScheduleItem[]) {
   return items.reduce((max, item, index) => Math.max(max, item.borderColorIndex ?? index), -1) + 1;
 }
 
+function draftItemsAfterSchoolNeedDeletion(items: DraftScheduleItem[], deletedIds: Set<string>, needs: SchoolTeachingNeed[], slots: TimeSlot[]) {
+  const needsById = new Map(needs.map((need) => [need.id, need]));
+  return items.flatMap((item) => {
+    if (!item.schoolNeedIds?.some((id) => deletedIds.has(id))) return [item];
+    const remainingIds = item.schoolNeedIds.filter((id) => !deletedIds.has(id));
+    if (remainingIds.length === 0) return [];
+    const survivingNeed = needsById.get(remainingIds[0]);
+    if (!survivingNeed) return [];
+    const originalPeriodIndex = item.schoolNeedIds.indexOf(survivingNeed.id);
+    return [createDraftScheduleItem({
+      ...item,
+      id: createId("draft"),
+      schoolNeedIds: [survivingNeed.id],
+      timeSlotId: slots.find((slot) => slot.start === survivingNeed.start && slot.end === survivingNeed.end)?.id || "",
+      lessonPeriods: [originalPeriodIndex === 0 ? "lesson1" : "lesson2"],
+      teacherIds: [],
+      assistantIds: [],
+    })];
+  });
+}
+
 function draftItemsFromSchoolNeeds(needs: SchoolTeachingNeed[], slots: TimeSlot[]): DraftScheduleItem[] {
   return needs.filter((need) => need.status === "OPEN" && !need.scheduleId)
     .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start) || a.classId.localeCompare(b.classId))
@@ -13230,7 +13276,7 @@ function announcementPriorityLabel(priority: AppAnnouncementPriority) {
   return priority === "important_not_urgent" ? "Quan trọng - không khẩn" : "Quan trọng - khẩn";
 }
 
-const assignmentCardBorderClasses = ["border-teal-400", "border-amber-400", "border-violet-400", "border-sky-400", "border-rose-400", "border-orange-400"] as const;
+const assignmentCardBorderClasses = ["border-teal-300", "border-amber-300", "border-violet-300", "border-sky-300", "border-rose-300", "border-orange-300"] as const;
 const assignmentCardBorderColors = ["#0f8f8a", "#c78212", "#8557b7", "#287ab0", "#c54865", "#ad5d29"] as const;
 
 const inputClass =

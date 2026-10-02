@@ -82,6 +82,32 @@ export function schoolNeedContentChanged(current: SchoolTeachingNeed, next: Norm
     .some((key) => String(current[key] || "") !== String(next[key] || ""));
 }
 
+export function planSchoolNeedDeletion(needs: SchoolTeachingNeed[], rawIds: unknown, rawExpectedRows?: unknown):
+  { ok: true; ids: string[]; rows: SchoolTeachingNeed[] } |
+  { ok: false; error: string; status: 400 | 409 } {
+  if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 200 || rawIds.some((id) => typeof id !== "string" || !id.trim())) {
+    return { ok: false, error: "Chọn từ 1 đến 200 tiết hợp lệ để xóa.", status: 400 };
+  }
+  const ids = rawIds.map((id: string) => id.trim());
+  if (new Set(ids).size !== ids.length) return { ok: false, error: "Danh sách tiết cần xóa bị trùng.", status: 400 };
+  const byId = new Map(needs.map((need) => [need.id, need]));
+  const rows = ids.map((id) => byId.get(id));
+  if (rows.some((row) => !row)) return { ok: false, error: "Lịch trường đã thay đổi. Hãy tải lại danh sách trước khi xóa.", status: 409 };
+  if (ids.length > 1) {
+    if (!Array.isArray(rawExpectedRows) || rawExpectedRows.length !== ids.length || rawExpectedRows.some((row) => !row || typeof row.id !== "string" || typeof row.updatedAt !== "string")) {
+      return { ok: false, error: "Thiếu phiên bản lịch cần xóa. Hãy tải lại danh sách trước khi xóa.", status: 400 };
+    }
+    const expectedById = new Map(rawExpectedRows.map((row: { id: string; updatedAt: string }) => [row.id, row.updatedAt]));
+    if (expectedById.size !== ids.length || rows.some((row) => expectedById.get(row!.id) !== row!.updatedAt)) {
+      return { ok: false, error: "Lịch trường đã được sửa trong lúc chọn. Hãy tải lại và chọn lại các tiết cần xóa.", status: 409 };
+    }
+  }
+  if (rows.some((row) => row!.scheduleId || row!.status === "ASSIGNED" || row!.status === "REVIEW")) {
+    return { ok: false, error: "Có tiết đã giao giáo viên hoặc đang chờ đối chiếu. Hãy xử lý lịch đã gửi trước khi xóa nguồn.", status: 409 };
+  }
+  return { ok: true, ids, rows: rows as SchoolTeachingNeed[] };
+}
+
 export function schoolNeedRevision(rows: SchoolTeachingNeed[]) {
   return createHash("sha256").update(JSON.stringify(rows.map((row) => [row.id, row.updatedAt, row.date, row.classId, row.start, row.end, row.status]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))))).digest("hex");
 }

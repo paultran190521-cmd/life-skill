@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { normalizeSchoolNeedInput, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedRequiresReview, schoolNeedRevision } from "../lib/school-teaching-needs.ts";
+import { normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedRequiresReview, schoolNeedRevision } from "../lib/school-teaching-needs.ts";
 
 const schools = [{ id: "s-nsg", name: "Trường Tiểu học Nam Sài Gòn", district: "" }];
 const classes = [{ id: "c-21", schoolId: "s-nsg", name: "2/1", grade: "2" }, { id: "c-22", schoolId: "s-nsg", name: "2/2", grade: "2" }];
@@ -27,6 +27,14 @@ assert.throws(() => planSchoolNeedImport([normalized, normalized], existing), /t
 assert.throws(() => planSchoolNeedImport([{ ...normalized, id: "unknown" }], existing), /mã dòng/);
 assert.throws(() => planSchoolNeedImport([{ ...normalized, id: "need-1", classId: "c-22" }], [...existing, { ...existing[0], id: "need-2", classId: "c-22" }]), /thuộc một dòng lịch khác/);
 const assigned = { ...existing[0], scheduleId: "sch-1", status: "ASSIGNED" };
+const secondOpen = { ...existing[0], id: "need-2", classId: "c-22" };
+const deletionVersions = [{ id: "need-1", updatedAt: "t1" }, { id: "need-2", updatedAt: "t1" }];
+assert.deepEqual(planSchoolNeedDeletion([existing[0], secondOpen], ["need-1", "need-2"], deletionVersions).ids, ["need-1", "need-2"]);
+assert.equal(planSchoolNeedDeletion([existing[0], secondOpen], ["need-1", "need-2"]).status, 400);
+assert.equal(planSchoolNeedDeletion([existing[0], { ...secondOpen, updatedAt: "t2" }], ["need-1", "need-2"], deletionVersions).status, 409);
+assert.equal(planSchoolNeedDeletion([existing[0], secondOpen], ["need-1", "need-1"]).status, 400);
+assert.equal(planSchoolNeedDeletion([existing[0], secondOpen], ["need-1", "missing"]).status, 409);
+assert.equal(planSchoolNeedDeletion([existing[0], { ...assigned, id: "need-2" }], ["need-1", "need-2"], deletionVersions).status, 409);
 assert.equal(schoolNeedRequiresReview(assigned, { ...normalized, sourceNote: "Trường xác nhận" }), false);
 assert.equal(schoolNeedRequiresReview(assigned, { ...normalized, start: "08:10" }), true);
 assert.notEqual(schoolNeedRevision(existing), schoolNeedRevision([{ ...existing[0], updatedAt: "t2" }]));

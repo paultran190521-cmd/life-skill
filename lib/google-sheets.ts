@@ -492,7 +492,7 @@ export async function deleteSheetRowById(sheetName: SheetName, id: string) {
  * Xóa nhiều dòng theo id trong cùng một batch request. Xóa từ dưới lên để
  * chỉ số dòng không bị thay đổi khi Google Sheets xử lý các deleteDimension.
  */
-export async function deleteSheetRowsByIds(sheetName: SheetName, ids: string[]) {
+export async function deleteSheetRowsByIds(sheetName: SheetName, ids: string[], options: { requireAll?: boolean } = {}) {
   const uniqueIds = Array.from(new Set(ids.map((id) => String(id || "").trim()).filter(Boolean)));
   if (uniqueIds.length === 0) {
     return 0;
@@ -509,6 +509,10 @@ export async function deleteSheetRowsByIds(sheetName: SheetName, ids: string[]) 
     .filter(({ id, index }) => index > 0 && idSet.has(id))
     .map(({ index }) => index)
     .sort((left, right) => right - left);
+
+  if (options.requireAll && rowIndexes.length !== uniqueIds.length) {
+    throw new Error(`Some rows to delete no longer exist in ${sheetName}.`);
+  }
 
   if (rowIndexes.length === 0) {
     return 0;
