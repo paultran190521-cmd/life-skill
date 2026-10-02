@@ -14,6 +14,7 @@ function onOpen() {
     .addItem('Xóa bộ lọc', 'clearIntakeFilters')
     .addItem('Cập nhật trường, lớp và tiết từ app', 'refreshIntakeCatalog')
     .addToUi();
+  try { warmIntakeCatalogCache_(); } catch (_) { /* The dropdown still loads on first edit. */ }
 }
 
 function openIntakeSidebar() {
@@ -229,6 +230,32 @@ function intakeCatalogOptions_(workbook, school, revision) {
   if (stored) return JSON.parse(stored);
   const catalog = workbook.getSheetByName(INTAKE_CATALOG);
   const entries = catalog.getLastRow() > 1 ? catalog.getRange(2, 4, catalog.getLastRow() - 1, 8).getDisplayValues() : [];
+  const options = intakeCatalogOptionsFromEntries_(entries, school);
+  const encoded = JSON.stringify(options);
+  if (encoded.length < 90000) cache.put(key, encoded, 21600);
+  return options;
+}
+
+function warmIntakeCatalogCache_() {
+  const workbook = SpreadsheetApp.getActive();
+  const catalog = workbook.getSheetByName(INTAKE_CATALOG);
+  if (!catalog || catalog.getLastRow() < 2) return;
+  const revision = String(workbook.getSheetByName('Tổng quan').getRange('B21').getDisplayValue());
+  const entries = catalog.getRange(2, 4, catalog.getLastRow() - 1, 8).getDisplayValues();
+  const schools = new Set();
+  for (const row of entries) {
+    if (row[0]) schools.add(row[0]);
+    if (row[5]) schools.add(row[5]);
+  }
+  const values = {};
+  for (const school of schools) {
+    const encoded = JSON.stringify(intakeCatalogOptionsFromEntries_(entries, school));
+    if (encoded.length < 90000) values[intakeCatalogCacheKey_(school, revision)] = encoded;
+  }
+  if (Object.keys(values).length) CacheService.getScriptCache().putAll(values, 21600);
+}
+
+function intakeCatalogOptionsFromEntries_(entries, school) {
   const options = { grades: [], classesByGrade: {}, sessions: [], periodsBySession: {} };
   for (const row of entries) {
     if (row[0] === school && row[1] && row[2]) {
@@ -242,8 +269,6 @@ function intakeCatalogOptions_(workbook, school, revision) {
       if (!options.periodsBySession[row[6]].includes(row[7])) options.periodsBySession[row[6]].push(row[7]);
     }
   }
-  const encoded = JSON.stringify(options);
-  if (encoded.length < 90000) cache.put(key, encoded, 21600);
   return options;
 }
 
