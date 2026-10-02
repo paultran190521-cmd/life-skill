@@ -143,6 +143,7 @@ export async function replaceIntakeCatalog(rows: string[][], schoolNames: string
     throw new Error("Cấu trúc Sheet nhập lịch không khớp hoặc danh mục vượt quá số dòng hiện có.");
   }
   const previous = (await readIntakeTab("Danh mục", "Q", catalog.gridProperties.rowCount)).slice(1);
+  const existingInput = (await readIntakeTab("Nhập lịch", "T", input.gridProperties.rowCount)).slice(intakeInputFirstDataRow - 1);
   const normalized = (row: string[]) => Array.from({ length: 17 }, (_, index) => row[index] || "");
   const changed = JSON.stringify(previous.map(normalized)) !== JSON.stringify(rows.map(normalized));
   const now = new Date();
@@ -167,6 +168,13 @@ export async function replaceIntakeCatalog(rows: string[][], schoolNames: string
       rule: { condition: { type: "ONE_OF_LIST", values: ["Tất cả", ...schoolNames].map((name) => ({ userEnteredValue: name })) }, strict: true, showCustomUi: true, inputMessage: "Lọc theo trường đã đồng bộ từ METTASOUL." },
     } });
   }
+  // API writes to Danh mục do not fire the Sheet's onEdit handler. Rebuild the
+  // dependent dropdowns without touching the entered schedule or sync columns.
+  if (existingInput.length) requests.push({ updateCells: {
+    start: { sheetId: input.sheetId, rowIndex: intakeInputFirstDataRow - 1, columnIndex: 3 },
+    rows: buildIntakeDropdownRows(rows, existingInput),
+    fields: "dataValidation",
+  } });
   requests.push({ updateCells: {
     start: { sheetId: overview.sheetId, rowIndex: 20, columnIndex: 1 },
     rows: [
@@ -177,6 +185,47 @@ export async function replaceIntakeCatalog(rows: string[][], schoolNames: string
   } });
   await sheets().spreadsheets.batchUpdate({ spreadsheetId: schoolIntakeSpreadsheetId, requestBody: { requests } });
   return { ...counts, changed, syncedAt: stamp };
+}
+
+export function buildIntakeDropdownRows(catalogRows: string[][], inputRows: string[][]) {
+  const grades = new Map<string, Set<string>>();
+  const classes = new Map<string, Set<string>>();
+  const sessions = new Map<string, Set<string>>();
+  const periods = new Map<string, Set<string>>();
+  for (const row of catalogRows) {
+    if (row[3] && row[4] && row[5]) {
+      if (!grades.has(row[3])) grades.set(row[3], new Set());
+      grades.get(row[3])!.add(row[4]);
+      const key = `${row[3]}\u0000${row[4]}`;
+      if (!classes.has(key)) classes.set(key, new Set());
+      classes.get(key)!.add(row[5]);
+    }
+    if (row[8] && row[9] && row[10]) {
+      if (!sessions.has(row[8])) sessions.set(row[8], new Set());
+      sessions.get(row[8])!.add(row[9]);
+      const key = `${row[8]}\u0000${row[9]}`;
+      if (!periods.has(key)) periods.set(key, new Set());
+      periods.get(key)!.add(row[10]);
+    }
+  }
+  const rule = (options: Set<string> | undefined, message: string) => {
+    const values = [...(options || [])];
+    return {
+      condition: values.length
+        ? { type: "ONE_OF_LIST", values: values.map((value) => ({ userEnteredValue: value })) }
+        : { type: "CUSTOM_FORMULA", values: [{ userEnteredValue: "=FALSE" }] },
+      strict: true, showCustomUi: values.length > 0, inputMessage: message,
+    };
+  };
+  return inputRows.map((row) => {
+    const school = row[2] || "", grade = row[3] || "", session = row[5] || "";
+    return { values: [
+      { dataValidation: rule(grades.get(school), "Chọn khối thuộc trường này; nếu giá trị cũ báo đỏ, hãy kiểm tra danh mục.") },
+      { dataValidation: rule(classes.get(`${school}\u0000${grade}`), "Chọn lớp thuộc trường và khối này; nếu giá trị cũ báo đỏ, hãy kiểm tra danh mục.") },
+      { dataValidation: rule(sessions.get(school), "Chọn buổi có khung giờ tại trường này.") },
+      { dataValidation: rule(periods.get(`${school}\u0000${session}`), "Chọn tiết thuộc trường và buổi này; nếu giá trị cũ báo đỏ, hãy kiểm tra danh mục.") },
+    ] };
+  });
 }
 
 export function parseIntakeSourceRow(values: string[], number: number): IntakeSourceRow & { number: number } {
