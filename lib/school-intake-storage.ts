@@ -63,12 +63,21 @@ export async function readIntakeTab(name: string, lastColumn: string, lastRow: n
 
 export async function appendIntakeRows(name: string, lastColumn: string, rows: string[][]) {
   if (!rows.length) return;
-  await sheets().spreadsheets.values.append({
+  const width = lastColumn.charCodeAt(0) - 64;
+  if (rows.some((row) => row.length > width)) throw new Error(`Dòng ${name} vượt quá cột ${lastColumn}.`);
+  const metadata = await sheets().spreadsheets.get({
     spreadsheetId: schoolIntakeSpreadsheetId,
-    range: `${tab(name)}!A:${lastColumn}`,
-    valueInputOption: "RAW",
-    insertDataOption: "INSERT_ROWS",
-    requestBody: { values: rows },
+    fields: "sheets(properties(sheetId,title))",
+  });
+  const sheetId = metadata.data.sheets?.find((sheet) => sheet.properties?.title === name)?.properties?.sheetId;
+  if (sheetId == null) throw new Error(`Không tìm thấy tab ${name}.`);
+  await sheets().spreadsheets.batchUpdate({
+    spreadsheetId: schoolIntakeSpreadsheetId,
+    requestBody: { requests: [{ appendCells: {
+      sheetId,
+      rows: rows.map((row) => ({ values: row.map((value) => ({ userEnteredValue: { stringValue: String(value ?? "") } })) })),
+      fields: "userEnteredValue",
+    } }] },
   });
 }
 
