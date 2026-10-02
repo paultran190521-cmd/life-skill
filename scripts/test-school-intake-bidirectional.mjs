@@ -65,7 +65,7 @@ await ioExports.mirrorAppNeedToIntake({ ...need, start: "07:05", updatedAt: "202
 assert.equal(writes.length, 3);
 assert.equal(writes[0].range, "'Nhập lịch'!A6:L6");
 assert.equal(writes[0].values[0].length, 12);
-assert.equal(writes[0].values[0][7], 425 / 1440);
+assert.equal(writes[0].values[0][7], "07:05");
 assert.equal(writes[2].range, "'Lịch hiệu lực'!A2:O2");
 assert.equal(formatting.length, 1);
 assert.equal(appends[0][0], "Lịch sử");

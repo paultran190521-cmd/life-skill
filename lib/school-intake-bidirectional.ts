@@ -79,11 +79,6 @@ function excelDate(iso: string) {
   return (Date.parse(`${iso}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86400000;
 }
 
-function excelTime(value: string) {
-  const [hours, minutes] = value.split(":").map(Number);
-  return (hours * 60 + minutes) / 1440;
-}
-
 function eventId(need: SchoolTeachingNeed, link: IntakeLink | null, allowDirty: boolean) {
   return `app-${createHash("sha256").update(`${need.id}:${need.updatedAt}:${need.status}:${allowDirty ? intakeLinkRevision(link) : ""}`).digest("hex").slice(0, 12)}`;
 }
@@ -105,13 +100,11 @@ export async function mirrorAppNeedToIntake(need: SchoolTeachingNeed, previous: 
     if (inputNumber > intakeInputLastRow) throw new Error("Google Sheet nhập lịch đã hết dòng trống.");
   }
   const date = excelDate(need.date);
-  const start = excelTime(need.start);
-  const end = excelTime(need.end);
   await ensureIntakeRowControls(inputNumber, fields);
   // Keep M:N formulas and row styling intact.
   const effectiveValue = [rowId, ...fields, need.id, id, now];
   await writeIntakeRanges([
-    { range: `'Nhập lịch'!A${inputNumber}:L${inputNumber}`, values: [[rowId, date, ...fields.slice(1, 6), start, end, ...fields.slice(8)]] },
+    { range: `'Nhập lịch'!A${inputNumber}:L${inputNumber}`, values: [[rowId, date, ...fields.slice(1, 6), need.start, need.end, ...fields.slice(8)]] },
     { range: `'Nhập lịch'!O${inputNumber}:T${inputNumber}`, values: [[action, "", "Đã đồng bộ", need.id, now, id]] },
     ...(link?.effectiveNumber ? [{ range: `'Lịch hiệu lực'!A${link.effectiveNumber}:O${link.effectiveNumber}`, values: [effectiveValue] }] : []),
   ]);
