@@ -126,7 +126,8 @@ export async function replaceIntakeCatalog(rows: string[][], schoolNames: string
   const previous = (await readIntakeTab("Danh mục", "Q", catalog.gridProperties.rowCount)).slice(1);
   const normalized = (row: string[]) => Array.from({ length: 17 }, (_, index) => row[index] || "");
   const changed = JSON.stringify(previous.map(normalized)) !== JSON.stringify(rows.map(normalized));
-  const stamp = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+  const now = new Date();
+  const stamp = `${new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(now)}.${String(now.getMilliseconds()).padStart(3, "0")}`;
   const requests: object[] = [];
   if (changed) {
     requests.push({ updateCells: {

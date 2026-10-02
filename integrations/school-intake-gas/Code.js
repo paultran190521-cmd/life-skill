@@ -161,7 +161,7 @@ function refreshIntakeCatalog() {
   input.getRange('F3').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['Tất cả'].concat(schools.map(row => row.name)), true).setAllowInvalid(false).build());
   const overview = workbook.getSheetByName('Tổng quan');
   if (overview) overview.getRange(21, 2, 2, 1).setValues([
-    [Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy HH:mm')],
+    [Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy HH:mm:ss.SSS')],
     [schools.length + ' trường · ' + classes.length + ' lớp · ' + periods.length + ' khung giờ'],
   ]);
   workbook.toast('Đã cập nhật ' + schools.length + ' trường, ' + classes.length + ' lớp, ' + periods.length + ' tiết.', 'Danh mục', 8);
@@ -176,27 +176,38 @@ function onEdit(e) {
     return;
   }
   if (e.range.getRow() < INTAKE_FIRST_DATA_ROW) return;
-  const input = e.range.getSheet(), catalog = e.source.getSheetByName(INTAKE_CATALOG);
-  const entries = catalog.getLastRow() > 1 ? catalog.getRange(2, 1, catalog.getLastRow() - 1, 17).getDisplayValues() : [];
-  const changed = e.range.getColumn();
-  const singleColumn = e.range.getNumColumns() === 1;
-  for (let number = e.range.getRow(); number < e.range.getRow() + e.range.getNumRows(); number++) {
-    const row = input.getRange(number, 1, 1, 20).getDisplayValues()[0];
-    if (singleColumn && changed === 3) { input.getRange(number, 4, 1, 4).clearContent(); row[3] = row[4] = row[5] = row[6] = ''; }
-    if (singleColumn && changed === 4) { input.getRange(number, 5).clearContent(); row[4] = ''; }
-    if (singleColumn && changed === 6) { input.getRange(number, 7).clearContent(); row[6] = ''; }
-    const grades = [...new Set(entries.filter(x => x[3] === row[2]).map(x => x[4]).filter(Boolean))];
-    if (row[3] && !grades.includes(row[3])) { input.getRange(number, 4, 1, 2).clearContent(); row[3] = row[4] = ''; }
-    const classes = entries.filter(x => x[3] === row[2] && x[4] === row[3]).map(x => x[5]).filter(Boolean);
-    if (row[4] && !classes.includes(row[4])) { input.getRange(number, 5).clearContent(); row[4] = ''; }
-    const sessions = [...new Set(entries.filter(x => x[8] === row[2]).map(x => x[9]).filter(Boolean))];
-    if (row[5] && !sessions.includes(row[5])) { input.getRange(number, 6, 1, 2).clearContent(); row[5] = row[6] = ''; }
-    const periods = entries.filter(x => x[8] === row[2] && x[9] === row[5]).map(x => x[10]).filter(Boolean);
-    if (row[6] && !periods.includes(row[6])) { input.getRange(number, 7).clearContent(); row[6] = ''; }
-    intakeDropdown_(input.getRange(number, 4), grades, 'Chọn trường trước để xem khối.');
-    intakeDropdown_(input.getRange(number, 5), classes, 'Chọn trường và khối trước để xem lớp.');
-    intakeDropdown_(input.getRange(number, 6), sessions, 'Chọn trường trước để xem buổi có lịch.');
-    intakeDropdown_(input.getRange(number, 7), periods, 'Chọn trường và buổi trước để xem tiết.');
+  const input = e.range.getSheet();
+  const changed = e.range.getColumn(), lastChanged = changed + e.range.getNumColumns() - 1;
+  const singleCell = e.range.getNumRows() === 1 && e.range.getNumColumns() === 1;
+  const needsDropdowns = changed <= 7 && lastChanged >= 3 && (!singleCell || [3, 4, 6].includes(changed));
+  const catalogRevision = needsDropdowns ? String(e.source.getSheetByName('Tổng quan').getRange('B21').getDisplayValue()) : '';
+  const firstRow = e.range.getRow(), count = e.range.getNumRows();
+  const rows = input.getRange(firstRow, 1, count, 19).getDisplayValues();
+  for (let offset = 0; offset < count; offset++) {
+    const number = firstRow + offset, row = rows[offset];
+    if (needsDropdowns) {
+      const options = intakeCatalogOptions_(e.source, row[2], catalogRevision);
+      const grades = options.grades, sessions = options.sessions;
+      const values = row.slice(3, 7);
+      if (singleCell && changed === 3) values.fill('');
+      if (singleCell && changed === 4) values[1] = '';
+      if (singleCell && changed === 6) values[3] = '';
+      if (values[0] && !grades.includes(values[0])) { values[0] = ''; values[1] = ''; }
+      const classes = options.classesByGrade[values[0]] || [];
+      if (values[1] && !classes.includes(values[1])) values[1] = '';
+      if (values[2] && !sessions.includes(values[2])) { values[2] = ''; values[3] = ''; }
+      const periods = options.periodsBySession[values[2]] || [];
+      if (values[3] && !periods.includes(values[3])) values[3] = '';
+      if (values.some((value, index) => value !== row[index + 3])) input.getRange(number, 4, 1, 4).setValues([values]);
+      row.splice(3, 4, ...values);
+      const rules = [
+        intakeDropdownRule_(grades, 'Chọn trường trước để xem khối.'),
+        intakeDropdownRule_(classes, 'Chọn trường và khối trước để xem lớp.'),
+        intakeDropdownRule_(sessions, 'Chọn trường trước để xem buổi có lịch.'),
+        intakeDropdownRule_(periods, 'Chọn trường và buổi trước để xem tiết.'),
+      ];
+      input.getRange(number, 4, 1, 4).setDataValidations([rules]);
+    }
     if (!row[10] && (row[1] || row[2])) input.getRange(number, 11).setValue('Dạy');
     if (changed <= 12 && changed + e.range.getNumColumns() > 1) {
       input.getRange(number, 16).clearContent();
@@ -204,6 +215,36 @@ function onEdit(e) {
       input.getRange(number, 19).setValue(new Date());
     }
   }
+}
+
+function intakeCatalogCacheKey_(school, revision) {
+  return 'intake-school-' + Utilities.base64EncodeWebSafe(school).slice(0, 160) + '-' + String(revision || '').replace(/[^\d]/g, '');
+}
+
+function intakeCatalogOptions_(workbook, school, revision) {
+  const empty = { grades: [], classesByGrade: {}, sessions: [], periodsBySession: {} };
+  if (!school) return empty;
+  const cache = CacheService.getScriptCache(), key = intakeCatalogCacheKey_(school, revision);
+  const stored = cache.get(key);
+  if (stored) return JSON.parse(stored);
+  const catalog = workbook.getSheetByName(INTAKE_CATALOG);
+  const entries = catalog.getLastRow() > 1 ? catalog.getRange(2, 4, catalog.getLastRow() - 1, 8).getDisplayValues() : [];
+  const options = { grades: [], classesByGrade: {}, sessions: [], periodsBySession: {} };
+  for (const row of entries) {
+    if (row[0] === school && row[1] && row[2]) {
+      if (!options.classesByGrade[row[1]]) options.classesByGrade[row[1]] = [];
+      if (!options.grades.includes(row[1])) options.grades.push(row[1]);
+      if (!options.classesByGrade[row[1]].includes(row[2])) options.classesByGrade[row[1]].push(row[2]);
+    }
+    if (row[5] === school && row[6] && row[7]) {
+      if (!options.periodsBySession[row[6]]) options.periodsBySession[row[6]] = [];
+      if (!options.sessions.includes(row[6])) options.sessions.push(row[6]);
+      if (!options.periodsBySession[row[6]].includes(row[7])) options.periodsBySession[row[6]].push(row[7]);
+    }
+  }
+  const encoded = JSON.stringify(options);
+  if (encoded.length < 90000) cache.put(key, encoded, 21600);
+  return options;
 }
 
 function refreshIntakeWeekOptions_() {
@@ -268,6 +309,10 @@ function clearIntakeFilters() {
 }
 
 function intakeDropdown_(cell, values, hint) {
+  cell.setDataValidation(intakeDropdownRule_(values, hint));
+}
+
+function intakeDropdownRule_(values, hint) {
   const rule = SpreadsheetApp.newDataValidation().setAllowInvalid(false).setHelpText(hint);
-  cell.setDataValidation((values.length ? rule.requireValueInList([...new Set(values)], true) : rule.requireFormulaSatisfied('=FALSE')).build());
+  return (values.length ? rule.requireValueInList(values, true) : rule.requireFormulaSatisfied('=FALSE')).build();
 }
