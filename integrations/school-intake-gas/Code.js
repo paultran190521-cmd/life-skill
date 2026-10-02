@@ -155,8 +155,13 @@ function intakeActionUnlocked_(input) {
 
 function notifyDirector_(batchId, summary) {
   const batches = SpreadsheetApp.getActive().getSheetByName(INTAKE_BATCHES);
-  const rows = batches.getLastRow() > 1 ? batches.getRange(2, 1, batches.getLastRow() - 1, 18).getDisplayValues() : [];
-  const batch = rows.find(row => row[0] === batchId);
+  let batch;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const rows = batches.getLastRow() > 1 ? batches.getRange(2, 1, batches.getLastRow() - 1, 18).getDisplayValues() : [];
+    batch = rows.find(row => row[0] === batchId);
+    if (batch && batch[4] === 'SYNCED') break;
+    if (attempt < 3) Utilities.sleep(350 * (attempt + 1));
+  }
   if (!batch || batch[4] !== 'SYNCED') throw new Error('Đợt lịch chưa được đồng bộ vào app.');
   if (batch[16]) return { batchId, status: 'NOTIFIED', mail: { sent: true, reason: '' } };
   const counts = summary || { newCount: Number(batch[6] || 0), changedCount: Number(batch[7] || 0), cancelledCount: Number(batch[9] || 0) };
