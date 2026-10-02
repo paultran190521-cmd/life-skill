@@ -1,9 +1,13 @@
 const INTAKE_INPUT = 'Nhập lịch';
 const INTAKE_CATALOG = 'Danh mục';
 const INTAKE_BATCHES = 'Đợt duyệt';
-const INTAKE_SUBMITTER = 'mynhung.ipale@gmail.com';
-const INTAKE_REVIEWER = 'nguyenphuong.ipale@gmail.com';
-const INTAKE_DIRECTOR = 'dangphuongvietnam@gmail.com';
+const INTAKE_OWNER = 'paultran190521@gmail.com';
+const INTAKE_EMAIL_CHOICES = [
+  { email: INTAKE_OWNER, label: 'Chủ Sheet · thử nghiệm' },
+  { email: 'mynhung.ipale@gmail.com', label: 'Mỹ Nhung' },
+  { email: 'nguyenphuong.ipale@gmail.com', label: 'Nguyễn Phương' },
+  { email: 'dangphuongvietnam@gmail.com', label: 'Sunny · giám đốc' },
+];
 const INTAKE_API_BASE = 'https://giaovukns.mettasoul.vn';
 const INTAKE_FIRST_DATA_ROW = 6;
 
@@ -44,9 +48,42 @@ function intakeApi_(method, data) {
   return body;
 }
 
+function intakeSettings_() {
+  const sheet = SpreadsheetApp.getActive().getSheetByName('Cấu hình duyệt');
+  if (!sheet) throw new Error('Chưa có tab Cấu hình duyệt.');
+  const values = sheet.getRange('B2:B4').getDisplayValues().map(row => String(row[0] || '').trim().toLowerCase());
+  const allowed = new Set(INTAKE_EMAIL_CHOICES.map(item => item.email));
+  if (values.some(email => !allowed.has(email)) || values.slice(0, 2).includes('dangphuongvietnam@gmail.com')) throw new Error('Email duyệt lịch chưa thuộc danh sách được phép. Chủ Sheet cần kiểm tra cấu hình.');
+  return { submitter: values[0], reviewer: values[1], director: values[2] };
+}
+
+function intakeSaveSettings(input) {
+  const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  if (email !== INTAKE_OWNER) throw new Error('Chỉ chủ Google Sheet được đổi email của các vai trò.');
+  const allowed = new Map(INTAKE_EMAIL_CHOICES.map(item => [item.email, item.label]));
+  const settings = {
+    submitter: String(input.submitter || '').trim().toLowerCase(),
+    reviewer: String(input.reviewer || '').trim().toLowerCase(),
+    director: String(input.director || '').trim().toLowerCase(),
+  };
+  if (Object.keys(settings).some(key => !allowed.has(settings[key]))) throw new Error('Hãy chọn email trong danh sách người đã có quyền truy cập.');
+  if ([settings.submitter, settings.reviewer].includes('dangphuongvietnam@gmail.com')) throw new Error('Email giám đốc hiện chỉ có quyền xem Sheet, không thể nhập hoặc duyệt lịch.');
+  if (settings.submitter === settings.reviewer && settings.submitter !== INTAKE_OWNER) throw new Error('Chỉ chủ Sheet được dùng chung email cho hai vòng khi thử nghiệm.');
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) throw new Error('Đang có thao tác xác nhận khác. Vui lòng thử lại.');
+  try {
+    const updatedAt = Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy HH:mm:ss');
+    SpreadsheetApp.getActive().getSheetByName('Cấu hình duyệt').getRange('B2:E4').setValues(
+      [settings.submitter, settings.reviewer, settings.director].map(value => [value, allowed.get(value), updatedAt, email]));
+    return { settings, updatedAt };
+  } finally { lock.releaseLock(); }
+}
+
 function intakeContext() {
   const email = String(Session.getActiveUser().getEmail() || '').toLowerCase();
-  if (![INTAKE_SUBMITTER, INTAKE_REVIEWER].includes(email)) throw new Error('Tài khoản Google này không được phép xác nhận lịch.');
+  const settings = intakeSettings_();
+  const canSubmit = email === settings.submitter, canReview = email === settings.reviewer, canConfigure = email === INTAKE_OWNER;
+  if (!canSubmit && !canReview && !canConfigure) throw new Error('Tài khoản Google này không được phép xác nhận lịch.');
   const workbook = SpreadsheetApp.getActive();
   const catalog = workbook.getSheetByName(INTAKE_CATALOG);
   const schools = catalog.getLastRow() > 1 ? catalog.getRange(2, 1, catalog.getLastRow() - 1, 1).getDisplayValues().map(row => row[0]).filter(Boolean) : [];
@@ -76,7 +113,8 @@ function intakeContext() {
     weeks.add(Utilities.formatDate(day, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd'));
   });
   if (/^\d{4}-\d{2}-\d{2}$/.test(selected[2])) weeks.add(selected[2]);
-  return { email, role: email === INTAKE_SUBMITTER ? 'submitter' : 'reviewer', schools, pending, unnotified,
+  return { email, role: canSubmit && canReview ? 'both' : canSubmit ? 'submitter' : canReview ? 'reviewer' : 'owner',
+    canSubmit, canReview, canConfigure, settings, emailChoices: INTAKE_EMAIL_CHOICES, schools, pending, unnotified,
     selection: { month: selected[0], weekStart: selected[2], school: selected[4] }, lockedWeeks,
     weeks: [...weeks].sort().reverse().map(day => ({ value: day, label: academicWeekLabel_(day) + ' · ' + day })) };
 }
@@ -92,8 +130,8 @@ function intakeAction(input) {
 function intakeActionUnlocked_(input) {
   const context = intakeContext();
   const mode = String(input.mode || '');
-  if (mode === 'submit' && context.role !== 'submitter') throw new Error('Chỉ Mỹ Nhung được gửi lịch vòng 1.');
-  if (['apply', 'reject', 'notify', 'lockWeek', 'unlockWeek'].includes(mode) && context.role !== 'reviewer') throw new Error('Chỉ Nguyễn Phương được xác nhận vòng 2 và khóa tuần.');
+  if (mode === 'submit' && !context.canSubmit) throw new Error('Chỉ email được chỉ định cho vòng 1 mới có thể gửi lịch.');
+  if (['apply', 'reject', 'notify', 'lockWeek', 'unlockWeek'].includes(mode) && !context.canReview) throw new Error('Chỉ email được chỉ định cho vòng 2 mới có thể duyệt hoặc khóa tuần.');
   if (mode === 'notify') return notifyDirector_(String(input.batchId || ''));
   const result = intakeApi_('POST', { mode, school: input.school || '', weekStart: input.weekStart || '', batchId: input.batchId || '', note: input.note || '' });
   if (mode === 'lockWeek' || mode === 'unlockWeek') { applyIntakeFilters(); return result; }
@@ -101,14 +139,14 @@ function intakeActionUnlocked_(input) {
   try {
     const sheetUrl = SpreadsheetApp.getActive().getUrl();
     if (mode === 'submit' && result.batchId) {
-      MailApp.sendEmail({ to: INTAKE_REVIEWER, subject: 'METTASOUL · Lịch trường chờ Nguyễn Phương xác nhận',
-        body: 'Mỹ Nhung đã gửi lịch ' + input.school + ' tuần ' + input.weekStart + '.\nMã đợt: ' + result.batchId + '\nMới: ' + result.summary.newCount + ', sửa: ' + result.summary.changedCount + ', hủy: ' + result.summary.cancelledCount + '.\nKiểm tra tại: ' + sheetUrl });
+      MailApp.sendEmail({ to: context.settings.reviewer, subject: 'METTASOUL · Lịch trường chờ duyệt vòng 2',
+        body: context.email + ' đã gửi lịch ' + input.school + ' tuần ' + input.weekStart + '.\nMã đợt: ' + result.batchId + '\nMới: ' + result.summary.newCount + ', sửa: ' + result.summary.changedCount + ', hủy: ' + result.summary.cancelledCount + '.\nKiểm tra tại: ' + sheetUrl });
       result.mail.sent = true;
     } else if (mode === 'apply' && result.status === 'SYNCED') {
       result.mail = notifyDirector_(result.batchId, result.summary).mail;
     } else if (mode === 'reject' && result.status === 'RETURNED') {
-      MailApp.sendEmail({ to: INTAKE_SUBMITTER, subject: 'METTASOUL · Lịch trường được trả lại để sửa',
-        body: 'Nguyễn Phương đã trả lại đợt ' + result.batchId + '.\nLý do: ' + result.note + '\n' + sheetUrl });
+      MailApp.sendEmail({ to: context.settings.submitter, subject: 'METTASOUL · Lịch trường được trả lại để sửa',
+        body: context.email + ' đã trả lại đợt ' + result.batchId + '.\nLý do: ' + result.note + '\n' + sheetUrl });
       result.mail.sent = true;
     }
   } catch (error) { result.mail.reason = error && error.message ? error.message : 'Không gửi được email.'; }
@@ -124,8 +162,8 @@ function notifyDirector_(batchId, summary) {
   const counts = summary || { newCount: Number(batch[6] || 0), changedCount: Number(batch[7] || 0), cancelledCount: Number(batch[9] || 0) };
   const result = { batchId, status: 'SYNCED', mail: { sent: false, reason: '' } };
   try {
-    MailApp.sendEmail({ to: INTAKE_DIRECTOR, subject: 'METTASOUL · Lịch trường đã duyệt và chuyển vào app',
-      body: 'Nguyễn Phương đã xác nhận lịch và hệ thống đã đồng bộ vào app.\nMã đợt: ' + batchId + '\nMới: ' + counts.newCount + ', sửa: ' + counts.changedCount + ', hủy: ' + counts.cancelledCount + '.\n' + (counts.reviewCount ? 'Cần đối chiếu lịch giáo viên đã giao: ' + counts.reviewCount + ' tiết.\n' : '') + SpreadsheetApp.getActive().getUrl() });
+    MailApp.sendEmail({ to: intakeSettings_().director, subject: 'METTASOUL · Lịch trường đã duyệt và chuyển vào app',
+      body: String(Session.getActiveUser().getEmail() || '') + ' đã xác nhận lịch và hệ thống đã đồng bộ vào app.\nMã đợt: ' + batchId + '\nMới: ' + counts.newCount + ', sửa: ' + counts.changedCount + ', hủy: ' + counts.cancelledCount + '.\n' + (counts.reviewCount ? 'Cần đối chiếu lịch giáo viên đã giao: ' + counts.reviewCount + ' tiết.\n' : '') + SpreadsheetApp.getActive().getUrl() });
     result.mail.sent = true;
     intakeApi_('POST', { mode: 'mailSent', batchId });
     result.status = 'NOTIFIED';

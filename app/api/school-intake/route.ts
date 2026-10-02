@@ -4,13 +4,10 @@ import { appendAuditLog } from "@/lib/audit";
 import { sendScheduleCancellationEmail } from "@/lib/email";
 import { appendSheetRows, ensureSheetHeaders, readSheetRowsBatch, schoolTeachingNeedHeaders, updateSheetRowsById } from "@/lib/google-sheets";
 import { buildSchoolNeedTemplateCatalog } from "@/lib/school-need-template";
-import { appendIntakeRows, dateKey, intakeFingerprint, intakeInputFirstDataRow, intakeInputLastRow, parseIntakeBatch, parseIntakeSourceRow, readIntakeTab, readIntakeWeekLocks, setIntakeWeekLock, snapshotSourceRow, weekStartOf, writeIntakeRanges, type IntakeSourceRow } from "@/lib/school-intake-storage";
+import { appendIntakeRows, dateKey, intakeFingerprint, intakeInputFirstDataRow, intakeInputLastRow, intakeSettingsOwner, parseIntakeBatch, parseIntakeSourceRow, readIntakeSettings, readIntakeTab, readIntakeWeekLocks, setIntakeWeekLock, snapshotSourceRow, weekStartOf, writeIntakeRanges, type IntakeSettings, type IntakeSourceRow } from "@/lib/school-intake-storage";
 import { normalizeSchoolNeedInput, planSchoolNeedImport, schoolNeedIdentity, schoolNeedRequiresReview, schoolNeedRevision, type NormalizedNeedInput } from "@/lib/school-teaching-needs";
 import { isDoubleTeachingTimeSlot, isTimeSlotAllowedForSchool } from "@/lib/time-slots";
 import type { Attendance, ClassRoom, LessonPlan, Schedule, School, SchoolTeachingNeed, TeachingWorkLog, TimeSlot } from "@/lib/types";
-
-const submitterEmail = "mynhung.ipale@gmail.com";
-const reviewerEmail = "nguyenphuong.ipale@gmail.com";
 
 type IntakeRow = IntakeSourceRow;
 
@@ -47,7 +44,7 @@ async function snapshotRows(batchId: string) {
   return history.slice(1).filter((row) => row[0] === batchId).map(snapshotSourceRow);
 }
 
-async function actorFromGoogleToken(request: Request) {
+async function actorFromGoogleToken(request: Request, settings: IntakeSettings) {
   const match = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") || "");
   if (!match) return null;
   const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
@@ -58,7 +55,7 @@ async function actorFromGoogleToken(request: Request) {
   if (!response.ok) return null;
   const profile = await response.json() as { email?: string; email_verified?: boolean };
   const email = String(profile.email || "").trim().toLowerCase();
-  if (!profile.email_verified || ![submitterEmail, reviewerEmail].includes(email)) return null;
+  if (!profile.email_verified || ![settings.submitter, settings.reviewer, intakeSettingsOwner].includes(email)) return null;
   return { id: `school-intake:${email}`, email };
 }
 
@@ -81,7 +78,8 @@ async function loadContext() {
 export async function GET(request: Request) {
   const requestId = createRequestId("school-intake-catalog");
   try {
-    const actor = await actorFromGoogleToken(request);
+    const settings = await readIntakeSettings();
+    const actor = await actorFromGoogleToken(request, settings);
     if (!actor) return apiFailure(401, "Tài khoản Google chưa được phép dùng bảng nhập lịch.", undefined, requestId);
     const catalogRows = await readSheetRowsBatch(["Schools", "Classes", "TimeSlots"] as const);
     const schools = catalogRows.Schools as unknown as School[];
@@ -99,12 +97,13 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const requestId = createRequestId("school-intake-sync");
   try {
-    const actor = await actorFromGoogleToken(request);
+    const settings = await readIntakeSettings();
+    const actor = await actorFromGoogleToken(request, settings);
     if (!actor) return apiFailure(401, "Tài khoản Google chưa được phép dùng bảng nhập lịch.", undefined, requestId);
     const body = await request.json() as IntakeBody;
     if (!body.mode || !["preview", "submit", "apply", "reject", "mailSent", "lockWeek", "unlockWeek"].includes(body.mode)) return apiFailure(400, "Thao tác không hợp lệ.", undefined, requestId);
-    if (["apply", "reject", "mailSent", "lockWeek", "unlockWeek"].includes(body.mode) && actor.email !== reviewerEmail) return apiFailure(403, "Chỉ Nguyễn Phương được xác nhận vòng 2 và khóa tuần.", undefined, requestId);
-    if (body.mode === "submit" && actor.email !== submitterEmail) return apiFailure(403, "Chỉ Mỹ Nhung được gửi lịch vòng 1.", undefined, requestId);
+    if (["apply", "reject", "mailSent", "lockWeek", "unlockWeek"].includes(body.mode) && actor.email !== settings.reviewer) return apiFailure(403, "Chỉ email được chỉ định cho vòng 2 mới có thể duyệt hoặc khóa tuần.", undefined, requestId);
+    if (body.mode === "submit" && actor.email !== settings.submitter) return apiFailure(403, "Chỉ email được chỉ định cho vòng 1 mới có thể gửi lịch.", undefined, requestId);
     if (["apply", "reject", "mailSent"].includes(body.mode) && !/^[a-zA-Z0-9_-]{12,100}$/.test(body.batchId || "")) return apiFailure(400, "Mã đợt xác nhận không hợp lệ.", undefined, requestId);
 
     const weekLocks = await readIntakeWeekLocks();
@@ -117,7 +116,7 @@ export async function POST(request: Request) {
         const weekEnd = new Date(`${week}T00:00:00+07:00`).getTime() + 7 * 24 * 60 * 60 * 1000;
         if (Date.now() < weekEnd) return apiFailure(400, "Chỉ khóa sau khi tuần dạy đã kết thúc.", undefined, requestId);
         const batches = (await readIntakeTab("Đợt duyệt", "R", 1000)).slice(1).map((row, index) => parseIntakeBatch(row, index + 2));
-        if (batches.some((item) => item.weekStart === week && item.status === "WAITING_REVIEW")) return apiFailure(409, "Tuần này còn lịch chờ Nguyễn Phương duyệt.", undefined, requestId);
+        if (batches.some((item) => item.weekStart === week && item.status === "WAITING_REVIEW")) return apiFailure(409, "Tuần này còn lịch chờ duyệt vòng 2.", undefined, requestId);
       }
       await setIntakeWeekLock(week, body.mode === "lockWeek", actor.email);
       await appendAuditLog({ requestId, actor, action: body.mode === "lockWeek" ? "school_intake.lock_week" : "school_intake.unlock_week", entityType: "SchoolIntakeWeek", entityId: week, route: "/api/school-intake", method: "POST", authMode: "enforce", decision: "allow", source: "email-token" });
@@ -129,10 +128,10 @@ export async function POST(request: Request) {
       if (!batch.raw[16]) await writeIntakeRanges([{ range: `'Đợt duyệt'!Q${batch.number}`, values: [[new Date().toISOString()]] }]);
       return NextResponse.json({ batchId: batch.id, status: "NOTIFIED" });
     }
-    if (["apply", "reject"].includes(body.mode) && (!batch || batch.status !== "WAITING_REVIEW" || batch.submittedBy !== submitterEmail)) return apiFailure(409, "Đợt lịch không còn chờ Nguyễn Phương duyệt.", undefined, requestId);
+    if (["apply", "reject"].includes(body.mode) && (!batch || batch.status !== "WAITING_REVIEW" || !batch.submittedBy)) return apiFailure(409, "Đợt lịch không còn chờ duyệt vòng 2.", undefined, requestId);
     if (body.mode === "reject") {
       const note = String(body.note || "").trim().slice(0, 500);
-      if (!note) return apiFailure(400, "Cần ghi lý do trả lại cho Mỹ Nhung.", undefined, requestId);
+      if (!note) return apiFailure(400, "Cần ghi lý do trả lại người nhập lịch.", undefined, requestId);
       const next = [...batch!.raw]; next[4] = "RETURNED"; next[12] = actor.email; next[13] = new Date().toISOString(); next[14] = note;
       await writeIntakeRanges([{ range: `'Đợt duyệt'!A${batch!.number}:R${batch!.number}`, values: [next] }]);
       const input = await readIntakeTab("Nhập lịch", "T", intakeInputLastRow);
@@ -154,25 +153,25 @@ export async function POST(request: Request) {
       rows = await snapshotRows(batch!.id);
       if (rows.length !== batch!.count || intakeFingerprint(rows) !== batch!.fingerprint) return apiFailure(409, "Bản lưu chờ duyệt đã thay đổi. Không thể xác nhận.", undefined, requestId);
       const current = await selectedRows(school, weekStart);
-      if (intakeFingerprint(current) !== batch!.fingerprint) return apiFailure(409, "Dữ liệu đã được sửa sau vòng 1. Mỹ Nhung cần gửi lại để Nguyễn Phương kiểm tra.", undefined, requestId);
+      if (intakeFingerprint(current) !== batch!.fingerprint) return apiFailure(409, "Dữ liệu đã được sửa sau vòng 1. Người nhập lịch cần gửi lại để duyệt.", undefined, requestId);
     } else {
       school = String(body.school || "").trim();
       weekStart = String(body.weekStart || "").trim();
       if (!school || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || weekStartOf(weekStart) !== weekStart) return apiFailure(400, "Hãy chọn trường và ngày thứ Hai của tuần cần xác nhận.", undefined, requestId);
       rows = await selectedRows(school, weekStart);
     }
-    if (weekLocks.get(weekStart)?.locked && body.mode !== "preview") return apiFailure(423, "Tuần này đã khóa. Nguyễn Phương cần mở khóa trước khi sửa hoặc duyệt lịch.", undefined, requestId);
+    if (weekLocks.get(weekStart)?.locked && body.mode !== "preview") return apiFailure(423, "Tuần này đã khóa. Người duyệt vòng 2 cần mở khóa trước khi sửa hoặc duyệt lịch.", undefined, requestId);
     if (rows.length < 1 || rows.length > 2000) return apiFailure(400, "Tuần này cần từ 1 đến 2.000 tiết hợp lệ.", undefined, requestId);
     if (body.mode === "submit") {
       const pending = (await readIntakeTab("Đợt duyệt", "R", 1000)).slice(1).map((row, index) => parseIntakeBatch(row, index + 2))
         .find((item) => item.school === school && item.weekStart === weekStart && item.status === "WAITING_REVIEW");
-      if (pending) return apiFailure(409, "Trường và tuần này đang chờ Nguyễn Phương duyệt. Hãy đợi kết quả hoặc trả lại trước khi gửi tiếp.", undefined, requestId);
+      if (pending) return apiFailure(409, "Trường và tuần này đang chờ duyệt vòng 2. Hãy đợi kết quả hoặc trả lại trước khi gửi tiếp.", undefined, requestId);
     }
 
     const context = await loadContext();
     const revision = schoolNeedRevision(context.needs);
     const alreadyApplied = Boolean(body.mode === "apply" && context.auditLogs.some((row) => row.action === "school_intake.apply" && row.entityId === batch!.id));
-    if ((body.mode === "apply" || body.mode === "preview" && batch) && batch!.revision !== revision && !alreadyApplied) return apiFailure(409, "Lịch trong app đã thay đổi từ sau vòng 1. Mỹ Nhung cần gửi lại bản kiểm tra.", undefined, requestId);
+    if ((body.mode === "apply" || body.mode === "preview" && batch) && batch!.revision !== revision && !alreadyApplied) return apiFailure(409, "Lịch trong app đã thay đổi từ sau vòng 1. Người nhập lịch cần gửi lại bản kiểm tra.", undefined, requestId);
 
     const catalog = buildSchoolNeedTemplateCatalog(context.schools, context.classes, context.slots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot, { includeDouble: true });
     const normalized: Array<{ source: IntakeRow; row: NormalizedNeedInput }> = [];
@@ -255,7 +254,7 @@ export async function POST(request: Request) {
       await appendIntakeRows("Lịch sử", "R", snapshots);
       await appendIntakeRows("Đợt duyệt", "R", [batchValues]);
       const inputUpdates = (rows as Array<IntakeRow & { number?: number }>).flatMap((row) => row.number ? [
-        { range: `'Nhập lịch'!O${row.number}:Q${row.number}`, values: [[changeByRow.get(row.rowId)?.action || "", "", "Chờ Nguyễn Phương duyệt"]] },
+        { range: `'Nhập lịch'!O${row.number}:Q${row.number}`, values: [[changeByRow.get(row.rowId)?.action || "", "", "Chờ duyệt vòng 2"]] },
         { range: `'Nhập lịch'!T${row.number}`, values: [[batchId]] },
       ] : []);
       await writeIntakeRanges(inputUpdates);
@@ -269,9 +268,9 @@ export async function POST(request: Request) {
     }));
     const updates = plan.filter((item) => (item.action === "CHANGED" || reactivated.has(item.target?.id || "")) && item.target).map((item) => ({
       id: item.target!.id,
-      patch: { ...item.row, id: item.target!.id, status: schoolNeedRequiresReview(item.target!, item.row) ? "REVIEW" : item.target!.scheduleId ? "ASSIGNED" : "OPEN", updatedAt: now, lastEditedAt: now, lastEditedBy: "Nguyễn Phương (Google Sheet)" },
+      patch: { ...item.row, id: item.target!.id, status: schoolNeedRequiresReview(item.target!, item.row) ? "REVIEW" : item.target!.scheduleId ? "ASSIGNED" : "OPEN", updatedAt: now, lastEditedAt: now, lastEditedBy: `${actor.email} (Google Sheet)` },
     }));
-    const cancellationUpdates = cancelled.filter((item) => item.target).map((item) => ({ id: item.target!.id, patch: { status: "CANCELLED" as const, updatedAt: now, lastEditedAt: now, lastEditedBy: "Nguyễn Phương (Google Sheet)" } }));
+    const cancellationUpdates = cancelled.filter((item) => item.target).map((item) => ({ id: item.target!.id, patch: { status: "CANCELLED" as const, updatedAt: now, lastEditedAt: now, lastEditedBy: `${actor.email} (Google Sheet)` } }));
     const scheduleCancellations = cancelled.flatMap((item) => {
       const schedule = context.schedules.find((row) => row.id === item.target?.scheduleId && row.status !== "cancelled");
       return schedule ? [{ id: schedule.id, patch: { status: "cancelled" as const, cancelledAt: now, updatedAt: now } }] : [];

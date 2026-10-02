@@ -10,7 +10,8 @@
     button{background:#086f82;color:#fff;font-weight:700;border:0;margin-top:12px;cursor:pointer}button.secondary{background:#fff;color:#086f82;border:1px solid #bad5dd}
     button.danger{background:#9a3329}.small{font-size:13px;color:#536c77}.status{white-space:pre-wrap;padding:12px;background:#e9f5f6;border-radius:9px;margin-top:12px}
     button:disabled{opacity:.55;cursor:wait}.pill{display:inline-block;padding:4px 9px;border-radius:999px;background:#e4f3f1;color:#075667;font-size:13px;font-weight:700}
-    .error{background:#fff0ee;color:#9a3329}.hidden{display:none}
+    .error{background:#fff0ee;color:#9a3329}.hidden{display:none}.settings{border-color:#7ec6ce;background:linear-gradient(145deg,#fff,#eef8f8)}
+    .settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}.settings-actions{display:flex;gap:9px;flex-wrap:wrap}.settings-actions button{width:auto;flex:1;min-width:150px}
   </style>
 </head>
 <body>
@@ -18,27 +19,42 @@
   <h1>METTASOUL · Xác nhận lịch trường</h1>
   <p class="small" id="who">Đang kiểm tra tài khoản Google...</p>
   <p class="pill" id="selection">Chọn tháng, tuần và trường tại đầu tab Nhập lịch.</p>
+  <section class="card settings hidden" id="settings">
+    <strong>Thiết lập email xác nhận</strong>
+    <p class="small">Chỉ chủ Google Sheet thay đổi được. Email vòng 1 và vòng 2 có thể cùng là email chủ Sheet trong giai đoạn thử nghiệm.</p>
+    <div class="settings-grid">
+      <div><label for="submitter-email">Người nhập · vòng 1</label><select id="submitter-email"></select></div>
+      <div><label for="reviewer-email">Người duyệt · vòng 2</label><select id="reviewer-email"></select></div>
+      <div><label for="director-email">Giám đốc · nhận thông báo</label><select id="director-email"></select></div>
+    </div>
+    <p class="small" id="settings-warning"></p>
+    <div class="settings-actions">
+      <button class="secondary" onclick="chooseTestEmails()">Dùng email của tôi để thử</button>
+      <button class="secondary" onclick="chooseDefaultEmails()">Chọn phân công ban đầu</button>
+      <button onclick="saveSettings()">Lưu thiết lập email</button>
+    </div>
+  </section>
   <section class="card hidden" id="submitter">
-    <strong>Vòng 1 · Mỹ Nhung gửi lịch</strong>
+    <strong id="submitter-label">Vòng 1 · Gửi lịch</strong>
     <label for="school">Trường</label><select id="school"></select>
     <label for="week">Tuần cần gửi</label><select id="week"></select>
-    <button class="secondary" onclick="act('preview')">Kiểm tra lịch</button>
-    <button onclick="act('submit')">Xác nhận nhập lịch và gửi Nguyễn Phương</button>
+    <button class="secondary" onclick="act('preview','submitter')">Kiểm tra lịch</button>
+    <button onclick="act('submit','submitter')">Xác nhận nhập lịch và gửi người duyệt</button>
   </section>
   <section class="card hidden" id="reviewer">
-    <strong>Vòng 2 · Nguyễn Phương kiểm tra</strong>
+    <strong id="reviewer-label">Vòng 2 · Kiểm tra lịch</strong>
     <label for="batch">Đợt chờ duyệt</label><select id="batch"></select>
-    <button class="secondary" onclick="act('preview')">Xem lại thay đổi</button>
+    <button class="secondary" onclick="act('preview','reviewer')">Xem lại thay đổi</button>
     <button onclick="act('apply')">Xác nhận lịch đúng và chuyển vào app</button>
     <label for="reason">Lý do trả lại nếu cần</label><textarea id="reason" rows="3"></textarea>
-    <button class="danger" onclick="act('reject')">Trả lại Mỹ Nhung</button>
+    <button class="danger" onclick="act('reject')">Trả lại người nhập lịch</button>
     <div id="notify-box" class="hidden">
-      <label for="notify-batch">Đợt đã vào app nhưng chưa ghi nhận email báo Sunny</label><select id="notify-batch"></select>
-      <button class="secondary" onclick="act('notify')">Gửi lại thông báo cho Sunny</button>
+      <label for="notify-batch">Đợt đã vào app nhưng chưa ghi nhận email giám đốc</label><select id="notify-batch"></select>
+      <button class="secondary" onclick="act('notify')">Gửi lại thông báo cho giám đốc</button>
     </div>
     <div class="card" style="background:#f5fafb;margin-top:18px">
       <strong>Khóa tuần đã kết thúc</strong>
-      <p class="small">Chỉ Nguyễn Phương khóa hoặc mở lại. Sau khi khóa, các dòng cũ được bảo vệ và app không nhận bản sửa của tuần đó.</p>
+      <p class="small">Chỉ email vòng 2 khóa hoặc mở lại. Sau khi khóa, các dòng cũ được bảo vệ và app không nhận bản sửa của tuần đó.</p>
       <label for="lock-week">Tuần</label><select id="lock-week"></select>
       <p class="small" id="lock-status"></p>
       <button id="lock-button" class="secondary" onclick="act('lockWeek')">Khóa tuần</button>
@@ -46,23 +62,46 @@
     </div>
   </section>
   <div id="result" class="status hidden"></div>
-  <p class="small">Lỗi nhập và kết quả đồng bộ được ghi ngay trên tab Nhập lịch. Sunny nhận email sau khi lịch vào app thành công.</p>
+  <p class="small">Lỗi nhập và kết quả đồng bộ được ghi ngay trên tab Nhập lịch. Email giám đốc nhận thông báo sau khi lịch vào app thành công.</p>
 </main>
 <script>
   let context;
   const $=id=>document.getElementById(id);
   const show=(message,error)=>{const el=$('result');el.textContent=message;el.classList.remove('hidden');el.classList.toggle('error',!!error)};
   const fail=error=>show(error&&error.message?error.message:String(error),true);
+  const setEmailOptions=(id,choices,selected)=>{const el=$(id);el.replaceChildren(...choices.map(item=>new Option(item.label+' · '+item.email,item.email)));el.value=selected};
+  function settingsWarning(){const s=$('submitter-email').value,r=$('reviewer-email').value;
+    $('settings-warning').textContent=s===r?'Đang dùng chung email cho hai vòng để thử nghiệm. Hãy chọn lại Mỹ Nhung và Nguyễn Phương sau khi thử xong.':'Hai vòng đã được giao cho hai email khác nhau.';
+  }
+  function chooseTestEmails(){['submitter-email','reviewer-email','director-email'].forEach(id=>$(id).value=context.email);settingsWarning()}
+  function chooseDefaultEmails(){$('submitter-email').value='mynhung.ipale@gmail.com';$('reviewer-email').value='nguyenphuong.ipale@gmail.com';$('director-email').value='dangphuongvietnam@gmail.com';settingsWarning()}
+  function saveSettings(){
+    if(!context?.canConfigure)return;
+    const input={submitter:$('submitter-email').value,reviewer:$('reviewer-email').value,director:$('director-email').value};
+    show('Đang lưu email cho các vai trò...');
+    google.script.run.withSuccessHandler(result=>{show('Đã lưu email vòng 1, vòng 2 và giám đốc.\nCập nhật: '+result.updatedAt,false);load()})
+      .withFailureHandler(fail).intakeSaveSettings(input);
+  }
   function load(){google.script.run.withSuccessHandler(data=>{
-    context=data;$('who').textContent=data.email+' · '+(data.role==='submitter'?'người nhập lịch':'người duyệt lịch');
+    context=data;$('who').textContent=data.email+' · '+(data.role==='both'?'nhập và duyệt thử':data.role==='submitter'?'người nhập lịch':data.role==='reviewer'?'người duyệt lịch':'chủ Sheet');
     $('selection').textContent='Đang xem: '+(data.selection.school||'tất cả trường')+' · '+(data.selection.month||'tất cả tháng')+' · '+(data.selection.weekStart||'tất cả tuần');
-    $('submitter').classList.toggle('hidden',data.role!=='submitter');$('reviewer').classList.toggle('hidden',data.role!=='reviewer');
+    $('settings').classList.toggle('hidden',!data.canConfigure);
+    $('submitter').classList.toggle('hidden',!data.canSubmit);$('reviewer').classList.toggle('hidden',!data.canReview);
+    $('submitter-label').textContent='Vòng 1 · '+data.settings.submitter+' gửi lịch';
+    $('reviewer-label').textContent='Vòng 2 · '+data.settings.reviewer+' kiểm tra';
+    if(data.canConfigure){
+      const roleChoices=data.emailChoices.filter(item=>item.email!=='dangphuongvietnam@gmail.com');
+      setEmailOptions('submitter-email',roleChoices,data.settings.submitter);
+      setEmailOptions('reviewer-email',roleChoices,data.settings.reviewer);
+      setEmailOptions('director-email',data.emailChoices,data.settings.director);
+      ['submitter-email','reviewer-email'].forEach(id=>$(id).onchange=settingsWarning);settingsWarning();
+    }
     $('school').innerHTML=data.schools.map(name=>'<option>'+name.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</option>').join('');
     if(data.selection.school&&data.selection.school!=='Tất cả')$('school').value=data.selection.school;
     $('week').innerHTML=data.weeks.map(item=>'<option value="'+item.value+'">'+item.label+'</option>').join('');
     if(data.selection.weekStart&&data.selection.weekStart!=='Tất cả')$('week').value=data.selection.weekStart;
     $('batch').innerHTML=data.pending.map(row=>'<option value="'+row.id+'">'+row.school+' · tuần '+row.weekStart+' · '+row.count+' tiết</option>').join('');
-    $('notify-box').classList.toggle('hidden',data.role!=='reviewer'||!data.unnotified.length);
+    $('notify-box').classList.toggle('hidden',!data.canReview||!data.unnotified.length);
     $('notify-batch').innerHTML=data.unnotified.map(row=>'<option value="'+row.id+'">'+row.school+' · tuần '+row.weekStart+' · '+row.count+' tiết</option>').join('');
     $('lock-week').innerHTML=data.weeks.map(item=>'<option value="'+item.value+'">'+item.label+'</option>').join('');
     if(data.selection.weekStart&&data.selection.weekStart!=='Tất cả')$('lock-week').value=data.selection.weekStart;
@@ -72,21 +111,22 @@
     $('lock-status').textContent=week?(locked?'Đã khóa · muốn sửa cần mở lại':'Đang mở · có thể khóa sau khi tuần kết thúc'):'Chưa có tuần trong bảng';
     $('lock-button').disabled=!week||!!locked;$('unlock-button').disabled=!week||!locked;
   }
-  function act(mode){
-    if(mode==='submit'&&!confirm('Gửi lịch tuần này cho Nguyễn Phương kiểm tra?'))return;
+  function act(mode,source){
+    if(mode==='submit'&&!confirm('Gửi lịch tuần này cho email duyệt vòng 2 kiểm tra?'))return;
     if(mode==='apply'&&!confirm('Xác nhận lịch đúng và chuyển vào METTASOUL?'))return;
-    if(mode==='reject'&&!confirm('Trả lại lịch cho Mỹ Nhung sửa?'))return;
-    if(mode==='notify'&&!confirm('Gửi thông báo lịch đã duyệt cho Sunny?'))return;
+    if(mode==='reject'&&!confirm('Trả lại lịch cho người nhập sửa?'))return;
+    if(mode==='notify'&&!confirm('Gửi thông báo lịch đã duyệt cho email giám đốc?'))return;
     if(mode==='lockWeek'&&!confirm('Khóa toàn bộ lịch của tuần này sau khi đã kết thúc?'))return;
     if(mode==='unlockWeek'&&!confirm('Mở lại tuần này để sửa lịch?'))return;
     show('Đang kiểm tra và xử lý...');
     const selected=context&&context.pending.find(row=>row.id===$('batch').value);
+    const submitterAction=source==='submitter'||mode==='submit';
     google.script.run.withSuccessHandler(result=>{
       const s=result.summary||{};let message='Trạng thái: '+(result.status||'Đã kiểm tra')+'\nMới: '+(s.newCount||0)+' · sửa: '+(s.changedCount||0)+' · trùng: '+(s.duplicateCount||0)+' · hủy: '+(s.cancelledCount||0);
       if(result.mail&&!result.mail.sent&&result.mail.reason)message+='\nEmail chưa gửi được: '+result.mail.reason;
       if(result.changes&&result.changes.length)message+='\n\n'+result.changes.map(x=>x.action+' · '+x.description+(x.previous&&x.action==='CHANGED'?'\n  Trước: '+x.previous:'')).join('\n');
       show(message,false);if(result.status)load();
-    }).withFailureHandler(fail).intakeAction({mode,school:context.role==='submitter'?$('school').value:selected?.school,weekStart:mode==='lockWeek'||mode==='unlockWeek'?$('lock-week').value:context.role==='submitter'?$('week').value:selected?.weekStart,batchId:mode==='notify'?$('notify-batch').value:$('batch').value,note:$('reason').value});
+    }).withFailureHandler(fail).intakeAction({mode,school:submitterAction?$('school').value:selected?.school,weekStart:mode==='lockWeek'||mode==='unlockWeek'?$('lock-week').value:submitterAction?$('week').value:selected?.weekStart,batchId:mode==='notify'?$('notify-batch').value:submitterAction?'':$('batch').value,note:$('reason').value});
   }
   load();
 </script>

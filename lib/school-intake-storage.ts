@@ -5,6 +5,16 @@ import type { SchoolNeedInput } from "@/lib/school-teaching-needs";
 export const schoolIntakeSpreadsheetId = process.env.SCHOOL_INTAKE_SPREADSHEET_ID || "1UPtukz6CQoQbe9Tq1s8Zwwfj1AL01XEwa7STeZ7dedg";
 export const intakeInputFirstDataRow = 6;
 export const intakeInputLastRow = 1004;
+export const intakeSettingsOwner = "paultran190521@gmail.com";
+
+export type IntakeSettings = { submitter: string; reviewer: string; director: string };
+
+export async function readIntakeSettings(): Promise<IntakeSettings> {
+  const rows = await readIntakeTab("Cấu hình duyệt", "B", 4);
+  const emails = [1, 2, 3].map((index) => String(rows[index]?.[1] || "").trim().toLowerCase());
+  if (emails.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error("Cấu hình email duyệt lịch chưa hợp lệ.");
+  return { submitter: emails[0], reviewer: emails[1], director: emails[2] };
+}
 
 export type IntakeSourceRow = SchoolNeedInput & {
   rowId: string;
