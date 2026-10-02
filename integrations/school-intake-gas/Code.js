@@ -241,9 +241,9 @@ function applyIntakeFilters() {
   const school = String(sheet.getRange('F3').getDisplayValue() || 'Tất cả');
   let filter = sheet.getFilter();
   if (!filter) filter = sheet.getRange(5, 1, sheet.getMaxRows() - 4, 20).createFilter();
-  if (month !== 'Tất cả') filter.setColumnFilterCriteria(14, SpreadsheetApp.newFilterCriteria().whenFormulaSatisfied('=OR($N6="";$N6=$B$3)').build());
+  if (month !== 'Tất cả') filter.setColumnFilterCriteria(14, SpreadsheetApp.newFilterCriteria().whenFormulaSatisfied('=OR($N6="";$N6=IF(ISNUMBER($B$3);TEXT($B$3;"yyyy-mm");$B$3))').build());
   else filter.removeColumnFilterCriteria(14);
-  if (week !== 'Tất cả') filter.setColumnFilterCriteria(13, SpreadsheetApp.newFilterCriteria().whenFormulaSatisfied('=OR($M6="";TEXT($M6;"yyyy-mm-dd")=$D$3)').build());
+  if (week !== 'Tất cả') filter.setColumnFilterCriteria(13, SpreadsheetApp.newFilterCriteria().whenFormulaSatisfied('=OR($M6="";TEXT($M6;"yyyy-mm-dd")=IF(ISNUMBER($D$3);TEXT($D$3;"yyyy-mm-dd");$D$3))').build());
   else filter.removeColumnFilterCriteria(13);
   if (school !== 'Tất cả') filter.setColumnFilterCriteria(3, SpreadsheetApp.newFilterCriteria().whenFormulaSatisfied('=OR($C6="";$C6=$F$3)').build());
   else filter.removeColumnFilterCriteria(3);
