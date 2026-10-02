@@ -157,6 +157,7 @@ type TabId =
 
 type DraftScheduleItem = {
   id: string;
+  borderColorIndex?: number;
   date: string;
   schoolId: string;
   classId: string;
@@ -6555,6 +6556,7 @@ export function MettasoulApp() {
                           items: [
                             ...current.items,
                             createDraftScheduleItem({
+                              borderColorIndex: nextDraftBorderColorIndex(current.items),
                               date: prev?.date ?? currentDateKey(),
                               schoolId,
                               classId,
@@ -6632,7 +6634,7 @@ export function MettasoulApp() {
                       !selectedSlot || isTeacherAvailableForSlot(teacherAvailability, teacher.id, item.date, selectedSlot),
                     );
                     return (
-                      <div key={item.id} className={`rounded-2xl border-2 bg-white p-3 shadow-sm ${cardHasRecentEdit ? "border-red-500" : assignmentCardBorderClasses[index % assignmentCardBorderClasses.length]}`}>
+                      <div key={item.id} className="rounded-2xl border-2 bg-white p-3 shadow-sm" style={{ borderColor: cardHasRecentEdit ? "#dc2626" : assignmentCardBorderColors[(item.borderColorIndex ?? index) % assignmentCardBorderColors.length] }}>
                         <div className="mb-2 flex items-center justify-between">
                           <p className="text-xs font-black uppercase text-[var(--brand-dark)]">{item.schoolNeedIds?.length ? `${formatDate(item.date)} · ${rowClasses.find((row) => row.id === item.classId)?.name || "Lớp"} · ${selectedSlot?.start || "--:--"}–${selectedSlot?.end || "--:--"}` : `Lịch #${index + 1}`}</p>
                           {pairSlot && mergeCandidate ? <button type="button" onClick={() => setDraftSchedule((current) => ({ items: current.items.filter((row) => row.id !== mergeCandidate.draft.id).map((row) => row.id === item.id ? { ...row, schoolNeedIds: [sourceNeed!.id, mergeCandidate.need!.id], timeSlotId: pairSlot.id, lessonPeriods: ["lesson1", "lesson2"], teacherIds: [], assistantIds: [] } : row) }))} className="rounded-lg bg-violet-100 px-2 py-1 text-xs font-black text-violet-800">Gộp 2 tiết · {pairSlot.start}–{pairSlot.end}</button> : null}
@@ -6640,7 +6642,7 @@ export function MettasoulApp() {
                             const source = item.schoolNeedIds!.map((id) => schoolNeeds.find((need) => need.id === id)).filter((need): need is SchoolTeachingNeed => Boolean(need));
                             if (source.length !== 2) return;
                             const singleSlots = activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, rowSchool?.name || ""));
-                            const split = source.map((need, periodIndex) => createDraftScheduleItem({ ...item, id: createId("draft"), schoolNeedIds: [need.id], timeSlotId: singleSlots.find((slot) => slot.start === need.start && slot.end === need.end)?.id || "", lessonPeriods: [periodIndex === 0 ? "lesson1" : "lesson2"], teacherIds: [], assistantIds: [] }));
+                            const split = source.map((need, periodIndex) => createDraftScheduleItem({ ...item, id: createId("draft"), borderColorIndex: periodIndex === 0 ? item.borderColorIndex ?? index : nextDraftBorderColorIndex(draftSchedule.items), schoolNeedIds: [need.id], timeSlotId: singleSlots.find((slot) => slot.start === need.start && slot.end === need.end)?.id || "", lessonPeriods: [periodIndex === 0 ? "lesson1" : "lesson2"], teacherIds: [], assistantIds: [] }));
                             setDraftSchedule((current) => ({ items: current.items.flatMap((row) => row.id === item.id ? split : [row]) }));
                           }} className="rounded-lg bg-violet-100 px-2 py-1 text-xs font-black text-violet-800">Đã gộp · tách lại</button> : null}
                           {!item.schoolNeedIds?.length ? <button
@@ -12602,6 +12604,7 @@ function escapeCsvCell(value: string) {
 function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftScheduleItem {
   return {
     id: seed?.id || createId("draft"),
+    borderColorIndex: seed?.borderColorIndex ?? 0,
     date: seed?.date || currentDateKey(),
     schoolId: seed?.schoolId || "",
     classId: seed?.classId || "",
@@ -12620,10 +12623,15 @@ function createDraftScheduleItem(seed?: Partial<DraftScheduleItem>): DraftSchedu
   };
 }
 
+function nextDraftBorderColorIndex(items: DraftScheduleItem[]) {
+  return items.reduce((max, item, index) => Math.max(max, item.borderColorIndex ?? index), -1) + 1;
+}
+
 function draftItemsFromSchoolNeeds(needs: SchoolTeachingNeed[], slots: TimeSlot[]): DraftScheduleItem[] {
   return needs.filter((need) => need.status === "OPEN" && !need.scheduleId)
     .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start) || a.classId.localeCompare(b.classId))
-    .map((need) => createDraftScheduleItem({
+    .map((need, index) => createDraftScheduleItem({
+      borderColorIndex: index,
       date: need.date,
       schoolId: need.schoolId,
       classId: need.classId,
@@ -13223,6 +13231,7 @@ function announcementPriorityLabel(priority: AppAnnouncementPriority) {
 }
 
 const assignmentCardBorderClasses = ["border-teal-400", "border-amber-400", "border-violet-400", "border-sky-400", "border-rose-400", "border-orange-400"] as const;
+const assignmentCardBorderColors = ["#0f8f8a", "#c78212", "#8557b7", "#287ab0", "#c54865", "#ad5d29"] as const;
 
 const inputClass =
   "w-full rounded-2xl border border-sky-200 bg-white/90 px-4 py-3 text-base font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100 sm:text-sm";
