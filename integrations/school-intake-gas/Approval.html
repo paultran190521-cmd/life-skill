@@ -12,6 +12,7 @@
     button:disabled{opacity:.55;cursor:wait}.pill{display:inline-block;padding:4px 9px;border-radius:999px;background:#e4f3f1;color:#075667;font-size:13px;font-weight:700}
     .error{background:#fff0ee;color:#9a3329}.hidden{display:none}.settings{border-color:#7ec6ce;background:linear-gradient(145deg,#fff,#eef8f8)}
     .settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}.settings-actions{display:flex;gap:9px;flex-wrap:wrap}.settings-actions button{width:auto;flex:1;min-width:150px}
+    dialog{border:1px solid #7ec6ce;border-radius:14px;padding:20px;max-width:420px;width:calc(100% - 48px);box-shadow:0 18px 50px #17374644;color:#173746}dialog::backdrop{background:#17374677}.confirm-actions{display:flex;gap:10px}.confirm-actions button{flex:1}
   </style>
 </head>
 <body>
@@ -62,10 +63,15 @@
     </div>
   </section>
   <div id="result" class="status hidden"></div>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-message">
+    <strong id="confirm-message"></strong>
+    <div class="confirm-actions"><button class="secondary" type="button" onclick="$('confirm-dialog').close()">Quay lại</button><button type="button" onclick="confirmAction()">Xác nhận</button></div>
+  </dialog>
   <p class="small">Lỗi nhập và kết quả đồng bộ được ghi ngay trên tab Nhập lịch. Email giám đốc nhận thông báo sau khi lịch vào app thành công.</p>
 </main>
 <script>
   let context;
+  let pendingAction;
   const $=id=>document.getElementById(id);
   const show=(message,error)=>{const el=$('result');el.textContent=message;el.classList.remove('hidden');el.classList.toggle('error',!!error)};
   const fail=error=>show(error&&error.message?error.message:String(error),true);
@@ -111,13 +117,13 @@
     $('lock-status').textContent=week?(locked?'Đã khóa · muốn sửa cần mở lại':'Đang mở · có thể khóa sau khi tuần kết thúc'):'Chưa có tuần trong bảng';
     $('lock-button').disabled=!week||!!locked;$('unlock-button').disabled=!week||!locked;
   }
+  const confirmationText={submit:'Gửi lịch tuần này cho email duyệt vòng 2 kiểm tra?',apply:'Xác nhận lịch đúng và chuyển vào METTASOUL?',reject:'Trả lại lịch cho người nhập sửa?',notify:'Gửi thông báo lịch đã duyệt cho email giám đốc?',lockWeek:'Khóa toàn bộ lịch của tuần này sau khi đã kết thúc?',unlockWeek:'Mở lại tuần này để sửa lịch?'};
   function act(mode,source){
-    if(mode==='submit'&&!confirm('Gửi lịch tuần này cho email duyệt vòng 2 kiểm tra?'))return;
-    if(mode==='apply'&&!confirm('Xác nhận lịch đúng và chuyển vào METTASOUL?'))return;
-    if(mode==='reject'&&!confirm('Trả lại lịch cho người nhập sửa?'))return;
-    if(mode==='notify'&&!confirm('Gửi thông báo lịch đã duyệt cho email giám đốc?'))return;
-    if(mode==='lockWeek'&&!confirm('Khóa toàn bộ lịch của tuần này sau khi đã kết thúc?'))return;
-    if(mode==='unlockWeek'&&!confirm('Mở lại tuần này để sửa lịch?'))return;
+    if(confirmationText[mode]){pendingAction={mode,source};$('confirm-message').textContent=confirmationText[mode];$('confirm-dialog').showModal();return}
+    runAction(mode,source);
+  }
+  function confirmAction(){const action=pendingAction;pendingAction=null;$('confirm-dialog').close();if(action)runAction(action.mode,action.source)}
+  function runAction(mode,source){
     show('Đang kiểm tra và xử lý...');
     const selected=context&&context.pending.find(row=>row.id===$('batch').value);
     const submitterAction=source==='submitter'||mode==='submit';
