@@ -3,8 +3,11 @@ import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
 import { validationError } from "@/lib/app-error";
 import { appendSheetRows, clearSheetData, deleteSheetRowsByIds, readSheetRows, updateSheetRowsById } from "@/lib/google-sheets";
+import { queueSchoolIntakeCatalogSync } from "@/lib/school-intake-catalog-sync";
 import { normalizeTimeSlotInput, normalizeTimeSlotLabel } from "@/lib/time-slots";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
+
+export const maxDuration = 60;
 
 export async function GET() {
   const requestId = createRequestId("slots-list");
@@ -123,6 +126,7 @@ export async function POST(request: Request) {
       })),
     ]);
 
+    queueSchoolIntakeCatalogSync();
     return NextResponse.json({
       timeSlots: [...updatedSlots, ...toInsert],
       inserted: toInsert.length,
@@ -166,6 +170,7 @@ export async function DELETE(request: Request) {
       source: auth.source,
       after: { deletedCount, selectedIds: ids.length > 0 ? ids : undefined },
     });
+    queueSchoolIntakeCatalogSync();
     return NextResponse.json({ success: true, deletedCount });
   } catch (error) {
     return apiError(error, requestId);

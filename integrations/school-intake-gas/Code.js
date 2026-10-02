@@ -106,7 +106,8 @@ function notifyDirector_(batchId, summary) {
 
 function refreshIntakeCatalog() {
   const data = intakeApi_('GET');
-  const sheet = SpreadsheetApp.getActive().getSheetByName(INTAKE_CATALOG);
+  const workbook = SpreadsheetApp.getActive();
+  const sheet = workbook.getSheetByName(INTAKE_CATALOG);
   const allSchools = data.schools || [];
   const allClasses = data.classes || [];
   const allPeriods = data.periods || [];
@@ -127,9 +128,14 @@ function refreshIntakeCatalog() {
   }
   if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, 17).clearContent();
   sheet.getRange(2, 1, rows.length, 17).setValues(rows);
-  const input = SpreadsheetApp.getActive().getSheetByName(INTAKE_INPUT);
+  const input = workbook.getSheetByName(INTAKE_INPUT);
   input.getRange(2, 3, input.getMaxRows() - 1, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(sheet.getRange(2, 1, schools.length, 1), true).setAllowInvalid(false).build());
-  SpreadsheetApp.getActive().toast('Đã cập nhật ' + schools.length + ' trường, ' + classes.length + ' lớp, ' + periods.length + ' tiết.', 'Danh mục', 8);
+  const overview = workbook.getSheetByName('Tổng quan');
+  if (overview) overview.getRange(21, 2, 2, 1).setValues([
+    [Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy HH:mm')],
+    [schools.length + ' trường · ' + classes.length + ' lớp · ' + periods.length + ' khung giờ'],
+  ]);
+  workbook.toast('Đã cập nhật ' + schools.length + ' trường, ' + classes.length + ' lớp, ' + periods.length + ' tiết.', 'Danh mục', 8);
   return { schools: schools.length, classes: classes.length, periods: periods.length };
 }
 

@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
 import { readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
+import { queueSchoolIntakeCatalogSync } from "@/lib/school-intake-catalog-sync";
 import { normalizeTimeSlotInput, normalizeTimeSlotLabel } from "@/lib/time-slots";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
 import type { TimeSlot } from "@/lib/types";
+
+export const maxDuration = 60;
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -61,6 +64,7 @@ export async function PATCH(request: Request, { params }: Params) {
         before: before || {},
         after: { ...(before || {}), ...patch },
       });
+      queueSchoolIntakeCatalogSync();
       return NextResponse.json({ id, ...fallback, ...patch });
     }
 
@@ -102,6 +106,7 @@ export async function PATCH(request: Request, { params }: Params) {
       before: before || {},
       after: { ...(before || {}), ...patch },
     });
+    queueSchoolIntakeCatalogSync();
     return NextResponse.json({ id, ...patch });
   } catch (error) {
     return apiError(error, requestId);

@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
 import { appendSheetRow, readSheetRows } from "@/lib/google-sheets";
+import { queueSchoolIntakeCatalogSync } from "@/lib/school-intake-catalog-sync";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
+
+export const maxDuration = 60;
 
 export async function GET() {
   const requestId = createRequestId("schools-list");
@@ -63,6 +66,7 @@ export async function POST(request: Request) {
       source: auth.source,
       after: school,
     });
+    queueSchoolIntakeCatalogSync();
     return NextResponse.json(school);
   } catch (error) {
     return apiError(error, requestId);

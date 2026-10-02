@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
 import { deleteSheetRowById, readSheetRowById, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
+import { queueSchoolIntakeCatalogSync } from "@/lib/school-intake-catalog-sync";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
+
+export const maxDuration = 60;
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -56,6 +59,7 @@ export async function PATCH(request: Request, { params }: Params) {
       before,
       after: { ...before, ...patch },
     });
+    queueSchoolIntakeCatalogSync();
     return NextResponse.json({ id, ...patch });
   } catch (error) {
     return apiError(error, requestId);
@@ -100,6 +104,7 @@ export async function DELETE(request: Request, { params }: Params) {
       source: auth.source,
       before,
     });
+    queueSchoolIntakeCatalogSync();
     return NextResponse.json({ id, deleted: true });
   } catch (error) {
     return apiError(error, requestId);

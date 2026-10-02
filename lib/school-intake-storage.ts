@@ -68,6 +68,50 @@ export async function writeIntakeRanges(data: Array<{ range: string; values: str
   });
 }
 
+export async function replaceIntakeCatalog(rows: string[][], schoolNames: string[], counts: { schools: number; classes: number; periods: number }) {
+  if (!rows.length || !schoolNames.length || rows.some((row) => row.length !== 17)) throw new Error("Danh mục METTASOUL chưa đủ dữ liệu để đồng bộ.");
+  const metadata = await sheets().spreadsheets.get({
+    spreadsheetId: schoolIntakeSpreadsheetId,
+    fields: "sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))",
+  });
+  const catalog = metadata.data.sheets?.find((sheet) => sheet.properties?.title === "Danh mục")?.properties;
+  const input = metadata.data.sheets?.find((sheet) => sheet.properties?.title === "Nhập lịch")?.properties;
+  const overview = metadata.data.sheets?.find((sheet) => sheet.properties?.title === "Tổng quan")?.properties;
+  if (catalog?.sheetId == null || input?.sheetId == null || overview?.sheetId == null || !catalog.gridProperties?.rowCount || !input.gridProperties?.rowCount || rows.length >= catalog.gridProperties.rowCount) {
+    throw new Error("Cấu trúc Sheet nhập lịch không khớp hoặc danh mục vượt quá số dòng hiện có.");
+  }
+  const previous = (await readIntakeTab("Danh mục", "Q", catalog.gridProperties.rowCount)).slice(1);
+  const normalized = (row: string[]) => Array.from({ length: 17 }, (_, index) => row[index] || "");
+  const changed = JSON.stringify(previous.map(normalized)) !== JSON.stringify(rows.map(normalized));
+  const stamp = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+  const requests: object[] = [];
+  if (changed) {
+    requests.push({ updateCells: {
+      start: { sheetId: catalog.sheetId, rowIndex: 1, columnIndex: 0 },
+      rows: rows.map((row) => ({ values: row.map((value) => ({ userEnteredValue: { stringValue: value } })) })),
+      fields: "userEnteredValue",
+    } });
+    if (previous.length > rows.length) requests.push({ repeatCell: {
+      range: { sheetId: catalog.sheetId, startRowIndex: rows.length + 1, endRowIndex: previous.length + 1, startColumnIndex: 0, endColumnIndex: 17 },
+      cell: {}, fields: "userEnteredValue",
+    } });
+    requests.push({ setDataValidation: {
+      range: { sheetId: input.sheetId, startRowIndex: 1, endRowIndex: input.gridProperties.rowCount, startColumnIndex: 2, endColumnIndex: 3 },
+      rule: { condition: { type: "ONE_OF_LIST", values: schoolNames.map((name) => ({ userEnteredValue: name })) }, strict: true, showCustomUi: true, inputMessage: "Chỉ chọn trường có đủ lớp và khung giờ trong METTASOUL." },
+    } });
+  }
+  requests.push({ updateCells: {
+    start: { sheetId: overview.sheetId, rowIndex: 20, columnIndex: 1 },
+    rows: [
+      { values: [{ userEnteredValue: { stringValue: stamp } }] },
+      { values: [{ userEnteredValue: { stringValue: `${counts.schools} trường · ${counts.classes} lớp · ${counts.periods} khung giờ` } }] },
+    ],
+    fields: "userEnteredValue",
+  } });
+  await sheets().spreadsheets.batchUpdate({ spreadsheetId: schoolIntakeSpreadsheetId, requestBody: { requests } });
+  return { ...counts, changed, syncedAt: stamp };
+}
+
 export function parseIntakeSourceRow(values: string[], number: number): IntakeSourceRow & { number: number } {
   return {
     number,

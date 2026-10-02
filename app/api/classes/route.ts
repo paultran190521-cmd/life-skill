@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog, appendAuditLogs } from "@/lib/audit";
 import { appendSheetRow, appendSheetRows, clearSheetData, readSheetRows } from "@/lib/google-sheets";
+import { queueSchoolIntakeCatalogSync } from "@/lib/school-intake-catalog-sync";
 import { evaluateRolePermission, requireSessionUser } from "@/lib/route-auth";
+
+export const maxDuration = 60;
 
 export async function GET() {
   const requestId = createRequestId("classes-list");
@@ -77,6 +80,7 @@ export async function POST(request: Request) {
         source: auth.source,
         after: classes[0],
       });
+      queueSchoolIntakeCatalogSync();
       return NextResponse.json(classes[0]);
     }
 
@@ -97,6 +101,7 @@ export async function POST(request: Request) {
           after: classRow,
         })),
     );
+    queueSchoolIntakeCatalogSync();
     return NextResponse.json({ classes });
   } catch (error) {
     return apiError(error, requestId);
@@ -148,6 +153,7 @@ export async function DELETE(request: Request) {
         classIds: classes.map((classRoom) => classRoom.id),
       },
     });
+    queueSchoolIntakeCatalogSync();
     return NextResponse.json({ deleted });
   } catch (error) {
     return apiError(error, requestId);
