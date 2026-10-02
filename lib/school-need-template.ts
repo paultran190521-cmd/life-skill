@@ -22,6 +22,7 @@ export function buildSchoolNeedTemplateCatalog(
   slots: SlotRow[],
   isAllowed: (slot: SlotRow, schoolName: string) => boolean,
   isDouble: (slot: SlotRow) => boolean,
+  options?: { includeDouble?: boolean },
 ): SchoolNeedTemplateCatalog {
   const activeSchools = schools.filter((row) => row.id && row.name).slice().sort((a, b) => collator.compare(a.name, b.name));
   const names: NamedRange[] = [];
@@ -42,7 +43,7 @@ export function buildSchoolNeedTemplateCatalog(
     });
     if (grades.length + 1 >= gradeFirst) names.push({ name: `GRADES_${schoolIndex}`, column: "D", first: gradeFirst, last: grades.length + 1 });
     (["Sáng", "Chiều"] as const).forEach((session, sessionPosition) => {
-      const available = slots.filter((slot) => slot.active !== false && isAllowed(slot, school.name) && !isDouble(slot) &&
+      const available = slots.filter((slot) => slot.active !== false && isAllowed(slot, school.name) && (options?.includeDouble || !isDouble(slot)) &&
         (slot.start < "12:00" ? "Sáng" : "Chiều") === session)
         .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
       const labelCounts = new Map<string, number>();

@@ -1,0 +1,120 @@
+import { createHash } from "node:crypto";
+import { google } from "googleapis";
+import type { SchoolNeedInput } from "@/lib/school-teaching-needs";
+
+export const schoolIntakeSpreadsheetId = process.env.SCHOOL_INTAKE_SPREADSHEET_ID || "1UPtukz6CQoQbe9Tq1s8Zwwfj1AL01XEwa7STeZ7dedg";
+
+export type IntakeSourceRow = SchoolNeedInput & {
+  rowId: string;
+  intakeStatus: "Dạy" | "Trường hủy tiết";
+};
+
+export type IntakeBatch = {
+  number: number;
+  id: string;
+  school: string;
+  weekStart: string;
+  fingerprint: string;
+  status: string;
+  count: number;
+  submittedBy: string;
+  submittedAt: string;
+  approvedBy: string;
+  approvedAt: string;
+  note: string;
+  revision: string;
+  raw: string[];
+};
+
+let client: ReturnType<typeof google.sheets> | null = null;
+function sheets() {
+  if (client) return client;
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  let key = String(process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || "").trim();
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) key = key.slice(1, -1);
+  key = key.replace(/\\n/g, "\n");
+  if (!email || !key.includes("-----BEGIN PRIVATE KEY-----")) throw new Error("Thiếu tài khoản tích hợp Google Sheets.");
+  const auth = new google.auth.JWT({ email, key, scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
+  client = google.sheets({ version: "v4", auth });
+  return client;
+}
+
+const tab = (name: string) => `'${name.replace(/'/g, "''")}'`;
+export async function readIntakeTab(name: string, lastColumn: string, lastRow: number) {
+  const response = await sheets().spreadsheets.values.get({
+    spreadsheetId: schoolIntakeSpreadsheetId,
+    range: `${tab(name)}!A1:${lastColumn}${lastRow}`,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+  return (response.data.values || []).map((row) => row.map((value) => String(value ?? "")));
+}
+
+export async function appendIntakeRows(name: string, lastColumn: string, rows: string[][]) {
+  if (!rows.length) return;
+  await sheets().spreadsheets.values.append({
+    spreadsheetId: schoolIntakeSpreadsheetId,
+    range: `${tab(name)}!A:${lastColumn}`,
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: rows },
+  });
+}
+
+export async function writeIntakeRanges(data: Array<{ range: string; values: string[][] }>) {
+  if (!data.length) return;
+  await sheets().spreadsheets.values.batchUpdate({
+    spreadsheetId: schoolIntakeSpreadsheetId,
+    requestBody: { valueInputOption: "RAW", data: data.map((item) => ({ range: item.range, values: item.values })) },
+  });
+}
+
+export function parseIntakeSourceRow(values: string[], number: number): IntakeSourceRow & { number: number } {
+  return {
+    number,
+    rowId: String(values[0] || "").trim(),
+    date: String(values[1] || "").trim(),
+    school: String(values[2] || "").trim(),
+    grade: String(values[3] || "").trim(),
+    className: String(values[4] || "").trim(),
+    session: String(values[5] || "").trim(),
+    periodLabel: String(values[6] || "").trim(),
+    start: String(values[7] || "").trim(),
+    end: String(values[8] || "").trim(),
+    environment: String(values[9] || "").trim(),
+    intakeStatus: String(values[10] || "").trim() as IntakeSourceRow["intakeStatus"],
+    sourceNote: String(values[11] || "").trim(),
+    id: String(values[17] || "").trim(),
+  };
+}
+
+export function intakeFingerprint(rows: IntakeSourceRow[]) {
+  const values = rows.map((row) => [row.rowId, row.id || "", row.date || "", row.school || "", row.grade || "", row.className || "", row.session || "", row.periodLabel || "", row.start || "", row.end || "", row.environment || "", row.intakeStatus, row.sourceNote || ""]);
+  values.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  return createHash("sha256").update(JSON.stringify(values)).digest("hex");
+}
+
+export function dateKey(value: string) {
+  const raw = String(value || "").trim();
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(raw);
+  const vi = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw);
+  const key = iso ? `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}` : vi ? `${vi[3]}-${vi[2].padStart(2, "0")}-${vi[1].padStart(2, "0")}` : "";
+  if (!key) return "";
+  const date = new Date(`${key}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === key ? key : "";
+}
+
+export function weekStartOf(value: string) {
+  const key = dateKey(value);
+  if (!key) return "";
+  const date = new Date(`${key}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0, 10);
+}
+
+export function parseIntakeBatch(row: string[], number: number): IntakeBatch {
+  return { number, id: row[0] || "", school: row[1] || "", weekStart: row[2] || "", fingerprint: row[3] || "", status: row[4] || "", count: Number(row[5] || 0), submittedBy: row[10] || "", submittedAt: row[11] || "", approvedBy: row[12] || "", approvedAt: row[13] || "", note: row[14] || "", revision: row[17] || "", raw: row };
+}
+
+export function snapshotSourceRow(values: string[]): IntakeSourceRow {
+  return { rowId: values[1] || "", date: values[2] || "", school: values[3] || "", grade: values[4] || "", className: values[5] || "", session: values[6] || "", periodLabel: values[7] || "", start: values[8] || "", end: values[9] || "", environment: values[10] || "", intakeStatus: (values[11] || "") as IntakeSourceRow["intakeStatus"], sourceNote: values[12] || "", id: values[13] || "" };
+}

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{font:15px/1.5 Arial,sans-serif;color:#173746;margin:0;background:#f5fafb}main{max-width:700px;margin:auto;padding:18px}
+    h1{font-size:21px;margin:0 0 6px}p{margin:5px 0 13px}.card{background:#fff;border:1px solid #d5e8ed;border-radius:14px;padding:17px;margin:12px 0}
+    label{display:block;font-weight:700;margin:10px 0 5px}select,input,textarea,button{box-sizing:border-box;width:100%;border:1px solid #bad5dd;border-radius:9px;padding:11px;font:inherit}
+    button{background:#086f82;color:#fff;font-weight:700;border:0;margin-top:12px;cursor:pointer}button.secondary{background:#fff;color:#086f82;border:1px solid #bad5dd}
+    button.danger{background:#9a3329}.small{font-size:13px;color:#536c77}.status{white-space:pre-wrap;padding:12px;background:#e9f5f6;border-radius:9px;margin-top:12px}
+    .error{background:#fff0ee;color:#9a3329}.hidden{display:none}
+  </style>
+</head>
+<body>
+<main>
+  <h1>METTASOUL · Xác nhận lịch trường</h1>
+  <p class="small" id="who">Đang kiểm tra tài khoản Google...</p>
+  <section class="card hidden" id="submitter">
+    <strong>Vòng 1 · Mỹ Nhung gửi lịch</strong>
+    <label for="school">Trường</label><select id="school"></select>
+    <label for="week">Ngày thứ Hai của tuần</label><input id="week" type="date">
+    <button class="secondary" onclick="act('preview')">Kiểm tra lịch</button>
+    <button onclick="act('submit')">Xác nhận nhập lịch và gửi Nguyễn Phương</button>
+  </section>
+  <section class="card hidden" id="reviewer">
+    <strong>Vòng 2 · Nguyễn Phương kiểm tra</strong>
+    <label for="batch">Đợt chờ duyệt</label><select id="batch"></select>
+    <button class="secondary" onclick="act('preview')">Xem lại thay đổi</button>
+    <button onclick="act('apply')">Xác nhận lịch đúng và chuyển vào app</button>
+    <label for="reason">Lý do trả lại nếu cần</label><textarea id="reason" rows="3"></textarea>
+    <button class="danger" onclick="act('reject')">Trả lại Mỹ Nhung</button>
+    <div id="notify-box" class="hidden">
+      <label for="notify-batch">Đợt đã vào app nhưng chưa ghi nhận email báo Sunny</label><select id="notify-batch"></select>
+      <button class="secondary" onclick="act('notify')">Gửi lại thông báo cho Sunny</button>
+    </div>
+  </section>
+  <div id="result" class="status hidden"></div>
+  <p class="small">Lỗi nhập và kết quả đồng bộ được ghi trong Google Sheet. Sunny chỉ nhận email sau khi lịch vào app thành công.</p>
+</main>
+<script>
+  let context;
+  const $=id=>document.getElementById(id);
+  const show=(message,error)=>{const el=$('result');el.textContent=message;el.classList.remove('hidden');el.classList.toggle('error',!!error)};
+  const fail=error=>show(error&&error.message?error.message:String(error),true);
+  function load(){google.script.run.withSuccessHandler(data=>{
+    context=data;$('who').textContent=data.email+' · '+(data.role==='submitter'?'người nhập lịch':'người duyệt lịch');
+    $('submitter').classList.toggle('hidden',data.role!=='submitter');$('reviewer').classList.toggle('hidden',data.role!=='reviewer');
+    $('school').innerHTML=data.schools.map(name=>'<option>'+name.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</option>').join('');
+    $('batch').innerHTML=data.pending.map(row=>'<option value="'+row.id+'">'+row.school+' · tuần '+row.weekStart+' · '+row.count+' tiết</option>').join('');
+    $('notify-box').classList.toggle('hidden',data.role!=='reviewer'||!data.unnotified.length);
+    $('notify-batch').innerHTML=data.unnotified.map(row=>'<option value="'+row.id+'">'+row.school+' · tuần '+row.weekStart+' · '+row.count+' tiết</option>').join('');
+  }).withFailureHandler(fail).intakeContext()}
+  function act(mode){
+    if(mode==='submit'&&!confirm('Gửi lịch tuần này cho Nguyễn Phương kiểm tra?'))return;
+    if(mode==='apply'&&!confirm('Xác nhận lịch đúng và chuyển vào METTASOUL?'))return;
+    if(mode==='reject'&&!confirm('Trả lại lịch cho Mỹ Nhung sửa?'))return;
+    if(mode==='notify'&&!confirm('Gửi thông báo lịch đã duyệt cho Sunny?'))return;
+    show('Đang kiểm tra và xử lý...');
+    const selected=context&&context.pending.find(row=>row.id===$('batch').value);
+    google.script.run.withSuccessHandler(result=>{
+      const s=result.summary||{};let message='Trạng thái: '+(result.status||'Đã kiểm tra')+'\nMới: '+(s.newCount||0)+' · sửa: '+(s.changedCount||0)+' · trùng: '+(s.duplicateCount||0)+' · hủy: '+(s.cancelledCount||0);
+      if(result.mail&&!result.mail.sent&&result.mail.reason)message+='\nEmail chưa gửi được: '+result.mail.reason;
+      if(result.changes&&result.changes.length)message+='\n\n'+result.changes.map(x=>x.action+' · '+x.description+(x.previous&&x.action==='CHANGED'?'\n  Trước: '+x.previous:'')).join('\n');
+      show(message,false);if(result.status)load();
+    }).withFailureHandler(fail).intakeAction({mode,school:context.role==='submitter'?$('school').value:selected?.school,weekStart:context.role==='submitter'?$('week').value:selected?.weekStart,batchId:mode==='notify'?$('notify-batch').value:$('batch').value,note:$('reason').value});
+  }
+  load();
+</script>
+</body>
+</html>
