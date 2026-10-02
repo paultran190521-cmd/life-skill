@@ -107,7 +107,14 @@ function notifyDirector_(batchId, summary) {
 function refreshIntakeCatalog() {
   const data = intakeApi_('GET');
   const sheet = SpreadsheetApp.getActive().getSheetByName(INTAKE_CATALOG);
-  const schools = data.schools || [], classes = data.classes || [], periods = data.periods || [];
+  const allSchools = data.schools || [];
+  const allClasses = data.classes || [];
+  const allPeriods = data.periods || [];
+  const schools = allSchools.filter(school => allClasses.some(row => row.schoolId === school.id) && allPeriods.some(row => row.school === school.name));
+  const schoolIds = new Set(schools.map(row => row.id));
+  const schoolNames = new Set(schools.map(row => row.name));
+  const classes = allClasses.filter(row => schoolIds.has(row.schoolId));
+  const periods = allPeriods.filter(row => schoolNames.has(row.school));
   const total = Math.max(schools.length, classes.length, periods.length, 5);
   const rows = [];
   for (let i = 0; i < total; i++) {
@@ -131,20 +138,26 @@ function onEdit(e) {
   const input = e.range.getSheet(), catalog = e.source.getSheetByName(INTAKE_CATALOG);
   const entries = catalog.getLastRow() > 1 ? catalog.getRange(2, 1, catalog.getLastRow() - 1, 17).getDisplayValues() : [];
   const changed = e.range.getColumn();
+  const singleColumn = e.range.getNumColumns() === 1;
   for (let number = e.range.getRow(); number < e.range.getRow() + e.range.getNumRows(); number++) {
     const row = input.getRange(number, 1, 1, 20).getDisplayValues()[0];
-    if (!row[0] && (row[1] || row[2] || row[4])) input.getRange(number, 1).setValue('intake-' + Utilities.getUuid().slice(0, 12));
-    if (changed === 3) { input.getRange(number, 4, 1, 4).clearContent(); row[3] = row[4] = row[5] = row[6] = ''; }
-    if (changed === 4) { input.getRange(number, 5).clearContent(); row[4] = ''; }
-    if (changed === 6) { input.getRange(number, 7).clearContent(); row[6] = ''; }
+    if (singleColumn && changed === 3) { input.getRange(number, 4, 1, 4).clearContent(); row[3] = row[4] = row[5] = row[6] = ''; }
+    if (singleColumn && changed === 4) { input.getRange(number, 5).clearContent(); row[4] = ''; }
+    if (singleColumn && changed === 6) { input.getRange(number, 7).clearContent(); row[6] = ''; }
     const grades = [...new Set(entries.filter(x => x[3] === row[2]).map(x => x[4]).filter(Boolean))];
+    if (row[3] && !grades.includes(row[3])) { input.getRange(number, 4, 1, 2).clearContent(); row[3] = row[4] = ''; }
     const classes = entries.filter(x => x[3] === row[2] && x[4] === row[3]).map(x => x[5]).filter(Boolean);
+    if (row[4] && !classes.includes(row[4])) { input.getRange(number, 5).clearContent(); row[4] = ''; }
+    const sessions = [...new Set(entries.filter(x => x[8] === row[2]).map(x => x[9]).filter(Boolean))];
+    if (row[5] && !sessions.includes(row[5])) { input.getRange(number, 6, 1, 2).clearContent(); row[5] = row[6] = ''; }
     const periods = entries.filter(x => x[8] === row[2] && x[9] === row[5]).map(x => x[10]).filter(Boolean);
-    intakeDropdown_(input.getRange(number, 4), grades);
-    intakeDropdown_(input.getRange(number, 5), classes);
-    intakeDropdown_(input.getRange(number, 7), periods);
+    if (row[6] && !periods.includes(row[6])) { input.getRange(number, 7).clearContent(); row[6] = ''; }
+    intakeDropdown_(input.getRange(number, 4), grades, 'Chọn trường trước để xem khối.');
+    intakeDropdown_(input.getRange(number, 5), classes, 'Chọn trường và khối trước để xem lớp.');
+    intakeDropdown_(input.getRange(number, 6), sessions, 'Chọn trường trước để xem buổi có lịch.');
+    intakeDropdown_(input.getRange(number, 7), periods, 'Chọn trường và buổi trước để xem tiết.');
     if (!row[10] && (row[1] || row[2])) input.getRange(number, 11).setValue('Dạy');
-    if ([2, 3, 4, 5, 6, 7, 10, 11, 12].includes(changed)) {
+    if (changed <= 12 && changed + e.range.getNumColumns() > 1) {
       input.getRange(number, 16).clearContent();
       if (['Chờ Nguyễn Phương duyệt', 'Đã đồng bộ'].includes(row[16])) input.getRange(number, 17).setValue('Đã sửa · cần gửi lại');
       input.getRange(number, 19).setValue(new Date());
@@ -152,7 +165,7 @@ function onEdit(e) {
   }
 }
 
-function intakeDropdown_(cell, values) {
-  if (!values.length) { cell.clearDataValidations(); return; }
-  cell.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList([...new Set(values)], true).setAllowInvalid(false).build());
+function intakeDropdown_(cell, values, hint) {
+  const rule = SpreadsheetApp.newDataValidation().setAllowInvalid(false).setHelpText(hint);
+  cell.setDataValidation((values.length ? rule.requireValueInList([...new Set(values)], true) : rule.requireFormulaSatisfied('=FALSE')).build());
 }
