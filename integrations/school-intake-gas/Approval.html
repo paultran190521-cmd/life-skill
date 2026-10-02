@@ -117,7 +117,7 @@
     $('lock-status').textContent=week?(locked?'Đã khóa · muốn sửa cần mở lại':'Đang mở · có thể khóa sau khi tuần kết thúc'):'Chưa có tuần trong bảng';
     $('lock-button').disabled=!week||!!locked;$('unlock-button').disabled=!week||!locked;
   }
-  const confirmationText={submit:'Gửi tất cả lịch chưa gửi của tuần này cho email duyệt vòng 2?',apply:'Xác nhận lịch của các trường trong đợt này và chuyển vào METTASOUL?',reject:'Trả lại lịch cho người nhập sửa?',notify:'Gửi thông báo lịch đã duyệt cho email giám đốc?',lockWeek:'Khóa toàn bộ lịch của tuần này sau khi đã kết thúc?',unlockWeek:'Mở lại tuần này để sửa lịch?'};
+  const confirmationText={submit:'Gửi lịch chưa gửi của tuần và phạm vi trường đã chọn cho email duyệt vòng 2?',apply:'Xác nhận lịch của các trường trong đợt này và chuyển vào METTASOUL?',reject:'Trả lại lịch cho người nhập sửa?',notify:'Gửi thông báo lịch đã duyệt cho email giám đốc?',lockWeek:'Khóa toàn bộ lịch của tuần này sau khi đã kết thúc?',unlockWeek:'Mở lại tuần này để sửa lịch?'};
   function act(mode,source){
     if(confirmationText[mode]){pendingAction={mode,source};$('confirm-message').textContent=confirmationText[mode];$('confirm-dialog').showModal();return}
     runAction(mode,source);
