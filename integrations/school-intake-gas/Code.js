@@ -14,7 +14,6 @@ const INTAKE_FIRST_DATA_ROW = 6;
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Xác nhận lịch')
     .addItem('Mở thao tác theo vai trò', 'openIntakeSidebar')
-    .addItem('Kích hoạt nút gửi / duyệt trên bảng', 'installIntakeActionTrigger')
     .addItem('Áp dụng bộ lọc đầu bảng', 'applyIntakeFilters')
     .addItem('Xóa bộ lọc', 'clearIntakeFilters')
     .addItem('Cập nhật trường, lớp và tiết từ app', 'refreshIntakeCatalog')
