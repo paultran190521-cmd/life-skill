@@ -5,10 +5,13 @@ const INTAKE_SUBMITTER = 'mynhung.ipale@gmail.com';
 const INTAKE_REVIEWER = 'nguyenphuong.ipale@gmail.com';
 const INTAKE_DIRECTOR = 'dangphuongvietnam@gmail.com';
 const INTAKE_API_BASE = 'https://giaovukns.mettasoul.vn';
+const INTAKE_FIRST_DATA_ROW = 6;
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Xác nhận lịch')
-    .addItem('Mở màn hình xác nhận', 'openIntakeSidebar')
+    .addItem('Mở thao tác theo vai trò', 'openIntakeSidebar')
+    .addItem('Áp dụng bộ lọc đầu bảng', 'applyIntakeFilters')
+    .addItem('Xóa bộ lọc', 'clearIntakeFilters')
     .addItem('Cập nhật trường, lớp và tiết từ app', 'refreshIntakeCatalog')
     .addToUi();
 }
@@ -50,7 +53,31 @@ function intakeContext() {
   const all = batches.getLastRow() > 1 ? batches.getRange(2, 1, batches.getLastRow() - 1, 18).getDisplayValues() : [];
   const pending = all.filter(row => row[4] === 'WAITING_REVIEW').map(row => ({ id: row[0], school: row[1], weekStart: row[2], count: row[5] }));
   const unnotified = all.filter(row => row[4] === 'SYNCED' && !row[16]).map(row => ({ id: row[0], school: row[1], weekStart: row[2], count: row[5] }));
-  return { email, role: email === INTAKE_SUBMITTER ? 'submitter' : 'reviewer', schools, pending, unnotified };
+  const input = workbook.getSheetByName(INTAKE_INPUT);
+  const selected = input.getRange('B3:F3').getDisplayValues()[0];
+  const locks = workbook.getSheetByName('Khóa tuần');
+  const lockedWeeks = {};
+  if (locks && locks.getLastRow() > 1) locks.getRange(2, 1, locks.getLastRow() - 1, 2).getDisplayValues().forEach(row => { if (row[0]) lockedWeeks[row[0]] = row[1] === 'LOCKED'; });
+  const weeks = new Set(Object.keys(lockedWeeks));
+  if (/^\d{4}-\d{2}$/.test(selected[0])) {
+    const [year, month] = selected[0].split('-').map(Number);
+    const cursor = new Date(Date.UTC(year, month - 1, 1));
+    cursor.setUTCDate(cursor.getUTCDate() - ((cursor.getUTCDay() + 6) % 7));
+    while (cursor.getTime() < Date.UTC(year, month, 1)) {
+      weeks.add(Utilities.formatDate(cursor, 'UTC', 'yyyy-MM-dd'));
+      cursor.setUTCDate(cursor.getUTCDate() + 7);
+    }
+  }
+  if (input.getLastRow() >= INTAKE_FIRST_DATA_ROW) input.getRange(INTAKE_FIRST_DATA_ROW, 2, input.getLastRow() - INTAKE_FIRST_DATA_ROW + 1, 1).getValues().forEach(row => {
+    if (!(row[0] instanceof Date)) return;
+    const day = new Date(row[0].getTime());
+    day.setDate(day.getDate() - ((day.getDay() + 6) % 7));
+    weeks.add(Utilities.formatDate(day, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd'));
+  });
+  if (/^\d{4}-\d{2}-\d{2}$/.test(selected[2])) weeks.add(selected[2]);
+  return { email, role: email === INTAKE_SUBMITTER ? 'submitter' : 'reviewer', schools, pending, unnotified,
+    selection: { month: selected[0], weekStart: selected[2], school: selected[4] }, lockedWeeks,
+    weeks: [...weeks].sort().reverse().map(day => ({ value: day, label: academicWeekLabel_(day) + ' · ' + day })) };
 }
 
 function intakeAction(input) {
@@ -65,9 +92,10 @@ function intakeActionUnlocked_(input) {
   const context = intakeContext();
   const mode = String(input.mode || '');
   if (mode === 'submit' && context.role !== 'submitter') throw new Error('Chỉ Mỹ Nhung được gửi lịch vòng 1.');
-  if (['apply', 'reject', 'notify'].includes(mode) && context.role !== 'reviewer') throw new Error('Chỉ Nguyễn Phương được xác nhận vòng 2.');
+  if (['apply', 'reject', 'notify', 'lockWeek', 'unlockWeek'].includes(mode) && context.role !== 'reviewer') throw new Error('Chỉ Nguyễn Phương được xác nhận vòng 2 và khóa tuần.');
   if (mode === 'notify') return notifyDirector_(String(input.batchId || ''));
   const result = intakeApi_('POST', { mode, school: input.school || '', weekStart: input.weekStart || '', batchId: input.batchId || '', note: input.note || '' });
+  if (mode === 'lockWeek' || mode === 'unlockWeek') { applyIntakeFilters(); return result; }
   result.mail = { sent: false, reason: '' };
   try {
     const sheetUrl = SpreadsheetApp.getActive().getUrl();
@@ -129,7 +157,8 @@ function refreshIntakeCatalog() {
   if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, 17).clearContent();
   sheet.getRange(2, 1, rows.length, 17).setValues(rows);
   const input = workbook.getSheetByName(INTAKE_INPUT);
-  input.getRange(2, 3, input.getMaxRows() - 1, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(sheet.getRange(2, 1, schools.length, 1), true).setAllowInvalid(false).build());
+  input.getRange(INTAKE_FIRST_DATA_ROW, 3, input.getMaxRows() - INTAKE_FIRST_DATA_ROW + 1, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(sheet.getRange(2, 1, schools.length, 1), true).setAllowInvalid(false).build());
+  input.getRange('F3').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['Tất cả'].concat(schools.map(row => row.name)), true).setAllowInvalid(false).build());
   const overview = workbook.getSheetByName('Tổng quan');
   if (overview) overview.getRange(21, 2, 2, 1).setValues([
     [Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy HH:mm')],
@@ -140,7 +169,13 @@ function refreshIntakeCatalog() {
 }
 
 function onEdit(e) {
-  if (!e || !e.range || e.range.getSheet().getName() !== INTAKE_INPUT || e.range.getRow() < 2) return;
+  if (!e || !e.range || e.range.getSheet().getName() !== INTAKE_INPUT) return;
+  if (e.range.getRow() === 3 && [2, 4, 6].includes(e.range.getColumn())) {
+    if (e.range.getColumn() === 2) refreshIntakeWeekOptions_();
+    applyIntakeFilters();
+    return;
+  }
+  if (e.range.getRow() < INTAKE_FIRST_DATA_ROW) return;
   const input = e.range.getSheet(), catalog = e.source.getSheetByName(INTAKE_CATALOG);
   const entries = catalog.getLastRow() > 1 ? catalog.getRange(2, 1, catalog.getLastRow() - 1, 17).getDisplayValues() : [];
   const changed = e.range.getColumn();
@@ -169,6 +204,67 @@ function onEdit(e) {
       input.getRange(number, 19).setValue(new Date());
     }
   }
+}
+
+function refreshIntakeWeekOptions_() {
+  const input = SpreadsheetApp.getActive().getSheetByName(INTAKE_INPUT);
+  const month = String(input.getRange('B3').getDisplayValue() || 'Tất cả');
+  const weeks = ['Tất cả'];
+  if (/^\d{4}-\d{2}$/.test(month)) {
+    const [year, part] = month.split('-').map(Number);
+    const cursor = new Date(Date.UTC(year, part - 1, 1));
+    cursor.setUTCDate(cursor.getUTCDate() - ((cursor.getUTCDay() + 6) % 7));
+    const stop = Date.UTC(year, part, 1);
+    while (cursor.getTime() < stop) {
+      weeks.push(Utilities.formatDate(cursor, 'UTC', 'yyyy-MM-dd'));
+      cursor.setUTCDate(cursor.getUTCDate() + 7);
+    }
+  }
+  input.getRange('D3').setValue('Tất cả').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(weeks, true).setAllowInvalid(false).build());
+}
+
+function academicWeekLabel_(weekStart) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return 'Chọn tuần để xem số tuần';
+  const date = new Date(weekStart + 'T00:00:00Z');
+  const thursday = new Date(date.getTime() + 3 * 86400000);
+  const academicYear = thursday.getUTCMonth() >= 8 ? thursday.getUTCFullYear() : thursday.getUTCFullYear() - 1;
+  const first = new Date(Date.UTC(academicYear, 8, 1));
+  first.setUTCDate(first.getUTCDate() - ((first.getUTCDay() + 6) % 7));
+  const number = Math.floor((date.getTime() - first.getTime()) / (7 * 86400000)) + 1;
+  return 'Tuần ' + String(number).padStart(2, '0') + ' · năm học ' + academicYear + '–' + (academicYear + 1);
+}
+
+function applyIntakeFilters() {
+  const sheet = SpreadsheetApp.getActive().getSheetByName(INTAKE_INPUT);
+  const month = String(sheet.getRange('B3').getDisplayValue() || 'Tất cả');
+  const week = String(sheet.getRange('D3').getDisplayValue() || 'Tất cả');
+  const school = String(sheet.getRange('F3').getDisplayValue() || 'Tất cả');
+  let filter = sheet.getFilter();
+  if (!filter) filter = sheet.getRange(5, 1, sheet.getMaxRows() - 4, 20).createFilter();
+  if (month !== 'Tất cả') filter.setColumnFilterCriteria(14, SpreadsheetApp.newFilterCriteria().whenFormulaSatisfied('=OR($N6="";$N6=$B$3)').build());
+  else filter.removeColumnFilterCriteria(14);
+  if (week !== 'Tất cả') filter.setColumnFilterCriteria(13, SpreadsheetApp.newFilterCriteria().whenFormulaSatisfied('=OR($M6="";TEXT($M6;"yyyy-mm-dd")=$D$3)').build());
+  else filter.removeColumnFilterCriteria(13);
+  if (school !== 'Tất cả') filter.setColumnFilterCriteria(3, SpreadsheetApp.newFilterCriteria().whenFormulaSatisfied('=OR($C6="";$C6=$F$3)').build());
+  else filter.removeColumnFilterCriteria(3);
+  let label = academicWeekLabel_(week);
+  if (week !== 'Tất cả') {
+    const locks = SpreadsheetApp.getActive().getSheetByName('Khóa tuần');
+    if (locks && locks.getLastRow() > 1) {
+      const matching = locks.getRange(2, 1, locks.getLastRow() - 1, 2).getDisplayValues().filter(row => row[0] === week);
+      label += matching.length && matching[matching.length - 1][1] === 'LOCKED' ? ' · Đã khóa' : ' · Đang mở';
+    }
+  }
+  sheet.getRange('J3').setValue(label);
+  SpreadsheetApp.getActive().toast('Đã lọc lịch theo lựa chọn đầu bảng.', 'Nhập lịch', 4);
+}
+
+function clearIntakeFilters() {
+  const sheet = SpreadsheetApp.getActive().getSheetByName(INTAKE_INPUT);
+  sheet.getRange('B3').setValue('Tất cả');
+  refreshIntakeWeekOptions_();
+  sheet.getRange('F3').setValue('Tất cả');
+  applyIntakeFilters();
 }
 
 function intakeDropdown_(cell, values, hint) {

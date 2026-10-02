@@ -4,7 +4,7 @@ import { appendAuditLog } from "@/lib/audit";
 import { sendScheduleCancellationEmail } from "@/lib/email";
 import { appendSheetRows, ensureSheetHeaders, readSheetRowsBatch, schoolTeachingNeedHeaders, updateSheetRowsById } from "@/lib/google-sheets";
 import { buildSchoolNeedTemplateCatalog } from "@/lib/school-need-template";
-import { appendIntakeRows, dateKey, intakeFingerprint, parseIntakeBatch, parseIntakeSourceRow, readIntakeTab, snapshotSourceRow, weekStartOf, writeIntakeRanges, type IntakeSourceRow } from "@/lib/school-intake-storage";
+import { appendIntakeRows, dateKey, intakeFingerprint, intakeInputFirstDataRow, intakeInputLastRow, parseIntakeBatch, parseIntakeSourceRow, readIntakeTab, readIntakeWeekLocks, setIntakeWeekLock, snapshotSourceRow, weekStartOf, writeIntakeRanges, type IntakeSourceRow } from "@/lib/school-intake-storage";
 import { normalizeSchoolNeedInput, planSchoolNeedImport, schoolNeedIdentity, schoolNeedRequiresReview, schoolNeedRevision, type NormalizedNeedInput } from "@/lib/school-teaching-needs";
 import { isDoubleTeachingTimeSlot, isTimeSlotAllowedForSchool } from "@/lib/time-slots";
 import type { Attendance, ClassRoom, LessonPlan, Schedule, School, SchoolTeachingNeed, TeachingWorkLog, TimeSlot } from "@/lib/types";
@@ -15,7 +15,7 @@ const reviewerEmail = "nguyenphuong.ipale@gmail.com";
 type IntakeRow = IntakeSourceRow;
 
 type IntakeBody = {
-  mode?: "preview" | "submit" | "apply" | "reject" | "mailSent";
+  mode?: "preview" | "submit" | "apply" | "reject" | "mailSent" | "lockWeek" | "unlockWeek";
   school?: string;
   weekStart?: string;
   batchId?: string;
@@ -23,8 +23,8 @@ type IntakeBody = {
 };
 
 async function selectedRows(school: string, weekStart: string) {
-  const raw = await readIntakeTab("Nhập lịch", "T", 1000);
-  const rows = raw.slice(1).map((values, index) => parseIntakeSourceRow(values, index + 2))
+  const raw = await readIntakeTab("Nhập lịch", "T", intakeInputLastRow);
+  const rows = raw.slice(intakeInputFirstDataRow - 1).map((values, index) => parseIntakeSourceRow(values, index + intakeInputFirstDataRow))
     .filter((row) => row.school === school && (weekStartOf(row.date || "") === weekStart || !dateKey(row.date || "")));
   const missingIds = rows.filter((row) => !row.rowId);
   if (missingIds.length) {
@@ -102,11 +102,27 @@ export async function POST(request: Request) {
     const actor = await actorFromGoogleToken(request);
     if (!actor) return apiFailure(401, "Tài khoản Google chưa được phép dùng bảng nhập lịch.", undefined, requestId);
     const body = await request.json() as IntakeBody;
-    if (!body.mode || !["preview", "submit", "apply", "reject", "mailSent"].includes(body.mode)) return apiFailure(400, "Thao tác không hợp lệ.", undefined, requestId);
-    if (["apply", "reject", "mailSent"].includes(body.mode) && actor.email !== reviewerEmail) return apiFailure(403, "Chỉ Nguyễn Phương được xác nhận vòng 2.", undefined, requestId);
+    if (!body.mode || !["preview", "submit", "apply", "reject", "mailSent", "lockWeek", "unlockWeek"].includes(body.mode)) return apiFailure(400, "Thao tác không hợp lệ.", undefined, requestId);
+    if (["apply", "reject", "mailSent", "lockWeek", "unlockWeek"].includes(body.mode) && actor.email !== reviewerEmail) return apiFailure(403, "Chỉ Nguyễn Phương được xác nhận vòng 2 và khóa tuần.", undefined, requestId);
     if (body.mode === "submit" && actor.email !== submitterEmail) return apiFailure(403, "Chỉ Mỹ Nhung được gửi lịch vòng 1.", undefined, requestId);
     if (["apply", "reject", "mailSent"].includes(body.mode) && !/^[a-zA-Z0-9_-]{12,100}$/.test(body.batchId || "")) return apiFailure(400, "Mã đợt xác nhận không hợp lệ.", undefined, requestId);
 
+    const weekLocks = await readIntakeWeekLocks();
+    if (body.mode === "lockWeek" || body.mode === "unlockWeek") {
+      const week = String(body.weekStart || "").trim();
+      if (!week || weekStartOf(week) !== week) return apiFailure(400, "Hãy chọn đúng ngày thứ Hai của tuần.", undefined, requestId);
+      const current = weekLocks.get(week)?.locked || false;
+      if ((body.mode === "lockWeek") === current) return apiFailure(409, current ? "Tuần này đã khóa." : "Tuần này chưa khóa.", undefined, requestId);
+      if (body.mode === "lockWeek") {
+        const weekEnd = new Date(`${week}T00:00:00+07:00`).getTime() + 7 * 24 * 60 * 60 * 1000;
+        if (Date.now() < weekEnd) return apiFailure(400, "Chỉ khóa sau khi tuần dạy đã kết thúc.", undefined, requestId);
+        const batches = (await readIntakeTab("Đợt duyệt", "R", 1000)).slice(1).map((row, index) => parseIntakeBatch(row, index + 2));
+        if (batches.some((item) => item.weekStart === week && item.status === "WAITING_REVIEW")) return apiFailure(409, "Tuần này còn lịch chờ Nguyễn Phương duyệt.", undefined, requestId);
+      }
+      await setIntakeWeekLock(week, body.mode === "lockWeek", actor.email);
+      await appendAuditLog({ requestId, actor, action: body.mode === "lockWeek" ? "school_intake.lock_week" : "school_intake.unlock_week", entityType: "SchoolIntakeWeek", entityId: week, route: "/api/school-intake", method: "POST", authMode: "enforce", decision: "allow", source: "email-token" });
+      return NextResponse.json({ status: body.mode === "lockWeek" ? "LOCKED" : "UNLOCKED", weekStart: week });
+    }
     const batch = body.batchId && ["preview", "apply", "reject", "mailSent"].includes(body.mode) ? await loadBatch(body.batchId) : undefined;
     if (body.mode === "mailSent") {
       if (!batch || batch.status !== "SYNCED") return apiFailure(409, "Đợt lịch chưa đồng bộ nên chưa thể đánh dấu đã báo Sunny.", undefined, requestId);
@@ -119,8 +135,8 @@ export async function POST(request: Request) {
       if (!note) return apiFailure(400, "Cần ghi lý do trả lại cho Mỹ Nhung.", undefined, requestId);
       const next = [...batch!.raw]; next[4] = "RETURNED"; next[12] = actor.email; next[13] = new Date().toISOString(); next[14] = note;
       await writeIntakeRanges([{ range: `'Đợt duyệt'!A${batch!.number}:R${batch!.number}`, values: [next] }]);
-      const input = await readIntakeTab("Nhập lịch", "T", 1000);
-      const numbers = new Map(input.slice(1).map((row, index) => [row[0], index + 2]));
+      const input = await readIntakeTab("Nhập lịch", "T", intakeInputLastRow);
+      const numbers = new Map(input.slice(intakeInputFirstDataRow - 1).map((row, index) => [row[0], index + intakeInputFirstDataRow]));
       const rowUpdates = (await snapshotRows(batch!.id)).flatMap((row) => {
         const number = numbers.get(row.rowId);
         return number ? [{ range: `'Nhập lịch'!Q${number}`, values: [[`Trả lại: ${note}`]] }] : [];
@@ -145,6 +161,7 @@ export async function POST(request: Request) {
       if (!school || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || weekStartOf(weekStart) !== weekStart) return apiFailure(400, "Hãy chọn trường và ngày thứ Hai của tuần cần xác nhận.", undefined, requestId);
       rows = await selectedRows(school, weekStart);
     }
+    if (weekLocks.get(weekStart)?.locked && body.mode !== "preview") return apiFailure(423, "Tuần này đã khóa. Nguyễn Phương cần mở khóa trước khi sửa hoặc duyệt lịch.", undefined, requestId);
     if (rows.length < 1 || rows.length > 2000) return apiFailure(400, "Tuần này cần từ 1 đến 2.000 tiết hợp lệ.", undefined, requestId);
     if (body.mode === "submit") {
       const pending = (await readIntakeTab("Đợt duyệt", "R", 1000)).slice(1).map((row, index) => parseIntakeBatch(row, index + 2))
@@ -188,11 +205,11 @@ export async function POST(request: Request) {
           normalized.push({ source, row });
         }
       } catch (error) {
-        errors.push({ rowId: String(source?.rowId || ""), index: (source as IntakeRow & { number?: number })?.number || index + 2, message: error instanceof Error ? error.message : "Dòng không hợp lệ." });
+        errors.push({ rowId: String(source?.rowId || ""), index: (source as IntakeRow & { number?: number })?.number || index + intakeInputFirstDataRow, message: error instanceof Error ? error.message : "Dòng không hợp lệ." });
       }
     }
     if (errors.length) {
-      if (body.mode !== "apply" && !batch) await writeIntakeRanges(errors.filter((item) => item.index >= 2).map((item) => ({ range: `'Nhập lịch'!P${item.index}:Q${item.index}`, values: [[item.message, "Có lỗi · chưa gửi"]] })));
+      if (body.mode !== "apply" && !batch) await writeIntakeRanges(errors.filter((item) => item.index >= intakeInputFirstDataRow).map((item) => ({ range: `'Nhập lịch'!P${item.index}:Q${item.index}`, values: [[item.message, "Có lỗi · chưa gửi"]] })));
       return NextResponse.json({ error: "Có dòng cần sửa trước khi gửi duyệt.", errors }, { status: 422 });
     }
 
@@ -305,8 +322,8 @@ export async function POST(request: Request) {
     }
     await writeIntakeRanges(effectiveUpdates);
     await appendIntakeRows("Lịch hiệu lực", "O", effectiveAppends);
-    const input = await readIntakeTab("Nhập lịch", "T", 1000);
-    const inputNumberById = new Map(input.slice(1).map((values, index) => [values[0], index + 2]));
+    const input = await readIntakeTab("Nhập lịch", "T", intakeInputLastRow);
+    const inputNumberById = new Map(input.slice(intakeInputFirstDataRow - 1).map((values, index) => [values[0], index + intakeInputFirstDataRow]));
     const rowUpdates = rows.flatMap((row) => {
       const number = inputNumberById.get(row.rowId);
       if (!number) return [];

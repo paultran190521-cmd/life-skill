@@ -3,6 +3,8 @@ import { google } from "googleapis";
 import type { SchoolNeedInput } from "@/lib/school-teaching-needs";
 
 export const schoolIntakeSpreadsheetId = process.env.SCHOOL_INTAKE_SPREADSHEET_ID || "1UPtukz6CQoQbe9Tq1s8Zwwfj1AL01XEwa7STeZ7dedg";
+export const intakeInputFirstDataRow = 6;
+export const intakeInputLastRow = 1004;
 
 export type IntakeSourceRow = SchoolNeedInput & {
   rowId: string;
@@ -68,6 +70,47 @@ export async function writeIntakeRanges(data: Array<{ range: string; values: str
   });
 }
 
+export async function readIntakeWeekLocks() {
+  const rows = await readIntakeTab("Khóa tuần", "F", 1000);
+  const latest = new Map<string, { weekStart: string; locked: boolean; by: string; at: string }>();
+  for (const row of rows.slice(1)) {
+    if (!weekStartOf(row[0] || "") || weekStartOf(row[0]) !== row[0]) continue;
+    latest.set(row[0], { weekStart: row[0], locked: row[1] === "LOCKED", by: row[2] || "", at: row[3] || "" });
+  }
+  return latest;
+}
+
+export async function setIntakeWeekLock(weekStart: string, locked: boolean, actor: string) {
+  const input = (await sheets().spreadsheets.get({
+    spreadsheetId: schoolIntakeSpreadsheetId,
+    fields: "sheets(properties(sheetId,title),protectedRanges(protectedRangeId,description))",
+  })).data.sheets?.find((item) => item.properties?.title === "Nhập lịch");
+  if (input?.properties?.sheetId == null) throw new Error("Không tìm thấy tab Nhập lịch.");
+  const tag = `INTAKE_WEEK_LOCK:${weekStart}`;
+  const existing = (input.protectedRanges || []).filter((item) => item.description === tag && item.protectedRangeId != null);
+  const requests: object[] = existing.map((item) => ({ deleteProtectedRange: { protectedRangeId: item.protectedRangeId } }));
+  if (locked) {
+    const rows = (await readIntakeTab("Nhập lịch", "T", intakeInputLastRow)).slice(intakeInputFirstDataRow - 1);
+    const numbers = rows.flatMap((values, index) => weekStartOf(values[1] || "") === weekStart ? [index + intakeInputFirstDataRow] : []);
+    const groups: Array<{ first: number; last: number }> = [];
+    for (const number of numbers) {
+      const last = groups.at(-1);
+      if (last && last.last + 1 === number) last.last = number;
+      else groups.push({ first: number, last: number });
+    }
+    const serviceEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    if (!serviceEmail) throw new Error("Thiếu tài khoản tích hợp để khóa tuần.");
+    for (const group of groups) requests.push({ addProtectedRange: { protectedRange: {
+      range: { sheetId: input.properties.sheetId, startRowIndex: group.first - 1, endRowIndex: group.last, startColumnIndex: 1, endColumnIndex: 12 },
+      description: tag,
+      warningOnly: false,
+      editors: { users: [serviceEmail] },
+    } } });
+  }
+  if (requests.length) await sheets().spreadsheets.batchUpdate({ spreadsheetId: schoolIntakeSpreadsheetId, requestBody: { requests } });
+  await appendIntakeRows("Khóa tuần", "F", [[weekStart, locked ? "LOCKED" : "UNLOCKED", actor, new Date().toISOString(), String(requests.length), ""]]);
+}
+
 export async function replaceIntakeCatalog(rows: string[][], schoolNames: string[], counts: { schools: number; classes: number; periods: number }) {
   if (!rows.length || !schoolNames.length || rows.some((row) => row.length !== 17)) throw new Error("Danh mục METTASOUL chưa đủ dữ liệu để đồng bộ.");
   const metadata = await sheets().spreadsheets.get({
@@ -96,8 +139,12 @@ export async function replaceIntakeCatalog(rows: string[][], schoolNames: string
       cell: {}, fields: "userEnteredValue",
     } });
     requests.push({ setDataValidation: {
-      range: { sheetId: input.sheetId, startRowIndex: 1, endRowIndex: input.gridProperties.rowCount, startColumnIndex: 2, endColumnIndex: 3 },
+      range: { sheetId: input.sheetId, startRowIndex: intakeInputFirstDataRow - 1, endRowIndex: input.gridProperties.rowCount, startColumnIndex: 2, endColumnIndex: 3 },
       rule: { condition: { type: "ONE_OF_LIST", values: schoolNames.map((name) => ({ userEnteredValue: name })) }, strict: true, showCustomUi: true, inputMessage: "Chỉ chọn trường có đủ lớp và khung giờ trong METTASOUL." },
+    } });
+    requests.push({ setDataValidation: {
+      range: { sheetId: input.sheetId, startRowIndex: 2, endRowIndex: 3, startColumnIndex: 5, endColumnIndex: 6 },
+      rule: { condition: { type: "ONE_OF_LIST", values: ["Tất cả", ...schoolNames].map((name) => ({ userEnteredValue: name })) }, strict: true, showCustomUi: true, inputMessage: "Lọc theo trường đã đồng bộ từ METTASOUL." },
     } });
   }
   requests.push({ updateCells: {
