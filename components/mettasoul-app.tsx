@@ -3012,6 +3012,36 @@ export function MettasoulApp() {
     setSchedules((items) =>
       items.map((item) => schedulesById.has(item.id) ? { ...item, ...schedulesById.get(item.id) } : item),
     );
+    const regularPeriods = response.attendance
+      .map((item) => schedules.find((candidate) => candidate.id === item.scheduleId))
+      .filter((item): item is Schedule => Boolean(item && item.teachingEnvironment !== "schoolyard_report"));
+    let confirmedCount = 0;
+    let pendingCount = 0;
+    let failedCount = 0;
+    for (const period of regularPeriods) {
+      try {
+        const result = await apiRequest<TeachingWorkLogCreateResponse>("/api/teaching-work-logs", {
+          method: "POST",
+          body: JSON.stringify({ scheduleId: period.id, intent: "check-in" }),
+        });
+        setTeachingWorkLogs((items) => [result.workLog, ...items.filter((item) => item.id !== result.workLog.id)]);
+        if (result.syncPending) {
+          pendingCount += 1;
+          void reconcilePendingTeachingWorkLog(period, result.retryAfterMs);
+        } else {
+          confirmedCount += 1;
+        }
+      } catch {
+        failedCount += 1;
+      }
+    }
+    if (regularPeriods.length > 0) {
+      pushToast(
+        failedCount ? "Đã điểm danh, cần kiểm tra công" : "Đã điểm danh và ghi công",
+        `${confirmedCount}/${regularPeriods.length} tiết đã ghi HRM${pendingCount ? ` · ${pendingCount} đang đối chiếu` : ""}${failedCount ? ` · ${failedCount} cần bấm thử lại ở trạng thái từng tiết` : ""}.`,
+        failedCount ? "warning" : "success",
+      );
+    }
     addNotification("Đã điểm danh", `${role === "assistant" ? currentUser.name : teacherName(schedule.teacherId)} đã điểm danh ${response.group.scheduleCount} tiết cùng trường và cùng buổi.`, "admin", {
       tone: "success",
     });
@@ -3021,7 +3051,7 @@ export function MettasoulApp() {
     setAttendanceRequiredScheduleId(schedule.id);
     pushToast(
       "Cần điểm danh trước",
-      "Hệ thống đã đưa bạn đến đúng tiết. Hãy bấm Điểm danh buổi rồi chấm công.",
+      "Hệ thống đã đưa bạn đến đúng tiết. Hãy bấm Điểm danh & ghi công buổi.",
       "warning",
     );
     window.setTimeout(() => {
@@ -3055,7 +3085,7 @@ export function MettasoulApp() {
     try {
       response = await saveRequest<TeachingWorkLogCreateResponse>("Đang gửi chấm công sang HRM...", "/api/teaching-work-logs", {
         method: "POST",
-        body: JSON.stringify({ scheduleId: schedule.id, evidenceUrl }),
+        body: JSON.stringify({ scheduleId: schedule.id, evidenceUrl, intent: schedule.teachingEnvironment === "schoolyard_report" ? undefined : "check-in" }),
       });
       setDataStatus("connected");
       setSaveError("");
@@ -3097,6 +3127,49 @@ export function MettasoulApp() {
       `HRM đã ghi nhận ${teachingRoleLabel(response.workLog.roleCode).toLowerCase()} cho tiết này${response.workLog.mcpPoints ? ` và ${response.workLog.mcpPoints} MCP` : ""}.`,
       "success",
     );
+  }
+
+  async function completeTopicReportAsAdmin(schedule: Schedule, teacherId: string, teacherCompleted: boolean) {
+    try {
+      const response = await saveRequest<TeachingWorkLogCreateResponse>(
+        "Đang xác nhận chuyên đề với HRM...",
+        "/api/teaching-work-logs",
+        { method: "POST", body: JSON.stringify({ scheduleId: schedule.id, teacherId, intent: teacherCompleted ? "approve" : "admin-complete" }) },
+      );
+      setTeachingWorkLogs((items) => [response.workLog, ...items.filter((item) => item.id !== response.workLog.id)]);
+      if (response.syncPending) {
+        pushToast("Đang đối chiếu HRM", "Chuyên đề đã được gửi, hệ thống đang chờ HRM xác nhận.", "info");
+      } else {
+        pushToast("Đã hoàn tất chuyên đề", "HRM đã ghi nhận công cho giáo viên.", "success");
+      }
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function reviewCancelledPeriod(report: CancellationReport, supportPercent: 0 | 50 | 100) {
+    const adminReason = await openPromptDialog({
+      title: `Xử lý tiết báo hủy · hỗ trợ ${supportPercent}%`,
+      message: `Giáo viên báo: ${report.reason}. Hãy ghi lý do để giáo viên xem được trên lịch.`,
+      placeholder: "Lý do hủy hoặc mức hỗ trợ...",
+      confirmText: "Xác nhận mức hỗ trợ",
+    });
+    if (!adminReason?.trim()) return;
+    try {
+      const response = await saveRequest<{ report: CancellationReport; money?: number; policyVersion?: string }>("Đang cập nhật công HRM...", "/api/schedule-cancellations", {
+        method: "PATCH",
+        body: JSON.stringify({ id: report.id, supportPercent, adminReason: adminReason.trim() }),
+      });
+      setCancellationReports((items) => items.map((item) => item.id === report.id ? response.report : item));
+      if (typeof response.money === "number") setTeachingWorkLogs((items) => items.map((item) =>
+        item.scheduleId === report.scheduleId && item.teacherId === report.teacherId && item.status === "CONFIRMED"
+          ? { ...item, money: response.money, policyVersion: response.policyVersion || item.policyVersion }
+          : item,
+      ));
+      pushToast("Đã xử lý tiết báo hủy", `Mức hỗ trợ ${supportPercent}% đã được HRM ghi nhận.`, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
   }
 
   async function reconcilePendingTeachingWorkLog(schedule: Schedule, delayMs = 1_500, attempt = 1): Promise<void> {
@@ -3144,12 +3217,37 @@ export function MettasoulApp() {
     }, delayMs);
   }
 
+  async function askAdminCancellationDecision(targets: Schedule[]) {
+    const selection = await openPromptDialog({
+      title: "Mức hỗ trợ cho tiết bị hủy",
+      message: `Áp dụng cho ${targets.length} tiết: nhập 0, 50 hoặc 100 (% tiền công mỗi tiết). MCP trường xa được giữ nguyên.`,
+      placeholder: "0 / 50 / 100",
+      confirmText: "Tiếp tục",
+    });
+    if (selection === null) return null;
+    if (!["0", "50", "100"].includes(selection.trim())) {
+      pushToast("Mức hỗ trợ không hợp lệ", "Chỉ chọn 0, 50 hoặc 100.", "warning");
+      return null;
+    }
+    const supportPercent = Number(selection.trim()) as 0 | 50 | 100;
+    const adminReason = await openPromptDialog({
+      title: "Lý do hủy lịch",
+      message: "Lý do này được lưu trên lịch để giáo viên xem lại.",
+      placeholder: "Trường thông báo hủy...",
+      confirmText: "Hủy lịch",
+    });
+    if (!adminReason?.trim()) return null;
+    return { supportPercent, adminReason: adminReason.trim() };
+  }
+
   async function cancelSchedule(schedule: Schedule) {
+    const decision = await askAdminCancellationDecision([schedule]);
+    if (!decision) return;
     let response: ScheduleUpdateResponse;
     try {
       response = await saveRequest<ScheduleUpdateResponse>("Đang hủy lịch...", `/api/schedules/${schedule.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "cancelled" }),
+        body: JSON.stringify({ status: "cancelled", ...decision }),
       });
       if (response.notifications?.length) {
         setNotifications((items) => [...response.notifications!, ...items]);
@@ -3162,8 +3260,11 @@ export function MettasoulApp() {
     }
 
     setSchedules((items) =>
-      items.map((item) => (item.id === schedule.id ? { ...item, status: "cancelled" } : item)),
+      items.map((item) => (item.id === schedule.id ? { ...item, status: "cancelled", cancellationReason: decision.adminReason, cancellationSupportPercent: String(decision.supportPercent) } : item)),
     );
+    void apiRequest<{ workLogs: TeachingWorkLog[] }>("/api/teaching-work-logs")
+      .then((result) => setTeachingWorkLogs(result.workLogs))
+      .catch(() => undefined);
     addLocalAudit("schedule.cancel", schedule.id, { status: "cancelled", teacherId: schedule.teacherId });
     pushToast("Đã hủy lịch", "Lịch dạy đã được hủy và đồng bộ lên Google Sheet.", "warning");
   }
@@ -3315,22 +3416,27 @@ export function MettasoulApp() {
       return;
     }
 
+    const decision = await askAdminCancellationDecision(targets);
+    if (!decision) return;
+
     try {
-      const responses = await Promise.all(
-        targets.map((schedule) =>
-          saveRequest<ScheduleUpdateResponse>("Đang hủy lịch hàng loạt...", `/api/schedules/${schedule.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({ status: "cancelled" }),
-          }),
-        ),
-      );
+      const responses: ScheduleUpdateResponse[] = [];
+      for (const schedule of targets) {
+        responses.push(await saveRequest<ScheduleUpdateResponse>("Đang hủy lịch hàng loạt...", `/api/schedules/${schedule.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "cancelled", ...decision }),
+        }));
+      }
       const newNotifications = responses.flatMap((response) => response.notifications ?? []);
       if (newNotifications.length > 0) {
         setNotifications((items) => [...newNotifications, ...items]);
       }
       setSchedules((items) =>
-        items.map((item) => (selectedScheduleIds.includes(item.id) ? { ...item, status: "cancelled" } : item)),
+        items.map((item) => (selectedScheduleIds.includes(item.id) ? { ...item, status: "cancelled", cancellationReason: decision.adminReason, cancellationSupportPercent: String(decision.supportPercent) } : item)),
       );
+      void apiRequest<{ workLogs: TeachingWorkLog[] }>("/api/teaching-work-logs")
+        .then((result) => setTeachingWorkLogs(result.workLogs))
+        .catch(() => undefined);
       setAuditLogs((items) => [
         ...targets.map((schedule) =>
           createLocalAuditLog("schedule.cancel", schedule.id, { status: "cancelled", teacherId: schedule.teacherId }),
@@ -9740,6 +9846,13 @@ export function MettasoulApp() {
       0,
     );
     const adminKpiTeacherCount = new Set(adminConfirmedKpiRows.map((row) => row.workLog.teacherId)).size;
+    const topicCompletionRows = schedules.filter((schedule) =>
+      schedule.teachingEnvironment === "schoolyard_report"
+      && schedule.status !== "cancelled"
+      && isTeachingPeriodEnded(schedule, timeSlots)
+      && canonicalParticipantSchedule(schedule, schedule.teacherId, schedules).id === schedule.id
+      && !teachingWorkLogs.some((workLog) => workLog.scheduleId === schedule.id && workLog.teacherId === schedule.teacherId && workLog.status === "CONFIRMED"),
+    ).sort((left, right) => right.date.localeCompare(left.date)).slice(0, 30);
 
     async function exportAdminTeachingKpiExcel() {
       const XLSX = await import("xlsx-js-style");
@@ -9854,6 +9967,47 @@ export function MettasoulApp() {
                   <button type="button" onClick={() => void sendAttendanceReminder(teacher?.id || teacherSchedules[0].teacherId)} disabled={!teacher?.email || isBusy} className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-3 py-2 text-xs font-black text-white transition hover:bg-rose-700 disabled:opacity-50"><Bell size={15} />Nhắc qua email</button>
                 </div>
               )) : <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-5 text-sm font-bold text-emerald-800">Không có tiết đã kết thúc cần nhắc chấm công.</div>}
+            </div>
+          </Panel>
+
+          <Panel title="Tiết giáo viên báo hủy" action={`${cancellationReports.filter((report) => report.status !== "REVIEWED" && report.status !== "REJECTED").length} tiết chờ xử lý`}>
+            <div className="space-y-3">
+              {cancellationReports.filter((report) => report.status !== "REVIEWED" && report.status !== "REJECTED").map((report) => {
+                const schedule = scheduleById.get(report.scheduleId);
+                const workLog = teachingWorkLogs.find((item) => item.scheduleId === report.scheduleId && item.teacherId === report.teacherId && item.status === "CONFIRMED");
+                return <div key={report.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50/50 p-4">
+                  <div>
+                    <p className="text-sm font-black text-rose-900">{teacherById.get(report.teacherId)?.name || report.userEmail} · {schedule ? formatDate(schedule.date) : report.scheduleId}</p>
+                    <p className="mt-1 text-sm text-rose-800">Giáo viên báo: {report.reason}</p>
+                    <p className="mt-1 text-xs font-bold text-slate-600">{workLog ? `Công HRM đã ghi: ${formatCurrency(workLog.money || 0)}. MCP trường xa được giữ.` : "Đang chờ HRM đối chiếu công của tiết này."}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    {([0, 50, 100] as const).map((percent) => <button key={percent} type="button" disabled={!workLog || isBusy} onClick={() => void reviewCancelledPeriod(report, percent)} className="rounded-xl border border-rose-300 bg-white px-3 py-2 text-xs font-black text-rose-900 disabled:opacity-50">Hỗ trợ {percent}%</button>)}
+                  </div>
+                </div>;
+              })}
+              {!cancellationReports.some((report) => report.status !== "REVIEWED" && report.status !== "REJECTED") ? <p className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">Không có tiết báo hủy đang chờ xử lý.</p> : null}
+            </div>
+          </Panel>
+
+          <Panel title="Xác nhận Báo cáo chuyên đề" action={`${topicCompletionRows.length} chuyên đề cần xử lý`}>
+            <p className="mb-3 text-sm font-semibold text-[var(--muted)]">Sau khi sự kiện kết thúc, admin có thể duyệt phần giáo viên đã hoàn thành hoặc chấm thay khi giáo viên chưa bấm. HRM ghi công theo từng tiết.</p>
+            <div className="space-y-3">
+              {topicCompletionRows.length ? topicCompletionRows.map((schedule) => {
+                const meta = lookupSchedule(schedule);
+                const workLog = teachingWorkLogs.find((item) => item.scheduleId === schedule.id && item.teacherId === schedule.teacherId);
+                const completed = workLog?.status === "COMPLETED";
+                const pending = workLog?.status === "PENDING";
+                return <div key={`topic-admin-${schedule.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+                  <div>
+                    <p className="text-sm font-black text-[var(--brand-dark)]">{meta.teacher?.name || "Giáo viên"} · {meta.school?.name || "Trường"} · {formatDate(schedule.date)}</p>
+                    <p className="mt-1 text-xs font-semibold text-[var(--muted)]">{meta.slot?.label || "Tiết"} · {topicReportActivity(schedule.activityTypeCode)?.name || "Báo cáo chuyên đề"} · {meta.checkIn ? "Đã điểm danh" : "Chưa điểm danh"}</p>
+                  </div>
+                  <button type="button" disabled={isBusy || pending || !hrmIntegrationConfigured} onClick={() => void completeTopicReportAsAdmin(schedule, schedule.teacherId, completed)} className="rounded-xl bg-indigo-700 px-4 py-2 text-sm font-black text-white disabled:opacity-50">
+                    {pending ? "Đang đối chiếu HRM" : completed ? "Duyệt hoàn thành" : "Chấm thay giáo viên"}
+                  </button>
+                </div>;
+              }) : <p className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">Không có chuyên đề đã kết thúc cần xác nhận.</p>}
             </div>
           </Panel>
 
@@ -10054,7 +10208,7 @@ export function MettasoulApp() {
 
     return (
       <div className="space-y-5">
-      <Panel title="Điểm danh theo trường và buổi" action="Một lần cho các tiết cùng nhóm">
+      <Panel title="Điểm danh & ghi công theo trường và buổi" action="Một lần cho toàn bộ tiết cùng trường, cùng buổi">
         <div className="space-y-3">
           {scopedSchedules.map((schedule) => {
             const meta = lookupSchedule(schedule);
@@ -10120,18 +10274,18 @@ export function MettasoulApp() {
                   }
                 >
                   <CheckCircle2 size={18} />
-                  {isCheckedIn ? "Đã điểm danh" : "Điểm danh buổi"}
+                  {isCheckedIn ? "Đã điểm danh" : "Điểm danh & ghi công"}
                 </button>
               </div>
             );
           })}
         </div>
       </Panel>
-      <Panel title="Chấm công từng tiết" action="Chỉ mở sau giờ kết thúc">
+      <Panel title="Trạng thái công từng tiết" action="Mỗi tiết là một dòng công HRM">
         <div className="space-y-3">
           {!hrmIntegrationConfigured ? (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
-              Kết nối HRM đang tắt. Quản trị viên cần hoàn tất cấu hình trước khi giáo viên chấm công.
+              Kết nối HRM đang tắt. Quản trị viên cần hoàn tất cấu hình để ghi công.
             </div>
           ) : null}
           {scopedSchedules.filter((item) => canonicalParticipantSchedule(item, currentTeacherId, schedules).id === item.id).map((schedule) => {
@@ -10167,7 +10321,8 @@ export function MettasoulApp() {
                   <p className="mt-1 text-sm text-[var(--muted)]">
                     {meta.school?.name}, {scheduleParticipantLabel(schedule, classes)} · {formatDate(schedule.date)} · {meta.slot?.start || "--:--"}-{meta.slot?.end || "--:--"}
                   </p>
-                  {cancellation ? <p className="mt-2 text-sm font-bold text-rose-800">Đã báo hủy: {cancellation.reason}</p> : completed ? <p className="mt-2 text-sm font-bold text-indigo-800">Đã hoàn thành, chờ admin duyệt.</p> : workLog ? (
+                  {isCancelled && schedule.cancellationReason ? <p className="mt-2 text-sm font-bold text-rose-800">Admin hủy lịch: {schedule.cancellationReason}{schedule.cancellationSupportPercent ? ` · Hỗ trợ ${schedule.cancellationSupportPercent}%` : ""}</p> : null}
+                  {cancellation ? <p className="mt-2 text-sm font-bold text-rose-800">{cancellation.status === "REVIEWED" ? `Admin đã xử lý: hỗ trợ ${cancellation.supportPercent}% · ${cancellation.adminReason}` : `Đã báo hủy, chờ admin xử lý: ${cancellation.reason}`}</p> : completed ? <p className="mt-2 text-sm font-bold text-indigo-800">Đã hoàn thành, chờ admin duyệt.</p> : workLog ? (
                     <p className="mt-2 text-sm font-bold text-emerald-700">
                       HRM đã ghi nhận lúc {formatDateTime(workLog.submittedAt)}
                       {typeof workLog.money === "number" ? ` · ${formatCurrency(workLog.money)}` : ""}
@@ -10177,12 +10332,12 @@ export function MettasoulApp() {
                     <p className="mt-2 text-sm font-bold text-amber-700">
                       METTASOUL đang tự đối chiếu kết quả từ HRM. Bạn không cần bấm lại; hệ thống dùng cùng mã chấm công nên không tạo công trùng.
                     </p>
-                  ) : ended && !hasAttendance ? (
-                    <p className="mt-2 text-sm font-bold text-amber-700">Cần điểm danh buổi trước khi chấm công tiết.</p>
-                  ) : ended ? (
-                    <p className="mt-2 text-sm font-bold text-indigo-700">Tiết đã kết thúc, có thể chấm công.</p>
+                  ) : !hasAttendance ? (
+                    <p className="mt-2 text-sm font-bold text-amber-700">Chưa điểm danh buổi.</p>
+                  ) : isTopic && !ended ? (
+                    <p className="mt-2 text-sm font-bold text-slate-500">Chuyên đề chưa kết thúc.</p>
                   ) : (
-                    <p className="mt-2 text-sm font-bold text-slate-500">Chưa đến giờ kết thúc tiết.</p>
+                    <p className="mt-2 text-sm font-bold text-amber-700">Đã điểm danh; cần thử lại việc ghi công HRM cho tiết này.</p>
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -10192,17 +10347,17 @@ export function MettasoulApp() {
                     event.stopPropagation();
                     submitTeachingWorkLog(schedule);
                   }}
-                  disabled={Boolean(workLog || cancellation || completed) || isTeachingSyncing || isCancelled || !ended || !hrmIntegrationConfigured || isBusy}
+                  disabled={Boolean(workLog || cancellation || completed) || isTeachingSyncing || isCancelled || (isTopic && !ended) || !hasAttendance || !hrmIntegrationConfigured || isBusy}
                   className={
-                    workLog || cancellation || completed || isTeachingSyncing || isCancelled || !ended || !hrmIntegrationConfigured || isBusy
+                    workLog || cancellation || completed || isTeachingSyncing || isCancelled || (isTopic && !ended) || !hasAttendance || !hrmIntegrationConfigured || isBusy
                       ? "inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-200 px-4 py-3 text-sm font-black text-slate-500 shadow-none"
                       : teachingWorkLogButtonClass
                   }
                 >
                   <ShieldCheck size={18} />
-                  {cancellation ? "Đã báo hủy" : completed ? "Hoàn thành · chờ duyệt" : workLog ? (isTopic ? "Đã hoàn thành" : "Đã chấm công") : isTeachingSyncing ? "Đang đối chiếu HRM" : isCancelled ? "Lịch đã hủy" : !hrmIntegrationConfigured ? "Chưa kết nối HRM" : ended ? (isTopic ? "Hoàn thành" : "Chấm công tiết") : "Chưa kết thúc"}
+                  {cancellation ? "Đã báo hủy" : completed ? "Hoàn thành · chờ duyệt" : workLog ? (isTopic ? "Đã hoàn thành" : "Đã ghi công") : isTeachingSyncing ? "Đang đối chiếu HRM" : isCancelled ? "Lịch đã hủy" : !hrmIntegrationConfigured ? "Chưa kết nối HRM" : isTopic && !ended ? "Chưa kết thúc" : !hasAttendance ? "Cần điểm danh buổi" : isTopic ? "Hoàn thành" : "Thử lại ghi công"}
                 </button>
-                <button type="button" disabled={!hasAttendance || Boolean(workLog || cancellation) || isTeachingSyncing || isCancelled || isBusy} onClick={() => { setCancelReason(""); setCancelDraft(schedule); }} className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-800 disabled:opacity-40">Bị hủy tiết</button>
+                <button type="button" disabled={!hasAttendance || Boolean(cancellation) || isTeachingSyncing || isCancelled || isBusy} onClick={() => { setCancelReason(""); setCancelDraft(schedule); }} className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-800 disabled:opacity-40">Bị hủy tiết</button>
                 </div>
               </div>
             );

@@ -7,8 +7,11 @@ import {
   ensureSheetHeaders,
   readSheetRowById,
   readSheetRows,
+  readSheetRowsBatch,
   updateSheetRowById,
   schoolTeachingNeedHeaders,
+  scheduleHeaders,
+  teachingWorkLogHeaders,
 } from "@/lib/google-sheets";
 import {
   deleteSchedulesCascade,
@@ -19,8 +22,11 @@ import { evaluatePermission, requireSessionUser } from "@/lib/route-auth";
 import { invalidateScheduleConflictIndex } from "@/lib/schedule-conflict-index";
 import { hasTeacherTimeConflict } from "@/lib/schedule-conflict-policy";
 import { cancelConfirmedTeachingWorkLogs } from "@/lib/teaching-work-log-cancellation";
+import { adjustCancelledPeriodInHrm, submitCancelledSupportToHrm, type TeachingPeriodPayload } from "@/lib/hrm-integration";
+import { createHash } from "node:crypto";
+import { deterministicTeachingEventId, deterministicTeachingWorkLogId, resolveTeachingRole, schedulePeriodTimes, teachingWorkLogKey } from "@/lib/teaching-work-log";
 import { isTimeSlotAllowedForSchool } from "@/lib/time-slots";
-import type { Notification, Schedule, ScheduleStatus, User } from "@/lib/types";
+import type { Notification, Schedule, ScheduleStatus, TimeSlot, User } from "@/lib/types";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -66,7 +72,68 @@ export async function PATCH(request: Request, { params }: Params) {
       ];
       action = "schedule.confirm";
     } else if (status === "cancelled") {
-      cancelledWorkLogIds = await cancelConfirmedTeachingWorkLogs([id]);
+      await ensureSheetHeaders("Schedules", scheduleHeaders);
+      await ensureSheetHeaders("TeachingWorkLogs", teachingWorkLogHeaders);
+      const supportPercent = Number(body.supportPercent);
+      const adminReason = String(body.adminReason || "").trim();
+      if (![0, 50, 100].includes(supportPercent) || !adminReason || adminReason.length > 2000) {
+        return apiFailure(400, "Chọn mức hỗ trợ 0%, 50% hoặc 100% và ghi lý do hủy.", undefined, requestId);
+      }
+      const rows = await readSheetRowsBatch(["Schedules", "TeachingWorkLogs", "TimeSlots", "Schools", "Classes", "Users"] as const);
+      const allSchedules = rows.Schedules as Schedule[];
+      const assignedIds = [schedule.teacherId, ...String(schedule.assistantIds || "").split(",")].map((value) => value.trim()).filter(Boolean);
+      const period = schedulePeriodTimes(schedule as Schedule, rows.TimeSlots as unknown as TimeSlot[]);
+      if (!period || !assignedIds.length) return apiFailure(409, "Lịch thiếu giờ hoặc người được phân công để tính hỗ trợ.", undefined, requestId);
+      const school = rows.Schools.find((item) => item.id === schedule.schoolId);
+      const classRoom = rows.Classes.find((item) => item.id === schedule.classId);
+      for (const participantId of assignedIds) {
+        const roleCode = resolveTeachingRole(schedule as Schedule, participantId, allSchedules);
+        if (!roleCode) continue;
+        const key = teachingWorkLogKey(id, participantId, roleCode);
+        const log = rows.TeachingWorkLogs.find((item) => item.idempotencyKey === key);
+        if (log && log.status !== "CONFIRMED") return apiFailure(409, "Có dòng công HRM đang đối chiếu. Hãy thử lại sau khi đồng bộ xong.", undefined, requestId);
+        if (log?.status === "CONFIRMED") {
+          const result = await adjustCancelledPeriodInHrm({
+            eventId: `ADJUST_${createHash("sha256").update(`${id}|${key}|${supportPercent}|${adminReason}`).digest("hex").slice(0, 24)}`,
+            idempotencyKey: `ADJUST:${key}`,
+            targetIdempotencyKey: key,
+            supportPercent,
+            adminReason,
+            adminEmail: auth.user.email,
+          });
+          const money = Number(result.money);
+          if (!Number.isFinite(money)) return apiFailure(502, "HRM chưa trả tiền hỗ trợ hợp lệ.", undefined, requestId);
+          await updateSheetRowById("TeachingWorkLogs", log.id, { money, policyVersion: result.policyVersion || log.policyVersion || "", updatedAt: now });
+        } else {
+          const userEmail = String(rows.Users.find((item) => item.teacherId === participantId)?.email || "").trim().toLowerCase();
+          if (!userEmail) return apiFailure(409, "Người được phân công chưa có email HRM.", undefined, requestId);
+          const eventId = deterministicTeachingEventId(key);
+          const groupPeers = allSchedules.filter((item) => item.groupId && item.groupId === schedule.groupId && item.status !== "cancelled");
+          const payload: TeachingPeriodPayload = {
+            source: "METTASOUL", action: "SUBMIT_TEACHING_PERIOD", eventId, idempotencyKey: key,
+            scheduleId: id, periodId: id, userEmail, roleCode,
+            schoolId: schedule.schoolId, schoolName: String(school?.name || ""),
+            classId: schedule.classId, className: String(classRoom?.name || ""),
+            environmentCode: String(schedule.teachingEnvironment || "in_class"), environmentName: String(schedule.teachingEnvironment || "in_class"),
+            workDate: schedule.date, periodStartAt: period.startsAt.toISOString(), periodEndAt: period.endsAt.toISOString(),
+            entryMode: "CANCEL_SUPPORT", supportPercent, adminReason, approvedBy: auth.user.email,
+            activityTypeCode: schedule.activityTypeCode,
+            principalCount: new Set((groupPeers.length ? groupPeers : [schedule]).map((item) => item.teacherId)).size,
+            policyContract: "TOPIC_REPORT_V1",
+          };
+          const result = await submitCancelledSupportToHrm(payload);
+          const money = Number(result.money);
+          if (!Number.isFinite(money)) return apiFailure(502, "HRM chưa trả tiền hỗ trợ hợp lệ.", undefined, requestId);
+          await appendSheetRows("TeachingWorkLogs", [{
+            id: deterministicTeachingWorkLogId(key), scheduleId: id, periodId: id, teacherId: participantId, userEmail, roleCode,
+            idempotencyKey: key, eventId, status: "CONFIRMED", hrmWorkLogId: result.workLogId || "", money,
+            mcpPoints: result.mcpPoints ?? "", mcpLedgerId: result.mcpLedgerId || "", policyVersion: result.policyVersion || "",
+            submittedAt: now, updatedAt: now, approvedBy: auth.user.email, approvedAt: now, submissionPayload: JSON.stringify(payload),
+          }]);
+        }
+      }
+      patch.cancellationReason = String(body.adminReason || "").trim();
+      patch.cancellationSupportPercent = String(body.supportPercent);
       patch.cancelledAt = now;
       notifications = [
         createNotification("Lịch đã hủy", "Một lịch dạy vừa được hủy.", "all", now),

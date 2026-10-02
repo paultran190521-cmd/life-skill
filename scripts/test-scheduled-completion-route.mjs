@@ -42,6 +42,7 @@ const route = load("app/api/teaching-work-logs/route.ts", {
   "@/lib/route-auth": { requireSessionUser: async () => ({ user: actor }), evaluatePermission: () => ({ allowed: true }) },
   "@/lib/topic-report-policy": policy, "@/lib/teaching-work-log": worklogs,
   "@/lib/worklog-rows": load("lib/worklog-rows.ts"),
+  "@/lib/attendance-grouping": load("lib/attendance-grouping.ts"),
   "@/lib/schedule-cancellation-reports": { readCancellationReports: async () => reports, blocksParticipant: (items, id, teacher) => items.some((r) => r.scheduleId === id && r.teacherId === teacher && r.status !== "REJECTED") },
   "@/lib/hrm-integration": { submitTeachingPeriodToHrm: async (p) => { submitted.push(p); return { ok: true, workLogId: "hrm1", money: 1000000, mcpPoints: 100, policyVersion: "test" }; } },
 });
@@ -71,6 +72,24 @@ assert.equal((await post({ scheduleId: "s1", evidenceUrl: "https://example.com/e
 reports = [];
 rows.Attendance = rows.Attendance.filter((row) => row.teacherId !== "t2");
 assert.equal((await post({ scheduleId: "s1", evidenceUrl: "https://example.com/evidence" })).status, 409);
+rows.Schedules.push({ id: "s2", teacherId: "t1", date: "2026-09-22", schoolId: "school", classId: "class", timeSlotId: "slot", teachingEnvironment: "schoolyard_report", activityTypeCode: "STUDENT_TOPIC_REPORT_SUPPORT", status: "confirmed", assistantIds: "" });
+actor = { role: "admin", email: "admin@example.com" };
+result = await post({ scheduleId: "s2", teacherId: "t1", intent: "admin-complete" });
+assert.equal(result.status, 200, "Admin can complete an ended topic without teacher attendance");
+assert.equal(result.body.workLog.status, "CONFIRMED");
+assert.equal(submitted.at(-1).approvedBy, "admin@example.com");
+rows.Schedules.push(
+  { id: "s3", teacherId: "t1", date: "2099-09-23", schoolId: "school", classId: "class", timeSlotId: "morning1", teachingEnvironment: "in_class", status: "attended" },
+  { id: "s4", teacherId: "t1", date: "2099-09-23", schoolId: "school", classId: "class", timeSlotId: "morning2", teachingEnvironment: "in_class", status: "attended" },
+);
+rows.TimeSlots.push({ id: "morning1", start: "07:00", end: "07:45" }, { id: "morning2", start: "08:00", end: "08:45" });
+rows.Attendance.push({ id: "a3", scheduleId: "s3", teacherId: "t1", checkedInAt: "2099-09-23T00:35:00.000Z" }, { id: "a4", scheduleId: "s4", teacherId: "t1", checkedInAt: "2099-09-23T00:35:00.000Z" });
+actor = { role: "teacher", teacherId: "t1", email: "teacher@example.com" };
+result = await post({ scheduleId: "s4", intent: "check-in" });
+assert.equal(result.status, 200, "Check-in creates a work log before a period ends");
+assert.equal(submitted.at(-1).entryMode, "CHECK_IN");
+assert.equal(submitted.at(-1).sessionStartAt, "2099-09-23T00:00:00.000Z", "All same-school morning periods use the first session start");
+assert.equal((await post({ scheduleId: "s4", intent: "check-in" })).body.idempotent, true);
 console.log("Completion route tests passed: attendance, optional evidence, no client amount/approval spoofing, admin approval, idempotency, participant isolation and cancellation blocking.");
 
 const worker = load("lib/payroll-reconciliation.ts", {

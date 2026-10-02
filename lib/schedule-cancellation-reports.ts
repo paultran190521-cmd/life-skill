@@ -1,7 +1,7 @@
 import { ensureSheetHeaders, readSheetRows, updateSheetRowById } from "@/lib/google-sheets";
 import { reportCancelledPeriodToHrm } from "@/lib/hrm-integration";
 
-export const cancellationReportHeaders = ["id", "scheduleId", "teacherId", "userEmail", "reason", "attendanceAt", "reportedAt", "status", "errorMessage", "reviewedBy", "reviewedAt", "updatedAt", "targetIdempotencyKey"];
+export const cancellationReportHeaders = ["id", "scheduleId", "teacherId", "userEmail", "reason", "attendanceAt", "reportedAt", "status", "errorMessage", "reviewedBy", "reviewedAt", "updatedAt", "targetIdempotencyKey", "supportPercent", "adminReason"];
 export type CancellationReport = Record<string, string>;
 
 export async function readCancellationReports() {
@@ -32,7 +32,7 @@ export async function reconcileCancellationReport(report: CancellationReport) {
   const next = { ...report, status, errorMessage, updatedAt: new Date().toISOString() };
   await updateSheetRowById("ScheduleCancellationReports", report.id, next);
   if (status === "CONFIRMED") {
-    for (const log of (await readSheetRows("TeachingWorkLogs")).filter((row) => row.idempotencyKey === report.targetIdempotencyKey)) {
+    for (const log of (await readSheetRows("TeachingWorkLogs")).filter((row) => row.idempotencyKey === report.targetIdempotencyKey && row.status !== "CONFIRMED")) {
       await updateSheetRowById("TeachingWorkLogs", log.id, { status: "CANCELLED", cancelledAt: next.updatedAt, updatedAt: next.updatedAt });
     }
   }

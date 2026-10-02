@@ -722,6 +722,8 @@ export const scheduleHeaders = [
   "confirmedAt",
   "reassignedFrom",
   "cancelledAt",
+  "cancellationReason",
+  "cancellationSupportPercent",
   "createdBy",
   "createdAt",
   "updatedAt",

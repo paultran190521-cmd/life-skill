@@ -18,6 +18,11 @@ export type TeachingPeriodPayload = {
   workDate: string;
   periodStartAt: string;
   periodEndAt: string;
+  entryMode?: "CHECK_IN" | "CANCEL_SUPPORT";
+  checkedInAt?: string;
+  sessionStartAt?: string;
+  supportPercent?: number;
+  adminReason?: string;
   activityTypeCode?: string;
   evidenceUrl?: string;
   approvedBy?: string;
@@ -145,8 +150,16 @@ export async function submitTeachingPeriodToHrm(payload: TeachingPeriodPayload) 
   return sendSignedPayload(payload.policyContract === "TOPIC_REPORT_V1" ? { ...payload, action: "SUBMIT_SCHEDULE_COMPLETION" } : payload);
 }
 
+export async function submitCancelledSupportToHrm(payload: TeachingPeriodPayload) {
+  return sendSignedPayload({ ...payload, action: "SUBMIT_CANCEL_SUPPORT" });
+}
+
 export async function reportCancelledPeriodToHrm(payload: Record<string, unknown>) {
   return sendSignedPayload({ ...payload, source: "METTASOUL", action: "REPORT_CANCELLED_PERIOD" });
+}
+
+export async function adjustCancelledPeriodInHrm(payload: Record<string, unknown>) {
+  return sendSignedPayload({ ...payload, source: "METTASOUL", action: "ADJUST_CANCELLED_PERIOD" });
 }
 
 export async function getTopicReportPoliciesFromHrm() {

@@ -22,6 +22,7 @@ import type { Schedule, TeachingEnvironment, TimeSlot } from "@/lib/types";
 import { canonicalParticipantSchedule, topicReportActivity, validateTopicReport } from "@/lib/topic-report-policy";
 import { blocksParticipant, readCancellationReports } from "@/lib/schedule-cancellation-reports";
 import { uniqueWorkLogRows } from "@/lib/worklog-rows";
+import { attendanceGroupKey } from "@/lib/attendance-grouping";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -53,7 +54,9 @@ export async function POST(request: Request) {
     const body = await request.json();
     const scheduleId = String(body.scheduleId || "").trim();
     const isApproval = auth.user.role === "admin" && body.intent === "approve";
-    const participantId = String(isApproval ? body.teacherId : auth.user.teacherId || "").trim();
+    const isAdminCompletion = auth.user.role === "admin" && body.intent === "admin-complete";
+    const isAdminAction = isApproval || isAdminCompletion;
+    const participantId = String(isAdminAction ? body.teacherId : auth.user.teacherId || "").trim();
     if (!scheduleId || !participantId) {
       return apiFailure(400, "Thiếu lịch dạy hoặc tài khoản giáo viên.", ErrorCodes.validation, requestId);
     }
@@ -87,22 +90,27 @@ export async function POST(request: Request) {
 
     const period = schedulePeriodTimes(schedule, rows.TimeSlots as unknown as TimeSlot[]);
     if (!period) return apiFailure(400, "Tiết dạy thiếu ngày hoặc khung giờ hợp lệ.", ErrorCodes.validation, requestId);
-    if (Date.now() < period.endsAt.getTime()) {
-      return apiFailure(409, `Chỉ được chấm công sau ${period.slot.end}.`, ErrorCodes.conflict, requestId);
-    }
-
     const idempotencyKey = teachingWorkLogKey(schedule.id, participantId, roleCode);
     const existing = uniqueWorkLogRows(rows.TeachingWorkLogs).find((item) => item.idempotencyKey === idempotencyKey);
     if (existing && String(existing.status || "").toUpperCase() === "CONFIRMED") {
       return NextResponse.json({ workLog: normalizeStoredWorkLog(existing), idempotent: true });
     }
+    let storedSubmission: Partial<TeachingPeriodPayload> | null = null;
+    try {
+      storedSubmission = existing?.submissionPayload ? JSON.parse(existing.submissionPayload) as Partial<TeachingPeriodPayload> : null;
+    } catch {
+      return apiFailure(409, "Dữ liệu chấm công cũ cần admin đối chiếu trước khi gửi lại.", ErrorCodes.conflict, requestId);
+    }
+    const isCheckIn = body.intent === "check-in" || storedSubmission?.entryMode === "CHECK_IN";
+    if (isCheckIn && schedule.teachingEnvironment === "schoolyard_report") return apiFailure(409, "Báo cáo chuyên đề cần xác nhận sau sự kiện.", ErrorCodes.conflict, requestId);
+    if (!isCheckIn && Date.now() < period.endsAt.getTime()) {
+      return apiFailure(409, `Chỉ được chấm công sau ${period.slot.end}.`, ErrorCodes.conflict, requestId);
+    }
     if (existing?.status === "CANCELLED" || blocksParticipant(await readCancellationReports(), schedule.id, participantId)) {
       return apiFailure(409, "Tiết này đã báo hủy.", ErrorCodes.conflict, requestId);
     }
-    const hasAttendance = rows.Attendance.some(
-      (item) => String(item.scheduleId || "").trim() === schedule.id && String(item.teacherId || "").trim() === participantId,
-    );
-    if (!hasAttendance) {
+    const checkIn = rows.Attendance.find((item) => String(item.scheduleId || "").trim() === schedule.id && String(item.teacherId || "").trim() === participantId);
+    if (!checkIn && !isAdminCompletion) {
       return apiFailure(409, "Bạn cần điểm danh tiết này trước khi chấm công.", ErrorCodes.conflict, requestId);
     }
 
@@ -116,13 +124,13 @@ export async function POST(request: Request) {
       if (policyError) return apiFailure(409, policyError, ErrorCodes.validation, requestId);
       if (existing?.activityTypeCode && existing.activityTypeCode !== schedule.activityTypeCode) return apiFailure(409, "Loại hoạt động đã thay đổi sau khi hoàn thành. Cần admin kiểm tra.", undefined, requestId);
     }
-    if (isApproval && !isTopic) return apiFailure(400, "Lịch này không thuộc Báo cáo chuyên đề.", undefined, requestId);
-    const participantEmail = isApproval ? rows.Users.find((row) => row.teacherId === participantId)?.email : auth.user.email;
+    if (isAdminAction && !isTopic) return apiFailure(400, "Lịch này không thuộc Báo cáo chuyên đề.", undefined, requestId);
+    const participantEmail = isAdminAction ? rows.Users.find((row) => row.teacherId === participantId)?.email : auth.user.email;
     if (!participantEmail) return apiFailure(409, "Thiếu email người tham gia.", undefined, requestId);
     const evidenceUrl = String(existing?.evidenceUrl || body.evidenceUrl || "").trim();
     if (evidenceUrl && !/^https:\/\//i.test(evidenceUrl)) return apiFailure(400, "Liên kết minh chứng cần bắt đầu bằng https://.", undefined, requestId);
     if (isApproval && !existing?.approvedBy && existing?.status !== "COMPLETED") return apiFailure(409, "Giáo viên chưa xác nhận hoàn thành.", undefined, requestId);
-    if (isTopic && !isApproval && !existing?.approvedBy) {
+    if (isTopic && !isAdminAction && !existing?.approvedBy) {
       if (existing?.status === "COMPLETED") return NextResponse.json({ workLog: normalizeStoredWorkLog(existing), awaitingApproval: true });
       const completed = { id: deterministicTeachingWorkLogId(teachingWorkLogKey(schedule.id, participantId, roleCode)), scheduleId: schedule.id, periodId: schedule.id, teacherId: participantId, userEmail: participantEmail, roleCode, idempotencyKey, eventId: deterministicTeachingEventId(idempotencyKey), status: "COMPLETED", activityTypeCode: schedule.activityTypeCode || "", evidenceUrl, submittedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       if (existing) await updateSheetRowById("TeachingWorkLogs", existing.id, completed);
@@ -132,17 +140,24 @@ export async function POST(request: Request) {
     const eventId = deterministicTeachingEventId(idempotencyKey);
     const workLogId = String(existing?.id || deterministicTeachingWorkLogId(idempotencyKey));
     const pendingAt = new Date().toISOString();
+    const checkInGroupKey = isCheckIn ? attendanceGroupKey({ ...schedule, teacherId: participantId }, rows.TimeSlots) : "";
+    const sessionStart = isCheckIn ? rows.Schedules.filter((item) =>
+      item.status !== "cancelled"
+      && resolveTeachingRole(item as Schedule, participantId, rows.Schedules as Schedule[])
+      && attendanceGroupKey({ ...item, teacherId: participantId }, rows.TimeSlots) === checkInGroupKey,
+    ).map((item) => rows.TimeSlots.find((slot) => slot.id === item.timeSlotId)?.start || "").filter(Boolean).sort()[0] : "";
     const submission: TeachingPeriodPayload = {
       source: "METTASOUL", action: "SUBMIT_TEACHING_PERIOD", eventId, idempotencyKey,
       scheduleId: schedule.id, periodId: schedule.id, userEmail: participantEmail.trim().toLowerCase(),
       activityTypeCode: schedule.activityTypeCode, evidenceUrl,
-      approvedBy: existing?.approvedBy || (isApproval ? auth.user.email : ""),
+      approvedBy: existing?.approvedBy || (isAdminAction ? auth.user.email : ""),
       principalCount: new Set(principals.map((row) => row.teacherId)).size,
       policyContract: "TOPIC_REPORT_V1", roleCode,
       schoolId: schedule.schoolId, schoolName: String(school?.name || ""),
       environmentCode, environmentName: environmentNames[environmentCode],
       classId: schedule.classId, className: String(classRoom?.name || ""), workDate: schedule.date,
       periodStartAt: period.startsAt.toISOString(), periodEndAt: period.endsAt.toISOString(),
+      ...(isCheckIn ? { entryMode: "CHECK_IN" as const, checkedInAt: checkIn?.checkedInAt || "", sessionStartAt: sessionStart ? new Date(`${schedule.date}T${sessionStart}:00+07:00`).toISOString() : "" } : {}),
     };
     const pendingWorkLog = {
       id: workLogId,
@@ -152,8 +167,8 @@ export async function POST(request: Request) {
       userEmail: participantEmail.trim().toLowerCase(),
       activityTypeCode: schedule.activityTypeCode || "",
       evidenceUrl,
-      approvedBy: existing?.approvedBy || (isApproval ? auth.user.email : ""),
-      approvedAt: existing?.approvedAt || (isApproval ? pendingAt : ""),
+      approvedBy: existing?.approvedBy || (isAdminAction ? auth.user.email : ""),
+      approvedAt: existing?.approvedAt || (isAdminAction ? pendingAt : ""),
       roleCode,
       idempotencyKey,
       eventId,

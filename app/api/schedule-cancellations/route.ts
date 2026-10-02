@@ -4,6 +4,8 @@ import { apiError, apiFailure, createRequestId } from "@/lib/api";
 import { requireSessionUser } from "@/lib/route-auth";
 import { readSheetRowsBatch, appendSheetRows, updateSheetRowById } from "@/lib/google-sheets";
 import { readCancellationReports, reconcileCancellationReport } from "@/lib/schedule-cancellation-reports";
+import { adjustCancelledPeriodInHrm } from "@/lib/hrm-integration";
+import { appendAuditLogs } from "@/lib/audit";
 import { canonicalParticipantSchedule } from "@/lib/topic-report-policy";
 import { resolveTeachingRole, teachingWorkLogKey } from "@/lib/teaching-work-log";
 import type { Schedule } from "@/lib/types";
@@ -37,7 +39,7 @@ export async function POST(request: Request) {
     if (!roleCode) return apiFailure(403, "Không được phân công lịch này.", undefined, requestId);
     const key = teachingWorkLogKey(schedule.id, teacherId, roleCode);
     const workLog = rows.TeachingWorkLogs.find((row) => row.idempotencyKey === key);
-    if (workLog?.status === "CONFIRMED") return apiFailure(409, "Tiết đã ghi nhận tại HRM. Vui lòng liên hệ admin xử lý hủy.", undefined, requestId);
+    if (workLog?.status === "PENDING") return apiFailure(409, "HRM đang đối chiếu công của tiết này. Vui lòng thử báo hủy sau khi đồng bộ xong.", undefined, requestId);
     const id = `CXL_${createHash("sha256").update(key).digest("hex").slice(0, 24)}`;
     const existing = reports.find((row) => row.id === id);
     if (existing && ["CONFIRMED", "REVIEWED"].includes(existing.status)) return NextResponse.json({ report: existing });
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
     if (existing?.status === "REJECTED") return NextResponse.json({ report: existing });
     const report = existing || { id, scheduleId: schedule.id, teacherId, userEmail: user.email, reason, attendanceAt: attendance.checkedInAt, reportedAt: now, status: "PENDING", errorMessage: "", updatedAt: now, targetIdempotencyKey: key };
     if (!existing) await appendSheetRows("ScheduleCancellationReports", [report]);
-    const result = await reconcileCancellationReport(report);
+    const result = workLog?.status === "CONFIRMED" ? report : await reconcileCancellationReport(report);
     return NextResponse.json({ report: result }, { status: result.status === "PENDING" ? 202 : 200 });
   } catch (error) { return apiError(error, requestId); }
 }
@@ -54,13 +56,46 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const requestId = createRequestId("cancellation-review");
   try {
-    const { user } = await requireSessionUser(request, { allowHeaderFallback: false });
+    const auth = await requireSessionUser(request, { allowHeaderFallback: false });
+    const { user } = auth;
     if (user.role !== "admin") return apiFailure(403, "Chỉ admin được ghi nhận báo cáo.", undefined, requestId);
-    const { id } = await request.json();
+    const { id, supportPercent, adminReason } = await request.json();
     const report = (await readCancellationReports()).find((row) => row.id === id);
-    if (!report || report.status !== "CONFIRMED") return apiFailure(409, "Báo cáo chưa xác nhận hủy tại HRM.", undefined, requestId);
-    const patch = { status: "REVIEWED", reviewedBy: user.email, reviewedAt: new Date().toISOString() };
+    if (!report || !["CONFIRMED", "PENDING"].includes(report.status)) return apiFailure(409, "Báo cáo không ở trạng thái chờ admin.", undefined, requestId);
+    const percentage = Number(supportPercent);
+    const reason = String(adminReason || "").trim();
+    if (![0, 50, 100].includes(percentage) || !reason || reason.length > 2000) return apiFailure(400, "Chọn mức hỗ trợ và nhập lý do xử lý.", undefined, requestId);
+    const rows = await readSheetRowsBatch(["TeachingWorkLogs"] as const);
+    const confirmed = rows.TeachingWorkLogs.find((row) => row.idempotencyKey === report.targetIdempotencyKey && row.status === "CONFIRMED");
+    if (!confirmed) return apiFailure(409, "Chưa có dòng công HRM được xác nhận để điều chỉnh; cần đối chiếu trước.", undefined, requestId);
+    let amount: number | undefined;
+    let policyVersion = "";
+    if (confirmed) {
+      const result = await adjustCancelledPeriodInHrm({
+        eventId: `ADJUST_${createHash("sha256").update(`${report.id}|${percentage}|${reason}`).digest("hex").slice(0, 24)}`,
+        idempotencyKey: `ADJUST:${report.targetIdempotencyKey}`,
+        targetIdempotencyKey: report.targetIdempotencyKey,
+        supportPercent: percentage,
+        adminReason: reason,
+        adminEmail: user.email,
+      });
+      amount = Number(result.money);
+      if (!Number.isFinite(amount)) return apiFailure(502, "HRM chưa trả số tiền hỗ trợ hợp lệ.", undefined, requestId);
+      policyVersion = String(result.policyVersion || "");
+      await updateSheetRowById("TeachingWorkLogs", confirmed.id, { money: amount, policyVersion, updatedAt: new Date().toISOString() });
+    }
+    const patch = { status: "REVIEWED", supportPercent: String(percentage), adminReason: reason, reviewedBy: user.email, reviewedAt: new Date().toISOString() };
     await updateSheetRowById("ScheduleCancellationReports", id, patch);
-    return NextResponse.json({ report: { ...report, ...patch } });
+    try {
+      await appendAuditLogs([{
+        requestId, actor: user, action: "teaching_period.cancel_support_review", entityType: "ScheduleCancellationReport", entityId: id,
+        route: "/api/schedule-cancellations", method: "PATCH", authMode: "enforce", decision: "allow", reason: "admin_support_review", source: auth.source,
+        before: { status: report.status, reason: report.reason },
+        after: { supportPercent: percentage, adminReason: reason, money: amount, hrmWorkLogId: confirmed.hrmWorkLogId },
+      }]);
+    } catch (error) {
+      console.error(`[cancellation-review-audit-failed][${requestId}]`, error);
+    }
+    return NextResponse.json({ report: { ...report, ...patch }, money: amount, policyVersion });
   } catch (error) { return apiError(error, requestId); }
 }

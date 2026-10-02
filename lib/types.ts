@@ -130,6 +130,8 @@ export type Schedule = {
   status: ScheduleStatus;
   sentAt?: string;
   confirmedAt?: string;
+  cancellationReason?: string;
+  cancellationSupportPercent?: string;
   reassignedFrom?: string;
   groupId?: string;
   /** A merged pair has one display group and two independent payroll periods. */

@@ -38,7 +38,8 @@ assert.doesNotMatch(component, /window\.confirm\("Gửi email nhắc chấm côn
 assert.match(component, /Gửi email nhắc/);
 assert.match(component, /focusAttendanceBeforeWorkLog/);
 assert.match(component, /attendanceButtonRefs\.current\.get\(schedule\.id\)/);
-assert.match(component, /Cần điểm danh buổi trước khi chấm công tiết/);
+assert.match(component, /Chưa điểm danh buổi/);
+assert.match(component, /Điểm danh & ghi công theo trường và buổi/);
 assert.match(component, /teachingWorkLogButtonClass/);
 assert.match(reminderRoute, /admin_only_attendance_reminder/);
 assert.match(reminderRoute, /hasEnded/);
