@@ -720,12 +720,42 @@ export function MettasoulApp() {
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const [calendarMonth, setCalendarMonth] = useState(() => currentMonthKey());
   const [scheduleReportMonth, setScheduleReportMonth] = useState(() => currentMonthKey());
+  const [scheduleReportWeek, setScheduleReportWeek] = useState("all");
+  const [scheduleReportSchoolId, setScheduleReportSchoolId] = useState("all");
+  const [scheduleReportTeacherId, setScheduleReportTeacherId] = useState("all");
   // Keep hooks at the component level; render helpers below must remain hook-free.
-  const reportSchedules = useMemo(
+  const monthlyReportSchedules = useMemo(
     () => sortSchedules(schedules.filter((schedule) =>
       schedule.status !== "draft" && (!scheduleReportMonth || schedule.date.startsWith(`${scheduleReportMonth}-`)),
     ), "date-asc"),
     [schedules, scheduleReportMonth],
+  );
+  const reportWeekOptions = useMemo(
+    () => Array.from(new Set(monthlyReportSchedules.map((schedule) => mondayDateKey(schedule.date)))).sort(),
+    [monthlyReportSchedules],
+  );
+  const reportSchoolIds = useMemo(
+    () => Array.from(new Set(monthlyReportSchedules.map((schedule) => schedule.schoolId))).sort(),
+    [monthlyReportSchedules],
+  );
+  const reportTeacherIds = useMemo(
+    () => Array.from(new Set(monthlyReportSchedules.map((schedule) => schedule.teacherId))).sort(),
+    [monthlyReportSchedules],
+  );
+  const reportSchedules = useMemo(
+    () => monthlyReportSchedules.filter((schedule) =>
+      (scheduleReportWeek === "all" || mondayDateKey(schedule.date) === scheduleReportWeek) &&
+      (scheduleReportSchoolId === "all" || schedule.schoolId === scheduleReportSchoolId) &&
+      (scheduleReportTeacherId === "all" || schedule.teacherId === scheduleReportTeacherId)),
+    [monthlyReportSchedules, scheduleReportWeek, scheduleReportSchoolId, scheduleReportTeacherId],
+  );
+  const reportPeriodCount = useMemo(
+    () => reportSchedules.reduce((total, schedule) => total + scheduleLessonPeriodCount(schedule), 0),
+    [reportSchedules],
+  );
+  const reportClassCount = useMemo(
+    () => new Set(reportSchedules.flatMap((schedule) => scheduleParticipantClassIds(schedule).map((classId) => `${schedule.schoolId}\u0000${classId}`))).size,
+    [reportSchedules],
   );
   const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
   const [calendarViewMode, setCalendarViewMode] = useState<CalendarViewMode>("week");
@@ -7266,6 +7296,12 @@ export function MettasoulApp() {
 
   function renderAssignmentSummaryPanel() {
     const selectedReportSchedules = reportSchedules.filter((schedule) => selectedReportScheduleIds.includes(schedule.id));
+    const reportScopeLabel = [
+      `Tháng: ${formatMonthTitle(scheduleReportMonth)}`,
+      scheduleReportWeek !== "all" ? `Tuần: ${formatDate(scheduleReportWeek)}–${formatDate(addDaysToDateKey(scheduleReportWeek, 6))}` : "Tất cả tuần",
+      scheduleReportSchoolId !== "all" ? `Trường: ${schoolById.get(scheduleReportSchoolId)?.name || scheduleReportSchoolId}` : "Tất cả trường",
+      scheduleReportTeacherId !== "all" ? `Giáo viên: ${teacherById.get(scheduleReportTeacherId)?.name || scheduleReportTeacherId}` : "Tất cả giáo viên",
+    ].join(" · ");
 
     function toggleReportScheduleSelection(scheduleId: string) {
       setSelectedReportScheduleIds((ids) =>
@@ -7339,7 +7375,7 @@ export function MettasoulApp() {
         const scheduleLastDataRow = Math.max(scheduleDataStartRow, scheduleDataStartRow + scheduleRows.length - 1);
         const ws = XLSX.utils.aoa_to_sheet([
           ["LỊCH DẠY ĐÃ GỬI"],
-          [`Thời gian tham chiếu: ${formatDateTime(new Date().toISOString())} · Bộ lọc tháng: ${scheduleReportMonth || "Tất cả"}`],
+          [`Thời gian tham chiếu: ${formatDateTime(new Date().toISOString())} · ${reportScopeLabel}`],
           [],
           scheduleHeaders,
           ...scheduleRows,
@@ -7378,26 +7414,20 @@ export function MettasoulApp() {
           const classNames = scheduleParticipantClassIds(schedule)
             .map((classId) => classById.get(classId)?.name ?? classId)
             .join(", ");
-          const lessonCount = new Set(
-            String(schedule.lessonPeriods || "lesson1")
-              .split(",")
-              .map((period) => period.trim())
-              .filter((period) => period === "lesson1" || period === "lesson2"),
-          ).size || 1;
           return [
             teacher?.name ?? schedule.teacherId,
             schedule.date,
             slot ? `${slot.start}-${slot.end}` : "Chưa khôi phục khung giờ",
             school?.name ?? schedule.schoolId,
             classNames,
-            schedule.status === "cancelled" ? 0 : lessonCount,
+            schedule.status === "cancelled" ? 0 : scheduleLessonPeriodCount(schedule),
             statusLabels[schedule.status] ?? schedule.status,
             lesson?.title ?? schedule.lessonId,
           ];
         });
         const kpiSheet = XLSX.utils.aoa_to_sheet([
           ["TỔNG HỢP KPI GIẢNG DẠY"],
-          [`Thời gian tham chiếu: ${formatDateTime(new Date().toISOString())} · Bộ lọc tháng: ${scheduleReportMonth || "Tất cả"}`],
+          [`Thời gian tham chiếu: ${formatDateTime(new Date().toISOString())} · ${reportScopeLabel}`],
           [],
           kpiHeaders,
           ...kpiRows,
@@ -7426,7 +7456,7 @@ export function MettasoulApp() {
         ]);
         XLSX.utils.book_append_sheet(wb, kpiSheet, "Tổng hợp KPI");
         XLSX.writeFile(wb, `lich-da-gui-${scheduleReportMonth || currentDateKey()}.xlsx`);
-        pushToast("Xuất Excel thành công", `Đã xuất ${rows.length} lịch trong tháng đã chọn.`, "success");
+        pushToast("Xuất Excel thành công", `Đã xuất ${rows.length} lịch theo bộ lọc hiện tại.`, "success");
       } catch (error) {
         pushToast("Lỗi xuất Excel", String(error), "error");
       } finally {
@@ -7436,18 +7466,53 @@ export function MettasoulApp() {
 
     return (
       <div className="space-y-5">
-        <Panel title="Danh sách lịch đã gửi" action={`${reportSchedules.length} lịch trong ${formatMonthTitle(scheduleReportMonth)}`}>
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3">
-            <label className="grid gap-1 text-xs font-black text-[var(--brand-dark)]">
-              Tháng báo cáo
-              <input
-                type="month"
-                value={scheduleReportMonth}
-                onChange={(event) => event.target.value && setScheduleReportMonth(event.target.value)}
-                className="h-10 rounded-xl border border-cyan-100 bg-white px-3 text-sm font-semibold outline-none focus:border-cyan-400"
-              />
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
+        <Panel title="Danh sách lịch đã gửi" action={`${reportSchedules.length} lịch · ${reportPeriodCount} tiết · ${reportClassCount} lớp`}>
+          <div className="mb-4 rounded-2xl border border-cyan-100 bg-cyan-50/50 p-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <label className="grid gap-1 text-xs font-black text-[var(--brand-dark)]">
+                Tháng
+                <input
+                  type="month"
+                  value={scheduleReportMonth}
+                  onChange={(event) => {
+                    if (!event.target.value) return;
+                    setScheduleReportMonth(event.target.value);
+                    setScheduleReportWeek("all");
+                    setScheduleReportSchoolId("all");
+                    setScheduleReportTeacherId("all");
+                    setSelectedReportScheduleIds([]);
+                  }}
+                  className="h-10 w-full rounded-xl border border-cyan-100 bg-white px-3 text-sm font-semibold outline-none focus:border-cyan-400"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-black text-[var(--brand-dark)]">
+                Tuần
+                <select value={scheduleReportWeek} onChange={(event) => { setScheduleReportWeek(event.target.value); setSelectedReportScheduleIds([]); }} className="h-10 w-full rounded-xl border border-cyan-100 bg-white px-3 text-sm font-semibold outline-none focus:border-cyan-400">
+                  <option value="all">Tất cả tuần trong tháng</option>
+                  {reportWeekOptions.map((weekStart) => <option key={weekStart} value={weekStart}>{formatDate(weekStart)}–{formatDate(addDaysToDateKey(weekStart, 6))}</option>)}
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs font-black text-[var(--brand-dark)]">
+                Trường
+                <select value={scheduleReportSchoolId} onChange={(event) => { setScheduleReportSchoolId(event.target.value); setSelectedReportScheduleIds([]); }} className="h-10 w-full rounded-xl border border-cyan-100 bg-white px-3 text-sm font-semibold outline-none focus:border-cyan-400">
+                  <option value="all">Tất cả trường</option>
+                  {reportSchoolIds.map((schoolId) => <option key={schoolId} value={schoolId}>{schoolById.get(schoolId)?.name || schoolId}</option>)}
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs font-black text-[var(--brand-dark)]">
+                Giáo viên
+                <select value={scheduleReportTeacherId} onChange={(event) => { setScheduleReportTeacherId(event.target.value); setSelectedReportScheduleIds([]); }} className="h-10 w-full rounded-xl border border-cyan-100 bg-white px-3 text-sm font-semibold outline-none focus:border-cyan-400">
+                  <option value="all">Tất cả giáo viên</option>
+                  {reportTeacherIds.map((teacherId) => <option key={teacherId} value={teacherId}>{teacherById.get(teacherId)?.name || teacherId}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-black text-[var(--brand-dark)]">
+              <span className="rounded-lg bg-white px-3 py-1.5 ring-1 ring-cyan-100">{reportSchedules.length} lịch</span>
+              <span className="rounded-lg bg-white px-3 py-1.5 ring-1 ring-cyan-100">{reportPeriodCount} tiết</span>
+              <span className="rounded-lg bg-white px-3 py-1.5 ring-1 ring-cyan-100">{reportClassCount} lớp</span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={toggleAllReportSchedules}
@@ -7466,9 +7531,9 @@ export function MettasoulApp() {
                 <Trash2 size={15} />
                 Xóa {selectedReportSchedules.length > 0 ? `(${selectedReportSchedules.length})` : "đã chọn"}
               </button>
-              <button onClick={exportScheduleExcel} disabled={isBusy} className={ghostButtonClass}>
+              <button onClick={exportScheduleExcel} disabled={isBusy || reportSchedules.length === 0} className={ghostButtonClass}>
                 <FileSpreadsheet size={16} />
-                Xuất Excel tháng
+                Xuất Excel kết quả lọc
               </button>
             </div>
           </div>
@@ -12746,6 +12811,13 @@ function buildClassSlotKey(schedule: Pick<Schedule, "date" | "timeSlotId" | "cla
 
 function scheduleParticipantClassIds(schedule: Pick<Schedule, "classId" | "participantClassIds">) {
   return Array.from(new Set(String(schedule.participantClassIds || schedule.classId || "").split(",").map((id) => id.trim()).filter(Boolean)));
+}
+
+function scheduleLessonPeriodCount(schedule: Pick<Schedule, "lessonPeriods">) {
+  return new Set(String(schedule.lessonPeriods || "lesson1")
+    .split(",")
+    .map((period) => period.trim())
+    .filter((period) => period === "lesson1" || period === "lesson2")).size || 1;
 }
 
 function isAssistantAssignedToSchedule(schedule: Pick<Schedule, "assistantIds">, assistantId: string) {
