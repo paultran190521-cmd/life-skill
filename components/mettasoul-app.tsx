@@ -6478,10 +6478,10 @@ export function MettasoulApp() {
         {renderAdminAvailabilityPanel()}
         <Panel title="Lịch trường theo tuần" action={assignmentSchoolId ? `${weekNeeds.length} tiết trong tuần` : "Chọn trường để bắt đầu"}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="rounded-2xl border-2 border-amber-400 bg-amber-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Tuần có ngày
+            <label className="rounded-2xl border-2 border-teal-400 bg-teal-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Tuần có ngày
               <input type="date" value={assignmentWeekStart} onChange={(event) => setAssignmentWeekStart(mondayDateKey(event.target.value))} className={`${inputClass} mt-1 w-full`} />
             </label>
-            <label className="rounded-2xl border-2 border-rose-400 bg-rose-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Trường
+            <label className="rounded-2xl border-2 border-violet-400 bg-violet-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Trường
               <select value={assignmentSchoolId} onChange={(event) => { setAssignmentSchoolId(event.target.value); setDraftSchedule({ items: event.target.value ? [] : [createDraftScheduleItem()] }); setSchoolNeeds([]); }} className={`${inputClass} mt-1 w-full`}>
                 <option value="">Chọn trường</option>
                 {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
@@ -6509,14 +6509,14 @@ export function MettasoulApp() {
           {weekNeeds.length > 0 ? <div className="mt-4 flex flex-wrap gap-3">{Array.from(new Set(weekNeeds.map((need) => need.date))).sort().map((date) => {
             const dayNeeds = weekNeeds.filter((need) => need.date === date);
             const editedCount = dayNeeds.filter((need) => assignmentClockMs > 0 && isSchoolNeedEditHighlighted(need, assignmentClockMs)).length;
-            return <span key={date} className="rounded-2xl bg-cyan-50 px-4 py-2 text-lg font-bold text-cyan-900 sm:text-2xl">{formatDate(date)} · {new Set(dayNeeds.map((need) => need.classId)).size} lớp · {dayNeeds.length} tiết · {dayNeeds.filter((need) => need.status === "OPEN").length} cần giao{editedCount ? <strong className="ml-2 text-rose-700">· {editedCount} lịch vừa sửa</strong> : null}</span>;
+            return <span key={date} className="rounded-2xl bg-cyan-50 px-4 py-2 text-base font-bold text-cyan-900 sm:text-xl">{formatDate(date)} · {new Set(dayNeeds.map((need) => need.classId)).size} lớp · {dayNeeds.length} tiết · {dayNeeds.filter((need) => need.status === "OPEN").length} cần giao{editedCount ? <strong className="ml-2 text-rose-700">· {editedCount} lịch vừa sửa</strong> : null}</span>;
           })}</div> : null}
           {assignmentSchoolId ? <div className="mt-4 space-y-2">
-            {weekNeeds.length === 0 ? <p className="rounded-xl bg-slate-50 p-3 text-lg text-slate-600 sm:text-2xl">Tuần này chưa có lịch trường đã nhập.</p> : weekNeeds.slice().sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start) || a.classId.localeCompare(b.classId)).map((need) => {
+            {weekNeeds.length === 0 ? <p className="rounded-xl bg-slate-50 p-3 text-base text-slate-600 sm:text-xl">Tuần này chưa có lịch trường đã nhập.</p> : weekNeeds.slice().sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start) || a.classId.localeCompare(b.classId)).map((need, index) => {
               const edited = assignmentClockMs > 0 && isSchoolNeedEditHighlighted(need, assignmentClockMs);
               const editLabel = schoolNeedEditLabel(need);
-              return <div key={need.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 px-4 py-3 text-lg sm:text-2xl ${edited ? "border-red-400 bg-red-50" : "border-slate-200 bg-white"}`}>
-                <span className="min-w-0"><strong>{formatDate(need.date)} · {need.start}–{need.end}</strong> · {classById.get(need.classId)?.name || need.classId} · {need.periodLabel}{editLabel ? <span className={`mt-1 block text-base font-bold sm:text-xl ${edited ? "text-red-700" : "text-slate-600"}`}>Sửa lúc {editLabel}</span> : null}</span>
+              return <div key={need.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 px-4 py-3 text-base sm:text-xl ${edited ? "border-red-500 bg-red-50" : `${assignmentCardBorderClasses[index % assignmentCardBorderClasses.length]} bg-white`}`}>
+                <span className="min-w-0"><strong>{formatDate(need.date)} · {need.start}–{need.end}</strong> · {classById.get(need.classId)?.name || need.classId} · {need.periodLabel}{editLabel ? <span className={`mt-1 block text-sm font-bold sm:text-lg ${edited ? "text-red-700" : "text-slate-600"}`}>Sửa lúc {editLabel}</span> : null}</span>
                 <span className="flex flex-wrap items-center gap-3"><span className={need.status === "OPEN" ? "font-bold text-amber-800" : need.status === "REVIEW" ? "font-bold text-rose-700" : "font-bold text-emerald-700"}>{need.status === "OPEN" ? "Cần giao" : need.status === "REVIEW" ? "Cần xem lại lịch đã giao" : need.status === "ASSIGNED" ? `Đã giao: ${teacherName(schedules.find((schedule) => schedule.id === need.scheduleId || schedule.schoolNeedId === need.id)?.teacherId || "")}` : "Đã hủy"}</span>{need.status === "REVIEW" ? <button type="button" onClick={() => void reconcileSchoolNeed(need)} className="font-bold text-rose-700 underline">Đối chiếu và áp dụng</button> : null}<button type="button" onClick={() => startEditSchoolNeed(need)} className="font-bold text-cyan-800 underline">Sửa</button>{!need.scheduleId ? <button type="button" onClick={() => void deleteSchoolNeed(need)} className="font-bold text-rose-700 underline">Xóa</button> : null}</span>
               </div>;
             })}
@@ -7100,7 +7100,6 @@ export function MettasoulApp() {
             </div>
           </Panel>
         </div>
-        {renderWeeklyUpdatesPanel({ embedded: true })}
         {renderAssignmentSummaryPanel()}
       </div>
     );
@@ -13223,7 +13222,7 @@ function announcementPriorityLabel(priority: AppAnnouncementPriority) {
   return priority === "important_not_urgent" ? "Quan trọng - không khẩn" : "Quan trọng - khẩn";
 }
 
-const assignmentCardBorderClasses = ["border-amber-400", "border-orange-400", "border-rose-400", "border-pink-400", "border-red-400"] as const;
+const assignmentCardBorderClasses = ["border-teal-400", "border-amber-400", "border-violet-400", "border-sky-400", "border-rose-400", "border-orange-400"] as const;
 
 const inputClass =
   "w-full rounded-2xl border border-sky-200 bg-white/90 px-4 py-3 text-base font-semibold text-[var(--brand-dark)] shadow-sm outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100 sm:text-sm";
