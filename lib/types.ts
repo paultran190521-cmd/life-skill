@@ -124,6 +124,8 @@ export type Schedule = {
   lessonId: string;
   /** Danh sách tiết đã giao, lưu trên Sheet dạng lesson1,lesson2. */
   lessonPeriods?: string;
+  /** A teacher explicitly confirmed that an earlier plan covers this same lesson and period. */
+  reusedLessonPlanId?: string;
   timeSlotId: string;
   teachingEnvironment?: TeachingEnvironment;
   activityTypeCode?: string;

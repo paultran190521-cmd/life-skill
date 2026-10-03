@@ -155,6 +155,7 @@ export async function PATCH(request: Request, { params }: Params) {
       patch.sentAt = now;
       patch.confirmedAt = "";
       patch.assistantConfirmedIds = "";
+      patch.reusedLessonPlanId = "";
       resetResult = await resetScheduleAssignmentData([id]);
       notifications = [
         createNotification("Đã chuyển lịch", "Một lịch dạy vừa được chuyển sang giáo viên mới.", "admin", now),

@@ -54,7 +54,7 @@ export async function GET(request: Request) {
         schedules: scopedSchedules,
         lessonPlans: teacherId
           ? data.lessonPlans.filter((plan) => auth.user.role === "assistant"
-              ? assignedScheduleIds.has(plan.scheduleId)
+              ? assignedScheduleIds.has(plan.scheduleId) || assignedSchedules.some((schedule) => schedule.reusedLessonPlanId === plan.id)
               : plan.teacherId === teacherId)
           : [],
         attendance: teacherId ? data.attendance.filter((record) => record.teacherId === teacherId) : [],

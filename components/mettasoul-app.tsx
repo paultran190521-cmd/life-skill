@@ -72,6 +72,7 @@ import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy"
 import { findConfiguredSchoolNeedMergeSlot } from "@/lib/school-need-merge";
 import { getSchoolAssignmentProgress, isSchoolNeedEditHighlighted, schoolNeedEditLabel } from "@/lib/school-assignment-progress";
 import { scheduledLessonSections } from "@/lib/lessons";
+import { canReuseLessonPlan, findReusableLessonPlan } from "@/lib/lesson-plan-reuse";
 import { attendanceLookupKey, groupByKey, indexById, legacyScheduleGroupKey, buildTextSearchIndex, searchTextIndex } from "@/lib/view-index";
 import {
   availabilityTimeRangeKey,
@@ -640,7 +641,7 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
   { id: "calendar", label: "Lịch tổng", icon: CalendarDays },
   { id: "teachers", label: "Giáo viên", icon: Users },
   { id: "lessons", label: "Bài học", icon: BookOpen },
-  { id: "plans", label: "Kế hoạch giảng dạy", icon: FileUp },
+  { id: "plans", label: "Kế hoạch GD", icon: FileUp },
   { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "settings", label: "Cấu hình", icon: Settings2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
@@ -650,7 +651,7 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "calendar", label: "Lịch của tôi", icon: CalendarDays },
   { id: "activities", label: "Công việc & MCP", icon: ListChecks },
-  { id: "plans", label: "Kế hoạch giảng dạy", icon: FileUp },
+  { id: "plans", label: "Kế hoạch GD", icon: FileUp },
   { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
@@ -659,7 +660,7 @@ const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "calendar", label: "Lịch trợ giảng", icon: CalendarDays },
   { id: "activities", label: "Công việc & MCP", icon: ListChecks },
-  { id: "plans", label: "Kế hoạch giảng dạy", icon: BookOpen },
+  { id: "plans", label: "Kế hoạch GD", icon: BookOpen },
   { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
@@ -969,6 +970,22 @@ export function MettasoulApp() {
   const role = currentUser.role;
   const hasAdminAccess = sessionUser?.role === "admin";
   const currentTeacherId = currentUser.teacherId ?? "";
+  const reusedPlanBySchedule = useMemo(() => {
+    const result = new Map<string, LessonPlan>();
+    const schedulesById = new Map(schedules.map((schedule) => [schedule.id, schedule]));
+    const plansById = new Map(lessonPlans.map((plan) => [plan.id, plan]));
+    for (const schedule of schedules) {
+      const plan = plansById.get(schedule.reusedLessonPlanId || "");
+      const source = plan && schedulesById.get(plan.scheduleId);
+      if (plan && ((source && canReuseLessonPlan(schedule, source, plan))
+        || (role === "assistant" && !source && plan.teacherId === schedule.teacherId))) result.set(schedule.id, plan);
+    }
+    return result;
+  }, [schedules, lessonPlans, role]);
+  const coveredPlanScheduleIds = useMemo(() => new Set([
+    ...lessonPlans.map((plan) => plan.scheduleId),
+    ...reusedPlanBySchedule.keys(),
+  ]), [lessonPlans, reusedPlanBySchedule]);
   const hasPendingCancellation = cancellationReports.some((row) => row.teacherId === currentTeacherId && row.status === "PENDING");
   const personnelDirectoryKey = useMemo(
     () => teachers.map((teacher) => `${teacher.id}\u0000${teacher.email}\u0000${teacher.name}`).sort().join("\u0001"),
@@ -2871,6 +2888,22 @@ export function MettasoulApp() {
     } catch (error) {
       handleSaveError(error);
       return false;
+    }
+  }
+
+  async function confirmReusedLessonPlan(schedule: Schedule, sourcePlan: LessonPlan) {
+    try {
+      const response = await saveRequest<{ scheduleId: string; reusedLessonPlanId: string }>(
+        "Đang xác nhận kế hoạch đã gửi...",
+        "/api/lesson-plans/reuse",
+        { method: "POST", body: JSON.stringify({ scheduleId: schedule.id, sourcePlanId: sourcePlan.id }) },
+      );
+      setSchedules((items) => items.map((item) => item.id === response.scheduleId
+        ? { ...item, reusedLessonPlanId: response.reusedLessonPlanId }
+        : item));
+      pushToast("Đã xác nhận kế hoạch", "Lịch này không còn được tính là thiếu giáo án.", "success");
+    } catch (error) {
+      handleSaveError(error);
     }
   }
 
@@ -5282,7 +5315,7 @@ export function MettasoulApp() {
                   onFocus={() => preloadMenu(item.id)}
                 >
                   <Icon size={18} />
-                  <span className={`${sidebarCollapsed ? "lg:hidden" : ""} ${item.id === "plans" ? "text-xs leading-4" : ""}`}>{item.id === "plans" ? <>Kế hoạch<br />giảng dạy</> : item.label}</span>
+                  <span className={sidebarCollapsed ? "lg:hidden" : ""}>{item.label}</span>
                   {item.id === "calendar" && role === "teacher" && unseenScheduleCount > 0 ? (
                     <span className={`ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-rose-600 px-1 text-[11px] font-black text-white ${sidebarCollapsed ? "lg:absolute lg:right-1" : ""}`}>
                       {unseenScheduleCount}
@@ -5487,7 +5520,7 @@ export function MettasoulApp() {
                       </span>
                     ) : null}
                     {item.id === "plans" && unreadLessonPlanChatCount > 0 ? <span className="grid h-4 min-w-4 place-items-center rounded-full bg-violet-600 px-1 text-[9px] font-black text-white">{unreadLessonPlanChatCount}</span> : null}
-                    <span className={item.id === "plans" ? "text-center leading-tight" : "whitespace-nowrap"}>{item.id === "plans" ? <>Kế hoạch<br />giảng dạy</> : mobileLabel}</span>
+                    <span className="whitespace-nowrap">{item.id === "plans" ? item.label : mobileLabel}</span>
                   </button>
                 );
               })}
@@ -6155,9 +6188,9 @@ export function MettasoulApp() {
                           </div>
                         </div>
 
-                        {meta.plans.length > 0 ? (
+                        {meta.plans.length > 0 || reusedPlanBySchedule.has(selectedScheduleDetail.id) ? (
                           <div className="mt-5 rounded-2xl border border-[var(--line)] bg-white p-4">
-                            <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Giáo án đã tải</p>
+                            <p className="text-xs font-black uppercase text-[var(--brand-dark)]">Kế hoạch đã gửi</p>
                             <div className="mt-3 grid gap-2">
                               {meta.plans.map((plan) => (
                                 <a
@@ -6170,6 +6203,7 @@ export function MettasoulApp() {
                                   {plan.fileName}
                                 </a>
                               ))}
+                              {reusedPlanBySchedule.get(selectedScheduleDetail.id) ? <a href={reusedPlanBySchedule.get(selectedScheduleDetail.id)!.driveUrl} target="_blank" rel="noreferrer" className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-800">Đã gửi kế hoạch · {reusedPlanBySchedule.get(selectedScheduleDetail.id)!.fileName}</a> : null}
                             </div>
                           </div>
                         ) : null}
@@ -6272,7 +6306,7 @@ export function MettasoulApp() {
     const confirmed = schedules.filter((item) => item.status === "confirmed").length;
     const uploaded = lessonPlans.length;
     const attended = primaryTeacherAttendance.length;
-    const uploadedScheduleIds = new Set(lessonPlans.map((plan) => plan.scheduleId));
+    const uploadedScheduleIds = coveredPlanScheduleIds;
     const attendedScheduleIds = new Set(primaryTeacherAttendance.map((record) => record.scheduleId));
     const detailRows: Record<AdminOverviewFocus, Schedule[]> = {
       "all-schedules": schedules,
@@ -8822,6 +8856,7 @@ export function MettasoulApp() {
           <PagedList items={assignedSchedules} resetKey={`${currentUserId}:assistant-plans`} pageSize={12} className="space-y-3">
           {(rows) => rows.map((schedule) => {
             const meta = lookupSchedule(schedule);
+            const reusedPlan = reusedPlanBySchedule.get(schedule.id);
             return (
               <div key={schedule.id} className="min-w-0 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm [overflow-wrap:anywhere]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -8838,7 +8873,8 @@ export function MettasoulApp() {
                       <span className="min-w-0 [overflow-wrap:anywhere]">{plan.fileName}</span>
                     </a>
                   ))}
-                  {meta.plans.length === 0 ? <span className="text-xs font-bold text-amber-700">Giáo viên chưa tải giáo án.</span> : null}
+                  {reusedPlan ? <a href={reusedPlan.driveUrl} target="_blank" rel="noopener noreferrer" className={`${ghostButtonClass} min-w-0 max-w-full`}>Đã gửi kế hoạch · {reusedPlan.fileName}</a> : null}
+                  {meta.plans.length === 0 && !reusedPlan ? <span className="text-xs font-bold text-amber-700">Giáo viên chưa tải giáo án.</span> : null}
                 </div>
               </div>
             );
@@ -8853,7 +8889,7 @@ export function MettasoulApp() {
   function renderAdminLessonPlansPanel() {
     const searchableTerm = deferredSearchTerm.trim().toLowerCase();
     const operationalSchedules = schedules.filter((schedule) => schedule.status !== "cancelled");
-    const submittedScheduleIds = new Set(lessonPlans.map((plan) => plan.scheduleId));
+    const submittedScheduleIds = coveredPlanScheduleIds;
     const missingSchedules = operationalSchedules
       .filter((schedule) => !submittedScheduleIds.has(schedule.id))
       .sort(compareRecentlySentSchedules);
@@ -9080,9 +9116,7 @@ export function MettasoulApp() {
 
   function renderTeacherLessonPlansPanel() {
     const scopedSchedules = schedules.filter((item) => item.teacherId === currentTeacherId && item.status !== "cancelled");
-    const submittedScheduleIds = new Set(
-      lessonPlans.filter((plan) => plan.teacherId === currentTeacherId).map((plan) => plan.scheduleId),
-    );
+    const submittedScheduleIds = coveredPlanScheduleIds;
     const pendingSchedules = scopedSchedules
       .filter((schedule) => !submittedScheduleIds.has(schedule.id))
       .sort(compareRecentlySentSchedules);
@@ -9260,7 +9294,11 @@ export function MettasoulApp() {
     schedule: Schedule;
     meta: ReturnType<typeof lookupSchedule>;
   }) {
-    const hasPlans = meta.plans.length > 0;
+    const reusedPlan = reusedPlanBySchedule.get(schedule.id);
+    const reusablePlan = !reusedPlan && meta.plans.length === 0
+      ? findReusableLessonPlan(schedule, schedules, lessonPlans)
+      : undefined;
+    const hasPlans = meta.plans.length > 0 || Boolean(reusedPlan);
     return (
       <div
         role="button"
@@ -9288,12 +9326,17 @@ export function MettasoulApp() {
               hasPlans ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
             }`}
           >
-            {hasPlans ? `${meta.plans.length} giáo án` : "Chưa có"}
+            {reusedPlan && meta.plans.length === 0 ? "Đã gửi kế hoạch" : hasPlans ? `${meta.plans.length} giáo án` : "Chưa có"}
           </span>
         </div>
 
         {hasPlans ? (
           <div className="mt-3 space-y-2">
+            {reusedPlan ? (
+              <a onClick={(event) => event.stopPropagation()} href={reusedPlan.driveUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-emerald-100 bg-white/90 px-3 py-2 text-sm font-black text-emerald-800">
+                <CheckCircle2 size={15} /> Đã gửi kế hoạch · {reusedPlan.fileName}
+              </a>
+            ) : null}
             {meta.plans.map((plan) => (
               <div key={plan.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-100 bg-white/90 px-3 py-2">
                 <a
@@ -9325,6 +9368,7 @@ export function MettasoulApp() {
         <div className="mt-3 grid gap-2" onClick={(event) => event.stopPropagation()}>
           <div className="flex flex-wrap gap-2">
             {renderLessonPlanUploadButton({ schedule: schedule })}
+            {reusablePlan ? <button type="button" disabled={isBusy} onClick={() => void confirmReusedLessonPlan(schedule, reusablePlan)} className="inline-flex h-11 items-center gap-2 rounded-2xl border border-emerald-300 bg-emerald-50 px-4 text-sm font-black text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"><CheckCircle2 size={17} />Đã gửi kế hoạch</button> : null}
           </div>
           <LessonPlanLinkForm
             key={`${currentUserId}:${schedule.id}`}
@@ -9389,9 +9433,7 @@ export function MettasoulApp() {
         !confirmedWorkLogScheduleIds.has(schedule.id) &&
         !pendingWorkLogScheduleIds.has(schedule.id),
     );
-    const submittedPlanScheduleIds = new Set(
-      lessonPlans.filter((plan) => plan.teacherId === currentTeacherId).map((plan) => plan.scheduleId),
-    );
+    const submittedPlanScheduleIds = coveredPlanScheduleIds;
     const submittedPlanSchedules = scopedSchedules.filter((schedule) => submittedPlanScheduleIds.has(schedule.id));
     const missingPlanSchedules = scopedSchedules.filter((schedule) => !submittedPlanScheduleIds.has(schedule.id));
     const taughtInClassSchedules = taughtSchedules.filter(
@@ -9626,6 +9668,7 @@ export function MettasoulApp() {
     schedule: Schedule;
     meta: ReturnType<typeof lookupSchedule>;
   }) {
+    const reusedPlan = reusedPlanBySchedule.get(schedule.id);
     return (
       <div className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_auto]">
         <div className="min-w-0">
@@ -9634,6 +9677,7 @@ export function MettasoulApp() {
             {meta.teacher?.name || "Giáo viên"} • {meta.school?.name} • {scheduleParticipantLabel(schedule, classes)} • {formatScheduleDateTime(schedule)}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
+            {reusedPlan ? <a href={reusedPlan.driveUrl} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800"><CheckCircle2 size={14} />Đã gửi kế hoạch · {reusedPlan.fileName}</a> : null}
             {meta.plans.map((plan) => (
               <div key={plan.id} className="inline-flex max-w-full items-center gap-2 rounded-xl bg-sky-50 px-3 py-2">
                 <a
@@ -9652,7 +9696,7 @@ export function MettasoulApp() {
         </div>
         <div className="flex items-center justify-between gap-2 lg:justify-end">
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-            {meta.plans.length} file
+            {meta.plans.length > 0 ? `${meta.plans.length} file` : reusedPlan ? "Đã gửi kế hoạch" : "0 file"}
           </span>
           <button type="button" onClick={() => setSelectedScheduleDetail(schedule)} className="rounded-xl bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-800 transition hover:bg-cyan-100">Xem chi tiết</button>
         </div>
@@ -9669,6 +9713,7 @@ export function MettasoulApp() {
     meta: ReturnType<typeof lookupSchedule>;
     allowUpload?: boolean;
   }) {
+    const reusablePlan = allowUpload ? findReusableLessonPlan(schedule, schedules, lessonPlans) : undefined;
     return (
       <div className="grid gap-3 px-4 py-3 lg:grid-cols-[1fr_auto]">
         <div className="min-w-0">
@@ -9681,6 +9726,7 @@ export function MettasoulApp() {
           <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">Chưa có giáo án</span>
           <button type="button" onClick={() => setSelectedScheduleDetail(schedule)} className="rounded-xl bg-cyan-50 px-3 py-2 text-xs font-black text-cyan-800 transition hover:bg-cyan-100">Xem chi tiết</button>
           {allowUpload ? renderLessonPlanUploadButton({ schedule: schedule, compact: true }) : null}
+          {reusablePlan ? <button type="button" disabled={isBusy} onClick={() => void confirmReusedLessonPlan(schedule, reusablePlan)} className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800 disabled:opacity-50">Đã gửi kế hoạch</button> : null}
         </div>
       </div>
     );
