@@ -17,6 +17,14 @@ const rules = [
     checks: ['requireSessionUser(request)', 'evaluateRolePermission(auth.user, "admin"'],
   },
   {
+    file: "app/api/resources/route.ts",
+    checks: ['requireSessionUser(request, { allowHeaderFallback: false })', 'evaluateRolePermission(auth.user, "admin"'],
+  },
+  {
+    file: "app/api/resources/[id]/route.ts",
+    checks: ['requireSessionUser(request)', 'evaluateRolePermission(auth.user, "admin"'],
+  },
+  {
     file: "app/api/schools/route.ts",
     checks: ['requireSessionUser(request)', 'evaluateRolePermission(auth.user, "admin"'],
   },

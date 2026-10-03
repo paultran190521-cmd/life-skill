@@ -4,6 +4,7 @@ import { getAvatarUrl } from "@/lib/avatar";
 import type {
   Attendance,
   AppAnnouncement,
+  ResourceLink,
   ActivityAssignment,
   ActivityOccurrence,
   ActivityType,
@@ -52,6 +53,7 @@ type SheetName =
   | "Notifications"
   | "AuditLogs"
   | "AppAnnouncements"
+  | "ResourceLinks"
   | "WeeklyUpdates"
   | "TeacherAvailability"
   | "ReminderRuns"
@@ -627,6 +629,7 @@ export async function getAppDataFromSheets(options: { includeHistory?: boolean }
     activityAssignments,
     notifications,
     appAnnouncements,
+    resourceLinks,
     auditLogs,
     weeklyUpdates,
     teacherAvailability,
@@ -657,6 +660,9 @@ export async function getAppDataFromSheets(options: { includeHistory?: boolean }
     ensureSheetHeaders("AppAnnouncements", appAnnouncementHeaders)
       .then(() => readSheetRows("AppAnnouncements").then(toAppAnnouncements))
       .catch(() => [] as AppAnnouncement[]),
+    ensureSheetHeaders("ResourceLinks", resourceLinkHeaders)
+      .then(() => readSheetRows("ResourceLinks").then(toResourceLinks))
+      .catch(() => [] as ResourceLink[]),
     options.includeHistory === false ? Promise.resolve([] as AuditLog[]) : readSheetRows("AuditLogs").then(toAuditLogs).catch(() => [] as AuditLog[]),
     options.includeHistory === false ? Promise.resolve([] as WeeklyUpdate[]) : ensureSheetHeaders("WeeklyUpdates", weeklyUpdateHeaders)
       .then(() => readSheetRows("WeeklyUpdates").then(toWeeklyUpdates))
@@ -683,6 +689,7 @@ export async function getAppDataFromSheets(options: { includeHistory?: boolean }
     activityAssignments,
     notifications,
     appAnnouncements,
+    resourceLinks,
     auditLogs,
     weeklyUpdates,
     teacherAvailability,
@@ -915,6 +922,18 @@ export const appAnnouncementHeaders = [
   "body",
   "priority",
   "active",
+  "createdBy",
+  "createdAt",
+  "updatedAt",
+];
+
+export const resourceLinkHeaders = [
+  "id",
+  "title",
+  "url",
+  "description",
+  "active",
+  "sortOrder",
   "createdBy",
   "createdAt",
   "updatedAt",
@@ -1335,6 +1354,22 @@ function toAppAnnouncements(rows: SheetRow[]): AppAnnouncement[] {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt || undefined,
   }));
+}
+
+export function toResourceLinks(rows: SheetRow[]): ResourceLink[] {
+  return rows
+    .filter((row) => String(row.id || "").trim() && String(row.title || "").trim() && String(row.url || "").trim())
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      url: row.url,
+      description: row.description || undefined,
+      active: parseBoolean(row.active, true),
+      sortOrder: Number.isFinite(Number(row.sortOrder)) ? Number(row.sortOrder) : 0,
+      createdBy: row.createdBy || undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt || undefined,
+    }));
 }
 
 function toTopics(rows: SheetRow[]): Topic[] {

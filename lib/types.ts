@@ -318,6 +318,18 @@ export type AppAnnouncement = {
   createdBy?: string;
 };
 
+export type ResourceLink = {
+  id: string;
+  title: string;
+  url: string;
+  description?: string;
+  active: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt?: string;
+  createdBy?: string;
+};
+
 export type AuditLog = {
   id: string;
   actorId: string;

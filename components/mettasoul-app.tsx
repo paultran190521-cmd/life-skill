@@ -116,6 +116,7 @@ import type {
   LessonPlanMessage,
   Notification,
   Role,
+  ResourceLink,
   Schedule,
   School,
   SchoolTeachingNeed,
@@ -154,6 +155,7 @@ type TabId =
   | "teachers"
   | "lessons"
   | "plans"
+  | "resources"
   | "attendance"
   | "settings";
 
@@ -213,6 +215,7 @@ type AppData = {
   hrmIntegration: { configured: boolean };
   notifications: Notification[];
   appAnnouncements: AppAnnouncement[];
+  resourceLinks: ResourceLink[];
   auditLogs: AuditLog[];
   weeklyUpdates: WeeklyUpdate[];
   teacherAvailability: TeacherAvailability[];
@@ -658,6 +661,7 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
   { id: "teachers", label: "Giáo viên", icon: Users },
   { id: "lessons", label: "Bài học", icon: BookOpen },
   { id: "plans", label: "Kế hoạch GD", icon: FileUp },
+  { id: "resources", label: "Tài nguyên", icon: BookOpen },
   { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "settings", label: "Cấu hình", icon: Settings2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
@@ -668,6 +672,7 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
   { id: "calendar", label: "Lịch của tôi", icon: CalendarDays },
   { id: "activities", label: "Công việc & MCP", icon: ListChecks },
   { id: "plans", label: "Kế hoạch GD", icon: FileUp },
+  { id: "resources", label: "Tài nguyên", icon: BookOpen },
   { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
@@ -677,6 +682,7 @@ const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }
   { id: "calendar", label: "Lịch trợ giảng", icon: CalendarDays },
   { id: "activities", label: "Công việc & MCP", icon: ListChecks },
   { id: "plans", label: "Kế hoạch GD", icon: BookOpen },
+  { id: "resources", label: "Tài nguyên", icon: BookOpen },
   { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
@@ -726,6 +732,7 @@ export function MettasoulApp() {
   const mutationRevision = useRef(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appAnnouncements, setAppAnnouncements] = useState<AppAnnouncement[]>([]);
+  const [resourceLinks, setResourceLinks] = useState<ResourceLink[]>([]);
   const [dataStatus, setDataStatus] = useState<"loading" | "connected" | "offline">("loading");
   const [authStatus, setAuthStatus] = useState<"checking" | "signed-in" | "signed-out">("checking");
   const [saveError, setSaveError] = useState("");
@@ -881,12 +888,16 @@ export function MettasoulApp() {
     schools: true,
     classes: true,
     slots: true,
+    resources: true,
   });
   const [announcementDraft, setAnnouncementDraft] = useState<AnnouncementDraft>({
     title: "",
     body: "",
     priority: "important_urgent",
   });
+  const [resourceDraft, setResourceDraft] = useState({ title: "", url: "", description: "" });
+  const [editingResourceId, setEditingResourceId] = useState("");
+  const [resourceEditDraft, setResourceEditDraft] = useState({ title: "", url: "", description: "" });
   const [schoolDraft, setSchoolDraft] = useState({
     name: "",
     district: "",
@@ -1164,7 +1175,7 @@ export function MettasoulApp() {
 
   useEffect(() => {
     if (activeTab === "settings") {
-      setCollapsedSettingsSections({ reminders: false, announcements: false, schools: true, classes: true, slots: true });
+      setCollapsedSettingsSections({ reminders: false, announcements: false, resources: true, schools: true, classes: true, slots: true });
     }
   }, [activeTab]);
 
@@ -1236,6 +1247,7 @@ export function MettasoulApp() {
         setAuditLogs(data.auditLogs ?? []);
         setNotifications(data.notifications);
         setAppAnnouncements(data.appAnnouncements ?? []);
+        setResourceLinks(data.resourceLinks ?? []);
         setWeeklyUpdates(data.weeklyUpdates ?? []);
         setTeacherAvailability(data.teacherAvailability ?? []);
         setDataStatus("connected");
@@ -3908,6 +3920,89 @@ export function MettasoulApp() {
     }
   }
 
+  async function createResourceLink() {
+    const title = resourceDraft.title.trim();
+    const url = resourceDraft.url.trim();
+    if (!title || !url) {
+      pushToast("Thiếu tài nguyên", "Nhập tên và đường dẫn tài liệu trước khi lưu.", "warning");
+      return;
+    }
+
+    try {
+      const sortOrder = Math.max(-1, ...resourceLinks.map((resource) => resource.sortOrder)) + 1;
+      const saved = await saveRequest<ResourceLink>("Đang lưu tài nguyên...", "/api/resources", {
+        method: "POST",
+        body: JSON.stringify({ title, url, description: resourceDraft.description.trim(), sortOrder }),
+      });
+      setResourceLinks((items) => [...items, saved]);
+      setResourceDraft({ title: "", url: "", description: "" });
+      setDataStatus("connected");
+      setSaveError("");
+      pushToast("Đã thêm tài nguyên", "Giáo viên có thể mở tài liệu từ menu Tài nguyên.", "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  function startEditResource(resource: ResourceLink) {
+    setEditingResourceId(resource.id);
+    setResourceEditDraft({ title: resource.title, url: resource.url, description: resource.description || "" });
+  }
+
+  async function saveResourceLink(resource: ResourceLink) {
+    const title = resourceEditDraft.title.trim();
+    const url = resourceEditDraft.url.trim();
+    if (!title || !url) {
+      pushToast("Thiếu tài nguyên", "Tên và đường dẫn tài liệu là bắt buộc.", "warning");
+      return;
+    }
+    try {
+      const saved = await saveRequest<Partial<ResourceLink> & { id: string }>("Đang cập nhật tài nguyên...", `/api/resources/${resource.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title, url, description: resourceEditDraft.description.trim() }),
+      });
+      setResourceLinks((items) => items.map((item) => item.id === resource.id ? { ...item, ...saved, title, url, description: resourceEditDraft.description.trim() } : item));
+      setEditingResourceId("");
+      setSaveError("");
+      pushToast("Đã cập nhật tài nguyên", title, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function toggleResourceLink(resource: ResourceLink) {
+    try {
+      const saved = await saveRequest<Partial<ResourceLink> & { id: string }>(resource.active ? "Đang ẩn tài nguyên..." : "Đang hiện tài nguyên...", `/api/resources/${resource.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active: !resource.active }),
+      });
+      setResourceLinks((items) => items.map((item) => item.id === resource.id ? { ...item, ...saved, active: !resource.active } : item));
+      setSaveError("");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
+  async function deleteResourceLink(resource: ResourceLink) {
+    const confirmed = await openConfirmDialog({
+      title: "Xóa tài nguyên?",
+      message: `Tài nguyên “${resource.title}” sẽ bị xóa khỏi menu giáo viên.`,
+      confirmText: "Xóa",
+      cancelText: "Hủy",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    try {
+      await saveRequest<{ id: string; deleted: boolean }>("Đang xóa tài nguyên...", `/api/resources/${resource.id}`, { method: "DELETE" });
+      setResourceLinks((items) => items.filter((item) => item.id !== resource.id));
+      if (editingResourceId === resource.id) setEditingResourceId("");
+      setSaveError("");
+      pushToast("Đã xóa tài nguyên", resource.title, "success");
+    } catch (error) {
+      handleSaveError(error);
+    }
+  }
+
   function addLocalAudit(action: string, entityId: string, metadata: Record<string, unknown>) {
     setAuditLogs((items) => [createLocalAuditLog(action, entityId, metadata), ...items]);
   }
@@ -5245,6 +5340,9 @@ export function MettasoulApp() {
     }
     if (tabId === "plans") {
       return renderLessonPlansPanel();
+    }
+    if (tabId === "resources") {
+      return renderResourcesPanel();
     }
     if (tabId === "attendance") {
       return renderAttendancePanel();
@@ -10985,6 +11083,48 @@ export function MettasoulApp() {
     );
   }
 
+  function renderResourcesPanel() {
+    const visibleResources = resourceLinks
+      .filter((resource) => resource.active)
+      .slice()
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.title.localeCompare(right.title, "vi"));
+
+    return (
+      <div className="space-y-5">
+        <Panel title="Tài nguyên" action={`${visibleResources.length} tài liệu`}>
+          <div className="rounded-2xl border border-cyan-100 bg-cyan-50/50 p-4">
+            <p className="text-sm font-black text-[var(--brand-dark)]">Tài liệu dùng chung</p>
+            <p className="mt-1 text-sm font-semibold text-[var(--muted)]">Mở PPT mẫu, logo, quy chế và các tài liệu do quản trị viên cập nhật.</p>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {visibleResources.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-cyan-200 bg-white px-4 py-8 text-center text-sm font-semibold text-[var(--muted)] md:col-span-2">
+                Chưa có tài nguyên được chia sẻ.
+              </div>
+            ) : visibleResources.map((resource) => (
+              <a
+                key={resource.id}
+                href={resource.url}
+                target="_blank"
+                rel="noreferrer"
+                className="group rounded-2xl border border-cyan-100 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-md"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-[var(--brand-dark)] group-hover:text-cyan-700">{resource.title}</p>
+                    {resource.description ? <p className="mt-1 text-xs font-semibold leading-5 text-[var(--muted)]">{resource.description}</p> : null}
+                  </div>
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-cyan-50 text-cyan-700 group-hover:bg-cyan-100"><ExternalLink size={17} /></span>
+                </div>
+                <p className="mt-4 text-xs font-black text-cyan-700">Mở tài liệu</p>
+              </a>
+            ))}
+          </div>
+        </Panel>
+      </div>
+    );
+  }
+
   function renderSettingsPanel() {
     const usageGuideUrl = "/huong-dan-su-dung/";
     const trainingChecklistUrl = "/training-14-09-2026.html";
@@ -11006,6 +11146,62 @@ export function MettasoulApp() {
     return (
       <div className="space-y-5">
         <PerformanceDiagnostics />
+        <Panel
+          title="Tài nguyên giáo viên"
+          action={`${resourceLinks.filter((resource) => resource.active).length}/${resourceLinks.length} đang hiện`}
+          collapsed={collapsedSettingsSections.resources}
+          onToggleCollapse={() => toggleSettingsSection("resources")}
+        >
+          {!collapsedSettingsSections.resources ? (
+            <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+              <div className="rounded-2xl border border-cyan-200 bg-cyan-50/50 p-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-cyan-100 text-cyan-700"><BookOpen size={20} /></div>
+                  <div>
+                    <h3 className="text-base font-black text-[var(--brand-dark)]">Thêm tài liệu dùng chung</h3>
+                    <p className="mt-1 text-sm font-semibold text-[var(--muted)]">Tên và đường dẫn sẽ xuất hiện trong menu Tài nguyên của giáo viên.</p>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  <input value={resourceDraft.title} onChange={(event) => setResourceDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Tên tài liệu, ví dụ: PPT mẫu tiết dạy" className={inputClass} />
+                  <input type="url" value={resourceDraft.url} onChange={(event) => setResourceDraft((current) => ({ ...current, url: event.target.value }))} placeholder="https://drive.google.com/..." className={inputClass} />
+                  <textarea value={resourceDraft.description} onChange={(event) => setResourceDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Mô tả ngắn, không bắt buộc" rows={3} className={`${inputClass} resize-y`} />
+                  <button type="button" onClick={() => void createResourceLink()} disabled={isBusy} className={primaryButtonClass}>
+                    <Plus size={16} /> Thêm tài nguyên
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-black text-[var(--brand-dark)]">Danh sách tài nguyên</h3>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{resourceLinks.length} mục</span>
+                </div>
+                <div className="app-scrollbar max-h-[480px] space-y-3 overflow-y-auto pr-1">
+                  {resourceLinks.length === 0 ? <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-sm font-semibold text-slate-600">Chưa có tài nguyên. Thêm mục đầu tiên ở khung bên trái.</div> : resourceLinks
+                    .slice()
+                    .sort((left, right) => left.sortOrder - right.sortOrder || left.title.localeCompare(right.title, "vi"))
+                    .map((resource) => (
+                      <div key={resource.id} className={`rounded-2xl border p-3 ${resource.active ? "border-cyan-100 bg-white" : "border-slate-200 bg-slate-50"}`}>
+                        {editingResourceId === resource.id ? (
+                          <div className="grid gap-2">
+                            <input value={resourceEditDraft.title} onChange={(event) => setResourceEditDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Tên tài liệu" className={compactInputClass} />
+                            <input type="url" value={resourceEditDraft.url} onChange={(event) => setResourceEditDraft((current) => ({ ...current, url: event.target.value }))} placeholder="https://..." className={compactInputClass} />
+                            <textarea value={resourceEditDraft.description} onChange={(event) => setResourceEditDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Mô tả" rows={2} className={`${compactInputClass} resize-y`} />
+                            <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditingResourceId("")} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600">Hủy</button><button type="button" onClick={() => void saveResourceLink(resource)} disabled={isBusy} className="rounded-xl bg-cyan-600 px-3 py-2 text-xs font-black text-white">Lưu</button></div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm font-black text-[var(--brand-dark)]">{resource.title}</p>{resource.description ? <p className="mt-1 text-xs font-semibold text-[var(--muted)]">{resource.description}</p> : null}<a href={resource.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex max-w-full items-center gap-1 truncate text-xs font-black text-cyan-700 hover:underline"><ExternalLink size={13} /> Mở đường dẫn</a></div><span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-black ${resource.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>{resource.active ? "Đang hiện" : "Đang ẩn"}</span></div>
+                            <div className="mt-3 flex flex-wrap justify-end gap-2"><button type="button" onClick={() => startEditResource(resource)} disabled={isBusy} className="rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-black text-[var(--brand-dark)]">Sửa</button><button type="button" onClick={() => void toggleResourceLink(resource)} disabled={isBusy} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700">{resource.active ? "Ẩn" : "Hiện"}</button><button type="button" onClick={() => void deleteResourceLink(resource)} disabled={isBusy} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-black text-rose-700">Xóa</button></div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </Panel>
         <Panel
           title="Bộ nhắc tự động"
           action={enabledReminderCount > 0 ? `${enabledReminderCount}/2 đang bật · chu kỳ 5 giờ` : "Đã tắt"}

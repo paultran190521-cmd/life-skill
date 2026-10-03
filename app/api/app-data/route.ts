@@ -67,6 +67,7 @@ export async function GET(request: Request) {
           (notification) => notification.role === auth.user.role || notification.role === "all",
         ),
         appAnnouncements: data.appAnnouncements.filter((announcement) => announcement.active),
+        resourceLinks: data.resourceLinks.filter((resource) => resource.active),
         auditLogs: [],
         weeklyUpdates: [],
         teacherAvailability: teacherId
@@ -93,6 +94,7 @@ export async function GET(request: Request) {
       hrmIntegration: { configured: hrmIntegrationConfigured() },
       notifications: data.notifications,
       appAnnouncements: data.appAnnouncements,
+      resourceLinks: data.resourceLinks,
       auditLogs: data.auditLogs,
       weeklyUpdates: data.weeklyUpdates,
       teacherAvailability: data.teacherAvailability.filter((item) => item.status === "available"),
