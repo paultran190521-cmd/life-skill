@@ -640,7 +640,7 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
   { id: "calendar", label: "Lịch tổng", icon: CalendarDays },
   { id: "teachers", label: "Giáo viên", icon: Users },
   { id: "lessons", label: "Bài học", icon: BookOpen },
-  { id: "plans", label: "Giáo án", icon: FileUp },
+  { id: "plans", label: "Kế hoạch giảng dạy", icon: FileUp },
   { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "settings", label: "Cấu hình", icon: Settings2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
@@ -650,7 +650,7 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "calendar", label: "Lịch của tôi", icon: CalendarDays },
   { id: "activities", label: "Công việc & MCP", icon: ListChecks },
-  { id: "plans", label: "Giáo án", icon: FileUp },
+  { id: "plans", label: "Kế hoạch giảng dạy", icon: FileUp },
   { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
@@ -659,7 +659,7 @@ const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }
   { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
   { id: "calendar", label: "Lịch trợ giảng", icon: CalendarDays },
   { id: "activities", label: "Công việc & MCP", icon: ListChecks },
-  { id: "plans", label: "Giáo án tham khảo", icon: BookOpen },
+  { id: "plans", label: "Kế hoạch giảng dạy", icon: BookOpen },
   { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
 ];
@@ -5282,7 +5282,7 @@ export function MettasoulApp() {
                   onFocus={() => preloadMenu(item.id)}
                 >
                   <Icon size={18} />
-                  <span className={sidebarCollapsed ? "lg:hidden" : ""}>{item.label}</span>
+                  <span className={`${sidebarCollapsed ? "lg:hidden" : ""} ${item.id === "plans" ? "text-xs leading-4" : ""}`}>{item.id === "plans" ? <>Kế hoạch<br />giảng dạy</> : item.label}</span>
                   {item.id === "calendar" && role === "teacher" && unseenScheduleCount > 0 ? (
                     <span className={`ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-rose-600 px-1 text-[11px] font-black text-white ${sidebarCollapsed ? "lg:absolute lg:right-1" : ""}`}>
                       {unseenScheduleCount}
@@ -5487,7 +5487,7 @@ export function MettasoulApp() {
                       </span>
                     ) : null}
                     {item.id === "plans" && unreadLessonPlanChatCount > 0 ? <span className="grid h-4 min-w-4 place-items-center rounded-full bg-violet-600 px-1 text-[9px] font-black text-white">{unreadLessonPlanChatCount}</span> : null}
-                    <span className="whitespace-nowrap">{mobileLabel}</span>
+                    <span className={item.id === "plans" ? "text-center leading-tight" : "whitespace-nowrap"}>{item.id === "plans" ? <>Kế hoạch<br />giảng dạy</> : mobileLabel}</span>
                   </button>
                 );
               })}

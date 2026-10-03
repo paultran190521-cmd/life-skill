@@ -121,6 +121,35 @@ export async function sendScheduleCancellationEmail(input: {
   return sendViaResend(args);
 }
 
+export async function sendPreClassAttendanceAlertEmail(input: {
+  admin: { name?: string; email: string };
+  sessions: Array<{ teacherName: string; schoolName: string; date: string; startTime: string; classNames: string[]; scheduleIds: string[] }>;
+}) {
+  const to = normalizeEmailAddress(input.admin.email);
+  if (!to || !isValidEmailAddress(to)) return { sent: false, reason: "Admin email is missing or invalid." };
+  const requestId = createEmailRequestId();
+  const scheduleIds = Array.from(new Set(input.sessions.flatMap((session) => session.scheduleIds)));
+  const subject = `METTASOUL | ${input.sessions.length} buổi dạy sắp bắt đầu chưa điểm danh`;
+  const rows = input.sessions.map((session) => `<tr>
+    <td style="padding:10px;border:1px solid #d6e7eb">${escapeHtml(session.teacherName)}</td>
+    <td style="padding:10px;border:1px solid #d6e7eb">${escapeHtml(formatDate(session.date))} · ${escapeHtml(session.startTime)}</td>
+    <td style="padding:10px;border:1px solid #d6e7eb">${escapeHtml(session.schoolName)}</td>
+    <td style="padding:10px;border:1px solid #d6e7eb">${escapeHtml(session.classNames.join(", ") || "Chưa rõ lớp")}</td>
+  </tr>`).join("");
+  const html = `<!doctype html><html lang="vi"><body style="margin:0;padding:24px;background:#f3f8fa;color:#16313a;font-family:Arial,sans-serif">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:760px;background:#fff;border:1px solid #d6e7eb;border-radius:16px"><tr><td style="padding:28px">
+    <p style="color:#147f99;font-size:12px;font-weight:700;text-align:center">HỌC VIỆN METTASOUL</p>
+    <h1 style="color:#b45309;font-size:22px;text-align:center">CẢNH BÁO CHƯA ĐIỂM DANH TRƯỚC GIỜ DẠY</h1>
+    <p>Chào ${escapeHtml(input.admin.name || "Quản trị")}, các buổi dạy dưới đây sắp bắt đầu nhưng người được phân công chưa điểm danh. Vui lòng kiểm tra và liên hệ giáo viên khi cần.</p>
+    <table width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;font-size:14px"><thead><tr style="background:#fff3d6"><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Giáo viên</th><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Ngày · giờ bắt đầu</th><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Trường</th><th style="padding:10px;border:1px solid #d6e7eb;text-align:left">Lớp</th></tr></thead><tbody>${rows}</tbody></table>
+    <p style="margin:22px 0 0;text-align:center"><a href="${escapeHtml(buildAppUrl())}" style="display:inline-block;border-radius:10px;background:#08788e;color:#fff;padding:12px 18px;font-weight:700;text-decoration:none">MỞ APP GIÁO VỤ</a></p>
+    </td></tr></table></td></tr></table></body></html>`;
+  const args = { to, subject, html, from: process.env.EMAIL_FROM, requestId, scheduleIds, teacherId: "" };
+  if (process.env.EMAIL_PROVIDER === "gas") return sendViaGas(args);
+  if (process.env.EMAIL_PROVIDER === "smtp") return sendViaSmtp(args);
+  return sendViaResend(args);
+}
+
 export async function sendAttendanceReminderEmail(input: Omit<ScheduleDigestInput, "kind">) {
   return sendScheduleDigestEmail({ ...input, kind: "attendance-reminder" });
 }

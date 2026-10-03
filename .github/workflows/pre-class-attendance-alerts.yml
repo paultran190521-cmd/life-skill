@@ -1,0 +1,38 @@
+name: Pre-class attendance alerts
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pre-class-attendance-alerts
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Notify administrators about missing check-ins
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ALERT_URL: https://giaovukns.mettasoul.vn/api/cron/pre-class-attendance-alerts
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "Missing repository secret CRON_SECRET."
+            exit 1
+          fi
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --retry 2 \
+            --retry-all-errors \
+            --max-time 65 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "$ALERT_URL"
