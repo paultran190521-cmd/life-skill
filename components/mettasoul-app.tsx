@@ -356,6 +356,7 @@ type PayrollSummary = {
   teachingIncome: number;
   insuranceDeduction: number;
   bhxhDeduction: number | null;
+  fixedDeductionDetails: Array<{ name: string; amount: number }> | null;
   otherDeduction: number;
   taxDeduction: number;
   netIncome: number;
@@ -10490,12 +10491,18 @@ export function MettasoulApp() {
                     <div><p className="text-xs font-bold text-[var(--muted)]">Tổng thu nhập HRM</p><p className="text-lg font-black">{formatCurrency(payrollSummary.totalIncome)}</p></div>
                     <div><p className="text-xs font-bold text-[var(--muted)]">Thu nhập công việc HRM</p><p className="text-lg font-black">{formatCurrency(payrollSummary.teachingIncome)}</p></div>
                     <div><p className="text-xs font-bold text-[var(--muted)]">Thuế TNCN</p><p className="text-lg font-black">-{formatCurrency(payrollSummary.taxDeduction)}</p></div>
-                    <div><p className="text-xs font-bold text-[var(--muted)]">BHXH</p><p className="text-lg font-black">{payrollSummary.bhxhDeduction === null ? "HRM chưa tách khoản này" : `-${formatCurrency(payrollSummary.bhxhDeduction)}`}</p></div>
+
                     <div><p className="text-xs font-bold text-[var(--muted)]">Bảo hiểm và khấu trừ cố định</p><p className="text-lg font-black">-{formatCurrency(payrollSummary.insuranceDeduction)}</p></div>
                     <div><p className="text-xs font-bold text-[var(--muted)]">Khấu trừ khác</p><p className="text-lg font-black">-{formatCurrency(payrollSummary.otherDeduction)}</p></div>
                     <div className="rounded-xl bg-emerald-50 p-3"><p className="text-xs font-black text-emerald-800">{payrollSummary.status === "FINAL" ? "Thực nhận đã chốt" : "Dự kiến thực nhận"}</p><p className="text-xl font-black text-emerald-950">{formatCurrency(payrollSummary.netIncome)}</p></div>
                   </div>
-                  <p className="mt-3 text-xs font-semibold text-[var(--muted)]">Bảng lương HRM gồm toàn bộ thu nhập trong tháng {teacherKpiMonthFilter}, không thay đổi theo bộ lọc trường. Khoản BHXH đã nằm trong tổng bảo hiểm và khấu trừ cố định, không trừ thêm lần nữa.{payrollSummary.status === "FINAL" && payrollSummary.isPaid ? " HRM đã ghi nhận thanh toán." : ""}</p>
+                  {payrollSummary.fixedDeductionDetails?.length ? (
+                    <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs">
+                      <p className="font-black text-[var(--brand-dark)]">Chi tiết bảo hiểm và khấu trừ cố định theo HRM</p>
+                      {payrollSummary.fixedDeductionDetails.map((item, index) => <p key={`${item.name}-${index}`} className="mt-1 flex justify-between gap-3"><span>{item.name}</span><span className="font-black">-{formatCurrency(item.amount)}</span></p>)}
+                    </div>
+                  ) : payrollSummary.insuranceDeduction > 0 ? <p className="mt-3 text-xs font-semibold text-[var(--muted)]">HRM chưa lưu chi tiết từng khoản cho bảng lương này; tổng khấu trừ vẫn là số từ HRM.</p> : null}
+                  <p className="mt-3 text-xs font-semibold text-[var(--muted)]">Bảng lương HRM gồm toàn bộ thu nhập trong tháng {teacherKpiMonthFilter}, không thay đổi theo bộ lọc trường. Nếu có BHXH, khoản đó đã nằm trong tổng khấu trừ cố định, không trừ thêm lần nữa.{payrollSummary.status === "FINAL" && payrollSummary.isPaid ? " HRM đã ghi nhận thanh toán." : ""}</p>
                 </>
               ) : <p className="mt-2 text-sm text-[var(--muted)]">HRM chưa có bảng lương cho tháng này.</p>}
           </div>

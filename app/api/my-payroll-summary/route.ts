@@ -29,6 +29,7 @@ export async function GET(request: Request) {
       teachingIncome: result.teachingIncome ?? 0,
       insuranceDeduction: result.insuranceDeduction ?? 0,
       bhxhDeduction: result.bhxhDeduction ?? null,
+      fixedDeductionDetails: result.fixedDeductionDetails ?? null,
       otherDeduction: result.otherDeduction ?? 0,
       taxDeduction: result.taxDeduction ?? 0,
       netIncome: result.netIncome ?? 0,

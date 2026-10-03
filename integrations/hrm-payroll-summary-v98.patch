@@ -1,17 +1,26 @@
 --- a/src/Code.js
 +++ b/src/Code.js
-@@ -1154,0 +1155 @@
+@@ -1154,0 +1155,2 @@
 +    let bhxhDeduction = null;
-@@ -1229,0 +1231 @@
++    let fixedDeductionDetails = [];
+@@ -1160 +1162,5 @@
+-        if (lRow && tRow && tRow[3] !== 'Incident') insuranceDed += parseFloat(lRow[3]) || 0;
++        if (lRow && tRow && tRow[3] !== 'Incident') {
++          const amount = parseFloat(lRow[3]) || 0;
++          insuranceDed += amount;
++          fixedDeductionDetails.push({ name: String(tRow[1] || "Khấu trừ cố định"), amount: amount });
++        }
+@@ -1229,0 +1236,2 @@
 +        bhxhDeduction = Math.round(dynamicBhxhDed);
-@@ -1273 +1275 @@
++        fixedDeductionDetails.push({ name: "BHXH (sau hỗ trợ " + totalTeachingPeriods + " tiết)", amount: bhxhDeduction });
+@@ -1273 +1281 @@
 -        fixedDed: insuranceDed, incidentDed, tax: taxAmount,
-+        fixedDed: insuranceDed, bhxhDeduction, incidentDed, tax: taxAmount,
++        fixedDed: insuranceDed, bhxhDeduction, fixedDeductionDetails, incidentDed, tax: taxAmount,
 --- a/src/MettasoulIntegration.js
 +++ b/src/MettasoulIntegration.js
 @@ -494,0 +495 @@
 +  if (action === "GET_MY_PAYROLL_SUMMARY") return getMettasoulPayrollSummary_(payload);
-@@ -2318,0 +2320,43 @@
+@@ -2318,0 +2320,44 @@
 +
 +/** Returns only this METTASOUL teacher's monthly figures from HRM. */
 +function getMettasoulPayrollSummary_(payload) {
@@ -50,6 +59,7 @@
 +    teachingIncome: Number(record.productIncome || 0),
 +    insuranceDeduction: Number(record.fixedDed || 0),
 +    bhxhDeduction: record.bhxhDeduction == null ? null : Number(record.bhxhDeduction),
++    fixedDeductionDetails: Array.isArray(record.fixedDeductionDetails) ? record.fixedDeductionDetails.map(function(item) { return { name: String(item.name || ""), amount: Number(item.amount || 0) }; }) : null,
 +    otherDeduction: Number(record.incidentDed || 0),
 +    taxDeduction: Number(record.tax || 0),
 +    netIncome: Number(record.netIncome || 0)

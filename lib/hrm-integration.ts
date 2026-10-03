@@ -127,6 +127,7 @@ export type HrmPayrollSummaryResponse = HrmTeachingResponse & {
   teachingIncome?: number;
   insuranceDeduction?: number;
   bhxhDeduction?: number | null;
+  fixedDeductionDetails?: Array<{ name: string; amount: number }> | null;
   otherDeduction?: number;
   taxDeduction?: number;
   netIncome?: number;
