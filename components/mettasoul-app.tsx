@@ -812,6 +812,7 @@ export function MettasoulApp() {
     items: [createDraftScheduleItem()],
   });
   const [assignmentWeekStart, setAssignmentWeekStart] = useState(() => mondayDateKey(currentDateKey()));
+  const [assignmentSummaryDate, setAssignmentSummaryDate] = useState(() => currentDateKey());
   const [assignmentSchoolId, setAssignmentSchoolId] = useState("");
   const [assignmentClockMs, setAssignmentClockMs] = useState(0);
   const [schoolNeeds, setSchoolNeeds] = useState<SchoolTeachingNeed[]>([]);
@@ -6361,6 +6362,9 @@ export function MettasoulApp() {
 
   function renderAssignmentPanel() {
     const activeTopics = topics.filter((t) => t.active !== false);
+    const assignmentSummary = summarizeAssignedSchedules(schedules, assignmentSummaryDate);
+    const assignmentWeekEnd = addDaysToDateKey(mondayDateKey(assignmentSummaryDate), 6);
+    const assignmentDayLabel = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][new Date(`${assignmentSummaryDate}T00:00:00`).getDay()];
 
     const weekEnd = addDaysToDateKey(assignmentWeekStart, 6);
     const weekNeeds = schoolNeeds.filter((need) => need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd);
@@ -6651,6 +6655,29 @@ export function MettasoulApp() {
 
     return (
       <div className="space-y-5">
+        <section aria-label="Tổng hợp lịch đã giao" className="rounded-2xl border border-amber-200 bg-white p-3 shadow-sm sm:p-4">
+          <p className="mb-3 text-xs font-bold text-[var(--muted)]">Toàn bộ trường · lịch đã giao · tuần {formatDate(mondayDateKey(assignmentSummaryDate))}–{formatDate(assignmentWeekEnd)}</p>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[1.45fr_repeat(4,minmax(0,1fr))]">
+            <label className="flex min-h-24 flex-col justify-between rounded-xl border-t-4 border-amber-500 bg-amber-50 px-3 py-2">
+              <span className="text-xs font-black uppercase text-cyan-950">Ngày cần xem</span>
+              <span className="flex items-center gap-2">
+                <input type="date" value={assignmentSummaryDate} onChange={(event) => { if (event.target.value) setAssignmentSummaryDate(event.target.value); }} className="min-w-0 w-full rounded-lg border-2 border-amber-400 bg-yellow-100 px-2 py-1 text-base font-black text-blue-800 outline-none focus:border-blue-500" />
+                <span className="shrink-0 text-base font-black text-cyan-950">{assignmentDayLabel}</span>
+              </span>
+            </label>
+            {([
+              ["Tiết trong ngày", assignmentSummary.dayPeriods],
+              ["Tiết trong tuần", assignmentSummary.weekPeriods],
+              ["Tiết trong tháng", assignmentSummary.monthPeriods],
+              ["Số trường có lịch ngày này", assignmentSummary.daySchools],
+            ] as const).map(([label, value]) => (
+              <div key={label} className="flex min-h-24 flex-col items-center justify-between rounded-xl border-t-4 border-amber-500 bg-cyan-50 px-2 py-2 text-center">
+                <span className="text-xs font-black uppercase leading-tight text-cyan-950">{label}</span>
+                <strong className="text-2xl font-black text-orange-500">{value.toLocaleString("vi-VN")}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
         {renderAdminAvailabilityPanel()}
         <Panel title="Lịch trường theo tuần" action={assignmentSchoolId ? `${weekNeeds.length} tiết trong tuần` : "Chọn trường để bắt đầu"}>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -12991,6 +13018,29 @@ function scheduleLessonPeriodCount(schedule: Pick<Schedule, "lessonPeriods">) {
     .split(",")
     .map((period) => period.trim())
     .filter((period) => period === "lesson1" || period === "lesson2")).size || 1;
+}
+
+function summarizeAssignedSchedules(schedules: Schedule[], date: string) {
+  const weekStart = mondayDateKey(date);
+  const weekEnd = addDaysToDateKey(weekStart, 6);
+  const month = date.slice(0, 7);
+  const daySchoolIds = new Set<string>();
+  let dayPeriods = 0;
+  let weekPeriods = 0;
+  let monthPeriods = 0;
+
+  for (const schedule of schedules) {
+    if (schedule.status === "draft" || schedule.status === "cancelled") continue;
+    const periods = scheduleLessonPeriodCount(schedule);
+    if (schedule.date === date) {
+      dayPeriods += periods;
+      if (schedule.schoolId) daySchoolIds.add(schedule.schoolId);
+    }
+    if (schedule.date >= weekStart && schedule.date <= weekEnd) weekPeriods += periods;
+    if (schedule.date.startsWith(`${month}-`)) monthPeriods += periods;
+  }
+
+  return { dayPeriods, weekPeriods, monthPeriods, daySchools: daySchoolIds.size };
 }
 
 function isAssistantAssignedToSchedule(schedule: Pick<Schedule, "assistantIds">, assistantId: string) {
