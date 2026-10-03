@@ -118,6 +118,19 @@ export type HrmMcpLedgerResponse = HrmTeachingResponse & {
   entries: HrmMcpLedgerEntry[];
 };
 
+export type HrmPayrollSummaryResponse = HrmTeachingResponse & {
+  month: string;
+  available: boolean;
+  status: "FINAL" | "ESTIMATE" | "UNAVAILABLE";
+  isPaid?: boolean;
+  totalIncome?: number;
+  teachingIncome?: number;
+  insuranceDeduction?: number;
+  bhxhDeduction?: number | null;
+  otherDeduction?: number;
+  taxDeduction?: number;
+  netIncome?: number;
+};
 export type HrmPersonnelDirectoryResponse = HrmTeachingResponse & {
   people: Array<{
     teacherId: string;
@@ -206,6 +219,17 @@ export async function getMcpLedgerFromHrm(userEmail: string): Promise<HrmMcpLedg
   }, { requireEnabled: false });
 }
 
+
+/** Read-only monthly payroll figures for the signed-in teacher. */
+export async function getMyPayrollSummaryFromHrm(userEmail: string, teacherId: string, month: string): Promise<HrmPayrollSummaryResponse> {
+  return sendSignedPayload<HrmPayrollSummaryResponse>({
+    source: "METTASOUL",
+    action: "GET_MY_PAYROLL_SUMMARY",
+    userEmail,
+    teacherId,
+    month,
+  }, { requireEnabled: false });
+}
 /**
  * Read-only lookup for the existing METTASOUL teacher list. The HRM endpoint
  * returns only matched internal codes; it never exposes the HRM directory.

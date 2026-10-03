@@ -1,0 +1,57 @@
+--- a/src/Code.js
++++ b/src/Code.js
+@@ -1154,0 +1155 @@
++    let bhxhDeduction = null;
+@@ -1229,0 +1231 @@
++        bhxhDeduction = Math.round(dynamicBhxhDed);
+@@ -1273 +1275 @@
+-        fixedDed: insuranceDed, incidentDed, tax: taxAmount,
++        fixedDed: insuranceDed, bhxhDeduction, incidentDed, tax: taxAmount,
+--- a/src/MettasoulIntegration.js
++++ b/src/MettasoulIntegration.js
+@@ -494,0 +495 @@
++  if (action === "GET_MY_PAYROLL_SUMMARY") return getMettasoulPayrollSummary_(payload);
+@@ -2318,0 +2320,43 @@
++
++/** Returns only this METTASOUL teacher's monthly figures from HRM. */
++function getMettasoulPayrollSummary_(payload) {
++  const email = String(payload && payload.userEmail || "").trim().toLowerCase();
++  const teacherId = String(payload && payload.teacherId || "").trim();
++  const month = String(payload && payload.month || "").trim();
++  if (!/^\S+@\S+\.\S+$/.test(email) || !teacherId || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
++    throw integrationError_("INVALID_PAYROLL_QUERY", "Thiếu giáo viên hoặc tháng lương hợp lệ.");
++  }
++  const ss = getDatabase_();
++  const users = ss.getSheetByName("Users").getDataRange().getValues();
++  const matches = users.slice(1).filter(function(row) { return String(row[0] || "").trim().toLowerCase() === email; });
++  if (matches.length !== 1) throw integrationError_("PAYROLL_IDENTITY_NOT_FOUND", "Không tìm thấy hồ sơ nhân sự tương ứng.");
++  const settings = safeJsonParseServer_(matches[0][5]);
++  if (settings.mettasoulTeacherId && String(settings.mettasoulTeacherId) !== teacherId) {
++    throw integrationError_("PAYROLL_IDENTITY_MISMATCH", "Mã giáo viên không khớp với hồ sơ HRM.");
++  }
++
++  const statusSheet = ss.getSheetByName("PayrollStatus");
++  const statusRows = statusSheet ? statusSheet.getDataRange().getValues() : [];
++  const statusRow = statusRows.slice(1).find(function(row) {
++    return (safeDateStr_(row[0], "yyyy-MM") || String(row[0] || "").replace("'", "")) === month;
++  });
++  let approvedSnapshot = false;
++  if (statusRow && String(statusRow[1]) === "Approved" && statusRow[6]) {
++    try { approvedSnapshot = Array.isArray(JSON.parse(statusRow[6])); } catch (error) { /* calculate as provisional */ }
++  }
++  const payroll = getCompanyPayrollData_(month, false);
++  const record = (payroll.report || []).find(function(row) { return String(row.email || "").trim().toLowerCase() === email; });
++  if (!record) return { ok: true, month: month, available: false, status: "UNAVAILABLE" };
++  return {
++    ok: true, month: month, available: true,
++    status: approvedSnapshot ? "FINAL" : "ESTIMATE",
++    isPaid: Boolean(record.isPaid),
++    totalIncome: Number(record.totalIncome || 0),
++    teachingIncome: Number(record.productIncome || 0),
++    insuranceDeduction: Number(record.fixedDed || 0),
++    bhxhDeduction: record.bhxhDeduction == null ? null : Number(record.bhxhDeduction),
++    otherDeduction: Number(record.incidentDed || 0),
++    taxDeduction: Number(record.tax || 0),
++    netIncome: Number(record.netIncome || 0)
++  };
++}

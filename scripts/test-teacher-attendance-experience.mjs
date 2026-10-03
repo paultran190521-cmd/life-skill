@@ -15,7 +15,7 @@ assert.match(component, /teacherConfirmedKpiRows/);
 assert.match(component, /teacherKpiSchoolFilter/);
 assert.match(component, /teacherKpiMonthFilter/);
 assert.match(component, /Tổng tiền và MCP phía trên tự tính lại theo bộ lọc/);
-assert.match(component, /Tổng tiền từ HRM/);
+assert.match(component, /Tiền công giảng dạy trước khấu trừ/);
 assert.match(component, /Sổ KPI & MCP giảng dạy kỹ năng sống/);
 assert.match(component, /adminKpiTeacherFilter/);
 assert.match(component, /exportAdminTeachingKpiExcel/);
