@@ -8520,8 +8520,8 @@ export function MettasoulApp() {
           ) : null}
         </Panel>
 
-        {recentlyAssignedSchedules.length > 0 ? (
-          <Panel title={role === "admin" ? "Lịch vừa giao" : "Lịch mới được giao"} action={`${recentlyAssignedSchedules.length} lịch gần nhất`}>
+        {role !== "admin" && recentlyAssignedSchedules.length > 0 ? (
+          <Panel title="Lịch mới được giao" action={`${recentlyAssignedSchedules.length} lịch gần nhất`}>
             {renderScheduleList({ items: recentlyAssignedSchedules, compact: true, onOpenDetail: setSelectedScheduleDetail })}
           </Panel>
         ) : null}
