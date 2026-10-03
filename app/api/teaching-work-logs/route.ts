@@ -6,6 +6,7 @@ import { submitTeachingPeriodToHrm, type TeachingPeriodPayload } from "@/lib/hrm
 import {
   appendSheetRows,
   ensureSheetHeaders,
+  readSheetRowById,
   readSheetRowsBatch,
   teachingWorkLogHeaders,
   updateSheetRowById,
@@ -191,6 +192,13 @@ export async function POST(request: Request) {
       if (!existing) {
         await appendSheetRows("TeachingWorkLogs", [pendingWorkLog]);
       }
+    }
+    // HRM must never receive payroll before its recovery record is readable.
+    // Google Sheets can acknowledge an append to a displaced table, leaving
+    // nothing for a later schedule deletion to find and cancel.
+    const durablePending = await readSheetRowById("TeachingWorkLogs", workLogId);
+    if (durablePending?.status !== "PENDING" || durablePending.idempotencyKey !== idempotencyKey || durablePending.scheduleId !== schedule.id) {
+      throw new Error(`TeachingWorkLogs PENDING row ${workLogId} was not persisted; HRM submission blocked.`);
     }
     let hrmResult;
     const hrmStartedAt = performance.now();

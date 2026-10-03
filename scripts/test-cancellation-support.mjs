@@ -57,6 +57,7 @@ const scheduleRows = {
   Users: [{ teacherId: "t1", email: "teacher@example.com" }], Notifications: [],
 };
 const createdSupport = [];
+let dropPendingSupport = false;
 const scheduleRoute = load("app/api/schedules/[id]/route.ts", {
   "node:crypto": { createHash }, "next/server": { NextResponse: Response },
   "@/lib/api": { createRequestId: () => "test", createId: () => "notification", apiFailure: (status, error) => Response.json({ error }, { status }), apiError: (error) => Response.json({ error: error.message }, { status: 500 }) },
@@ -66,7 +67,13 @@ const scheduleRoute = load("app/api/schedules/[id]/route.ts", {
     ensureSheetHeaders: async () => {}, scheduleHeaders: [], teachingWorkLogHeaders: [], schoolTeachingNeedHeaders: [],
     readSheetRowById: async (name, id) => scheduleRows[name]?.find((row) => row.id === id),
     readSheetRows: async (name) => scheduleRows[name] || [], readSheetRowsBatch: async () => structuredClone(scheduleRows),
-    appendSheetRows: async (name, items) => scheduleRows[name].push(...structuredClone(items)),
+    appendSheetRows: async (name, items) => {
+      if (dropPendingSupport && name === "TeachingWorkLogs" && items.some((item) => item.status === "PENDING")) {
+        dropPendingSupport = false;
+        return;
+      }
+      scheduleRows[name].push(...structuredClone(items));
+    },
     updateSheetRowById: async (name, id, patch) => Object.assign(scheduleRows[name].find((row) => row.id === id), patch),
   },
   "@/lib/schedule-cascade-delete": { deleteSchedulesCascade: async () => {}, resetScheduleAssignmentData: async () => {} },
@@ -85,4 +92,28 @@ assert.equal(createdSupport[0].supportPercent, 50);
 assert.equal(scheduleRows.TeachingWorkLogs[0].money, 82500);
 assert.equal(scheduleRows.TeachingWorkLogs[0].mcpPoints, 20);
 assert.equal(scheduleRows.Schedules[0].cancellationReason, "Trường hủy trước buổi");
+scheduleRows.Schedules.push({ ...scheduleRows.Schedules[0], id: "lost-pending", status: "sent", cancellationReason: "" });
+dropPendingSupport = true;
+const priorSupportCalls = createdSupport.length;
+const missingPending = await scheduleRoute.PATCH(new Request("https://local/api/schedules/lost-pending", { method: "PATCH", body: JSON.stringify({ status: "cancelled", supportPercent: 50, adminReason: "Trường hủy trước buổi" }) }), { params: Promise.resolve({ id: "lost-pending" }) });
+assert.equal(missingPending.status, 500);
+assert.equal(createdSupport.length, priorSupportCalls, "No HRM support record may be created without a durable local PENDING row");
+const supportLog = scheduleRows.TeachingWorkLogs[0];
+supportLog.status = "PENDING";
+const worker = load("lib/payroll-reconciliation.ts", {
+  "@/lib/google-sheets": {
+    readSheetRowsBatch: async () => structuredClone({ TeachingWorkLogs: scheduleRows.TeachingWorkLogs, Schedules: scheduleRows.Schedules, Attendance: [] }),
+    updateSheetRowById: async (_name, id, patch) => Object.assign(scheduleRows.TeachingWorkLogs.find((row) => row.id === id), patch),
+  },
+  "@/lib/hrm-integration": {
+    submitTeachingPeriodToHrm: async () => { throw new Error("Support must use its own HRM action"); },
+    submitCancelledSupportToHrm: async (payload) => { createdSupport.push(payload); return { workLogId: "hrm-support", money: 82500, mcpPoints: 20 }; },
+  },
+  "@/lib/schedule-cancellation-reports": { readCancellationReports: async () => [], blocksParticipant: () => false },
+  "@/lib/teaching-work-log": load("lib/teaching-work-log.ts", { "node:crypto": { createHash } }),
+  "@/lib/worklog-rows": load("lib/worklog-rows.ts"),
+});
+assert.equal((await worker.reconcilePayrollOutbox()).confirmed, 1, "Pending support must recover without an attendance row");
+assert.equal(supportLog.status, "CONFIRMED");
+assert.equal(createdSupport.at(-1).entryMode, "CANCEL_SUPPORT");
 console.log("Admin cancellation before check-in records support and the teacher-visible reason.");

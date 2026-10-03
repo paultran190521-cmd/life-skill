@@ -121,15 +121,24 @@ export async function PATCH(request: Request, { params }: Params) {
             principalCount: new Set((groupPeers.length ? groupPeers : [schedule]).map((item) => item.teacherId)).size,
             policyContract: "TOPIC_REPORT_V1",
           };
+          const workLogId = deterministicTeachingWorkLogId(key);
+          await appendSheetRows("TeachingWorkLogs", [{
+            id: workLogId, scheduleId: id, periodId: id, teacherId: participantId, userEmail, roleCode,
+            idempotencyKey: key, eventId, status: "PENDING", approvedBy: auth.user.email, approvedAt: now,
+            updatedAt: now, submissionPayload: JSON.stringify(payload),
+          }]);
+          const durablePending = await readSheetRowById("TeachingWorkLogs", workLogId);
+          if (durablePending?.status !== "PENDING" || durablePending.idempotencyKey !== key || durablePending.scheduleId !== id) {
+            throw new Error(`TeachingWorkLogs PENDING row ${workLogId} was not persisted; HRM submission blocked.`);
+          }
           const result = await submitCancelledSupportToHrm(payload);
           const money = Number(result.money);
           if (!Number.isFinite(money)) return apiFailure(502, "HRM chưa trả tiền hỗ trợ hợp lệ.", undefined, requestId);
-          await appendSheetRows("TeachingWorkLogs", [{
-            id: deterministicTeachingWorkLogId(key), scheduleId: id, periodId: id, teacherId: participantId, userEmail, roleCode,
-            idempotencyKey: key, eventId, status: "CONFIRMED", hrmWorkLogId: result.workLogId || "", money,
+          await updateSheetRowById("TeachingWorkLogs", workLogId, {
+            status: "CONFIRMED", hrmWorkLogId: result.workLogId || "", money,
             mcpPoints: result.mcpPoints ?? "", mcpLedgerId: result.mcpLedgerId || "", policyVersion: result.policyVersion || "",
-            submittedAt: now, updatedAt: now, approvedBy: auth.user.email, approvedAt: now, submissionPayload: JSON.stringify(payload),
-          }]);
+            submittedAt: now, updatedAt: now,
+          });
         }
       }
       patch.cancellationReason = String(body.adminReason || "").trim();

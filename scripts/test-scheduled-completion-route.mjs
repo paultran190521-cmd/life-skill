@@ -20,6 +20,7 @@ assert.equal(uniqueWorkLogRows(["COMPLETED", "PENDING"].map((status) => ({ id: "
 let actor = { role: "teacher", teacherId: "t1", email: "teacher@example.com" };
 let reports = [];
 let submitted = [];
+let dropNextPendingAppend = false;
 const rows = {
   Schedules: [{ id: "s1", teacherId: "t1", date: "2026-09-23", schoolId: "school", classId: "class", timeSlotId: "slot", teachingEnvironment: "schoolyard_report", activityTypeCode: "STUDENT_TOPIC_REPORT_SUPPORT", status: "attended", assistantIds: "t2" }],
   TimeSlots: [{ id: "slot", start: "13:00", end: "13:45" }], Schools: [{ id: "school", name: "School" }], Classes: [{ id: "class", name: "Class" }],
@@ -29,7 +30,14 @@ const rows = {
 const sheetApi = {
   ensureSheetHeaders: async () => {}, teachingWorkLogHeaders: [],
   readSheetRowsBatch: async () => structuredClone(rows),
-  appendSheetRows: async (name, items) => { rows[name].push(...structuredClone(items)); },
+  appendSheetRows: async (name, items) => {
+    if (name === "TeachingWorkLogs" && dropNextPendingAppend && items.some((item) => item.status === "PENDING")) {
+      dropNextPendingAppend = false;
+      return;
+    }
+    rows[name].push(...structuredClone(items));
+  },
+  readSheetRowById: async (name, id) => structuredClone(rows[name].find((row) => row.id === id) || null),
   updateSheetRowById: async (name, id, patch) => Object.assign(rows[name].find((row) => row.id === id), structuredClone(patch)),
 };
 const api = {
@@ -90,6 +98,12 @@ assert.equal(result.status, 200, "Check-in creates a work log before a period en
 assert.equal(submitted.at(-1).entryMode, "CHECK_IN");
 assert.equal(submitted.at(-1).sessionStartAt, "2099-09-23T00:00:00.000Z", "All same-school morning periods use the first session start");
 assert.equal((await post({ scheduleId: "s4", intent: "check-in" })).body.idempotent, true);
+rows.Schedules.push({ id: "s5", teacherId: "t1", date: "2099-09-23", schoolId: "school", classId: "class", timeSlotId: "morning1", teachingEnvironment: "in_class", status: "attended" });
+rows.Attendance.push({ id: "a5", scheduleId: "s5", teacherId: "t1", checkedInAt: "2099-09-23T00:35:00.000Z" });
+dropNextPendingAppend = true;
+const beforeLostAppend = submitted.length;
+assert.equal((await post({ scheduleId: "s5", intent: "check-in" })).status, 500);
+assert.equal(submitted.length, beforeLostAppend, "HRM must not receive an orphan payroll event when the pending row is missing");
 console.log("Completion route tests passed: attendance, optional evidence, no client amount/approval spoofing, admin approval, idempotency, participant isolation and cancellation blocking.");
 
 const worker = load("lib/payroll-reconciliation.ts", {
