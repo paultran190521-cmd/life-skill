@@ -671,9 +671,9 @@ const teacherTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> 
   { id: "calendar", label: "Lịch của tôi", icon: CalendarDays },
   { id: "activities", label: "Công việc & MCP", icon: ListChecks },
   { id: "plans", label: "Kế hoạch GD", icon: FileUp },
-  { id: "resources", label: "Tài nguyên", icon: BookOpen },
   { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
+  { id: "resources", label: "Tài nguyên", icon: BookOpen },
 ];
 
 const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = [
@@ -681,9 +681,9 @@ const assistantTabs: Array<{ id: TabId; label: string; icon: React.ElementType }
   { id: "calendar", label: "Lịch trợ giảng", icon: CalendarDays },
   { id: "activities", label: "Công việc & MCP", icon: ListChecks },
   { id: "plans", label: "Kế hoạch GD", icon: BookOpen },
-  { id: "resources", label: "Tài nguyên", icon: BookOpen },
   { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
+  { id: "resources", label: "Tài nguyên", icon: BookOpen },
 ];
 
 export function MettasoulApp() {
