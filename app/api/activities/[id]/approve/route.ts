@@ -13,6 +13,13 @@ function pendingIsFresh(status: string, updatedAt: string) {
   return status === "PENDING" && Date.now() - Date.parse(updatedAt || "") < 120_000;
 }
 
+function activityHasEnded(date: string, endTime: string) {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
+  const part = (name: string) => parts.find((item) => item.type === name)?.value || "";
+  const today = `${part("year")}-${part("month")}-${part("day")}`;
+  return date < today || (date === today && (!endTime || endTime <= `${part("hour")}:${part("minute")}`));
+}
+
 export async function POST(request: Request, { params }: Params) {
   const requestId = createRequestId("activity-attendance");
   try {
@@ -37,6 +44,7 @@ export async function POST(request: Request, { params }: Params) {
     const type = types.find((item) => item.id === activity.activityTypeId);
     const user = rows.Users.find((item) => item.teacherId === assignment.teacherId);
     if (!type || !user?.email) return apiFailure(409, "Thiếu loại hoạt động hoặc email nhân sự.", undefined, requestId);
+    if (!activityHasEnded(activity.date, activity.endTime)) return apiFailure(409, "Chỉ chấm công sau khi hoạt động kết thúc.", undefined, requestId);
 
     if (!present) {
       if (assignment.status === "APPROVED" || assignment.integrationStatus === "CONFIRMED") return apiFailure(409, "HRM đã xác nhận quyền lợi. Cần hủy quyền lợi trước khi sửa chấm công.", undefined, requestId);
