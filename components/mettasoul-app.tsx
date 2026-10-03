@@ -348,7 +348,7 @@ type ClassCreateResponse = ClassRoom | { classes: ClassRoom[] };
 
 type CalendarViewMode = "month" | "week" | "day";
 type AvailabilityCalendarViewMode = "month" | "week";
-type CalendarSortMode = "date-asc" | "date-desc" | "status";
+type CalendarSortMode = "sent-desc" | "date-asc" | "date-desc" | "status";
 type LessonPlanAdminFocus = "uploaded" | "submitted" | "missing" | "upcoming-missing";
 
 type BrandedExcelOptions = {
@@ -587,7 +587,7 @@ const supportedLessonPlanMimeTypes = new Set([
   "text/csv",
 ]);
 const supportedLessonPlanExtensions = [".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".txt", ".csv"];
-const calendarFilterStorageKey = "hoc-vien-mettasoul-calendar-filters-v1";
+const calendarFilterStorageKey = "hoc-vien-mettasoul-calendar-filters-v2";
 const defaultCalendarFilters: CalendarFilters = {
   status: "all",
   teacherId: "all",
@@ -596,7 +596,7 @@ const defaultCalendarFilters: CalendarFilters = {
   timeSlotId: "all",
   dateFrom: "",
   dateTo: "",
-  sort: "date-asc",
+  sort: "sent-desc",
 };
 const teachingEnvironmentOptions = [
   {
@@ -6297,8 +6297,8 @@ export function MettasoulApp() {
         </SpotlightGrid>
 
         <div className="grid gap-5 xl:grid-cols-[1.5fr_0.85fr]">
-          <Panel title="Lịch dạy gần nhất" action="Xem theo tuần">
-            {renderScheduleList({ items: visibleSchedules.slice(0, 5), compact: true })}
+          <Panel title="Lịch vừa giao" action="Xem theo tuần">
+            {renderScheduleList({ items: sortSchedules(visibleSchedules, "sent-desc").slice(0, 5), compact: true })}
           </Panel>
           <Panel title="Thông báo vận hành" action={`${unreadNotifications} mới`}>
             <div className="space-y-3">
@@ -6353,7 +6353,7 @@ export function MettasoulApp() {
           Trợ giảng xác nhận và điểm danh cho chính mình. Giáo án của giáo viên được mở ở chế độ chỉ đọc; mọi chỉnh sửa hoặc tải lên vẫn thuộc giáo viên phụ trách.
         </div>
         <Panel title="Lịch trợ giảng gần nhất" action={`${upcomingSchedules.length} lịch sắp tới`}>
-          {renderScheduleList({ items: upcomingSchedules.slice(0, 8) })}
+          {renderScheduleList({ items: sortSchedules(upcomingSchedules, "sent-desc").slice(0, 8) })}
         </Panel>
       </div>
     );
@@ -7853,6 +7853,14 @@ export function MettasoulApp() {
 
   function renderCalendarPanel() {
     const todayKey = currentDateKey();
+    const recentlyAssignedSchedules = sortSchedules(
+      schedules.filter((schedule) =>
+        schedule.status !== "draft" &&
+        schedule.status !== "cancelled" &&
+        (role === "admin" || schedule.teacherId === currentTeacherId || isAssistantAssignedToSchedule(schedule, currentTeacherId)),
+      ),
+      "sent-desc",
+    ).slice(0, 5);
     const teacherUntaughtSchedules = role === "admin"
       ? []
       : schedules
@@ -7861,7 +7869,7 @@ export function MettasoulApp() {
           && schedule.status !== "cancelled"
           && !isTeachingPeriodEnded(schedule, timeSlots),
         )
-        .sort((left, right) => left.date.localeCompare(right.date) || (lookupSchedule(left).slot?.start || "").localeCompare(lookupSchedule(right).slot?.start || ""));
+        .sort(compareRecentlySentSchedules);
     const calendarGridClass = calendarViewMode === "day" ? "grid-cols-1" : "grid-cols-7";
     const showTeacherBadgesInCalendarCell = calendarViewMode === "day" || !isMobileViewport;
     const bulkTargets = selectedDaySchedules.filter((schedule) => selectedScheduleIds.includes(schedule.id));
@@ -7879,6 +7887,11 @@ export function MettasoulApp() {
 
     return (
       <div className="space-y-5">
+        {recentlyAssignedSchedules.length > 0 ? (
+          <Panel title={role === "admin" ? "Lịch vừa giao" : "Lịch mới được giao"} action={`${recentlyAssignedSchedules.length} lịch gần nhất`}>
+            {renderScheduleList({ items: recentlyAssignedSchedules, compact: true, onOpenDetail: setSelectedScheduleDetail })}
+          </Panel>
+        ) : null}
         {availabilityChoiceOpen ? <ViewportPortal>
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
             <div role="dialog" aria-modal="true" aria-labelledby="availability-choice-title" className="w-full max-w-xl rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl sm:p-7">
@@ -8257,8 +8270,9 @@ export function MettasoulApp() {
                 onChange={(event) => setCalendarFilters((current) => ({ ...current, sort: event.target.value as CalendarSortMode }))}
                 className={compactInputClass}
               >
-                <option value="date-asc">Sớm nhất trước</option>
-                <option value="date-desc">Mới nhất trước</option>
+                <option value="sent-desc">Vừa giao trước</option>
+                <option value="date-asc">Ngày dạy sớm trước</option>
+                <option value="date-desc">Ngày dạy muộn trước</option>
                 <option value="status">Theo trạng thái</option>
               </select>
               <button
@@ -8477,7 +8491,7 @@ export function MettasoulApp() {
                 </button>
               </div>
             ) : null}
-            {renderScheduleList({ items: selectedDaySchedules, selectedIds: selectedScheduleIds, onToggleSelect: role === "admin" ? toggleScheduleSelection : undefined, onOpenDetail: setSelectedScheduleDetail, auditLogs: auditLogs, expandedHistoryId: expandedHistoryScheduleId, onToggleHistory: (scheduleId) =>
+            {renderScheduleList({ items: selectedDaySchedules, sortMode: calendarFilters.sort, selectedIds: selectedScheduleIds, onToggleSelect: role === "admin" ? toggleScheduleSelection : undefined, onOpenDetail: setSelectedScheduleDetail, auditLogs: auditLogs, expandedHistoryId: expandedHistoryScheduleId, onToggleHistory: (scheduleId) =>
                 setExpandedHistoryScheduleId((current) => (current === scheduleId ? "" : scheduleId)) })}
           </Panel>
         ) : (
@@ -8770,7 +8784,7 @@ export function MettasoulApp() {
   function renderAssistantLessonPlansPanel() {
     const assignedSchedules = schedules
       .filter((schedule) => isAssistantAssignedToSchedule(schedule, currentTeacherId) && schedule.status !== "cancelled")
-      .sort((left, right) => left.date.localeCompare(right.date));
+      .sort(compareRecentlySentSchedules);
 
     return (
       <Panel title="Giáo án tham khảo" action="Chỉ đọc">
@@ -8815,7 +8829,7 @@ export function MettasoulApp() {
     const submittedScheduleIds = new Set(lessonPlans.map((plan) => plan.scheduleId));
     const missingSchedules = operationalSchedules
       .filter((schedule) => !submittedScheduleIds.has(schedule.id))
-      .sort((left, right) => left.date.localeCompare(right.date));
+      .sort(compareRecentlySentSchedules);
     const upcomingMissingSchedules = missingSchedules.filter((schedule) => isWithinNextDays(schedule.date, 3));
     const latestPlanRows = lessonPlans
       .map((plan) => {
@@ -9044,13 +9058,13 @@ export function MettasoulApp() {
     );
     const pendingSchedules = scopedSchedules
       .filter((schedule) => !submittedScheduleIds.has(schedule.id))
-      .sort((left, right) => left.date.localeCompare(right.date));
+      .sort(compareRecentlySentSchedules);
     const submittedSchedules = scopedSchedules
       .filter((schedule) => submittedScheduleIds.has(schedule.id))
-      .sort((left, right) => left.date.localeCompare(right.date));
+      .sort(compareRecentlySentSchedules);
     const lessonPlanScheduleCards = scopedSchedules
       .slice()
-      .sort((left, right) => left.date.localeCompare(right.date));
+      .sort(compareRecentlySentSchedules);
     const myPlanRows = lessonPlans
       .filter((plan) => plan.teacherId === currentTeacherId)
       .map((plan) => {
@@ -10141,16 +10155,16 @@ export function MettasoulApp() {
                 </div>
                 <div className="space-y-3">
                   {attendanceAdminFocus === "attended-by-day" && selectedAttendanceRows.length > 0 ? (
-                    Array.from(new Set(selectedAttendanceRows.map((schedule) => schedule.date))).map((date) => (
+                    Array.from(new Set(sortSchedules(selectedAttendanceRows, "sent-desc").map((schedule) => schedule.date))).map((date) => (
                       <section key={date} className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/45 p-3">
                         <p className="text-sm font-black text-emerald-900">{formatDate(date)}</p>
-                        {selectedAttendanceRows.filter((schedule) => schedule.date === date).map((schedule) => (
+                        {sortSchedules(selectedAttendanceRows.filter((schedule) => schedule.date === date), "sent-desc").map((schedule) => (
                           <Fragment key={schedule.id}>{renderAttendanceScheduleRow({ schedule: schedule, showLateDetail: true })}</Fragment>
                         ))}
                       </section>
                     ))
                   ) : selectedAttendanceRows.length > 0 ? (
-                    selectedAttendanceRows.map((schedule) => (
+                    sortSchedules(selectedAttendanceRows, "sent-desc").map((schedule) => (
                       <Fragment key={schedule.id}>{renderAttendanceScheduleRow({ schedule: schedule, showLateDetail: true })}</Fragment>
                     ))
                   ) : (
@@ -10189,7 +10203,7 @@ export function MettasoulApp() {
                 </div>
                 <div className="space-y-3">
                   {selectedWarningRows.length > 0 ? (
-                    selectedWarningRows.map((schedule) => (
+                    sortSchedules(selectedWarningRows, "sent-desc").map((schedule) => (
                       <Fragment key={schedule.id}>{renderAttendanceScheduleRow({ schedule: schedule, showLateDetail: true })}</Fragment>
                     ))
                   ) : (
@@ -11618,6 +11632,7 @@ export function MettasoulApp() {
   }
   function renderScheduleList({
     items,
+    sortMode = "sent-desc",
     compact = false,
     selectedIds = [],
     onToggleSelect,
@@ -11627,6 +11642,7 @@ export function MettasoulApp() {
     onToggleHistory,
   }: {
     items: Schedule[];
+    sortMode?: CalendarSortMode;
     compact?: boolean;
     selectedIds?: string[];
     onToggleSelect?: (scheduleId: string) => void;
@@ -11644,9 +11660,11 @@ export function MettasoulApp() {
       );
     }
 
+    const orderedItems = sortSchedules(items, sortMode);
+
     return (
       <div className="app-scrollbar overflow-x-auto">
-        <PagedList items={items} resetKey={`${items[0]?.id ?? ""}:${items.length}`} className="space-y-3 sm:min-w-[860px]">
+        <PagedList items={orderedItems} resetKey={`${orderedItems[0]?.id ?? ""}:${orderedItems[0]?.sentAt ?? ""}:${items.length}:${sortMode}`} className="space-y-3 sm:min-w-[860px]">
           {(pageSchedules) => pageSchedules.map((schedule) => {
             const meta = lookupSchedule(schedule);
             const checkedIn = Boolean(meta.checkIn);
@@ -13921,6 +13939,9 @@ function sortSchedules(schedules: Schedule[], sortMode: CalendarSortMode) {
   };
 
   return [...schedules].sort((a, b) => {
+    if (sortMode === "sent-desc") {
+      return compareRecentlySentSchedules(a, b);
+    }
     if (sortMode === "date-desc") {
       return b.date.localeCompare(a.date);
     }
@@ -13930,6 +13951,12 @@ function sortSchedules(schedules: Schedule[], sortMode: CalendarSortMode) {
     }
     return a.date.localeCompare(b.date);
   });
+}
+
+function compareRecentlySentSchedules(a: Schedule, b: Schedule) {
+  return (b.sentAt || "").localeCompare(a.sentAt || "") ||
+    b.date.localeCompare(a.date) ||
+    b.id.localeCompare(a.id);
 }
 
 function loadCalendarFilters(): CalendarFilters {
