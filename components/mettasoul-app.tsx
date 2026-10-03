@@ -74,6 +74,7 @@ import { getSchoolAssignmentProgress, isSchoolNeedEditHighlighted, schoolNeedEdi
 import { scheduledLessonSections } from "@/lib/lessons";
 import { attendanceGroupKey, attendanceSessionForStart } from "@/lib/attendance-grouping";
 import { canReuseLessonPlan, findReusableLessonPlan } from "@/lib/lesson-plan-reuse";
+import { activityHasEnded } from "@/lib/activity-attendance-time";
 import { attendanceLookupKey, groupByKey, indexById, legacyScheduleGroupKey, buildTextSearchIndex, searchTextIndex } from "@/lib/view-index";
 import {
   availabilityTimeRangeKey,
@@ -725,6 +726,7 @@ export function MettasoulApp() {
   const [activityLeadTeacherId, setActivityLeadTeacherId] = useState("");
   const [hrmIntegrationConfigured, setHrmIntegrationConfigured] = useState(false);
   const [internalSharingPolicyReady, setInternalSharingPolicyReady] = useState(false);
+  const [activityClockMs, setActivityClockMs] = useState(0);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [historyLoadError, setHistoryLoadError] = useState("");
   const [weeklyLoadError, setWeeklyLoadError] = useState("");
@@ -1347,6 +1349,13 @@ export function MettasoulApp() {
     if (role !== "admin" || activeTab !== "assignment") return;
     setAssignmentClockMs(Date.now());
     const timer = window.setInterval(() => setAssignmentClockMs(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [activeTab, role]);
+
+  useEffect(() => {
+    if (role !== "admin" || activeTab !== "activities") return;
+    setActivityClockMs(Date.now());
+    const timer = window.setInterval(() => setActivityClockMs(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, [activeTab, role]);
 
@@ -7914,6 +7923,10 @@ export function MettasoulApp() {
   }
 
   async function saveActivityAttendance(activity: ActivityOccurrence, assignments: ActivityAssignment[], formData: FormData) {
+    if (!activityHasEnded(activity.date, activity.endTime, new Date())) {
+      pushToast("Chưa đến giờ chấm công", `Hoạt động kết thúc lúc ${activity.endTime || "cuối ngày"} ngày ${formatDate(activity.date)}. Vui lòng chấm công sau thời điểm này.`, "warning");
+      return;
+    }
     if (!assignments.some((assignment) => formData.get(`attendance_${assignment.id}`))) {
       pushToast("Chưa chọn kết quả", "Hãy chọn có mặt hoặc vắng mặt cho ít nhất một người.", "warning");
       return;
@@ -8081,6 +8094,7 @@ export function MettasoulApp() {
             {visibleActivities.length === 0 ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-[var(--muted)]">Chưa có hoạt động phù hợp.</p> : visibleActivities.map((activity) => {
               const type = typeById.get(activity.activityTypeId);
               const participants = activityAssignments.filter((assignment) => assignment.activityId === activity.id);
+              const attendanceReady = activityClockMs > 0 && activityHasEnded(activity.date, activity.endTime, new Date(activityClockMs));
               return <div key={activity.id} className="rounded-xl border border-cyan-100 bg-white p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-black text-[var(--brand-dark)]">{activity.title}</p><p className="mt-1 text-xs font-semibold text-[var(--muted)]">{activity.date}{activity.startTime ? ` · ${activity.startTime}${activity.endTime ? `–${activity.endTime}` : ""}` : ""}{activity.location ? ` · ${activity.location}` : ""}</p></div><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-fuchsia-50 px-2 py-1 text-xs font-black text-fuchsia-800">{type?.name || "Loại hoạt động"}</span>{role === "admin" ? <><button type="button" onClick={() => setActivityEditDraft(activity)} className="inline-flex items-center gap-1 rounded-lg border border-cyan-200 bg-white px-2.5 py-1.5 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"><Pencil size={14} /> Sửa</button><button type="button" onClick={() => void deleteActivity(activity)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-black text-rose-700 transition hover:bg-rose-50"><Trash2 size={14} /> Xóa</button></> : null}</div></div>
                 <p className="mt-2 text-xs text-[var(--muted)]">{activity.note || "Quản trị viên chấm công sau khi hoạt động kết thúc. Quyền lợi sẽ theo kết quả HRM xác nhận."}</p>
@@ -8089,12 +8103,13 @@ export function MettasoulApp() {
                     <div><p className="text-sm font-bold text-[var(--brand-dark)]">{teacherName(assignment.teacherId)} · {type?.code === "INTERNAL_SHARING" ? assignment.roleCode === "LEAD" ? "Người chủ trì / diễn giả" : "Người tham dự" : "Người thực hiện"}</p>
                       <p className="text-xs text-[var(--muted)]">{assignment.status === "APPROVED" ? "HRM đã xác nhận" : assignment.status === "REJECTED" ? "Vắng mặt" : "Chưa chấm công"}{assignment.cashAmount && assignment.cashAmount > 0 ? ` · ${assignment.cashAmount.toLocaleString("vi-VN")} ₫` : ""}{assignment.mcpPoints && assignment.mcpPoints > 0 ? ` · +${assignment.mcpPoints} MCP` : ""}{assignment.rewardEmailStatus === "FAILED" ? " · Email gửi lỗi" : ""}</p>
                     </div>
-                    {assignment.status !== "APPROVED" || assignment.rewardEmailStatus === "FAILED" ? <select name={`attendance_${assignment.id}`} defaultValue="" className="rounded-lg border border-cyan-100 bg-white px-2 py-2 text-sm" aria-label={`Chấm công ${teacherName(assignment.teacherId)}`}>
+                      {assignment.status !== "APPROVED" || assignment.rewardEmailStatus === "FAILED" ? <select name={`attendance_${assignment.id}`} defaultValue="" disabled={!attendanceReady} className="rounded-lg border border-cyan-100 bg-white px-2 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Chấm công ${teacherName(assignment.teacherId)}`}>
                       <option value="">Chọn kết quả</option><option value="PRESENT" disabled={type?.code === "INTERNAL_SHARING" && !internalSharingPolicyReady}>{assignment.status === "APPROVED" ? "Gửi lại email" : "Có mặt / hoàn thành"}</option>{assignment.status !== "APPROVED" ? <option value="ABSENT">Vắng mặt / không hoàn thành</option> : null}
                     </select> : null}
                     {assignment.status !== "APPROVED" ? <input name={`evidence_${assignment.id}`} type="url" placeholder={type?.requiresEvidence ? "Link minh chứng bắt buộc https://…" : "Link minh chứng (nếu có) https://…"} defaultValue={assignment.evidenceUrl || ""} className="rounded-lg border border-cyan-100 bg-white px-2 py-2 text-sm sm:col-span-2" /> : null}
                   </div>)}
-                  {participants.some((assignment) => assignment.status !== "APPROVED" || assignment.rewardEmailStatus === "FAILED") ? <button type="submit" disabled={isBusy || !hrmIntegrationConfigured} className="rounded-lg bg-fuchsia-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50">Lưu chấm công</button> : null}
+                  {participants.some((assignment) => assignment.status !== "APPROVED" || assignment.rewardEmailStatus === "FAILED") ? <button type="submit" disabled={isBusy || !hrmIntegrationConfigured || !attendanceReady} className="rounded-lg bg-fuchsia-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50">Lưu chấm công</button> : null}
+                  {!attendanceReady ? <p className="text-xs font-semibold text-amber-800">Chấm công sau {activity.endTime || "cuối ngày"} ngày {formatDate(activity.date)} (giờ Việt Nam).</p> : null}
                   {!hrmIntegrationConfigured ? <p className="text-xs text-amber-800">Cần kết nối HRM để ghi nhận quyền lợi.</p> : null}
                   {type?.code === "INTERNAL_SHARING" && !internalSharingPolicyReady ? <p className="text-xs text-amber-800">Chờ xác nhận hai mức quyền lợi trên HRM trước khi ghi có mặt cho buổi chia sẻ.</p> : null}
                 </form> : <div className="mt-3 space-y-2">{participants.filter((assignment) => assignment.teacherId === currentTeacherId).map((assignment) => <div key={assignment.id} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="font-bold text-[var(--brand-dark)]">{type?.code === "INTERNAL_SHARING" ? assignment.roleCode === "LEAD" ? "Người chủ trì / diễn giả" : "Người tham dự" : "Người thực hiện"} · {assignment.status === "APPROVED" ? "Đã được admin ghi nhận" : assignment.status === "REJECTED" ? "Không được ghi nhận" : "Chờ admin chấm công"}</p>{assignment.status === "APPROVED" && ((assignment.cashAmount ?? 0) > 0 || (assignment.mcpPoints ?? 0) > 0) ? <p className="mt-1 text-xs text-[var(--muted)]">{assignment.cashAmount && assignment.cashAmount > 0 ? `Thù lao: ${assignment.cashAmount.toLocaleString("vi-VN")} ₫` : ""}{assignment.cashAmount && assignment.cashAmount > 0 && assignment.mcpPoints && assignment.mcpPoints > 0 ? " · " : ""}{assignment.mcpPoints && assignment.mcpPoints > 0 ? `MCP: +${assignment.mcpPoints}` : ""}</p> : null}</div>)}</div>}
