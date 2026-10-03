@@ -8010,11 +8010,6 @@ export function MettasoulApp() {
 
     return (
       <div className="space-y-5">
-        {recentlyAssignedSchedules.length > 0 ? (
-          <Panel title={role === "admin" ? "Lịch vừa giao" : "Lịch mới được giao"} action={`${recentlyAssignedSchedules.length} lịch gần nhất`}>
-            {renderScheduleList({ items: recentlyAssignedSchedules, compact: true, onOpenDetail: setSelectedScheduleDetail })}
-          </Panel>
-        ) : null}
         {availabilityChoiceOpen ? <ViewportPortal>
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
             <div role="dialog" aria-modal="true" aria-labelledby="availability-choice-title" className="w-full max-w-xl rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl sm:p-7">
@@ -8524,6 +8519,12 @@ export function MettasoulApp() {
             </div>
           ) : null}
         </Panel>
+
+        {recentlyAssignedSchedules.length > 0 ? (
+          <Panel title={role === "admin" ? "Lịch vừa giao" : "Lịch mới được giao"} action={`${recentlyAssignedSchedules.length} lịch gần nhất`}>
+            {renderScheduleList({ items: recentlyAssignedSchedules, compact: true, onOpenDetail: setSelectedScheduleDetail })}
+          </Panel>
+        ) : null}
 
         {role !== "admin" ? (
           <Panel title="Lịch chưa dạy" action={`${teacherUntaughtSchedules.length} lịch`}>
