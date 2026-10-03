@@ -72,6 +72,7 @@ import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy"
 import { findConfiguredSchoolNeedMergeSlot } from "@/lib/school-need-merge";
 import { getSchoolAssignmentProgress, isSchoolNeedEditHighlighted, schoolNeedEditLabel } from "@/lib/school-assignment-progress";
 import { scheduledLessonSections } from "@/lib/lessons";
+import { attendanceGroupKey, attendanceSessionForStart } from "@/lib/attendance-grouping";
 import { canReuseLessonPlan, findReusableLessonPlan } from "@/lib/lesson-plan-reuse";
 import { attendanceLookupKey, groupByKey, indexById, legacyScheduleGroupKey, buildTextSearchIndex, searchTextIndex } from "@/lib/view-index";
 import {
@@ -3052,7 +3053,9 @@ export function MettasoulApp() {
     let confirmedCount = 0;
     let pendingCount = 0;
     let failedCount = 0;
+    setPendingTeachingSyncIds((ids) => Array.from(new Set([...ids, ...regularPeriods.map((period) => period.id)])));
     for (const period of regularPeriods) {
+      let syncPending = false;
       try {
         const result = await apiRequest<TeachingWorkLogCreateResponse>("/api/teaching-work-logs", {
           method: "POST",
@@ -3060,6 +3063,7 @@ export function MettasoulApp() {
         });
         setTeachingWorkLogs((items) => [result.workLog, ...items.filter((item) => item.id !== result.workLog.id)]);
         if (result.syncPending) {
+          syncPending = true;
           pendingCount += 1;
           void reconcilePendingTeachingWorkLog(period, result.retryAfterMs);
         } else {
@@ -3067,6 +3071,8 @@ export function MettasoulApp() {
         }
       } catch {
         failedCount += 1;
+      } finally {
+        if (!syncPending) setPendingTeachingSyncIds((ids) => ids.filter((id) => id !== period.id));
       }
     }
     if (regularPeriods.length > 0) {
@@ -10293,162 +10299,98 @@ export function MettasoulApp() {
       );
     }
 
+    const teachingPeriods = scopedSchedules.filter((item) => canonicalParticipantSchedule(item, currentTeacherId, schedules).id === item.id);
+    const attendanceGroups = Array.from(groupByKey(
+      sortSchedules(scopedSchedules, "sent-desc"),
+      (item) => attendanceGroupKey({ ...item, teacherId: currentTeacherId }, timeSlots) || item.id,
+    ).entries());
+    const confirmedPeriodIds = new Set(teachingWorkLogs.filter((item) => item.teacherId === currentTeacherId && item.status === "CONFIRMED").map((item) => item.scheduleId));
+    const reportedPeriodIds = new Set(cancellationReports.filter((item) => item.teacherId === currentTeacherId && item.status !== "REJECTED").map((item) => item.scheduleId));
+
     return (
       <div className="space-y-5">
-      <Panel title="Điểm danh & ghi công theo trường và buổi" action="Một lần cho toàn bộ tiết cùng trường, cùng buổi">
-        <div className="space-y-3">
-          {scopedSchedules.map((schedule) => {
-            const meta = lookupSchedule(schedule);
-            const isCheckedIn = Boolean(meta.checkIn);
-            const isCancelled = schedule.status === "cancelled";
+      <Panel title="Điểm danh, công & hủy tiết" action="Điểm danh một lần cho các tiết cùng trường, cùng buổi">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-xl bg-cyan-50 px-3 py-2 text-xs font-bold text-cyan-900">Tổng tiết <strong className="ml-1 text-base">{teachingPeriods.length}</strong></div>
+            <div className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900">Đã điểm danh <strong className="ml-1 text-base">{teachingPeriods.filter((item) => Boolean(lookupSchedule(item).checkIn)).length}</strong></div>
+            <div className="rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-900">HRM đã ghi <strong className="ml-1 text-base">{teachingPeriods.filter((item) => confirmedPeriodIds.has(item.id)).length}</strong></div>
+            <div className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-900">Đã báo hủy <strong className="ml-1 text-base">{teachingPeriods.filter((item) => reportedPeriodIds.has(item.id)).length}</strong></div>
+          </div>
+          {!hrmIntegrationConfigured ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">Kết nối HRM đang tắt. Quản trị viên cần hoàn tất cấu hình để ghi công.</div> : null}
+          {attendanceGroups.map(([groupKey, groupSchedules]) => {
+            const periods = groupSchedules
+              .filter((item) => canonicalParticipantSchedule(item, currentTeacherId, schedules).id === item.id)
+              .sort((left, right) => String(slotById.get(left.timeSlotId)?.start || "").localeCompare(String(slotById.get(right.timeSlotId)?.start || "")));
+            const activeSchedules = groupSchedules.filter((item) => item.status !== "cancelled");
+            const firstMissing = activeSchedules.find((item) => !lookupSchedule(item).checkIn);
+            const first = groupSchedules[0];
+            const firstSlot = slotById.get(first.timeSlotId);
+            const session = attendanceSessionForStart(firstSlot?.start) === "afternoon" ? "Buổi chiều" : "Buổi sáng";
+            const checkedAt = activeSchedules.map((item) => lookupSchedule(item).checkIn?.checkedInAt).find(Boolean);
+            const needsAttention = groupSchedules.some((item) => item.id === attendanceRequiredScheduleId);
             return (
-              <div
-                key={schedule.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => setSelectedScheduleDetail(schedule)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedScheduleDetail(schedule);
-                  }
-                }}
-                className={`grid gap-4 rounded-2xl border bg-white p-4 shadow-sm transition lg:grid-cols-[1fr_auto] ${
-                  attendanceRequiredScheduleId === schedule.id
-                    ? "border-amber-400 ring-4 ring-amber-200/80"
-                    : "border-[var(--line)] hover:border-cyan-300"
-                }`}
-              >
-                <div>
-                  <p className="text-sm font-black text-[var(--brand-dark)]">
-                    {meta.slot?.label} - {meta.lesson?.title}
-                  </p>
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    {meta.teacher?.name} tại {meta.school?.name}, {scheduleParticipantLabel(schedule, classes)}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs font-black">
-                    <span className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-cyan-800">
-                      <CalendarDays size={14} />
-                      Ngày dạy {formatDate(schedule.date)}
-                    </span>
-                    <span className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-indigo-700">
-                      <Clock3 size={14} />
-                      Bắt đầu {meta.slot?.start || "--:--"} · Kết thúc {meta.slot?.end || "--:--"}
-                    </span>
+              <section key={groupKey} className={`rounded-2xl border bg-white p-3 shadow-sm sm:p-4 ${needsAttention ? "border-amber-400 ring-4 ring-amber-200/80" : "border-[var(--line)]"}`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-[var(--brand-dark)]">{schoolById.get(first.schoolId)?.name || "Trường dạy"} · {session} · {formatDate(first.date)}</p>
+                    <p className="mt-1 text-xs font-semibold text-[var(--muted)]">{periods.length} tiết · {firstMissing ? "Chưa điểm danh đủ buổi" : checkedAt ? `Đã điểm danh lúc ${formatDateTime(checkedAt)}` : "Lịch đã hủy"}</p>
                   </div>
-                  {meta.checkIn ? (
-                    <p className="mt-2 text-sm font-bold text-emerald-700">
-                      Đã điểm danh lúc {formatDateTime(meta.checkIn.checkedInAt)}
-                    </p>
-                  ) : (
-                    <p className="mt-2 text-sm font-bold text-orange-700">Chưa điểm danh</p>
-                  )}
+                  <button
+                    ref={(element) => { for (const item of groupSchedules) { if (element) attendanceButtonRefs.current.set(item.id, element); else attendanceButtonRefs.current.delete(item.id); } }}
+                    type="button"
+                    onClick={() => { if (firstMissing) checkIn(firstMissing); }}
+                    disabled={!firstMissing || isBusy}
+                    className={firstMissing ? primaryButtonClass : "inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-black text-slate-500"}
+                  >
+                    <CheckCircle2 size={17} />{firstMissing ? "Điểm danh & ghi công" : checkedAt ? "Đã điểm danh" : "Lịch đã hủy"}
+                  </button>
                 </div>
-                <button
-                  ref={(element) => {
-                    if (element) attendanceButtonRefs.current.set(schedule.id, element);
-                    else attendanceButtonRefs.current.delete(schedule.id);
-                  }}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    checkIn(schedule);
-                  }}
-                  disabled={isCheckedIn || isCancelled}
-                  className={
-                    isCheckedIn || isCancelled
-                      ? "inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-200 px-4 py-3 text-sm font-black text-slate-500 shadow-none"
-                      : primaryButtonClass
-                  }
-                >
-                  <CheckCircle2 size={18} />
-                  {isCheckedIn ? "Đã điểm danh" : "Điểm danh & ghi công"}
-                </button>
-              </div>
+                <div className="mt-3 space-y-2">
+                  {periods.map((schedule) => {
+                    const meta = lookupSchedule(schedule);
+                    const workLog = teachingWorkLogs.find((item) => item.scheduleId === schedule.id && item.teacherId === currentTeacherId && item.status === "CONFIRMED");
+                    const pendingWorkLog = workLog ? undefined : teachingWorkLogs.find((item) => item.scheduleId === schedule.id && item.teacherId === currentTeacherId && item.status === "PENDING");
+                    const completed = teachingWorkLogs.find((item) => item.scheduleId === schedule.id && item.teacherId === currentTeacherId && item.status === "COMPLETED");
+                    const cancellation = cancellationReports.find((item) => item.scheduleId === schedule.id && item.teacherId === currentTeacherId && item.status !== "REJECTED");
+                    const isTeachingSyncing = pendingTeachingSyncIds.includes(schedule.id) || Boolean(pendingWorkLog);
+                    const isCancelled = schedule.status === "cancelled";
+                    const hasAttendance = Boolean(meta.checkIn);
+                    const isTopic = schedule.teachingEnvironment === "schoolyard_report";
+                    const ended = isTeachingPeriodEnded(schedule, timeSlots);
+                    const roleCode = workLog?.roleCode || scheduleTeachingRoleForParticipant(schedule, currentTeacherId, schedules);
+                    const canSubmitWorkLog = hasAttendance && !workLog && !pendingWorkLog && !completed && !cancellation && !isTeachingSyncing && !isCancelled && (!isTopic || ended) && hrmIntegrationConfigured && !isBusy;
+                    return (
+                      <div key={schedule.id} className="grid gap-3 rounded-xl border border-cyan-100 bg-slate-50/70 p-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button type="button" onClick={() => setSelectedScheduleDetail(schedule)} className="text-left text-sm font-black text-[var(--brand-dark)] hover:underline">{meta.slot?.label} · {meta.lesson?.title}</button>
+                            <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-black text-violet-700">{teachingRoleLabel(roleCode)}</span>
+                          </div>
+                          <p className="mt-1 text-xs font-semibold text-[var(--muted)]">{scheduleParticipantLabel(schedule, classes)} · {meta.slot?.start || "--:--"}-{meta.slot?.end || "--:--"}</p>
+                          {isCancelled && schedule.cancellationReason ? <p className="mt-2 text-xs font-bold text-rose-800">Admin hủy lịch: {schedule.cancellationReason}{schedule.cancellationSupportPercent ? ` · Hỗ trợ ${schedule.cancellationSupportPercent}%` : ""}</p> : null}
+                          {cancellation ? <p className="mt-2 text-xs font-bold text-rose-800">{cancellation.status === "REVIEWED" ? `Admin đã xử lý: hỗ trợ ${cancellation.supportPercent}% · ${cancellation.adminReason}` : `Đã báo hủy, chờ admin xử lý: ${cancellation.reason}`}</p>
+                            : completed ? <p className="mt-2 text-xs font-bold text-indigo-800">Đã hoàn thành, chờ admin duyệt.</p>
+                            : workLog ? <p className="mt-2 text-xs font-bold text-emerald-700">HRM đã ghi lúc {formatDateTime(workLog.submittedAt)}{typeof workLog.money === "number" ? ` · ${formatCurrency(workLog.money)}` : ""}{typeof workLog.mcpPoints === "number" && workLog.mcpPoints !== 0 ? ` · +${workLog.mcpPoints} MCP` : ""}</p>
+                            : pendingWorkLog || isTeachingSyncing ? <p className="mt-2 text-xs font-bold text-amber-700">Đang đối chiếu công với HRM.</p>
+                            : isCancelled ? <p className="mt-2 text-xs font-bold text-rose-800">Lịch đã hủy.</p>
+                            : !hasAttendance ? <p className="mt-2 text-xs font-bold text-amber-700">Chưa điểm danh buổi.</p>
+                            : isTopic && !ended ? <p className="mt-2 text-xs font-bold text-slate-500">Chuyên đề chưa kết thúc.</p>
+                            : !hrmIntegrationConfigured ? <p className="mt-2 text-xs font-bold text-amber-700">Chưa kết nối HRM.</p>
+                            : <p className="mt-2 text-xs font-bold text-amber-700">Cần thử lại ghi công HRM cho tiết này.</p>}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                          {canSubmitWorkLog ? <button type="button" onClick={() => submitTeachingWorkLog(schedule)} className={teachingWorkLogButtonClass}><ShieldCheck size={16} />{isTopic ? "Hoàn thành" : "Thử lại ghi công"}</button> : null}
+                          <button type="button" title={!hasAttendance ? "Cần điểm danh trước khi báo hủy tiết" : undefined} disabled={!hasAttendance || Boolean(cancellation) || isTeachingSyncing || isCancelled || isBusy} onClick={() => { setCancelReason(""); setCancelDraft(schedule); }} className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 disabled:opacity-40">Bị hủy tiết</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
             );
           })}
-        </div>
-      </Panel>
-      <Panel title="Trạng thái công từng tiết" action="Mỗi tiết là một dòng công HRM">
-        <div className="space-y-3">
-          {!hrmIntegrationConfigured ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
-              Kết nối HRM đang tắt. Quản trị viên cần hoàn tất cấu hình để ghi công.
-            </div>
-          ) : null}
-          {scopedSchedules.filter((item) => canonicalParticipantSchedule(item, currentTeacherId, schedules).id === item.id).map((schedule) => {
-            const meta = lookupSchedule(schedule);
-            const workLog = teachingWorkLogs.find((item) =>
-              item.scheduleId === schedule.id
-              && item.teacherId === currentTeacherId
-              && item.status === "CONFIRMED"
-            );
-            const pendingWorkLog = workLog ? undefined : teachingWorkLogs.find((item) =>
-              item.scheduleId === schedule.id
-              && item.teacherId === currentTeacherId
-              && item.status === "PENDING"
-            );
-            const isTeachingSyncing = pendingTeachingSyncIds.includes(schedule.id) || Boolean(pendingWorkLog);
-            const ended = isTeachingPeriodEnded(schedule, timeSlots);
-            const isCancelled = schedule.status === "cancelled";
-            const hasAttendance = Boolean(meta.checkIn);
-            const cancellation = cancellationReports.find((row) => row.scheduleId === schedule.id && row.teacherId === currentTeacherId && row.status !== "REJECTED");
-            const completed = teachingWorkLogs.find((row) => row.scheduleId === schedule.id && row.teacherId === currentTeacherId && row.status === "COMPLETED");
-            const isTopic = schedule.teachingEnvironment === "schoolyard_report";
-            const roleCode = workLog?.roleCode || scheduleTeachingRoleForParticipant(schedule, currentTeacherId, schedules);
-            return (
-              <div key={`work-log-${schedule.id}`} className="grid gap-4 rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm lg:grid-cols-[1fr_auto]">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-black text-[var(--brand-dark)]">{meta.slot?.label} - {meta.lesson?.title}</p>
-                    {schedule.activityTypeCode ? <p className="text-sm font-bold text-indigo-800">{topicReportActivity(schedule.activityTypeCode)?.name}</p> : null}
-                    <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-black text-violet-700">
-                      {teachingRoleLabel(roleCode)}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    {meta.school?.name}, {scheduleParticipantLabel(schedule, classes)} · {formatDate(schedule.date)} · {meta.slot?.start || "--:--"}-{meta.slot?.end || "--:--"}
-                  </p>
-                  {isCancelled && schedule.cancellationReason ? <p className="mt-2 text-sm font-bold text-rose-800">Admin hủy lịch: {schedule.cancellationReason}{schedule.cancellationSupportPercent ? ` · Hỗ trợ ${schedule.cancellationSupportPercent}%` : ""}</p> : null}
-                  {cancellation ? <p className="mt-2 text-sm font-bold text-rose-800">{cancellation.status === "REVIEWED" ? `Admin đã xử lý: hỗ trợ ${cancellation.supportPercent}% · ${cancellation.adminReason}` : `Đã báo hủy, chờ admin xử lý: ${cancellation.reason}`}</p> : completed ? <p className="mt-2 text-sm font-bold text-indigo-800">Đã hoàn thành, chờ admin duyệt.</p> : workLog ? (
-                    <p className="mt-2 text-sm font-bold text-emerald-700">
-                      HRM đã ghi nhận lúc {formatDateTime(workLog.submittedAt)}
-                      {typeof workLog.money === "number" ? ` · ${formatCurrency(workLog.money)}` : ""}
-                      {typeof workLog.mcpPoints === "number" && workLog.mcpPoints !== 0 ? ` · +${workLog.mcpPoints} MCP` : ""}
-                    </p>
-                  ) : pendingWorkLog ? (
-                    <p className="mt-2 text-sm font-bold text-amber-700">
-                      METTASOUL đang tự đối chiếu kết quả từ HRM. Bạn không cần bấm lại; hệ thống dùng cùng mã chấm công nên không tạo công trùng.
-                    </p>
-                  ) : !hasAttendance ? (
-                    <p className="mt-2 text-sm font-bold text-amber-700">Chưa điểm danh buổi.</p>
-                  ) : isTopic && !ended ? (
-                    <p className="mt-2 text-sm font-bold text-slate-500">Chuyên đề chưa kết thúc.</p>
-                  ) : (
-                    <p className="mt-2 text-sm font-bold text-amber-700">Đã điểm danh; cần thử lại việc ghi công HRM cho tiết này.</p>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    submitTeachingWorkLog(schedule);
-                  }}
-                  disabled={Boolean(workLog || cancellation || completed) || isTeachingSyncing || isCancelled || (isTopic && !ended) || !hasAttendance || !hrmIntegrationConfigured || isBusy}
-                  className={
-                    workLog || cancellation || completed || isTeachingSyncing || isCancelled || (isTopic && !ended) || !hasAttendance || !hrmIntegrationConfigured || isBusy
-                      ? "inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-200 px-4 py-3 text-sm font-black text-slate-500 shadow-none"
-                      : teachingWorkLogButtonClass
-                  }
-                >
-                  <ShieldCheck size={18} />
-                  {cancellation ? "Đã báo hủy" : completed ? "Hoàn thành · chờ duyệt" : workLog ? (isTopic ? "Đã hoàn thành" : "Đã ghi công") : isTeachingSyncing ? "Đang đối chiếu HRM" : isCancelled ? "Lịch đã hủy" : !hrmIntegrationConfigured ? "Chưa kết nối HRM" : isTopic && !ended ? "Chưa kết thúc" : !hasAttendance ? "Cần điểm danh buổi" : isTopic ? "Hoàn thành" : "Thử lại ghi công"}
-                </button>
-                <button type="button" disabled={!hasAttendance || Boolean(cancellation) || isTeachingSyncing || isCancelled || isBusy} onClick={() => { setCancelReason(""); setCancelDraft(schedule); }} className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-800 disabled:opacity-40">Bị hủy tiết</button>
-                </div>
-              </div>
-            );
-          })}
+          {attendanceGroups.length === 0 ? <p className="rounded-xl bg-slate-50 p-4 text-sm font-semibold text-[var(--muted)]">Chưa có lịch dạy.</p> : null}
         </div>
       </Panel>
       <Panel title="KPI & MCP giảng dạy kỹ năng sống" action="Nguồn HRM đã xác nhận">
