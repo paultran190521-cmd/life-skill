@@ -661,7 +661,6 @@ const adminTabs: Array<{ id: TabId; label: string; icon: React.ElementType }> = 
   { id: "teachers", label: "Giáo viên", icon: Users },
   { id: "lessons", label: "Bài học", icon: BookOpen },
   { id: "plans", label: "Kế hoạch GD", icon: FileUp },
-  { id: "resources", label: "Tài nguyên", icon: BookOpen },
   { id: "attendance", label: "Đ.danh - KPI", icon: CheckCircle2 },
   { id: "settings", label: "Cấu hình", icon: Settings2 },
   { id: "school-guide", label: "Thông tin trường", icon: School2 },
