@@ -49,6 +49,10 @@ export async function PATCH(request: Request, { params }: Params) {
       return apiFailure(409, "Không thể chuyển hoạt động sang Báo cáo chuyên đề tại Công việc & MCP. Hãy tạo lịch trong Giao lịch → Báo cáo chuyên đề.", undefined, requestId);
     }
     const assignments = rows.ActivityAssignments.filter((item) => item.activityId === id);
+    const currentType = types.find((item) => item.id === activity.activityTypeId);
+    if (assignments.length > 0 && (currentType?.code === "INTERNAL_SHARING") !== (requestedType.code === "INTERNAL_SHARING")) {
+      return apiFailure(409, "Không thể đổi loại hoạt động vì vai trò người chủ trì và người tham dự sẽ thay đổi. Hãy tạo hoạt động mới.", undefined, requestId);
+    }
     const hasConfirmedReward = assignments.some((item) => item.status === "APPROVED" || item.integrationStatus === "CONFIRMED");
     const changesRewardFacts = activity.activityTypeId !== activityTypeId || activity.title !== title || activity.date !== date;
     if (hasConfirmedReward && changesRewardFacts) {

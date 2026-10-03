@@ -212,7 +212,7 @@ type AppData = {
   activityTypes: ActivityType[];
   activityOccurrences: ActivityOccurrence[];
   activityAssignments: ActivityAssignment[];
-  hrmIntegration: { configured: boolean };
+  hrmIntegration: { configured: boolean; internalSharingPolicyReady?: boolean };
   notifications: Notification[];
   appAnnouncements: AppAnnouncement[];
   resourceLinks: ResourceLink[];
@@ -721,7 +721,10 @@ export function MettasoulApp() {
   const [activityOccurrences, setActivityOccurrences] = useState<ActivityOccurrence[]>([]);
   const [activityAssignments, setActivityAssignments] = useState<ActivityAssignment[]>([]);
   const [activityEditDraft, setActivityEditDraft] = useState<ActivityOccurrence | null>(null);
+  const [activityCreateTypeId, setActivityCreateTypeId] = useState("");
+  const [activityLeadTeacherId, setActivityLeadTeacherId] = useState("");
   const [hrmIntegrationConfigured, setHrmIntegrationConfigured] = useState(false);
+  const [internalSharingPolicyReady, setInternalSharingPolicyReady] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [historyLoadError, setHistoryLoadError] = useState("");
   const [weeklyLoadError, setWeeklyLoadError] = useState("");
@@ -1243,6 +1246,7 @@ export function MettasoulApp() {
         setActivityOccurrences(data.activityOccurrences ?? []);
         setActivityAssignments(data.activityAssignments ?? []);
         setHrmIntegrationConfigured(Boolean(data.hrmIntegration?.configured));
+        setInternalSharingPolicyReady(Boolean(data.hrmIntegration?.internalSharingPolicyReady));
         setAuditLogs(data.auditLogs ?? []);
         setNotifications(data.notifications);
         setAppAnnouncements(data.appAnnouncements ?? []);
@@ -7864,9 +7868,16 @@ export function MettasoulApp() {
     );
   }
 
-  async function createActivityFromForm(formData: FormData) {
-    const participantIds = formData.getAll("teacherId").map(String).filter(Boolean);
-    if (participantIds.length === 0) {
+  async function createActivityFromForm(formData: FormData, form?: HTMLFormElement) {
+    const selectedType = activityTypes.find((type) => type.id === String(formData.get("activityTypeId") || ""));
+    const isInternalSharing = selectedType?.code === "INTERNAL_SHARING";
+    const leadTeacherId = String(formData.get("leadTeacherId") || "");
+    const participantIds = formData.getAll("teacherId").map(String).filter((id) => Boolean(id) && id !== leadTeacherId);
+    if (isInternalSharing && !leadTeacherId) {
+      pushToast("Chưa chọn người chủ trì", "Mỗi buổi chia sẻ cần đúng một người chủ trì.", "warning");
+      return;
+    }
+    if (!isInternalSharing && participantIds.length === 0) {
       pushToast("Chưa chọn người tham gia", "Hãy chọn ít nhất một người để giao công việc.", "warning");
       return;
     }
@@ -7884,40 +7895,49 @@ export function MettasoulApp() {
             endTime: String(formData.get("endTime") || ""),
             location: String(formData.get("location") || ""),
             note: String(formData.get("note") || ""),
-            participants: participantIds.map((teacherId) => ({ teacherId, roleCode: "PARTICIPANT" })),
+            participants: [
+              ...(isInternalSharing ? [{ teacherId: leadTeacherId, roleCode: "LEAD" }] : []),
+              ...participantIds.map((teacherId) => ({ teacherId, roleCode: "PARTICIPANT" })),
+            ],
           }),
         },
       );
       setActivityOccurrences((items) => [response.activity, ...items]);
       setActivityAssignments((items) => [...response.assignments, ...items]);
+      form?.reset();
+      setActivityCreateTypeId("");
+      setActivityLeadTeacherId("");
       pushToast("Đã giao công việc", "Người được phân công sẽ thấy hoạt động trong mục Công việc & MCP.", "success");
     } catch {
       // saveRequest already shows the server response.
     }
   }
 
-  async function completeActivityAssignment(activity: ActivityOccurrence, assignment: ActivityAssignment) {
-    const submittedEvidence = window.prompt("Bạn có thể dán liên kết minh chứng hoặc để trống để gửi duyệt:", assignment.evidenceUrl || "");
-    if (submittedEvidence === null) return;
-    const evidenceUrl = submittedEvidence.trim();
-    try {
-      const response = await saveRequest<{ assignment: ActivityAssignment }>("Đang gửi xác nhận hoàn thành...", `/api/activities/${activity.id}/complete`, { method: "POST", body: JSON.stringify({ evidenceUrl }) });
-      setActivityAssignments((items) => items.map((item) => item.id === response.assignment.id ? response.assignment : item));
-      pushToast("Đã gửi hoàn thành", "Hoạt động đang chờ quản trị viên duyệt quyền lợi.", "success");
-    } catch {
-      // saveRequest already shows the server response.
+  async function saveActivityAttendance(activity: ActivityOccurrence, assignments: ActivityAssignment[], formData: FormData) {
+    if (!assignments.some((assignment) => formData.get(`attendance_${assignment.id}`))) {
+      pushToast("Chưa chọn kết quả", "Hãy chọn có mặt hoặc vắng mặt cho ít nhất một người.", "warning");
+      return;
     }
-  }
-
-  async function approveActivityAssignment(activity: ActivityOccurrence, assignment: ActivityAssignment) {
-    try {
-      const response = await saveRequest<{ assignment: ActivityAssignment }>("Đang duyệt quyền lợi tại HRM...", `/api/activities/${activity.id}/approve`, { method: "POST", body: JSON.stringify({ assignmentId: assignment.id }) });
-      setActivityAssignments((items) => items.map((item) => item.id === response.assignment.id ? response.assignment : item));
-      setActivityOccurrences((items) => items.map((item) => item.id === activity.id ? { ...item, status: "APPROVED" } : item));
-      pushToast("Đã duyệt", "HRM đã ghi nhận quyền lợi tiền công và/hoặc MCP theo chính sách hiện hành.", "success");
-    } catch {
-      // saveRequest already shows the server response.
+    let saved = 0;
+    let failedEmails = 0;
+    for (const assignment of assignments) {
+      const choice = String(formData.get(`attendance_${assignment.id}`) || "");
+      if (!choice) continue;
+      try {
+        const response = await saveRequest<{ assignment: ActivityAssignment; email?: { sent: boolean } }>(
+          "Đang lưu chấm công và đối chiếu HRM...",
+          `/api/activities/${activity.id}/approve`,
+          { method: "POST", body: JSON.stringify({ assignmentId: assignment.id, present: choice === "PRESENT", evidenceUrl: String(formData.get(`evidence_${assignment.id}`) || "") }) },
+        );
+        setActivityAssignments((items) => items.map((item) => item.id === response.assignment.id ? response.assignment : item));
+        if (choice === "PRESENT") setActivityOccurrences((items) => items.map((item) => item.id === activity.id ? { ...item, status: "APPROVED" } : item));
+        if (response.email && !response.email.sent) failedEmails += 1;
+        saved += 1;
+      } catch {
+        // Keep the successful people visible; the failed person can be retried.
+      }
     }
+    if (saved > 0) pushToast("Đã lưu chấm công", `${saved} người được cập nhật.${failedEmails ? ` ${failedEmails} email gửi lỗi, có thể thử lại tại danh sách.` : ""}`, failedEmails ? "warning" : "success");
   }
 
   async function saveEditedActivity(formData: FormData) {
@@ -8002,13 +8022,13 @@ export function MettasoulApp() {
         {role === "admin" ? (
           <Panel
             title="Giao công việc & hoạt động MCP"
-            action="Chỉ ghi nhận sau khi hoàn thành và duyệt"
+            action="Quản trị viên chấm công sau khi hoạt động kết thúc"
             titleClassName="text-xl sm:text-2xl"
             actionClassName="text-sm sm:text-base"
           >
-            <form className="grid gap-3 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); void createActivityFromForm(new FormData(event.currentTarget)); event.currentTarget.reset(); }}>
+            <form className="grid gap-3 md:grid-cols-2" onSubmit={(event) => { event.preventDefault(); void createActivityFromForm(new FormData(event.currentTarget), event.currentTarget); }}>
               <label className="text-base font-bold text-[var(--brand-dark)]">Loại hoạt động
-                <select name="activityTypeId" required className="mt-1 w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-lg">
+                <select name="activityTypeId" required value={activityCreateTypeId} onChange={(event) => { setActivityCreateTypeId(event.target.value); setActivityLeadTeacherId(""); }} className="mt-1 w-full rounded-xl border border-cyan-100 bg-white px-3 py-2 text-lg">
                   <option value="">Chọn loại hoạt động</option>
                   {manualActivityTypes.map((type) => <option key={type.id} value={type.id}>{type.name} · {type.kind === "MCP" ? "MCP" : type.kind === "OTHER_PAID" ? "Thù lao" : "Thù lao + MCP"}</option>)}
                 </select>
@@ -8020,10 +8040,18 @@ export function MettasoulApp() {
               <label className="text-base font-bold text-[var(--brand-dark)]">Bắt đầu<input name="startTime" type="time" className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-lg" /></label>
               <label className="text-base font-bold text-[var(--brand-dark)]">Kết thúc<input name="endTime" type="time" className="mt-1 w-full rounded-xl border border-cyan-100 px-3 py-2 text-lg" /></label>
               <label className="text-base font-bold text-[var(--brand-dark)] md:col-span-2">Ghi chú hoặc yêu cầu minh chứng<textarea name="note" className="mt-1 min-h-20 w-full rounded-xl border border-cyan-100 px-3 py-2 text-lg" /></label>
+              {activityTypes.find((type) => type.id === activityCreateTypeId)?.code === "INTERNAL_SHARING" ? <div className="md:col-span-2 rounded-xl bg-amber-50 p-3">
+                <label className="text-base font-black text-[var(--brand-dark)]">Người chủ trì / diễn giả (chọn một)
+                  <select name="leadTeacherId" required value={activityLeadTeacherId} onChange={(event) => setActivityLeadTeacherId(event.target.value)} className="mt-2 w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-base">
+                    <option value="">Chọn người chủ trì</option>
+                    {activeTeachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
+                  </select>
+                </label>
+              </div> : null}
               <div className="md:col-span-2 rounded-xl bg-cyan-50 p-3">
-                <p className="text-base font-black text-[var(--brand-dark)]">Người tham gia</p>
+                <p className="text-base font-black text-[var(--brand-dark)]">{activityTypes.find((type) => type.id === activityCreateTypeId)?.code === "INTERNAL_SHARING" ? "Người tham dự" : "Người thực hiện"}</p>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {activeTeachers.map((teacher) => <label key={teacher.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-base font-semibold"><input name="teacherId" type="checkbox" value={teacher.id} />{teacher.name}</label>)}
+                  {activeTeachers.filter((teacher) => teacher.id !== activityLeadTeacherId).map((teacher) => <label key={teacher.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-base font-semibold"><input name="teacherId" type="checkbox" value={teacher.id} />{teacher.name}</label>)}
                 </div>
               </div>
               <button type="submit" disabled={isBusy} className="md:col-span-2 rounded-xl bg-[var(--brand)] px-4 py-3 text-lg font-black text-white disabled:opacity-50">Giao công việc</button>
@@ -8055,14 +8083,21 @@ export function MettasoulApp() {
               const participants = activityAssignments.filter((assignment) => assignment.activityId === activity.id);
               return <div key={activity.id} className="rounded-xl border border-cyan-100 bg-white p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-black text-[var(--brand-dark)]">{activity.title}</p><p className="mt-1 text-xs font-semibold text-[var(--muted)]">{activity.date}{activity.startTime ? ` · ${activity.startTime}${activity.endTime ? `–${activity.endTime}` : ""}` : ""}{activity.location ? ` · ${activity.location}` : ""}</p></div><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-fuchsia-50 px-2 py-1 text-xs font-black text-fuchsia-800">{type?.name || "Loại hoạt động"}</span>{role === "admin" ? <><button type="button" onClick={() => setActivityEditDraft(activity)} className="inline-flex items-center gap-1 rounded-lg border border-cyan-200 bg-white px-2.5 py-1.5 text-xs font-black text-[var(--brand-dark)] transition hover:bg-cyan-50"><Pencil size={14} /> Sửa</button><button type="button" onClick={() => void deleteActivity(activity)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-black text-rose-700 transition hover:bg-rose-50"><Trash2 size={14} /> Xóa</button></> : null}</div></div>
-                <p className="mt-2 text-xs text-[var(--muted)]">{type?.description || activity.note || "Chờ người tham gia hoàn thành và quản trị viên duyệt."}</p>
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-bold text-[var(--brand-dark)]">Người tham gia: {participants.map((assignment) => <span key={assignment.id} className="rounded-full bg-slate-50 px-2 py-1">{teacherName(assignment.teacherId)} · {assignment.status}</span>)}</div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {role !== "admin" ? participants.filter((assignment) => assignment.teacherId === currentTeacherId && assignment.status === "ASSIGNED").map((assignment) => <button key={assignment.id} type="button" onClick={() => void completeActivityAssignment(activity, assignment)} className="rounded-lg bg-[var(--brand)] px-3 py-2 text-xs font-black text-white">Xác nhận hoàn thành</button>) : null}
-                  {role === "admin" ? participants.filter((assignment) => assignment.status === "COMPLETED").map((assignment) => hrmIntegrationConfigured
-                    ? <button key={assignment.id} type="button" onClick={() => void approveActivityAssignment(activity, assignment)} className="rounded-lg bg-fuchsia-600 px-3 py-2 text-xs font-black text-white">Duyệt {teacherName(assignment.teacherId)}</button>
-                    : <span key={assignment.id} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-black text-amber-800">Chờ kết nối HRM để duyệt</span>) : null}
-                </div>
+                <p className="mt-2 text-xs text-[var(--muted)]">{activity.note || "Quản trị viên chấm công sau khi hoạt động kết thúc. Quyền lợi sẽ theo kết quả HRM xác nhận."}</p>
+                {role === "admin" ? <form className="mt-3 space-y-2" onSubmit={(event) => { event.preventDefault(); void saveActivityAttendance(activity, participants, new FormData(event.currentTarget)); }}>
+                  {participants.map((assignment) => <div key={assignment.id} className="grid gap-2 rounded-lg bg-slate-50 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(160px,auto)] sm:items-center">
+                    <div><p className="text-sm font-bold text-[var(--brand-dark)]">{teacherName(assignment.teacherId)} · {type?.code === "INTERNAL_SHARING" ? assignment.roleCode === "LEAD" ? "Người chủ trì / diễn giả" : "Người tham dự" : "Người thực hiện"}</p>
+                      <p className="text-xs text-[var(--muted)]">{assignment.status === "APPROVED" ? "HRM đã xác nhận" : assignment.status === "REJECTED" ? "Vắng mặt" : "Chưa chấm công"}{assignment.cashAmount && assignment.cashAmount > 0 ? ` · ${assignment.cashAmount.toLocaleString("vi-VN")} ₫` : ""}{assignment.mcpPoints && assignment.mcpPoints > 0 ? ` · +${assignment.mcpPoints} MCP` : ""}{assignment.rewardEmailStatus === "FAILED" ? " · Email gửi lỗi" : ""}</p>
+                    </div>
+                    {assignment.status !== "APPROVED" || assignment.rewardEmailStatus === "FAILED" ? <select name={`attendance_${assignment.id}`} defaultValue="" className="rounded-lg border border-cyan-100 bg-white px-2 py-2 text-sm" aria-label={`Chấm công ${teacherName(assignment.teacherId)}`}>
+                      <option value="">Chọn kết quả</option><option value="PRESENT" disabled={type?.code === "INTERNAL_SHARING" && !internalSharingPolicyReady}>{assignment.status === "APPROVED" ? "Gửi lại email" : "Có mặt / hoàn thành"}</option>{assignment.status !== "APPROVED" ? <option value="ABSENT">Vắng mặt / không hoàn thành</option> : null}
+                    </select> : null}
+                    {assignment.status !== "APPROVED" ? <input name={`evidence_${assignment.id}`} type="url" placeholder={type?.requiresEvidence ? "Link minh chứng bắt buộc https://…" : "Link minh chứng (nếu có) https://…"} defaultValue={assignment.evidenceUrl || ""} className="rounded-lg border border-cyan-100 bg-white px-2 py-2 text-sm sm:col-span-2" /> : null}
+                  </div>)}
+                  {participants.some((assignment) => assignment.status !== "APPROVED" || assignment.rewardEmailStatus === "FAILED") ? <button type="submit" disabled={isBusy || !hrmIntegrationConfigured} className="rounded-lg bg-fuchsia-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50">Lưu chấm công</button> : null}
+                  {!hrmIntegrationConfigured ? <p className="text-xs text-amber-800">Cần kết nối HRM để ghi nhận quyền lợi.</p> : null}
+                  {type?.code === "INTERNAL_SHARING" && !internalSharingPolicyReady ? <p className="text-xs text-amber-800">Chờ xác nhận hai mức quyền lợi trên HRM trước khi ghi có mặt cho buổi chia sẻ.</p> : null}
+                </form> : <div className="mt-3 space-y-2">{participants.filter((assignment) => assignment.teacherId === currentTeacherId).map((assignment) => <div key={assignment.id} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="font-bold text-[var(--brand-dark)]">{type?.code === "INTERNAL_SHARING" ? assignment.roleCode === "LEAD" ? "Người chủ trì / diễn giả" : "Người tham dự" : "Người thực hiện"} · {assignment.status === "APPROVED" ? "Đã được admin ghi nhận" : assignment.status === "REJECTED" ? "Không được ghi nhận" : "Chờ admin chấm công"}</p>{assignment.status === "APPROVED" && ((assignment.cashAmount ?? 0) > 0 || (assignment.mcpPoints ?? 0) > 0) ? <p className="mt-1 text-xs text-[var(--muted)]">{assignment.cashAmount && assignment.cashAmount > 0 ? `Thù lao: ${assignment.cashAmount.toLocaleString("vi-VN")} ₫` : ""}{assignment.cashAmount && assignment.cashAmount > 0 && assignment.mcpPoints && assignment.mcpPoints > 0 ? " · " : ""}{assignment.mcpPoints && assignment.mcpPoints > 0 ? `MCP: +${assignment.mcpPoints}` : ""}</p> : null}</div>)}</div>}
               </div>;
             })}
           </div>

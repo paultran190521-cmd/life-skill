@@ -1,6 +1,7 @@
 ﻿import { createScheduleConfirmationBatchToken, createScheduleConfirmationToken } from "@/lib/schedule-confirmation";
 import { appendSheetRowWithHeaders } from "@/lib/google-sheets";
 import { formatAcademicWeekLabel } from "@/lib/academic-week";
+import { renderActivityRewardMessage } from "@/lib/activity-reward-message";
 import nodemailer from "nodemailer";
 import type { Schedule } from "@/lib/types";
 
@@ -145,6 +146,23 @@ export async function sendPreClassAttendanceAlertEmail(input: {
     <p style="margin:22px 0 0;text-align:center"><a href="${escapeHtml(buildAppUrl())}" style="display:inline-block;border-radius:10px;background:#08788e;color:#fff;padding:12px 18px;font-weight:700;text-decoration:none">MỞ APP GIÁO VỤ</a></p>
     </td></tr></table></td></tr></table></body></html>`;
   const args = { to, subject, html, from: process.env.EMAIL_FROM, requestId, scheduleIds, teacherId: "" };
+  if (process.env.EMAIL_PROVIDER === "gas") return sendViaGas(args);
+  if (process.env.EMAIL_PROVIDER === "smtp") return sendViaSmtp(args);
+  return sendViaResend(args);
+}
+
+export async function sendActivityRewardEmail(input: {
+  teacher: { name?: string; email?: string; id: string };
+  activity: { id: string; title: string; date: string };
+  roleLabel: string;
+  money: number;
+  mcpPoints: number;
+}) {
+  const to = normalizeEmailAddress(input.teacher.email);
+  if (!to || !isValidEmailAddress(to)) return { sent: false, reason: "Recipient email is missing or invalid." };
+  const requestId = createEmailRequestId();
+  const { subject, html } = renderActivityRewardMessage({ teacherName: input.teacher.name, activityTitle: input.activity.title, activityDate: input.activity.date, roleLabel: input.roleLabel, money: input.money, mcpPoints: input.mcpPoints });
+  const args = { to, subject, html, from: process.env.EMAIL_FROM, requestId, scheduleIds: [input.activity.id], teacherId: input.teacher.id };
   if (process.env.EMAIL_PROVIDER === "gas") return sendViaGas(args);
   if (process.env.EMAIL_PROVIDER === "smtp") return sendViaSmtp(args);
   return sendViaResend(args);

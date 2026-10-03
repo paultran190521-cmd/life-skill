@@ -291,7 +291,11 @@ export type ActivityAssignment = {
   integrationStatus?: "PENDING" | "CONFIRMED" | "FAILED";
   integrationEventId?: string;
   hrmWorkLogId?: string;
+  cashAmount?: number;
   mcpPoints?: number;
+  rewardEmailStatus?: "SENT" | "FAILED";
+  rewardEmailSentAt?: string;
+  rewardEmailError?: string;
 };
 
 export type Notification = {

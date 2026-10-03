@@ -62,7 +62,7 @@ export async function GET(request: Request) {
         activityTypes: data.activityTypes,
         activityOccurrences: data.activityOccurrences.filter((activity) => data.activityAssignments.some((assignment) => assignment.activityId === activity.id && assignment.teacherId === teacherId)),
         activityAssignments: data.activityAssignments.filter((assignment) => assignment.teacherId === teacherId),
-        hrmIntegration: { configured: hrmIntegrationConfigured() },
+        hrmIntegration: { configured: hrmIntegrationConfigured(), internalSharingPolicyReady: process.env.INTERNAL_SHARING_ROLE_POLICY_READY === "true" },
         notifications: data.notifications.filter(
           (notification) => notification.role === auth.user.role || notification.role === "all",
         ),
@@ -91,7 +91,7 @@ export async function GET(request: Request) {
       activityTypes: data.activityTypes,
       activityOccurrences: data.activityOccurrences,
       activityAssignments: data.activityAssignments,
-      hrmIntegration: { configured: hrmIntegrationConfigured() },
+      hrmIntegration: { configured: hrmIntegrationConfigured(), internalSharingPolicyReady: process.env.INTERNAL_SHARING_ROLE_POLICY_READY === "true" },
       notifications: data.notifications,
       appAnnouncements: data.appAnnouncements,
       resourceLinks: data.resourceLinks,

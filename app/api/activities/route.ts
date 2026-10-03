@@ -67,6 +67,13 @@ export async function POST(request: Request) {
     if (normalizedParticipants.length !== participants.length || new Set(normalizedParticipants.map((participant) => participant.teacherId)).size !== normalizedParticipants.length || !normalizedParticipants.every((participant) => activeTeacherIds.has(participant.teacherId))) {
       return apiFailure(400, "Người được giao không tồn tại, đang tắt hoặc bị lặp.", undefined, requestId);
     }
+    const isInternalSharing = activityType.code === "INTERNAL_SHARING";
+    const leadCount = normalizedParticipants.filter((participant) => participant.roleCode === "LEAD").length;
+    if ((isInternalSharing && leadCount !== 1) || normalizedParticipants.some((participant) => !["PARTICIPANT", ...(isInternalSharing ? ["LEAD"] : [])].includes(participant.roleCode))) {
+      return apiFailure(400, isInternalSharing
+        ? "Mỗi buổi chia sẻ phải có đúng một người chủ trì; những người còn lại là người tham dự."
+        : "Hoạt động này chỉ nhận người thực hiện.", undefined, requestId);
+    }
     await Promise.all([
       ensureSheetHeaders("ActivityOccurrences", activityOccurrenceHeaders),
       ensureSheetHeaders("ActivityAssignments", activityAssignmentHeaders),

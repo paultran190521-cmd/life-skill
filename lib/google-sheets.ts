@@ -816,7 +816,7 @@ export const reminderSettingsHeaders = [
 
 export const activityTypeHeaders = ["id", "code", "name", "kind", "unit", "requiresEvidence", "requiresApproval", "active", "description", "createdAt", "updatedAt"];
 export const activityOccurrenceHeaders = ["id", "activityTypeId", "title", "date", "startTime", "endTime", "location", "status", "note", "createdBy", "createdAt", "updatedAt"];
-export const activityAssignmentHeaders = ["id", "activityId", "teacherId", "roleCode", "status", "evidenceUrl", "completedAt", "approvedAt", "approvedBy", "approvalNote", "integrationStatus", "integrationEventId", "hrmWorkLogId", "mcpPoints", "createdAt", "updatedAt"];
+export const activityAssignmentHeaders = ["id", "activityId", "teacherId", "roleCode", "status", "evidenceUrl", "completedAt", "approvedAt", "approvedBy", "approvalNote", "integrationStatus", "integrationEventId", "hrmWorkLogId", "mcpPoints", "createdAt", "updatedAt", "cashAmount", "rewardEmailStatus", "rewardEmailSentAt", "rewardEmailError"];
 
 const defaultActivityTypes: Array<Omit<ActivityType, "description"> & { description: string }> = [
   { id: "activity-melis", code: "MELIS_SESSION_1_STUDENT", name: "Giáo viên MELIS (1 học viên)", kind: "OTHER_PAID", unit: "SESSION", requiresEvidence: false, requiresApproval: true, active: true, description: "Phiên MELIS 1:1 · 270.000đ/buổi" },
@@ -1326,7 +1326,11 @@ function toActivityAssignments(rows: SheetRow[]): ActivityAssignment[] {
     integrationStatus: (["PENDING", "CONFIRMED", "FAILED"].includes(row.integrationStatus) ? row.integrationStatus : undefined) as ActivityAssignment["integrationStatus"],
     integrationEventId: row.integrationEventId || undefined,
     hrmWorkLogId: row.hrmWorkLogId || undefined,
+    cashAmount: row.cashAmount === "" || row.cashAmount === undefined ? undefined : Number(row.cashAmount),
     mcpPoints: row.mcpPoints === "" || row.mcpPoints === undefined ? undefined : Number(row.mcpPoints),
+    rewardEmailStatus: (["SENT", "FAILED"].includes(row.rewardEmailStatus) ? row.rewardEmailStatus : undefined) as ActivityAssignment["rewardEmailStatus"],
+    rewardEmailSentAt: row.rewardEmailSentAt || undefined,
+    rewardEmailError: row.rewardEmailError || undefined,
   }));
 }
 
