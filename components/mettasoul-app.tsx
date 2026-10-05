@@ -8011,7 +8011,7 @@ export function MettasoulApp() {
     const mcpBalance = visibleMcpEntries.reduce((total, entry) => total + entry.points, 0);
     return (
       <div className="space-y-5">
-        {role === "admin" ? <ScheduleGovernancePanel schedules={schedules} teachers={teachers} schools={schools} classes={classes} timeSlots={timeSlots} onWorkLogsChange={setTeachingWorkLogs} /> : null}
+        {role === "admin" ? <ScheduleGovernancePanel schedules={schedules} teachers={teachers} schools={schools} classes={classes} timeSlots={timeSlots} activityTypes={activityTypes} activityOccurrences={activityOccurrences} activityAssignments={activityAssignments} onWorkLogsChange={setTeachingWorkLogs} /> : null}
         {role === "admin" && activityEditDraft ? <ViewportPortal>
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
             <form className="w-full max-w-2xl rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl sm:p-7" onSubmit={(event) => { event.preventDefault(); void saveEditedActivity(new FormData(event.currentTarget)); }}>
