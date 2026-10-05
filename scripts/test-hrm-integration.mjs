@@ -149,6 +149,32 @@ try {
   });
   assert.equal(JSON.parse(captured.envelope.payload).role, "assistant");
 
+  for (const action of ["PROVISION_WORKER", "GET_TEACHER_PAY_SETUP", "GET_PERSONNEL_DIRECTORY", "GET_MCP_LEDGER"]) {
+    process.env.HRM_METTASOUL_WEBHOOK_URL = "https://script.google.com/macros/s/test/exec";
+    const calls = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), init });
+      if (calls.length === 1 || calls.length === 3) {
+        return new Response(null, { status: 302, headers: { Location: `https://script.googleusercontent.com/macros/echo?attempt=${calls.length}` } });
+      }
+      if (calls.length === 2) return new Response("<html>expired</html>", { status: 404, headers: { "Content-Type": "text/html" } });
+      return new Response(JSON.stringify({ ok: true, code: "CONFIRMED" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const request = action === "PROVISION_WORKER"
+      ? () => provisionMettasoulTeacherInHrm({ source: "METTASOUL", action, eventId: "identity-retry", idempotencyKey: "PROVISION:u-retry", userId: "u-retry", teacherId: "t-retry", name: "Giáo viên thử", userEmail: "retry@example.com", role: "teacher" })
+      : action === "GET_TEACHER_PAY_SETUP"
+        ? () => getTeacherPaySetupFromHrm([])
+        : action === "GET_PERSONNEL_DIRECTORY"
+          ? () => runtimeModule.exports.getMettasoulPersonnelDirectoryFromHrm([])
+          : () => runtimeModule.exports.getMcpLedgerFromHrm("retry@example.com");
+    await request();
+    assert.equal(calls.length, 4, action);
+    assert.equal(calls[0].init.body, calls[2].init.body, `${action} must replay the same signed envelope`);
+    assert.equal(JSON.parse(JSON.parse(calls[0].init.body).payload).action, action);
+  }
+  process.env.HRM_METTASOUL_WEBHOOK_URL = "https://hrm.example.test/webhook";
+  globalThis.fetch = captureSuccessFetch;
+
   await getTeacherPaySetupFromHrm([{ id: "t-1", email: "TEACHER@example.com", name: "Giáo viên thử" }]);
   assert.deepEqual(JSON.parse(captured.envelope.payload).teachers, [{ teacherId: "t-1", email: "teacher@example.com", name: "Giáo viên thử" }]);
   await setTeacherPayAssignmentInHrm({

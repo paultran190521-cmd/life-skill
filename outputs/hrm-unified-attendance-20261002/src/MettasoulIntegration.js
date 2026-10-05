@@ -397,7 +397,7 @@ function buildMettasoulWorkerRow_(headers, identity, now, allowedTaskId) {
   // rather than depending on presentation labels.
   const row = new Array(headers.length).fill("");
   const values = [
-    identity.email, "", "user", identity.name,
+    String(identity.userEmail || identity.email || "").trim().toLowerCase(), "", "user", identity.name,
     "MTS_" + (teacherId || Utilities.getUuid()), JSON.stringify(settings), 0,
     "METTASOUL_MANAGED", "", teacherId ? "MTS-" + teacherId : "",
     "METTASOUL", "", String(identity.avatarUrl || "").trim(), "", "", ""

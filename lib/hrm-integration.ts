@@ -329,10 +329,13 @@ async function sendSignedPayload<T extends HrmTeachingResponse = HrmTeachingResp
   let response: Response;
   try {
     response = await fetchHrmResponse(url, envelopeText, requestOptions);
-    // Apps Script may occasionally issue an expired/invalid one-time redirect
-    // after the POST has already reached GAS. Replaying the same signed,
-    // idempotent cancellation is safer than surfacing a false delete failure.
-    if (isCancellation && response.status === 404) {
+    // Apps Script can return an expired one-time googleusercontent redirect.
+    // Replay the identical signed envelope so HRM's event/idempotency key
+    // handles a POST that may already have completed. This also affects
+    // read-only lookups and personnel provisioning, not just cancellations.
+    if (response.status === 404
+      && response.headers.get("content-type")?.toLowerCase().includes("text/html")
+      && new URL(url).hostname === "script.google.com") {
       response = await fetchHrmResponse(url, envelopeText, requestOptions);
     }
   } catch (error) {
