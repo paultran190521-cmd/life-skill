@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     const people = [] as Awaited<ReturnType<typeof getTeacherPaySetupFromHrm>>["people"];
     for (let offset = 0; offset < teachers.length; offset += 500) {
       const result = await getTeacherPaySetupFromHrm(teachers.slice(offset, offset + 500).map((teacher) => ({
-        id: String(teacher.id || ""), email: String(teacher.email || "").trim().toLowerCase(),
+        id: String(teacher.id || ""), email: String(teacher.email || "").trim().toLowerCase(), name: String(teacher.name || "").trim(),
       })));
       if (!profiles.length) profiles.push(...result.profiles);
       people.push(...result.people);

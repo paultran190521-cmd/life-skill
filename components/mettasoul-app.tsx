@@ -6057,7 +6057,7 @@ export function MettasoulApp() {
                   <div className="mt-4 rounded-xl bg-cyan-50 p-3 text-sm font-semibold text-cyan-900">
                     {identityStatus === "MANAGED" ? "Nhân sự đã đồng bộ từ METTASOUL sang HRM." :
                       identityStatus === "EXISTING_HRM" ? "Email này đã có hồ sơ HRM độc lập. Hãy xác nhận đúng người trước khi gán bậc." :
-                      identityStatus === "CONFLICT" ? "Mã giáo viên hoặc email đang xung đột với HRM; cần đối chiếu hồ sơ." :
+                      identityStatus === "CONFLICT" ? (person?.assignment ? "Bậc hiện tại đã được đối chiếu theo email và họ tên trong HRM. Mã giáo viên cũ chưa khớp; cần đối chiếu mã trước khi thay đổi bậc." : "Mã giáo viên hoặc email đang xung đột với HRM; cần đối chiếu hồ sơ.") :
                       "Chưa tìm thấy nhân sự trong HRM. Hãy đồng bộ trước khi gán bậc."}
                   </div>
                   {!userForTeacher(target.id) ? <div className="mt-3 rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900">

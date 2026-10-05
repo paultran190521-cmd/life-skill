@@ -221,11 +221,11 @@ export type HrmTeacherPaySetup = HrmTeachingResponse & {
   people: HrmTeacherPayPerson[];
 };
 
-export async function getTeacherPaySetupFromHrm(teachers: Array<{ id: string; email: string }>): Promise<HrmTeacherPaySetup> {
+export async function getTeacherPaySetupFromHrm(teachers: Array<{ id: string; email: string; name: string }>): Promise<HrmTeacherPaySetup> {
   return sendSignedPayload<HrmTeacherPaySetup>({
     source: "METTASOUL",
     action: "GET_TEACHER_PAY_SETUP",
-    teachers: teachers.map((teacher) => ({ teacherId: teacher.id, email: teacher.email.trim().toLowerCase() })),
+    teachers: teachers.map((teacher) => ({ teacherId: teacher.id, email: teacher.email.trim().toLowerCase(), name: teacher.name.trim() })),
   }, { requireEnabled: false });
 }
 

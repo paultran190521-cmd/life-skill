@@ -181,9 +181,12 @@ function TeacherTableRow({
         <div className="min-w-0">
           <p className="truncate font-black text-[var(--brand-dark)]">{teacher.name}</p>
           <p className="truncate text-xs font-bold uppercase text-[var(--muted)]">{teacher.specialty}</p>
-          {payPerson ? <p className={`mt-1 truncate text-[11px] font-bold ${payPerson.identityStatus === "CONFLICT" ? "text-rose-700" : payPerson.identityStatus === "MISSING" ? "text-amber-700" : "text-teal-700"}`}>
-            {payPerson.identityStatus === "MISSING" ? "HRM: chờ đồng bộ" : payPerson.identityStatus === "CONFLICT" ? "HRM: cần đối chiếu" : payPerson.assignment ? `Bậc: ${payPerson.assignment.defaultProfileCode || payPerson.assignment.assistantProfileCode}` : "HRM: chưa gán bậc"}
-          </p> : null}
+          {payPerson ? <>
+            <p className={`mt-1 truncate text-[11px] font-bold ${payPerson.assignment ? "text-teal-700" : payPerson.identityStatus === "CONFLICT" ? "text-rose-700" : payPerson.identityStatus === "MISSING" ? "text-amber-700" : "text-[var(--muted)]"}`}>
+              {payPerson.assignment ? `Bậc HRM: ${payPerson.assignment.defaultProfileCode || payPerson.assignment.assistantProfileCode}` : payPerson.identityStatus === "MISSING" ? "HRM: chờ đồng bộ" : payPerson.identityStatus === "CONFLICT" ? "HRM: cần đối chiếu" : "HRM: chưa gán bậc"}
+            </p>
+            {payPerson.assignment && payPerson.identityStatus === "CONFLICT" ? <p className="truncate text-[10px] font-bold text-rose-700">Mã nhân sự cần đối chiếu</p> : null}
+          </> : null}
         </div>
       </div>
       <span className="truncate font-bold text-orange-700">{teacher.phone}</span>

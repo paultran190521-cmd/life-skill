@@ -149,8 +149,8 @@ try {
   });
   assert.equal(JSON.parse(captured.envelope.payload).role, "assistant");
 
-  await getTeacherPaySetupFromHrm([{ id: "t-1", email: "TEACHER@example.com" }]);
-  assert.deepEqual(JSON.parse(captured.envelope.payload).teachers, [{ teacherId: "t-1", email: "teacher@example.com" }]);
+  await getTeacherPaySetupFromHrm([{ id: "t-1", email: "TEACHER@example.com", name: "Giáo viên thử" }]);
+  assert.deepEqual(JSON.parse(captured.envelope.payload).teachers, [{ teacherId: "t-1", email: "teacher@example.com", name: "Giáo viên thử" }]);
   await setTeacherPayAssignmentInHrm({
     eventId: "pay-1", idempotencyKey: "PAY_ASSIGN:pay-1", teacherId: "t-1", userEmail: "teacher@example.com",
     defaultProfileCode: "TEACHER_A", assistantProfileCode: "ASSISTANT_PRO", workerCategory: "PROFESSIONAL_TEACHER",
