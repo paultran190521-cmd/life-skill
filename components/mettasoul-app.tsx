@@ -718,6 +718,9 @@ export function MettasoulApp() {
   const [cancelReason, setCancelReason] = useState("");
   const [mcpLedgerEntries, setMcpLedgerEntries] = useState<McpLedgerEntry[]>([]);
   const [mcpLedgerExpanded, setMcpLedgerExpanded] = useState(false);
+  const [mcpLedgerStatus, setMcpLedgerStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [mcpLedgerError, setMcpLedgerError] = useState("");
+  const [mcpLedgerRefreshKey, setMcpLedgerRefreshKey] = useState(0);
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const [activityOccurrences, setActivityOccurrences] = useState<ActivityOccurrence[]>([]);
   const [activityAssignments, setActivityAssignments] = useState<ActivityAssignment[]>([]);
@@ -1288,18 +1291,23 @@ export function MettasoulApp() {
   useEffect(() => {
     if (authStatus !== "signed-in" || !hrmIntegrationConfigured) {
       setMcpLedgerEntries([]);
+      setMcpLedgerStatus("idle");
+      setMcpLedgerError("");
       return;
     }
+    if (activeTab !== "activities" && mcpLedgerStatus === "ready") return;
     let cancelled = false;
+    setMcpLedgerStatus("loading");
+    setMcpLedgerError("");
     void apiRequest<{ entries: McpLedgerEntry[] }>("/api/mcp-ledger")
-      .then((result) => { if (!cancelled) setMcpLedgerEntries(result.entries ?? []); })
+      .then((result) => { if (!cancelled) { setMcpLedgerEntries(result.entries ?? []); setMcpLedgerStatus("ready"); } })
       .catch((error) => {
         // Attendance must remain usable if the optional ledger display is temporarily unavailable.
         console.error("Không thể tải sổ MCP từ HRM", error);
-        if (!cancelled) setMcpLedgerEntries([]);
+        if (!cancelled) { setMcpLedgerEntries([]); setMcpLedgerStatus("error"); setMcpLedgerError(error instanceof Error ? error.message : "Không lấy được sổ MCP từ HRM."); }
       });
     return () => { cancelled = true; };
-  }, [authStatus, hrmIntegrationConfigured]);
+  }, [authStatus, hrmIntegrationConfigured, activeTab, mcpLedgerRefreshKey]);
   useEffect(() => {
     if (role !== "teacher" || dataStatus !== "connected" || initializedPayrollMonth.current) return;
     const months = teachingWorkLogs
@@ -8073,12 +8081,15 @@ export function MettasoulApp() {
         ) : null}
         <Panel
           title="MCP của tôi từ HRM"
-          action={`${mcpBalance > 0 ? "+" : ""}${mcpBalance} MCP`}
+          action={mcpLedgerStatus === "ready" ? `${mcpBalance > 0 ? "+" : ""}${mcpBalance} MCP` : mcpLedgerStatus === "error" ? "Chưa tải được" : mcpLedgerStatus === "idle" ? "Chưa kết nối HRM" : "Đang tải MCP"}
           collapsed={!mcpLedgerExpanded}
           onToggleCollapse={() => setMcpLedgerExpanded((expanded) => !expanded)}
         >
           <div className="space-y-3">
-            {visibleMcpEntries.length === 0 ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-[var(--muted)]">Chưa có MCP được HRM ghi nhận. MCP sẽ xuất hiện ở đây ngay sau khi HRM xác nhận chấm công tại trường xa.</p> : visibleMcpEntries.map((entry) => (
+            {mcpLedgerStatus === "error" ? <div role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-800">Chưa lấy được số MCP từ HRM: {mcpLedgerError}<button type="button" onClick={() => setMcpLedgerRefreshKey((value) => value + 1)} className="ml-3 rounded-lg border border-rose-300 px-2 py-1 font-bold">Thử lại</button></div>
+              : mcpLedgerStatus === "idle" ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-[var(--muted)]">Chưa kết nối được với HRM để xem sổ MCP.</p>
+              : mcpLedgerStatus !== "ready" ? <p role="status" className="rounded-xl bg-slate-50 p-4 text-sm text-[var(--muted)]">Đang tải sổ MCP từ HRM...</p>
+              : visibleMcpEntries.length === 0 ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-[var(--muted)]">Chưa có MCP được HRM ghi nhận. MCP từ tiết dạy và hoạt động đã chấm công sẽ xuất hiện tại đây.</p> : visibleMcpEntries.map((entry) => (
               <div key={entry.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-100 bg-white p-4">
                 <div>
                   <p className="font-black text-[var(--brand-dark)]">{entry.reasonName || "MCP từ HRM"}</p>
