@@ -11196,6 +11196,12 @@ export function MettasoulApp() {
       .filter((resource) => resource.active)
       .slice()
       .sort((left, right) => left.sortOrder - right.sortOrder || left.title.localeCompare(right.title, "vi"));
+    const resourceCardColors = [
+      { border: "border-violet-200 hover:border-violet-400", icon: "bg-violet-50 text-violet-700 group-hover:bg-violet-100", link: "text-violet-700 group-hover:text-violet-800" },
+      { border: "border-amber-200 hover:border-amber-400", icon: "bg-amber-50 text-amber-700 group-hover:bg-amber-100", link: "text-amber-700 group-hover:text-amber-800" },
+      { border: "border-rose-200 hover:border-rose-400", icon: "bg-rose-50 text-rose-700 group-hover:bg-rose-100", link: "text-rose-700 group-hover:text-rose-800" },
+      { border: "border-sky-200 hover:border-sky-400", icon: "bg-sky-50 text-sky-700 group-hover:bg-sky-100", link: "text-sky-700 group-hover:text-sky-800" },
+    ];
 
     return (
       <div className="space-y-5">
@@ -11209,22 +11215,22 @@ export function MettasoulApp() {
               <div className="rounded-2xl border border-dashed border-cyan-200 bg-white px-4 py-8 text-center text-sm font-semibold text-[var(--muted)] md:col-span-2">
                 Chưa có tài nguyên được chia sẻ.
               </div>
-            ) : visibleResources.map((resource) => (
+            ) : visibleResources.map((resource, index) => (
               <a
                 key={resource.id}
                 href={resource.url}
                 target="_blank"
                 rel="noreferrer"
-                className="group rounded-2xl border border-cyan-100 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-md"
+                className={`group rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${resourceCardColors[index % resourceCardColors.length].border}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-black text-[var(--brand-dark)] group-hover:text-cyan-700">{resource.title}</p>
+                    <p className="text-sm font-black text-[var(--brand-dark)]">{resource.title}</p>
                     {resource.description ? <p className="mt-1 text-xs font-semibold leading-5 text-[var(--muted)]">{resource.description}</p> : null}
                   </div>
-                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-cyan-50 text-cyan-700 group-hover:bg-cyan-100"><ExternalLink size={17} /></span>
+                  <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${resourceCardColors[index % resourceCardColors.length].icon}`}><ExternalLink size={17} /></span>
                 </div>
-                <p className="mt-4 text-xs font-black text-cyan-700">Mở tài liệu</p>
+                <p className={`mt-4 text-xs font-black ${resourceCardColors[index % resourceCardColors.length].link}`}>Mở tài liệu</p>
               </a>
             ))}
           </div>
