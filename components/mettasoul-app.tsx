@@ -806,6 +806,7 @@ export function MettasoulApp() {
   const [assignmentAvailabilityDate, setAssignmentAvailabilityDate] = useState(() => currentDateKey());
   const [assignmentAvailabilityView, setAssignmentAvailabilityView] = useState<AvailabilityCalendarViewMode>("week");
   const [availabilityOverviewDate, setAvailabilityOverviewDate] = useState("");
+  const [unassignedWarningWeek, setUnassignedWarningWeek] = useState("");
   const [unassignedWarningDate, setUnassignedWarningDate] = useState("");
   const [unassignedWarningSearch, setUnassignedWarningSearch] = useState("");
   const [selectedAvailabilityOverviewKeys, setSelectedAvailabilityOverviewKeys] = useState<string[]>([]);
@@ -7610,7 +7611,17 @@ export function MettasoulApp() {
       warningsByDate.set(warning.date, rows);
     }
     const warningDates = [...warningsByDate.keys()].sort();
-    const selectedWarningDate = warningsByDate.has(unassignedWarningDate) ? unassignedWarningDate : "";
+    const warningsByWeek = new Map<string, { dates: string[]; count: number }>();
+    for (const date of warningDates) {
+      const week = mondayDateKey(date);
+      const group = warningsByWeek.get(week) ?? { dates: [], count: 0 };
+      group.dates.push(date);
+      group.count += warningsByDate.get(date)?.length ?? 0;
+      warningsByWeek.set(week, group);
+    }
+    const warningWeeks = [...warningsByWeek.keys()].sort();
+    const selectedWarningWeek = warningsByWeek.has(unassignedWarningWeek) ? unassignedWarningWeek : "";
+    const selectedWarningDate = selectedWarningWeek && mondayDateKey(unassignedWarningDate) === selectedWarningWeek && warningsByDate.has(unassignedWarningDate) ? unassignedWarningDate : "";
     const warningSearch = normalizeComparableText(unassignedWarningSearch);
     const selectedWarnings = (warningsByDate.get(selectedWarningDate) ?? [])
       .filter((warning) => !warningSearch || normalizeComparableText(teacherById.get(warning.teacherId)?.name || warning.teacherId).includes(warningSearch))
@@ -7734,17 +7745,27 @@ export function MettasoulApp() {
           <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-3" role="status" aria-label="Giáo viên đã đăng ký nhưng chưa được phân công">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="flex items-center gap-2 text-sm font-black text-rose-800"><AlertTriangle size={16} className="shrink-0" />{unassignedWarnings.length} lượt đăng ký chưa được phân công từ hôm nay đến 4 ngày tới</p>
-              <button type="button" onClick={() => { setUnassignedWarningDate(selectedWarningDate ? "" : warningDates[0]); setUnassignedWarningSearch(""); }} aria-expanded={Boolean(selectedWarningDate)} className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs font-black text-rose-800 ring-1 ring-rose-200 hover:bg-rose-100">
-                {selectedWarningDate ? "Thu gọn" : "Xem chi tiết"}{selectedWarningDate ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              <button type="button" onClick={() => { setUnassignedWarningWeek(selectedWarningWeek ? "" : warningWeeks[0]); setUnassignedWarningDate(""); setUnassignedWarningSearch(""); }} aria-expanded={Boolean(selectedWarningWeek)} className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs font-black text-rose-800 ring-1 ring-rose-200 hover:bg-rose-100">
+                {selectedWarningWeek ? "Thu gọn" : "Xem chi tiết"}{selectedWarningWeek ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
-              {warningDates.map((date) => (
-                <button key={date} type="button" onClick={() => { setUnassignedWarningDate(selectedWarningDate === date ? "" : date); setUnassignedWarningSearch(""); }} aria-expanded={selectedWarningDate === date} className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${selectedWarningDate === date ? "border-rose-600 bg-rose-700 text-white" : "border-rose-200 bg-white text-rose-800 hover:bg-rose-100"}`}>
-                  {date === currentDateKey() ? "Hôm nay" : formatDate(date)} · {warningsByDate.get(date)?.length} lượt
+              {warningWeeks.map((week) => (
+                <button key={week} type="button" onClick={() => { setUnassignedWarningWeek(selectedWarningWeek === week ? "" : week); setUnassignedWarningDate(""); setUnassignedWarningSearch(""); }} aria-expanded={selectedWarningWeek === week} className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${selectedWarningWeek === week ? "border-rose-600 bg-rose-700 text-white" : "border-rose-200 bg-white text-rose-800 hover:bg-rose-100"}`}>
+                  {week === mondayDateKey(currentDateKey()) ? "Tuần này" : "Tuần tới"} · {warningsByWeek.get(week)?.count} lượt
                 </button>
               ))}
             </div>
+            {selectedWarningWeek ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-rose-200 bg-white p-3">
+                <p className="mr-1 text-xs font-black text-rose-900">{formatDate(selectedWarningWeek)}–{formatDate(addDaysToDateKey(selectedWarningWeek, 6))}</p>
+                {warningsByWeek.get(selectedWarningWeek)?.dates.map((date) => (
+                  <button key={date} type="button" onClick={() => { setUnassignedWarningDate(selectedWarningDate === date ? "" : date); setUnassignedWarningSearch(""); }} aria-expanded={selectedWarningDate === date} className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition ${selectedWarningDate === date ? "border-rose-600 bg-rose-700 text-white" : "border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"}`}>
+                    {date === currentDateKey() ? "Hôm nay" : formatDate(date)} · {warningsByDate.get(date)?.length} lượt
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {selectedWarningDate ? (
               <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -7758,6 +7779,7 @@ export function MettasoulApp() {
                     setDraftSchedule((current) => current.items.length === 1 && current.items.every((item) =>
                       !item.schoolId && !item.classId && !item.lessonId && !item.teacherIds.length && !item.assistantIds.length && !item.schoolNeedIds?.length,
                     ) ? { ...current, items: current.items.map((item) => ({ ...item, date: selectedWarningDate })) } : current);
+                    setUnassignedWarningWeek("");
                     setUnassignedWarningDate("");
                     window.requestAnimationFrame(() => document.getElementById("assignment-school-week")?.scrollIntoView({ behavior: "smooth", block: "start" }));
                   }} className="rounded-lg bg-rose-700 px-3 py-2 text-xs font-black text-white hover:bg-rose-800">Mở ngày để giao lịch</button>
