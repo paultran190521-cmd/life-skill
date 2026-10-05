@@ -11,6 +11,19 @@ async function request<T>(url: string, body?: unknown, method = "POST"): Promise
   return data;
 }
 
+type AdminPayrollSummary = {
+  month: string;
+  available: boolean;
+  status: "FINAL" | "ESTIMATE" | "UNAVAILABLE";
+  isPaid: boolean;
+  totalIncome: number;
+  teachingIncome: number;
+  insuranceDeduction: number;
+  fixedDeductionDetails: Array<{ name: string; amount: number }> | null;
+  otherDeduction: number;
+  taxDeduction: number;
+  netIncome: number;
+};
 export function ScheduleGovernancePanel({ schedules, teachers, schools, classes, timeSlots, onWorkLogsChange }: { schedules: Schedule[]; teachers: Teacher[]; schools: School[]; classes: ClassRoom[]; timeSlots: TimeSlot[]; onWorkLogsChange?: (logs: TeachingWorkLog[]) => void }) {
   const [reports, setReports] = useState<CancellationReport[]>([]);
   const [logs, setLogs] = useState<TeachingWorkLog[]>([]);
@@ -19,6 +32,24 @@ export function ScheduleGovernancePanel({ schedules, teachers, schools, classes,
   const [busy, setBusy] = useState(false);
   const [checkingHrm, setCheckingHrm] = useState(false);
   const [hrmHealth, setHrmHealth] = useState("");
+  const [payrollTeacherId, setPayrollTeacherId] = useState("");
+  const [payrollMonth, setPayrollMonth] = useState(() => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" }).slice(0, 7));
+  const [payrollRefreshKey, setPayrollRefreshKey] = useState(0);
+  const [payrollSummary, setPayrollSummary] = useState<AdminPayrollSummary | null>(null);
+  const [payrollLoading, setPayrollLoading] = useState(false);
+  const [payrollError, setPayrollError] = useState("");
+  useEffect(() => {
+    if (!payrollTeacherId || !payrollMonth) { setPayrollSummary(null); setPayrollError(""); return; }
+    let disposed = false;
+    setPayrollLoading(true);
+    setPayrollError("");
+    setPayrollSummary(null);
+    void request<AdminPayrollSummary>(`/api/admin/payroll-summary?teacherId=${encodeURIComponent(payrollTeacherId)}&month=${encodeURIComponent(payrollMonth)}`)
+      .then((result) => { if (!disposed) setPayrollSummary(result); })
+      .catch((failure) => { if (!disposed) setPayrollError(failure instanceof Error ? failure.message : "Không lấy được bảng lương HRM."); })
+      .finally(() => { if (!disposed) setPayrollLoading(false); });
+    return () => { disposed = true; };
+  }, [payrollTeacherId, payrollMonth, payrollRefreshKey]);
   useEffect(() => {
     let disposed = false;
     let running = false;
@@ -67,6 +98,38 @@ export function ScheduleGovernancePanel({ schedules, teachers, schools, classes,
       }}>{checkingHrm ? "Đang kiểm tra HRM…" : "Kiểm tra kết nối HRM (chỉ đọc)"}</button>
       {hrmHealth ? <p role="status" className="mt-2 text-sm text-cyan-950">{hrmHealth}</p> : null}
     </div>
+    <div className="rounded-2xl border border-cyan-200 bg-cyan-50/40 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div><h2 className="text-lg font-bold text-cyan-950">Bảng lương tháng từ HRM</h2><p className="text-sm text-slate-600">Xem thuế, bảo hiểm và thực nhận của một giáo viên theo toàn bộ thu nhập trong tháng.</p></div>
+        {payrollSummary?.available ? <span className={`rounded-full px-3 py-1 text-xs font-bold ${payrollSummary.status === "FINAL" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{payrollSummary.status === "FINAL" ? "HRM đã chốt" : "HRM tạm tính"}</span> : null}
+      </div>
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <label className="min-w-[240px] flex-1 text-sm font-semibold text-cyan-950">Giáo viên
+          <select value={payrollTeacherId} onChange={(event) => setPayrollTeacherId(event.target.value)} className="mt-1 w-full rounded-xl border border-cyan-200 bg-white p-2">
+            <option value="">Chọn giáo viên</option>
+            {teachers.filter((teacher) => teacher.email).map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-semibold text-cyan-950">Tháng lương
+          <input type="month" value={payrollMonth} onChange={(event) => setPayrollMonth(event.target.value)} className="mt-1 block rounded-xl border border-cyan-200 bg-white p-2" />
+        </label>
+        <button type="button" disabled={!payrollTeacherId || payrollLoading} onClick={() => setPayrollRefreshKey((value) => value + 1)} className="rounded-xl border border-cyan-300 bg-white px-3 py-2 text-sm font-bold text-cyan-900 disabled:opacity-50">Cập nhật từ HRM</button>
+      </div>
+      {payrollLoading ? <p className="mt-3 text-sm text-slate-600">Đang lấy bảng lương từ HRM...</p>
+        : payrollError ? <p role="alert" className="mt-3 text-sm font-semibold text-rose-700">{payrollError}</p>
+        : payrollSummary?.available ? <>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Tổng thu nhập HRM</p><p className="text-lg font-black">{formatCurrency(payrollSummary.totalIncome)}</p></div>
+            <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Thu nhập công việc HRM</p><p className="text-lg font-black">{formatCurrency(payrollSummary.teachingIncome)}</p></div>
+            <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Thuế TNCN</p><p className="text-lg font-black">-{formatCurrency(payrollSummary.taxDeduction)}</p></div>
+            <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Bảo hiểm và khấu trừ cố định</p><p className="text-lg font-black">-{formatCurrency(payrollSummary.insuranceDeduction)}</p></div>
+            <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Khấu trừ khác</p><p className="text-lg font-black">-{formatCurrency(payrollSummary.otherDeduction)}</p></div>
+            <div className="rounded-xl bg-emerald-100 p-3"><p className="text-xs font-bold text-emerald-900">{payrollSummary.status === "FINAL" ? "Thực nhận đã chốt" : "Dự kiến thực nhận"}</p><p className="text-xl font-black text-emerald-950">{formatCurrency(payrollSummary.netIncome)}</p></div>
+          </div>
+          {payrollSummary.fixedDeductionDetails?.length ? <div className="mt-2 rounded-xl bg-white p-3 text-sm"><p className="font-bold">Chi tiết khấu trừ cố định theo HRM</p>{payrollSummary.fixedDeductionDetails.map((item, index) => <p key={`${item.name}-${index}`} className="mt-1 flex justify-between gap-3"><span>{item.name}</span><span className="font-bold">-{formatCurrency(item.amount)}</span></p>)}</div> : null}
+          <p className="mt-2 text-xs text-slate-600">BHXH, nếu được gán, đã nằm trong khấu trừ cố định. Bảng lương gồm mọi công việc trong tháng {payrollMonth}; không trừ thuế hoặc BHXH riêng cho từng hoạt động.{payrollSummary.status === "FINAL" && payrollSummary.isPaid ? " HRM đã ghi nhận thanh toán." : ""}</p>
+        </> : payrollTeacherId && payrollMonth && payrollSummary ? <p className="mt-3 text-sm text-slate-600">HRM chưa có bảng lương cho giáo viên trong tháng này.</p> : null}
+    </div>
     <h2 className="text-lg font-bold text-cyan-950">Duyệt hoàn thành chuyên đề</h2>
     {error ? <p role="alert" className="text-rose-700">{error}</p> : null}
     {logs.filter((row) => row.activityTypeCode && ["COMPLETED", "PENDING", "FAILED"].includes(row.status) && !reports.some((report) => report.scheduleId === row.scheduleId && report.teacherId === row.teacherId && report.status !== "REJECTED")).map((log) => <div key={log.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-cyan-50 p-3">
@@ -85,7 +148,7 @@ export function ScheduleGovernancePanel({ schedules, teachers, schools, classes,
     </div>)}
     <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h2 className="text-lg font-bold text-emerald-950">Tổng hợp lương & MCP chuyên đề</h2><p className="mt-1 text-sm text-emerald-900">Chỉ hiển thị kết quả HRM đã xác nhận; METTASOUL không tự tính hoặc điều chỉnh tiền, MCP.</p></div>
+        <div><h2 className="text-lg font-bold text-emerald-950">Tổng hợp Báo cáo chuyên đề từ Giao lịch</h2><p className="mt-1 text-sm text-emerald-900">Chỉ hiển thị kết quả HRM đã xác nhận; METTASOUL không tự tính hoặc điều chỉnh tiền, MCP.</p></div>
         <p className="rounded-full bg-white px-3 py-1 text-sm font-black text-emerald-800">{confirmedTopicLogs.length} dòng HRM xác nhận</p>
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-2"><div className="rounded-xl bg-white p-3"><p className="text-xs font-bold uppercase text-emerald-800">Tổng tiền HRM</p><p className="mt-1 text-xl font-black text-emerald-950">{formatCurrency(confirmedTopicMoney)}</p></div><div className="rounded-xl bg-white p-3"><p className="text-xs font-bold uppercase text-violet-800">Tổng MCP HRM</p><p className="mt-1 text-xl font-black text-violet-950">{confirmedTopicMcp} MCP</p></div></div>

@@ -492,6 +492,7 @@ function handleMettasoulWebhook_(e) {
   }
   if (action === "GET_TOPIC_REPORT_POLICIES") return getTopicReportPolicies_();
   if (action === "GET_MCP_LEDGER") return getMettasoulMcpLedger_(payload);
+  if (action === "GET_MY_PAYROLL_SUMMARY") return getMettasoulPayrollSummary_(payload);
   if (action === "GET_PERSONNEL_DIRECTORY") return getMettasoulPersonnelDirectory_(payload);
   if (action === "PROVISION_WORKER") return provisionMettasoulWorkerFromWebhook_(payload, verified.payloadHash);
   if (action === "SUBMIT_TEACHING_PERIOD") return submitTeachingPeriod_(payload, verified.payloadHash);
@@ -869,7 +870,7 @@ function submitActivityCompletion_(payload, payloadHash) {
         const taskId = getMettasoulIntegrationTaskId_(ss);
         const task = getAuthoritativeTaskById_(ss, taskId);
         workLogId = "LOG_MTS_ACT_" + Utilities.getUuid();
-        appendIntegratedActivityWorkLog_(ss, workLogId, task, input, policy, cashAmount);
+        workLogId = appendIntegratedActivityWorkLog_(ss, workLogId, task, input, policy, cashAmount);
       }
       let mcpLedgerId = "";
       if (mcpPoints > 0) {
@@ -918,15 +919,50 @@ function resolveActivityPolicy_(ss, input) {
 }
 
 function appendIntegratedActivityWorkLog_(ss, workLogId, task, input, policy, money) {
-  appendObjectRow_(ss.getSheetByName("WorkLogs"), {
-    ID: workLogId, UserEmail: input.userEmail, TaskId: task.id, TaskName: task.name,
-    InputData: JSON.stringify({ integration: { source: METTASOUL_INTEGRATION_SCHEMA_.source, eventId: input.eventId, idempotencyKey: input.idempotencyKey, activityId: input.activityId, assignmentId: input.assignmentId }, activity: { typeCode: input.activityTypeCode, title: input.activityTitle, roleCode: input.roleCode, unit: input.unit, evidenceUrl: input.evidenceUrl }, calculation: { money: money, policyCode: policy.Code } }),
-    Quantity: 1, Money: money, Timestamp: new Date(), Date: input.workDate, Status: "Active", Source: METTASOUL_INTEGRATION_SCHEMA_.source,
-    ExternalEventId: input.eventId, ScheduleId: input.activityId, PeriodId: input.assignmentId, RoleCode: input.roleCode,
-    PolicyVersion: "ACTIVITY_POLICY:" + String(policy.Version || 1), RateProfileId: policy.ID, CalculationJson: JSON.stringify({ money: money, policyCode: policy.Code }), ExternalStatus: "CONFIRMED", UpdatedAt: new Date()
+  const sheet = ss.getSheetByName("WorkLogs");
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  const eventColumn = headers.indexOf("ExternalEventId");
+  const activityColumn = headers.indexOf("ScheduleId");
+  const assignmentColumn = headers.indexOf("PeriodId");
+  if (eventColumn < 0 || activityColumn < 0 || assignmentColumn < 0) {
+    throw integrationError_("WORKLOG_SCHEMA_INVALID", "WorkLogs thiếu cột định danh hoạt động.");
+  }
+  const rows = sheet.getDataRange().getValues();
+  const matches = rows.slice(1).map(function(row, index) { return { row: row, rowNumber: index + 2 }; })
+    .filter(function(item) { return String(item.row[eventColumn] || "") === input.eventId; });
+  if (matches.length > 1) throw integrationError_("WORKLOG_DUPLICATE_EVENT", "Một sự kiện có nhiều dòng công HRM; cần đối chiếu thủ công.");
+  const existing = matches[0];
+  if (existing) {
+    if (String(existing.row[1] || "").trim().toLowerCase() !== input.userEmail ||
+        String(existing.row[activityColumn] || "") !== input.activityId ||
+        String(existing.row[assignmentColumn] || "") !== input.assignmentId ||
+        normalizeCode_(existing.row[9]) === "DELETED") {
+      throw integrationError_("WORKLOG_EVENT_MISMATCH", "Dòng công cũ không khớp sự kiện hoạt động; cần đối chiếu thủ công.");
+    }
+    if (existing.row[6] !== "" && Number(existing.row[6]) !== money) {
+      throw integrationError_("WORKLOG_AMOUNT_MISMATCH", "Số tiền dòng công cũ không khớp chính sách HRM.");
+    }
+    workLogId = String(existing.row[0] || "").trim() || workLogId;
+  }
+  const inputData = JSON.stringify({
+    integration: { source: METTASOUL_INTEGRATION_SCHEMA_.source, eventId: input.eventId, idempotencyKey: input.idempotencyKey, activityId: input.activityId, assignmentId: input.assignmentId },
+    activity: { typeCode: input.activityTypeCode, title: input.activityTitle, roleCode: input.roleCode, unit: input.unit, evidenceUrl: input.evidenceUrl },
+    calculation: { money: money, policyCode: policy.Code }
   });
+  if (!existing) appendObjectRow_(sheet, {
+    UserEmail: input.userEmail, TaskName: task.name, Timestamp: new Date(), Source: METTASOUL_INTEGRATION_SCHEMA_.source,
+    ExternalEventId: input.eventId, ScheduleId: input.activityId, PeriodId: input.assignmentId, RoleCode: input.roleCode,
+    PolicyVersion: "ACTIVITY_POLICY:" + String(policy.Version || 1), RateProfileId: policy.ID,
+    CalculationJson: JSON.stringify({ money: money, policyCode: policy.Code }), ExternalStatus: "CONFIRMED", UpdatedAt: new Date()
+  });
+  writeIntegratedTeachingWorkLog_(sheet, existing ? existing.rowNumber : sheet.getLastRow(), {
+    ID: workLogId, UserEmail: input.userEmail, TaskId: task.id, TaskName: task.name,
+    InputData: inputData, Quantity: 1, Money: money,
+    Timestamp: existing && existing.row[7] ? existing.row[7] : new Date(),
+    Date: input.workDate, Status: "Active", Source: METTASOUL_INTEGRATION_SCHEMA_.source
+  });
+  return workLogId;
 }
-
 function cancelActivityCompletion_(payload, payloadHash) {
   const lock = LockService.getScriptLock();
   try { lock.waitLock(10000); } catch (error) { throw integrationError_("SYSTEM_BUSY", "HRM đang xử lý yêu cầu khác, vui lòng thử lại."); }
@@ -2315,4 +2351,48 @@ function integrationError_(code, message) {
 function jsonOutput_(value) {
   return ContentService.createTextOutput(JSON.stringify(value))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/** Returns only this METTASOUL teacher's monthly figures from HRM. */
+function getMettasoulPayrollSummary_(payload) {
+  const email = String(payload && payload.userEmail || "").trim().toLowerCase();
+  const teacherId = String(payload && payload.teacherId || "").trim();
+  const month = String(payload && payload.month || "").trim();
+  if (!/^\S+@\S+\.\S+$/.test(email) || !teacherId || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    throw integrationError_("INVALID_PAYROLL_QUERY", "Thiếu giáo viên hoặc tháng lương hợp lệ.");
+  }
+  const ss = getDatabase_();
+  const users = ss.getSheetByName("Users").getDataRange().getValues();
+  const matches = users.slice(1).filter(function(row) { return String(row[0] || "").trim().toLowerCase() === email; });
+  if (matches.length !== 1) throw integrationError_("PAYROLL_IDENTITY_NOT_FOUND", "Không tìm thấy hồ sơ nhân sự tương ứng.");
+  const settings = safeJsonParseServer_(matches[0][5]);
+  if (settings.mettasoulTeacherId && String(settings.mettasoulTeacherId) !== teacherId) {
+    throw integrationError_("PAYROLL_IDENTITY_MISMATCH", "Mã giáo viên không khớp với hồ sơ HRM.");
+  }
+
+  const statusSheet = ss.getSheetByName("PayrollStatus");
+  const statusRows = statusSheet ? statusSheet.getDataRange().getValues() : [];
+  const statusRow = statusRows.slice(1).find(function(row) {
+    return (safeDateStr_(row[0], "yyyy-MM") || String(row[0] || "").replace("'", "")) === month;
+  });
+  let approvedSnapshot = false;
+  if (statusRow && String(statusRow[1]) === "Approved" && statusRow[6]) {
+    try { approvedSnapshot = Array.isArray(JSON.parse(statusRow[6])); } catch (error) { /* calculate as provisional */ }
+  }
+  const payroll = getCompanyPayrollData_(month, false);
+  const record = (payroll.report || []).find(function(row) { return String(row.email || "").trim().toLowerCase() === email; });
+  if (!record) return { ok: true, month: month, available: false, status: "UNAVAILABLE" };
+  return {
+    ok: true, month: month, available: true,
+    status: approvedSnapshot ? "FINAL" : "ESTIMATE",
+    isPaid: Boolean(record.isPaid),
+    totalIncome: Number(record.totalIncome || 0),
+    teachingIncome: Number(record.productIncome || 0),
+    insuranceDeduction: Number(record.fixedDed || 0),
+    bhxhDeduction: record.bhxhDeduction == null ? null : Number(record.bhxhDeduction),
+    fixedDeductionDetails: Array.isArray(record.fixedDeductionDetails) ? record.fixedDeductionDetails.map(function(item) { return { name: String(item.name || ""), amount: Number(item.amount || 0) }; }) : null,
+    otherDeduction: Number(record.incidentDed || 0),
+    taxDeduction: Number(record.tax || 0),
+    netIncome: Number(record.netIncome || 0)
+  };
 }
