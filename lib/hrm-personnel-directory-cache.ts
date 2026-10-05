@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { revalidateTag, unstable_cache } from "next/cache";
 import { getMettasoulPersonnelDirectoryFromHrm } from "@/lib/hrm-integration";
 
@@ -6,14 +7,13 @@ type TeacherIdentity = { id: string; email: string; name: string };
 
 // A successful HRM lookup can serve subsequent admin views across requests.
 // The roster is part of the key, so newly added teachers are fetched afresh.
-const readCachedPersonnelDirectory = unstable_cache(
-  (teachers: TeacherIdentity[]) => getMettasoulPersonnelDirectoryFromHrm(teachers),
-  ["hrm-personnel-directory-v1"],
-  { revalidate: 120, tags: [personnelDirectoryTag] },
-);
-
 export function readPersonnelDirectory(teachers: TeacherIdentity[]) {
-  return readCachedPersonnelDirectory(teachers);
+  const rosterHash = createHash("sha256").update(JSON.stringify(teachers)).digest("hex");
+  return unstable_cache(
+    () => getMettasoulPersonnelDirectoryFromHrm(teachers),
+    ["hrm-personnel-directory-v2", rosterHash],
+    { revalidate: 120, tags: [personnelDirectoryTag] },
+  )();
 }
 
 export function invalidatePersonnelDirectory() {

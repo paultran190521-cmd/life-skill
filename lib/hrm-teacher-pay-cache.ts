@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { revalidateTag, unstable_cache } from "next/cache";
 import { getTeacherPaySetupFromHrm } from "@/lib/hrm-integration";
 
@@ -6,11 +7,14 @@ type TeacherIdentity = { id: string; email: string; name: string };
 
 // Cache only a successful HRM read. The teacher roster is an argument, so a
 // newly added teacher gets a different cache key without waiting for the TTL.
-const readCachedTeacherPaySetup = unstable_cache(
-  (teachers: TeacherIdentity[]) => getTeacherPaySetupFromHrm(teachers),
-  ["hrm-teacher-pay-setup-v1"],
-  { revalidate: 120, tags: [teacherPayTag] },
-);
+function readCachedTeacherPaySetup(teachers: TeacherIdentity[]) {
+  const rosterHash = createHash("sha256").update(JSON.stringify(teachers)).digest("hex");
+  return unstable_cache(
+    () => getTeacherPaySetupFromHrm(teachers),
+    ["hrm-teacher-pay-setup-v2", rosterHash],
+    { revalidate: 120, tags: [teacherPayTag] },
+  )();
+}
 
 export async function readTeacherPaySetup(teachers: TeacherIdentity[], fresh = false) {
   if (!fresh) return readCachedTeacherPaySetup(teachers);
