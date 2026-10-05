@@ -18,7 +18,7 @@ new Function("module", "exports", "require", "process", compiled)(
   process,
 );
 
-const { cancelActivityCompletionInHrm, cancelTeachingPeriodInHrm, hrmIntegrationConfigured, hrmIntegrationCredentialsConfigured, pingHrmIntegration, provisionMettasoulTeacherInHrm, submitTeachingPeriodToHrm } = runtimeModule.exports;
+const { cancelActivityCompletionInHrm, cancelTeachingPeriodInHrm, getTeacherPaySetupFromHrm, hrmIntegrationConfigured, hrmIntegrationCredentialsConfigured, pingHrmIntegration, provisionMettasoulTeacherInHrm, setTeacherPayAssignmentInHrm, submitTeachingPeriodToHrm } = runtimeModule.exports;
 const previousUrl = process.env.HRM_METTASOUL_WEBHOOK_URL;
 const previousSecret = process.env.HRM_METTASOUL_WEBHOOK_SECRET;
 const previousEnabled = process.env.HRM_METTASOUL_INTEGRATION_ENABLED;
@@ -142,6 +142,22 @@ try {
   const identityPayload = JSON.parse(captured.envelope.payload);
   assert.equal(identityPayload.action, "PROVISION_WORKER");
   assert.equal(identityPayload.userEmail, "teacher@example.com");
+
+  await provisionMettasoulTeacherInHrm({
+    source: "METTASOUL", action: "PROVISION_WORKER", eventId: "identity-assistant", idempotencyKey: "PROVISION:u-2",
+    userId: "u-2", teacherId: "t-2", name: "Trợ giảng thử", userEmail: "assistant@example.com", role: "assistant",
+  });
+  assert.equal(JSON.parse(captured.envelope.payload).role, "assistant");
+
+  await getTeacherPaySetupFromHrm([{ id: "t-1", email: "TEACHER@example.com" }]);
+  assert.deepEqual(JSON.parse(captured.envelope.payload).teachers, [{ teacherId: "t-1", email: "teacher@example.com" }]);
+  await setTeacherPayAssignmentInHrm({
+    eventId: "pay-1", idempotencyKey: "PAY_ASSIGN:pay-1", teacherId: "t-1", userEmail: "teacher@example.com",
+    defaultProfileCode: "TEACHER_A", assistantProfileCode: "ASSISTANT_PRO", workerCategory: "PROFESSIONAL_TEACHER",
+    confirmExistingHrmAccount: false, actorEmail: "admin@example.com",
+  });
+  assert.equal(JSON.parse(captured.envelope.payload).action, "SET_TEACHER_PAY_ASSIGNMENT");
+  assert.equal(JSON.parse(captured.envelope.payload).defaultProfileCode, "TEACHER_A");
 
   const health = await pingHrmIntegration();
   assert.equal(JSON.parse(captured.envelope.payload).action, "PING");

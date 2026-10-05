@@ -66,7 +66,7 @@ export type ActivityCompletionCancellationPayload = {
   integrationEventId?: string;
 };
 
-/** Minimal, non-payroll identity sent only when an administrator creates a teacher in METTASOUL. */
+/** Minimal, non-payroll identity sent when an administrator creates a teacher or assistant. */
 export type IdentityProvisionPayload = {
   source: "METTASOUL";
   action: "PROVISION_WORKER";
@@ -76,7 +76,7 @@ export type IdentityProvisionPayload = {
   teacherId: string;
   name: string;
   userEmail: string;
-  role: "teacher";
+  role: "teacher" | "assistant";
   avatarUrl?: string;
 };
 
@@ -195,6 +195,52 @@ export async function cancelActivityCompletionInHrm(payload: ActivityCompletionC
 /** HRM creates a non-password profile and assigns only its configured KNS teaching task. */
 export async function provisionMettasoulTeacherInHrm(payload: IdentityProvisionPayload) {
   return sendSignedPayload(payload);
+}
+
+export type HrmTeacherPayProfile = {
+  code: string;
+  name: string;
+  roles: string[];
+  baseRate: number;
+  managementAllowance: number;
+};
+
+export type HrmTeacherPayPerson = {
+  teacherId: string;
+  identityStatus: "MISSING" | "MANAGED" | "EXISTING_HRM" | "CONFLICT";
+  assignment: null | {
+    defaultProfileCode: string;
+    assistantProfileCode: string;
+    workerCategory: string;
+    effectiveFrom: string;
+  };
+};
+
+export type HrmTeacherPaySetup = HrmTeachingResponse & {
+  profiles: HrmTeacherPayProfile[];
+  people: HrmTeacherPayPerson[];
+};
+
+export async function getTeacherPaySetupFromHrm(teachers: Array<{ id: string; email: string }>): Promise<HrmTeacherPaySetup> {
+  return sendSignedPayload<HrmTeacherPaySetup>({
+    source: "METTASOUL",
+    action: "GET_TEACHER_PAY_SETUP",
+    teachers: teachers.map((teacher) => ({ teacherId: teacher.id, email: teacher.email.trim().toLowerCase() })),
+  }, { requireEnabled: false });
+}
+
+export async function setTeacherPayAssignmentInHrm(payload: {
+  eventId: string;
+  idempotencyKey: string;
+  teacherId: string;
+  userEmail: string;
+  defaultProfileCode: string;
+  assistantProfileCode: string;
+  workerCategory: string;
+  confirmExistingHrmAccount: boolean;
+  actorEmail: string;
+}): Promise<HrmTeachingResponse & { assignment: NonNullable<HrmTeacherPayPerson["assignment"]> }> {
+  return sendSignedPayload({ source: "METTASOUL", action: "SET_TEACHER_PAY_ASSIGNMENT", ...payload }, { requireEnabled: false });
 }
 
 /** Performs a signed, read-only connectivity check. HRM does not create a work log for PING. */

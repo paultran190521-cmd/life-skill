@@ -122,19 +122,19 @@ export async function POST(request: Request) {
 
 async function provisionTeachersInHrm(users: NewUserRow[]) {
   return Promise.all(users.map(async (user) => {
-    if (user.role !== "teacher") return { userId: user.id, status: "NOT_APPLICABLE" as const };
-    const eventId = `MTS_IDENTITY_${user.id}`;
+    if (user.role !== "teacher" && user.role !== "assistant") return { userId: user.id, status: "NOT_APPLICABLE" as const };
+    const eventId = `MTS_IDENTITY_${user.id}_${user.email}_${user.role}`;
     try {
       const result = await provisionMettasoulTeacherInHrm({
         source: "METTASOUL",
         action: "PROVISION_WORKER",
         eventId,
-        idempotencyKey: `PROVISION:${user.id}`,
+        idempotencyKey: `PROVISION:${user.id}:${user.email}:${user.role}`,
         userId: user.id,
         teacherId: user.teacherId,
         name: user.name,
         userEmail: user.email,
-        role: "teacher",
+        role: user.role,
         avatarUrl: user.avatarUrl,
       });
       return { userId: user.id, status: "CONFIRMED" as const, hrmUserEmail: result.userEmail || user.email, idempotent: Boolean(result.idempotent) };

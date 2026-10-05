@@ -4,22 +4,25 @@ import { Panel } from "@/components/menus/panel";
 import { PagedList } from "@/components/paged-list";
 import type { Teacher, User, Role } from "@/lib/types";
 import type { TeacherEditDraft } from "@/components/menus/menu-types";
+import type { HrmTeacherPayPerson } from "@/lib/hrm-integration";
 export interface TeachersPanelProps {
 filteredTeachers:Teacher[]; teachers:Teacher[]; deferredSearchTerm:string; primaryButtonClass:string;
 personnelByTeacherId: Record<string, { mnv: string; cooperationYears?: number }>;
+teacherPayPeople: Record<string, HrmTeacherPayPerson>; teacherPayLoadError: string; onOpenTeacherPay:(teacher:Teacher)=>void;
 setTeacherModalOpen:(value:boolean)=>void; userForTeacher:(id:string)=>User|undefined;
 updateTeacherRole:(teacher:Teacher,role:Role)=>void; editingTeacherId:string; teacherEditDraft:TeacherEditDraft;
 startEditTeacher:(teacher:Teacher)=>void; cancelEditTeacher:()=>void; setTeacherEditDraft:(draft:TeacherEditDraft)=>void;
 saveTeacherEdit:(id:string)=>void; toggleTeacherActive:(teacher:Teacher)=>void; deleteTeacher:(teacher:Teacher)=>void;
 }
 
-export function TeachersPanel({filteredTeachers, teachers, personnelByTeacherId, deferredSearchTerm, primaryButtonClass, setTeacherModalOpen, userForTeacher, updateTeacherRole, editingTeacherId, teacherEditDraft, startEditTeacher, cancelEditTeacher, setTeacherEditDraft, saveTeacherEdit, toggleTeacherActive, deleteTeacher}: TeachersPanelProps) {
+export function TeachersPanel({filteredTeachers, teachers, personnelByTeacherId, teacherPayPeople, teacherPayLoadError, onOpenTeacherPay, deferredSearchTerm, primaryButtonClass, setTeacherModalOpen, userForTeacher, updateTeacherRole, editingTeacherId, teacherEditDraft, startEditTeacher, cancelEditTeacher, setTeacherEditDraft, saveTeacherEdit, toggleTeacherActive, deleteTeacher}: TeachersPanelProps) {
     return (
       <Panel title="Danh sách giáo viên" action={`${filteredTeachers.length}/${teachers.length} người`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-black text-[var(--brand-dark)]">Bảng quản lý giáo viên</p>
-            <p className="text-xs font-semibold text-[var(--muted)]">Theo dõi thông tin, email, số điện thoại và phân quyền.</p>
+            <p className="text-xs font-semibold text-[var(--muted)]">Theo dõi thông tin, phân quyền và bậc đơn giá từ HRM.</p>
+            {teacherPayLoadError ? <p className="mt-1 text-xs font-bold text-rose-700">Chưa đọc được bậc HRM: {teacherPayLoadError}</p> : null}
           </div>
           <button type="button" onClick={() => setTeacherModalOpen(true)} className={primaryButtonClass}>
             <UserPlus size={18} />
@@ -45,7 +48,9 @@ export function TeachersPanel({filteredTeachers, teachers, personnelByTeacherId,
                   key={teacher.id}
                   teacher={teacher}
                   personnel={personnelByTeacherId[teacher.id]}
+                  payPerson={teacherPayPeople[teacher.id]}
                   user={userForTeacher(teacher.id)}
+                  onOpenTeacherPay={onOpenTeacherPay}
                   onRoleChange={updateTeacherRole}
                   isEditing={editingTeacherId === teacher.id}
                   draft={teacherEditDraft}
@@ -72,7 +77,9 @@ export function TeachersPanel({filteredTeachers, teachers, personnelByTeacherId,
 function TeacherTableRow({
   teacher,
   personnel,
+  payPerson,
   user,
+  onOpenTeacherPay,
   onRoleChange,
   isEditing,
   draft,
@@ -85,7 +92,9 @@ function TeacherTableRow({
 }: {
   teacher: Teacher;
   personnel?: { mnv: string; cooperationYears?: number };
+  payPerson?: HrmTeacherPayPerson;
   user?: User;
+  onOpenTeacherPay: (teacher: Teacher) => void;
   onRoleChange: (teacher: Teacher, role: Role) => void;
   isEditing: boolean;
   draft: TeacherEditDraft;
@@ -172,6 +181,9 @@ function TeacherTableRow({
         <div className="min-w-0">
           <p className="truncate font-black text-[var(--brand-dark)]">{teacher.name}</p>
           <p className="truncate text-xs font-bold uppercase text-[var(--muted)]">{teacher.specialty}</p>
+          {payPerson ? <p className={`mt-1 truncate text-[11px] font-bold ${payPerson.identityStatus === "CONFLICT" ? "text-rose-700" : payPerson.identityStatus === "MISSING" ? "text-amber-700" : "text-teal-700"}`}>
+            {payPerson.identityStatus === "MISSING" ? "HRM: chờ đồng bộ" : payPerson.identityStatus === "CONFLICT" ? "HRM: cần đối chiếu" : payPerson.assignment ? `Bậc: ${payPerson.assignment.defaultProfileCode || payPerson.assignment.assistantProfileCode}` : "HRM: chưa gán bậc"}
+          </p> : null}
         </div>
       </div>
       <span className="truncate font-bold text-orange-700">{teacher.phone}</span>
@@ -195,6 +207,14 @@ function TeacherTableRow({
         {teacher.active ? "Đang bật" : "Đang tắt"}
       </span>
       <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          title="Gán bậc đơn giá tại HRM"
+          onClick={() => onOpenTeacherPay(teacher)}
+          className="inline-flex h-8 items-center rounded-lg bg-amber-50 px-2 text-[11px] font-black text-amber-800 ring-1 ring-amber-200 transition hover:bg-amber-100"
+        >
+          Bậc dạy
+        </button>
         <button
           type="button"
           title="Sửa giáo viên"

@@ -51,6 +51,7 @@ import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { Panel } from "@/components/menus/panel";
 import type { LessonDraft, BulkLessonRow, TeacherEditDraft } from "@/components/menus/menu-types";
+import type { HrmTeacherPayPerson, HrmTeacherPayProfile } from "@/lib/hrm-integration";
 import type { SchoolGuideCache } from "@/components/school-guide-panel";
 import { PagedList } from "@/components/paged-list";
 import { LessonPlanLinkForm } from "@/components/lesson-plan-link-form";
@@ -232,6 +233,8 @@ type TeacherPersonnel = {
   mnv: string;
   cooperationYears?: number;
 };
+
+type HrmProvisioningResult = { userId: string; status: "CONFIRMED" | "PENDING" | "NOT_APPLICABLE"; message?: string };
 
 type ObservabilitySnapshot = {
   checkedAt: string;
@@ -704,6 +707,13 @@ export function MettasoulApp() {
   const [sessionUserId, setSessionUserId] = useState("");
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [teacherPersonnel, setTeacherPersonnel] = useState<Record<string, TeacherPersonnel>>({});
+  const [teacherPayProfiles, setTeacherPayProfiles] = useState<HrmTeacherPayProfile[]>([]);
+  const [teacherPayPeople, setTeacherPayPeople] = useState<Record<string, HrmTeacherPayPerson>>({});
+  const [teacherPayLoadError, setTeacherPayLoadError] = useState("");
+  const [teacherPayRefreshKey, setTeacherPayRefreshKey] = useState(0);
+  const [teacherPayTargetId, setTeacherPayTargetId] = useState("");
+  const [teacherPayDraft, setTeacherPayDraft] = useState({ defaultProfileCode: "", assistantProfileCode: "", workerCategory: "PROFESSIONAL_TEACHER" });
+  const [confirmExistingHrmAccount, setConfirmExistingHrmAccount] = useState(false);
   const [schools, setSchools] = useState<School[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -1056,6 +1066,22 @@ export function MettasoulApp() {
 
     return () => { disposed = true; };
   }, [activeTab, authStatus, hasAdminAccess, personnelDirectoryKey]);
+
+  useEffect(() => {
+    if (activeTab !== "teachers" || authStatus !== "signed-in" || !hasAdminAccess) return;
+    let disposed = false;
+    void apiRequest<{ profiles: HrmTeacherPayProfile[]; people: HrmTeacherPayPerson[] }>("/api/hrm-integration/teacher-pay")
+      .then((data) => {
+        if (disposed) return;
+        setTeacherPayProfiles(data.profiles);
+        setTeacherPayPeople(Object.fromEntries(data.people.map((person) => [person.teacherId, person])));
+        setTeacherPayLoadError("");
+      })
+      .catch((error) => {
+        if (!disposed) setTeacherPayLoadError(error instanceof Error ? error.message : "Không đọc được bậc đơn giá HRM.");
+      });
+    return () => { disposed = true; };
+  }, [activeTab, authStatus, hasAdminAccess, personnelDirectoryKey, teacherPayRefreshKey]);
 
   useEffect(() => {
     if (!currentTeacherId || activeTab !== "attendance") return;
@@ -4052,6 +4078,44 @@ export function MettasoulApp() {
     };
   }
 
+  function openTeacherPay(teacher: Teacher) {
+    const assignment = teacherPayPeople[teacher.id]?.assignment;
+    const role = userForTeacher(teacher.id)?.role;
+    setTeacherPayTargetId(teacher.id);
+    setTeacherPayDraft({
+      defaultProfileCode: assignment?.defaultProfileCode || "",
+      assistantProfileCode: assignment?.assistantProfileCode || "",
+      workerCategory: assignment?.workerCategory || (role === "assistant" ? "STUDENT_ASSISTANT" : "PROFESSIONAL_TEACHER"),
+    });
+    setConfirmExistingHrmAccount(false);
+  }
+
+  async function retryTeacherHrmProvision(teacherId: string) {
+    try {
+      await saveRequest("Đang đồng bộ nhân sự HRM...", "/api/hrm-integration/teacher-provision", {
+        method: "POST", body: JSON.stringify({ teacherId }),
+      });
+      setTeacherPayRefreshKey((value) => value + 1);
+      pushToast("Đã đồng bộ HRM", "Hồ sơ nhân sự đã được HRM xác nhận.", "success");
+    } catch (error) {
+      pushToast("Chưa đồng bộ được HRM", error instanceof Error ? error.message : "Hãy thử lại sau.", "warning");
+    }
+  }
+
+  async function saveTeacherPay(teacherId: string) {
+    try {
+      await saveRequest("Đang gán bậc tại HRM...", "/api/hrm-integration/teacher-pay", {
+        method: "POST", body: JSON.stringify({ teacherId, ...teacherPayDraft, confirmExistingHrmAccount }),
+      });
+      setTeacherPayRefreshKey((value) => value + 1);
+      setTeacherPayTargetId("");
+      pushToast("HRM đã xác nhận", "Bậc đơn giá mới có hiệu lực từ hôm nay.", "success");
+    } catch (error) {
+      setTeacherPayRefreshKey((value) => value + 1);
+      pushToast("Chưa gán được bậc", error instanceof Error ? error.message : "Hãy kiểm tra lại HRM.", "error");
+    }
+  }
+
   async function addTeacher() {
     if (!teacherDraft.name || !teacherDraft.email) {
       pushToast("Thiếu thông tin", "Vui lòng nhập Họ tên và Email Google trước khi thêm.", "warning");
@@ -4059,12 +4123,16 @@ export function MettasoulApp() {
     }
 
     try {
-      const { savedTeachers, savedUsers } = await createTeachersWithAccounts([teacherDraft], "Đang thêm giáo viên...");
+      const { savedTeachers, savedUsers, hrmProvisioning } = await createTeachersWithAccounts([teacherDraft], "Đang thêm giáo viên...");
       setTeachers((items) => [...savedTeachers, ...items]);
       setAppUsers((items) => [...savedUsers, ...items.filter((item) => !savedUsers.some((saved) => saved.id === item.id))]);
       setDataStatus("connected");
       setSaveError("");
-      pushToast("Đã thêm giáo viên", `Đã tạo ${savedTeachers.length} giáo viên và tài khoản liên kết.`, "success");
+      setTeacherPayRefreshKey((value) => value + 1);
+      const pendingHrm = hrmProvisioning.filter((item) => item.status === "PENDING");
+      pushToast(pendingHrm.length ? "Đã thêm trên METTASOUL, HRM chờ đồng bộ" : "Đã thêm giáo viên",
+        pendingHrm.length ? (pendingHrm[0].message || "Mở Bậc đơn giá để thử đồng bộ lại HRM.") : `Đã tạo ${savedTeachers.length} giáo viên và tài khoản liên kết.`,
+        pendingHrm.length ? "warning" : "success");
     } catch (error) {
       handleSaveError(error);
       return;
@@ -4159,12 +4227,16 @@ export function MettasoulApp() {
     }
 
     try {
-      const { savedTeachers, savedUsers } = await createTeachersWithAccounts(rows, "Đang import giáo viên...");
+      const { savedTeachers, savedUsers, hrmProvisioning } = await createTeachersWithAccounts(rows, "Đang import giáo viên...");
       setTeachers((items) => [...savedTeachers, ...items]);
       setAppUsers((items) => [...savedUsers, ...items.filter((item) => !savedUsers.some((saved) => saved.id === item.id))]);
       setDataStatus("connected");
       setSaveError("");
-      pushToast("Import thành công", `Đã thêm ${savedTeachers.length} giáo viên từ file.`, "success");
+      setTeacherPayRefreshKey((value) => value + 1);
+      const pendingCount = hrmProvisioning.filter((item) => item.status === "PENDING").length;
+      pushToast(pendingCount ? "Import xong, HRM còn chờ đồng bộ" : "Import thành công",
+        pendingCount ? `${pendingCount} nhân sự chưa xác nhận tại HRM. Mở Bậc đơn giá để thử lại.` : `Đã thêm ${savedTeachers.length} giáo viên từ file.`,
+        pendingCount ? "warning" : "success");
       setTeacherModalOpen(false);
     } catch (error) {
       handleSaveError(error);
@@ -4211,7 +4283,7 @@ export function MettasoulApp() {
       isActive: true,
     }));
 
-    const userResult = await saveRequest<{ users: User[] } | User>("Đang tạo tài khoản giáo viên...", "/api/users", {
+    const userResult = await saveRequest<{ users: User[]; hrmProvisioning: HrmProvisioningResult[] } | (User & { hrmProvisioning: HrmProvisioningResult })>("Đang tạo tài khoản giáo viên...", "/api/users", {
       method: "POST",
       body: JSON.stringify({ users: usersPayload }),
     });
@@ -4219,7 +4291,10 @@ export function MettasoulApp() {
       ? ((userResult as { users: User[] }).users ?? [])
       : [userResult as User];
 
-    return { savedTeachers, savedUsers };
+    const hrmProvisioning = Array.isArray((userResult as { hrmProvisioning?: HrmProvisioningResult[] }).hrmProvisioning)
+      ? (userResult as { hrmProvisioning: HrmProvisioningResult[] }).hrmProvisioning
+      : [(userResult as User & { hrmProvisioning: HrmProvisioningResult }).hrmProvisioning].filter(Boolean);
+    return { savedTeachers, savedUsers, hrmProvisioning };
   }
 
   async function updateTeacherRole(teacher: Teacher, nextRole: Role) {
@@ -4250,6 +4325,10 @@ export function MettasoulApp() {
       );
       setDataStatus("connected");
       setSaveError("");
+      const provisioning = (savedUser as User & { hrmProvisioning?: HrmProvisioningResult }).hrmProvisioning;
+      if (!linkedUser && provisioning?.status === "PENDING") {
+        pushToast("Tài khoản đã tạo, HRM chờ đồng bộ", provisioning.message || "Mở Bậc đơn giá để thử đồng bộ lại HRM.", "warning");
+      }
     } catch (error) {
       handleSaveError(error);
     }
@@ -5959,6 +6038,66 @@ export function MettasoulApp() {
               </div>
             </ViewportPortal>
           ) : null}
+          {teacherPayTargetId ? (() => {
+            const target = teachers.find((teacher) => teacher.id === teacherPayTargetId);
+            if (!target) return null;
+            const person = teacherPayPeople[target.id];
+            const identityStatus = person?.identityStatus || "MISSING";
+            return <ViewportPortal>
+              <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
+                <div data-modal-scroll="true" className="app-scrollbar max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-3xl border border-cyan-100 bg-white p-5 shadow-2xl">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h2 className="text-xl font-black text-[var(--brand-dark)]">Gán bậc đơn giá từ HRM</h2>
+                      <p className="mt-1 text-sm font-semibold text-[var(--muted)]">{target.name} · {target.email}</p>
+                    </div>
+                    <button type="button" onClick={() => setTeacherPayTargetId("")} className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--line)]"><X size={17} /></button>
+                  </div>
+                  {teacherPayLoadError ? <div className="mt-4 rounded-xl bg-rose-50 p-3 text-sm font-semibold text-rose-800">{teacherPayLoadError}</div> : null}
+                  <div className="mt-4 rounded-xl bg-cyan-50 p-3 text-sm font-semibold text-cyan-900">
+                    {identityStatus === "MANAGED" ? "Nhân sự đã đồng bộ từ METTASOUL sang HRM." :
+                      identityStatus === "EXISTING_HRM" ? "Email này đã có hồ sơ HRM độc lập. Hãy xác nhận đúng người trước khi gán bậc." :
+                      identityStatus === "CONFLICT" ? "Mã giáo viên hoặc email đang xung đột với HRM; cần đối chiếu hồ sơ." :
+                      "Chưa tìm thấy nhân sự trong HRM. Hãy đồng bộ trước khi gán bậc."}
+                  </div>
+                  {!userForTeacher(target.id) ? <div className="mt-3 rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                    Giáo viên này chưa có tài khoản METTASOUL liên kết.
+                    <button type="button" disabled={isBusy} onClick={async () => { await updateTeacherRole(target, "teacher"); setTeacherPayRefreshKey((value) => value + 1); }} className="ml-2 underline disabled:opacity-50">Tạo tài khoản giáo viên</button>
+                  </div> : null}
+                  {identityStatus === "MISSING" ? <button type="button" disabled={isBusy} onClick={() => retryTeacherHrmProvision(target.id)} className="mt-3 rounded-xl border border-cyan-300 px-4 py-2 text-sm font-black text-cyan-800 disabled:opacity-50">Thử đồng bộ nhân sự HRM</button> : null}
+                  {identityStatus === "EXISTING_HRM" ? <label className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                    <input type="checkbox" checked={confirmExistingHrmAccount} onChange={(event) => setConfirmExistingHrmAccount(event.target.checked)} className="mt-1" />
+                    Tôi đã đối chiếu email và xác nhận đây là đúng nhân sự HRM.
+                  </label> : null}
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                    <label className="text-sm font-black text-[var(--brand-dark)]">Bậc dạy chính / đồng giảng
+                      <select value={teacherPayDraft.defaultProfileCode} onChange={(event) => setTeacherPayDraft({ ...teacherPayDraft, defaultProfileCode: event.target.value })} className="mt-2 w-full rounded-xl border border-cyan-200 bg-white px-3 py-2 text-sm font-semibold">
+                        <option value="">Chưa chọn</option>
+                        {teacherPayProfiles.filter((profile) => profile.roles.includes("MAIN_TEACHER") || profile.roles.includes("CO_TEACHER")).map((profile) => <option key={profile.code} value={profile.code}>{profile.name} · {profile.baseRate.toLocaleString("vi-VN")} ₫/tiết</option>)}
+                      </select>
+                    </label>
+                    <label className="text-sm font-black text-[var(--brand-dark)]">Mức khi trợ giảng
+                      <select value={teacherPayDraft.assistantProfileCode} onChange={(event) => setTeacherPayDraft({ ...teacherPayDraft, assistantProfileCode: event.target.value })} className="mt-2 w-full rounded-xl border border-cyan-200 bg-white px-3 py-2 text-sm font-semibold">
+                        <option value="">Theo nhóm người</option>
+                        {teacherPayProfiles.filter((profile) => profile.roles.includes("ASSISTANT")).map((profile) => <option key={profile.code} value={profile.code}>{profile.name} · {profile.baseRate.toLocaleString("vi-VN")} ₫/tiết</option>)}
+                      </select>
+                    </label>
+                    <label className="text-sm font-black text-[var(--brand-dark)] sm:col-span-2">Nhóm người
+                      <select value={teacherPayDraft.workerCategory} onChange={(event) => setTeacherPayDraft({ ...teacherPayDraft, workerCategory: event.target.value })} className="mt-2 w-full rounded-xl border border-cyan-200 bg-white px-3 py-2 text-sm font-semibold">
+                        <option value="PROFESSIONAL_TEACHER">Giáo viên / chuyên viên</option>
+                        <option value="STUDENT_ASSISTANT">Trợ giảng sinh viên</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p className="mt-4 text-xs font-semibold text-[var(--muted)]">HRM xác nhận bậc và giữ đơn giá gốc. Bậc mới có hiệu lực từ ngày lưu; tiết đã xác nhận giữ mức đã ghi nhận.</p>
+                  <div className="mt-5 flex justify-end gap-2">
+                    <button type="button" onClick={() => { setTeacherPayRefreshKey((value) => value + 1); }} className="rounded-xl border border-cyan-200 px-4 py-2 text-sm font-black text-cyan-800">Tải lại HRM</button>
+                    <button type="button" onClick={() => saveTeacherPay(target.id)} disabled={isBusy || Boolean(teacherPayLoadError) || (identityStatus !== "MANAGED" && !(identityStatus === "EXISTING_HRM" && confirmExistingHrmAccount)) || (!teacherPayDraft.defaultProfileCode && !teacherPayDraft.assistantProfileCode)} className="rounded-xl bg-[var(--brand)] px-4 py-2 text-sm font-black text-white disabled:opacity-50">Lưu bậc trên HRM</button>
+                  </div>
+                </div>
+              </div>
+            </ViewportPortal>;
+          })() : null}
           {teacherModalOpen ? (
             <ViewportPortal>
               <div className="app-modal-overlay z-50 grid place-items-center overflow-hidden bg-slate-950/35 p-4 backdrop-blur-sm">
@@ -9035,7 +9174,7 @@ export function MettasoulApp() {
   }
 
   function renderTeachersPanel() {
-    return <TeachersPanel filteredTeachers={filteredTeachers} teachers={teachers} personnelByTeacherId={teacherPersonnel} deferredSearchTerm={deferredSearchTerm} primaryButtonClass={primaryButtonClass} setTeacherModalOpen={setTeacherModalOpen} userForTeacher={userForTeacher} updateTeacherRole={updateTeacherRole} editingTeacherId={editingTeacherId} teacherEditDraft={teacherEditDraft} startEditTeacher={startEditTeacher} cancelEditTeacher={cancelEditTeacher} setTeacherEditDraft={setTeacherEditDraft} saveTeacherEdit={saveTeacherEdit} toggleTeacherActive={toggleTeacherActive} deleteTeacher={deleteTeacher} />;
+    return <TeachersPanel filteredTeachers={filteredTeachers} teachers={teachers} personnelByTeacherId={teacherPersonnel} teacherPayPeople={teacherPayPeople} teacherPayLoadError={teacherPayLoadError} onOpenTeacherPay={openTeacherPay} deferredSearchTerm={deferredSearchTerm} primaryButtonClass={primaryButtonClass} setTeacherModalOpen={setTeacherModalOpen} userForTeacher={userForTeacher} updateTeacherRole={updateTeacherRole} editingTeacherId={editingTeacherId} teacherEditDraft={teacherEditDraft} startEditTeacher={startEditTeacher} cancelEditTeacher={cancelEditTeacher} setTeacherEditDraft={setTeacherEditDraft} saveTeacherEdit={saveTeacherEdit} toggleTeacherActive={toggleTeacherActive} deleteTeacher={deleteTeacher} />;
   }
 
   function renderLessonsPanel() {
