@@ -806,6 +806,8 @@ export function MettasoulApp() {
   const [assignmentAvailabilityDate, setAssignmentAvailabilityDate] = useState(() => currentDateKey());
   const [assignmentAvailabilityView, setAssignmentAvailabilityView] = useState<AvailabilityCalendarViewMode>("week");
   const [availabilityOverviewDate, setAvailabilityOverviewDate] = useState("");
+  const [unassignedWarningDate, setUnassignedWarningDate] = useState("");
+  const [unassignedWarningSearch, setUnassignedWarningSearch] = useState("");
   const [selectedAvailabilityOverviewKeys, setSelectedAvailabilityOverviewKeys] = useState<string[]>([]);
   const [calendarFilters, setCalendarFilters] = useState<CalendarFilters>(() => loadCalendarFilters());
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
@@ -6893,6 +6895,7 @@ export function MettasoulApp() {
           </div>
         </section>
         {renderAdminAvailabilityPanel()}
+        <span id="assignment-school-week" className="block scroll-mt-24" aria-hidden="true" />
         <Panel title="Lịch trường theo tuần" action={assignmentSchoolId ? `${weekNeeds.length} tiết trong tuần` : "Chọn trường để bắt đầu"}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="rounded-2xl border-2 border-teal-400 bg-teal-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Tuần có ngày
@@ -7531,6 +7534,24 @@ export function MettasoulApp() {
     const unassignedWarnings = unassignedAvailabilityWarnings(
       teacherAvailability, schedules, timeSlots, currentDateKey(), 4,
     ).filter((warning) => teacherById.get(warning.teacherId)?.active !== false);
+    const warningsByDate = new Map<string, typeof unassignedWarnings>();
+    for (const warning of unassignedWarnings) {
+      const rows = warningsByDate.get(warning.date) ?? [];
+      rows.push(warning);
+      warningsByDate.set(warning.date, rows);
+    }
+    const warningDates = [...warningsByDate.keys()].sort();
+    const selectedWarningDate = warningsByDate.has(unassignedWarningDate) ? unassignedWarningDate : "";
+    const warningSearch = normalizeComparableText(unassignedWarningSearch);
+    const selectedWarnings = (warningsByDate.get(selectedWarningDate) ?? [])
+      .filter((warning) => !warningSearch || normalizeComparableText(teacherById.get(warning.teacherId)?.name || warning.teacherId).includes(warningSearch))
+      .sort((left, right) => {
+        const earliest = (warning: typeof left) => warning.entries.reduce((start, entry) => {
+          const entryStart = entry.scope === "all_day" ? "00:00" : entry.scope === "morning" ? "06:00" : entry.scope === "afternoon" ? "12:00" : timeSlots.find((slot) => slot.id === entry.timeSlotId)?.start || "23:59";
+          return entryStart < start ? entryStart : start;
+        }, "23:59");
+        return earliest(left).localeCompare(earliest(right)) || (teacherById.get(left.teacherId)?.name || left.teacherId).localeCompare(teacherById.get(right.teacherId)?.name || right.teacherId, "vi");
+      });
     const days = buildCalendarDays(
       assignmentAvailabilityMonth,
       assignmentAvailabilityDate,
@@ -7641,23 +7662,47 @@ export function MettasoulApp() {
         </div>
         <p className="mt-3 text-xs font-semibold text-[var(--muted)]">Buổi sáng gồm khung bắt đầu trước 12:00; buổi chiều từ 12:00 trở đi.</p>
         {unassignedWarnings.length > 0 ? (
-          <div className="mt-4 space-y-2 rounded-2xl border border-rose-200 bg-rose-50 p-3" role="status" aria-label="Giáo viên đã đăng ký nhưng chưa được phân công">
-            <p className="flex items-center gap-2 text-sm font-black text-rose-800"><AlertTriangle size={16} />{unassignedWarnings.length} lượt đăng ký trong 4 ngày tới chưa được phân công lịch</p>
-            {unassignedWarnings.map((warning, index) => (
-              <button
-                key={`${warning.teacherId}-${warning.date}-${index}`}
-                type="button"
-                onClick={() => {
-                  setAssignmentAvailabilityDate(warning.date);
-                  setAssignmentAvailabilityMonth(warning.date.slice(0, 7));
-                  setAssignmentAvailabilityView("week");
-                  setAvailabilityOverviewDate(warning.date);
-                }}
-                className="block w-full rounded-xl bg-white px-3 py-2 text-left text-xs font-bold text-rose-800 ring-1 ring-rose-200 hover:bg-rose-100"
-              >
-                {teacherById.get(warning.teacherId)?.name || warning.teacherId} · {formatDate(warning.date)} · {summarizeAvailabilityEntries(warning.entries, timeSlots)} — chưa có lịch phù hợp
+          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-3" role="status" aria-label="Giáo viên đã đăng ký nhưng chưa được phân công">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="flex items-center gap-2 text-sm font-black text-rose-800"><AlertTriangle size={16} className="shrink-0" />{unassignedWarnings.length} lượt đăng ký chưa được phân công trong 4 ngày tới</p>
+              <button type="button" onClick={() => { setUnassignedWarningDate(selectedWarningDate ? "" : warningDates[0]); setUnassignedWarningSearch(""); }} aria-expanded={Boolean(selectedWarningDate)} className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs font-black text-rose-800 ring-1 ring-rose-200 hover:bg-rose-100">
+                {selectedWarningDate ? "Thu gọn" : "Xem chi tiết"}{selectedWarningDate ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
-            ))}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {warningDates.map((date) => (
+                <button key={date} type="button" onClick={() => { setUnassignedWarningDate(selectedWarningDate === date ? "" : date); setUnassignedWarningSearch(""); }} aria-expanded={selectedWarningDate === date} className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${selectedWarningDate === date ? "border-rose-600 bg-rose-700 text-white" : "border-rose-200 bg-white text-rose-800 hover:bg-rose-100"}`}>
+                  {date === currentDateKey() ? "Hôm nay" : formatDate(date)} · {warningsByDate.get(date)?.length} lượt
+                </button>
+              ))}
+            </div>
+            {selectedWarningDate ? (
+              <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-black text-rose-900">Ngày {formatDate(selectedWarningDate)} · {warningsByDate.get(selectedWarningDate)?.length} lượt chưa có lịch phù hợp</p>
+                  <button type="button" onClick={() => {
+                    setAssignmentSummaryDate(selectedWarningDate);
+                    setAssignmentWeekStart(mondayDateKey(selectedWarningDate));
+                    setAssignmentAvailabilityDate(selectedWarningDate);
+                    setAssignmentAvailabilityMonth(selectedWarningDate.slice(0, 7));
+                    setAssignmentAvailabilityView("week");
+                    setUnassignedWarningDate("");
+                    window.requestAnimationFrame(() => document.getElementById("assignment-school-week")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+                  }} className="rounded-lg bg-rose-700 px-3 py-2 text-xs font-black text-white hover:bg-rose-800">Mở ngày để giao lịch</button>
+                </div>
+                <label className="mt-3 block text-xs font-bold text-rose-900">Tìm giáo viên
+                  <input type="search" value={unassignedWarningSearch} onChange={(event) => setUnassignedWarningSearch(event.target.value)} placeholder="Nhập tên giáo viên..." className="mt-1 w-full rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium outline-none focus:border-rose-500" />
+                </label>
+                <div className="app-scrollbar mt-3 max-h-72 space-y-1.5 overflow-y-auto" aria-live="polite">
+                  {selectedWarnings.length > 0 ? selectedWarnings.map((warning, index) => (
+                    <div key={`${warning.teacherId}-${warning.date}-${index}`} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-rose-100 px-3 py-2 text-xs">
+                      <span className="font-black text-[var(--brand-dark)]">{teacherById.get(warning.teacherId)?.name || warning.teacherId}</span>
+                      <span className="font-semibold text-rose-800">{summarizeAvailabilityEntries(warning.entries, timeSlots)}</span>
+                    </div>
+                  )) : <p className="py-3 text-center text-xs font-semibold text-[var(--muted)]">Không tìm thấy giáo viên phù hợp.</p>}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </Panel>
