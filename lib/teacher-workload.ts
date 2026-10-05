@@ -14,6 +14,7 @@ export function teacherWorkloadRows(
   schedules: Schedule[],
   attendance: Attendance[],
   availability: TeacherAvailability[],
+  unassigned: Array<{ teacherId: string }> = [],
 ) {
   const attended = new Set(attendance.map((row) => `${row.scheduleId}\u0000${row.teacherId}`));
   const totals = new Map(teachers.map((teacher) => [teacher.id, {
@@ -22,6 +23,7 @@ export function teacherWorkloadRows(
     assigned: 0,
     taught: 0,
     registeredDays: 0,
+    unassignedRegistrations: 0,
   }]));
   for (const schedule of schedules) {
     if (!activeSchedule(schedule)) continue;
@@ -37,25 +39,26 @@ export function teacherWorkloadRows(
     registeredDates.add(`${entry.teacherId}\u0000${entry.date}`);
   }
   for (const key of registeredDates) totals.get(key.split("\u0000")[0])!.registeredDays += 1;
+  for (const entry of unassigned) {
+    const row = totals.get(entry.teacherId);
+    if (row) row.unassignedRegistrations += 1;
+  }
   return [...totals.values()].sort((left, right) =>
-    right.taught - left.taught || right.assigned - left.assigned || left.name.localeCompare(right.name, "vi"),
+    right.assigned - left.assigned || right.taught - left.taught || right.unassignedRegistrations - left.unassignedRegistrations || left.name.localeCompare(right.name, "vi"),
   );
 }
 
-export function unassignedAvailabilityWarnings(
+export function unassignedAvailabilityRows(
   availability: TeacherAvailability[],
   schedules: Schedule[],
   slots: TimeSlot[],
-  today: string,
-  noticeDays = 4,
+  from: string,
+  to: string,
 ) {
-  const until = new Date(`${today}T00:00:00Z`);
-  until.setUTCDate(until.getUTCDate() + noticeDays);
-  const lastDate = until.toISOString().slice(0, 10);
   const slotsById = new Map(slots.map((slot) => [slot.id, slot]));
   const scheduledByTeacherDate = new Map<string, Schedule[]>();
   for (const schedule of schedules) {
-    if (!activeSchedule(schedule) || schedule.date < today || schedule.date > lastDate) continue;
+    if (!activeSchedule(schedule) || (from && schedule.date < from) || (to && schedule.date > to)) continue;
     for (const teacherId of [schedule.teacherId, ...String(schedule.assistantIds || "").split(",").map((id) => id.trim()).filter(Boolean)]) {
       const key = `${teacherId}\u0000${schedule.date}`;
       const rows = scheduledByTeacherDate.get(key) ?? [];
@@ -65,7 +68,7 @@ export function unassignedAvailabilityWarnings(
   }
   const groups = new Map<string, { teacherId: string; date: string; entries: TeacherAvailability[] }>();
   for (const entry of availability) {
-    if (entry.status !== "available" || entry.date < today || entry.date > lastDate) continue;
+    if (entry.status !== "available" || (from && entry.date < from) || (to && entry.date > to)) continue;
     const assignments = scheduledByTeacherDate.get(`${entry.teacherId}\u0000${entry.date}`) ?? [];
     const assigned = assignments.some((schedule) => {
       const slot = slotsById.get(schedule.timeSlotId);
@@ -79,4 +82,16 @@ export function unassignedAvailabilityWarnings(
     groups.set(key, group);
   }
   return [...groups.values()].sort((left, right) => left.date.localeCompare(right.date) || left.teacherId.localeCompare(right.teacherId));
+}
+
+export function unassignedAvailabilityWarnings(
+  availability: TeacherAvailability[],
+  schedules: Schedule[],
+  slots: TimeSlot[],
+  today: string,
+  noticeDays = 4,
+) {
+  const until = new Date(`${today}T00:00:00Z`);
+  until.setUTCDate(until.getUTCDate() + noticeDays);
+  return unassignedAvailabilityRows(availability, schedules, slots, today, until.toISOString().slice(0, 10));
 }

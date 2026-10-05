@@ -76,7 +76,7 @@ import { attendanceGroupKey, attendanceSessionForStart } from "@/lib/attendance-
 import { canReuseLessonPlan, findReusableLessonPlan } from "@/lib/lesson-plan-reuse";
 import { activityHasEnded } from "@/lib/activity-attendance-time";
 import { summarizeConfirmedWork } from "@/lib/confirmed-work-summary";
-import { teacherWorkloadRows, unassignedAvailabilityWarnings } from "@/lib/teacher-workload";
+import { teacherWorkloadRows, unassignedAvailabilityRows, unassignedAvailabilityWarnings } from "@/lib/teacher-workload";
 import { attendanceLookupKey, groupByKey, indexById, legacyScheduleGroupKey, buildTextSearchIndex, searchTextIndex } from "@/lib/view-index";
 import {
   availabilityTimeRangeKey,
@@ -849,6 +849,8 @@ export function MettasoulApp() {
   });
   const [assignmentWeekStart, setAssignmentWeekStart] = useState(() => mondayDateKey(currentDateKey()));
   const [assignmentSummaryDate, setAssignmentSummaryDate] = useState(() => currentDateKey());
+  const [workloadDateFrom, setWorkloadDateFrom] = useState(() => `${currentMonthKey()}-01`);
+  const [workloadDateTo, setWorkloadDateTo] = useState(() => addDaysToDateKey(`${addMonths(currentMonthKey(), 1)}-01`, -1));
   const [assignmentSchoolId, setAssignmentSchoolId] = useState("");
   const [assignmentClockMs, setAssignmentClockMs] = useState(0);
   const [schoolNeeds, setSchoolNeeds] = useState<SchoolTeachingNeed[]>([]);
@@ -7526,7 +7528,74 @@ export function MettasoulApp() {
           </Panel>
         </div>
         {renderAssignmentSummaryPanel()}
+        {renderTeacherWorkloadPanel()}
       </div>
+    );
+  }
+
+  function renderTeacherWorkloadPanel() {
+    const validRange = !workloadDateFrom || !workloadDateTo || workloadDateFrom <= workloadDateTo;
+    const isInRange = (date: string) => (!workloadDateFrom || date >= workloadDateFrom) && (!workloadDateTo || date <= workloadDateTo);
+    const workloadSchedules = validRange ? schedules.filter((schedule) => isInRange(schedule.date)) : [];
+    const workloadAvailability = validRange ? teacherAvailability.filter((entry) => entry.status === "available" && isInRange(entry.date)) : [];
+    const unassigned = validRange ? unassignedAvailabilityRows(workloadAvailability, workloadSchedules, timeSlots, workloadDateFrom, workloadDateTo) : [];
+    const workloadTeacherIds = new Set([...workloadSchedules.map((schedule) => schedule.teacherId), ...workloadAvailability.map((entry) => entry.teacherId)]);
+    const workloadRows = teacherWorkloadRows(
+      teachers.filter((teacher) => workloadTeacherIds.has(teacher.id)),
+      workloadSchedules,
+      attendance,
+      workloadAvailability,
+      unassigned,
+    ).filter((row) => row.assigned > 0 || row.taught > 0 || row.registeredDays > 0);
+    const workloadScale = Math.max(1, ...workloadRows.flatMap((row) => [row.assigned, row.taught, row.unassignedRegistrations]));
+    const today = currentDateKey();
+    const quickRanges = [
+      { label: "Hôm nay", from: today, to: today },
+      { label: "Tuần này", from: mondayDateKey(today), to: addDaysToDateKey(mondayDateKey(today), 6) },
+      { label: "Tháng này", from: `${currentMonthKey()}-01`, to: addDaysToDateKey(`${addMonths(currentMonthKey(), 1)}-01`, -1) },
+      { label: "Tất cả", from: "", to: "" },
+    ];
+
+    return (
+      <section aria-label="Biểu đồ tiết dạy theo giáo viên" className="rounded-2xl border border-sky-200 bg-white p-3 sm:p-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-base font-black text-[var(--brand-dark)]">Tiết dạy theo giáo viên</h2>
+            <p className="mt-1 text-xs font-semibold text-[var(--muted)]">Xếp hạng theo tiết được giao từ cao xuống thấp · đã dạy dựa trên điểm danh · đăng ký chưa giao tính theo lượt đăng ký.</p>
+          </div>
+          <div className="flex flex-wrap gap-3 text-xs font-bold text-slate-700">
+            <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-sky-400" />Được giao (tiết)</span>
+            <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-emerald-500" />Đã dạy (tiết)</span>
+            <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-rose-500" />Đăng ký chưa giao (lượt)</span>
+          </div>
+        </div>
+        <div className="mt-4 rounded-xl border border-cyan-100 bg-cyan-50/60 p-3">
+          <div className="flex flex-wrap gap-2">
+            {quickRanges.map((range) => <button key={range.label} type="button" onClick={() => { setWorkloadDateFrom(range.from); setWorkloadDateTo(range.to); }} aria-pressed={workloadDateFrom === range.from && workloadDateTo === range.to} className={`rounded-lg border px-3 py-1.5 text-xs font-black transition ${workloadDateFrom === range.from && workloadDateTo === range.to ? "border-[var(--brand)] bg-[var(--brand)] text-white" : "border-cyan-200 bg-white text-[var(--brand-dark)] hover:bg-cyan-100"}`}>{range.label}</button>)}
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <label className="text-xs font-bold text-[var(--brand-dark)]">Từ ngày<input type="date" value={workloadDateFrom} onChange={(event) => setWorkloadDateFrom(event.target.value)} className="mt-1 block w-full rounded-lg border border-cyan-200 bg-white px-3 py-2 text-sm" /></label>
+            <label className="text-xs font-bold text-[var(--brand-dark)]">Đến ngày<input type="date" value={workloadDateTo} onChange={(event) => setWorkloadDateTo(event.target.value)} className="mt-1 block w-full rounded-lg border border-cyan-200 bg-white px-3 py-2 text-sm" /></label>
+          </div>
+        </div>
+        {!validRange ? <p className="mt-4 rounded-xl bg-rose-50 p-3 text-sm font-bold text-rose-800">Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.</p> : workloadRows.length === 0 ? <p className="mt-4 text-sm font-semibold text-[var(--muted)]">Chưa có tiết dạy hoặc lượt đăng ký trống trong khoảng thời gian này.</p> : (
+          <div className="app-scrollbar mt-4 max-h-[520px] space-y-2.5 overflow-y-auto pr-1">
+            {workloadRows.map((row, index) => (
+              <div key={row.teacherId} className="rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 sm:grid sm:grid-cols-[minmax(145px,205px)_1fr] sm:items-center sm:gap-3">
+                <div className="mb-2 min-w-0 sm:mb-0">
+                  <p className="truncate text-xs font-black text-[var(--brand-dark)]" title={row.name}><span className="mr-2 text-sky-700">#{index + 1}</span>{row.name}</p>
+                  <p className="text-[11px] font-semibold text-[var(--muted)]">{row.registeredDays} ngày đăng ký trống</p>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2" title={`Được giao ${row.assigned} tiết`}><div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-sky-100"><div className="h-full rounded-full bg-sky-400" style={{ width: `${row.assigned / workloadScale * 100}%` }} /></div><strong className="w-8 text-right text-xs text-sky-800">{row.assigned}</strong></div>
+                  <div className="flex items-center gap-2" title={`Đã dạy ${row.taught} tiết`}><div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-emerald-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${row.taught / workloadScale * 100}%` }} /></div><strong className="w-8 text-right text-xs text-emerald-800">{row.taught}</strong></div>
+                  <div className="flex items-center gap-2" title={`Đăng ký chưa giao ${row.unassignedRegistrations} lượt`}><div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-rose-100"><div className="h-full rounded-full bg-rose-500" style={{ width: `${row.unassignedRegistrations / workloadScale * 100}%` }} /></div><strong className="w-8 text-right text-xs text-rose-800">{row.unassignedRegistrations}</strong></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     );
   }
 
@@ -8285,26 +8354,6 @@ export function MettasoulApp() {
     }
     const registeredAvailabilityRows = Array.from(registeredAvailabilityByDate.values())
       .sort((left, right) => left.date.localeCompare(right.date) || left.entries[0].createdAt.localeCompare(right.entries[0].createdAt));
-    const isInWorkloadRange = (date: string) => calendarViewMode === "month"
-      ? date.startsWith(`${calendarMonth}-`)
-      : date >= calendarRangeFrom && date <= calendarRangeTo;
-    const workloadSchedules = visibleSchedules.filter((schedule) => isInWorkloadRange(schedule.date));
-    const showRegisteredDays = calendarFilters.status === "all" && calendarFilters.schoolId === "all" &&
-      calendarFilters.classId === "all" && calendarFilters.timeSlotId === "all" && !deferredSearchTerm.trim();
-    const workloadAvailability = showRegisteredDays ? teacherAvailability.filter((entry) =>
-      entry.status === "available" && isInWorkloadRange(entry.date) &&
-      (calendarFilters.teacherId === "all" || entry.teacherId === calendarFilters.teacherId) &&
-      (!calendarFilters.dateFrom || entry.date >= calendarFilters.dateFrom) &&
-      (!calendarFilters.dateTo || entry.date <= calendarFilters.dateTo),
-    ) : [];
-    const workloadTeacherIds = new Set([...workloadSchedules.map((schedule) => schedule.teacherId), ...workloadAvailability.map((entry) => entry.teacherId)]);
-    const workloadRows = role === "admin" ? teacherWorkloadRows(
-      teachers.filter((teacher) => workloadTeacherIds.has(teacher.id)),
-      workloadSchedules,
-      attendance,
-      workloadAvailability,
-    ).filter((row) => row.assigned > 0 || row.taught > 0 || row.registeredDays > 0) : [];
-    const workloadScale = Math.max(1, ...workloadRows.map((row) => row.assigned));
 
     return (
       <div className="space-y-5">
@@ -8394,36 +8443,6 @@ export function MettasoulApp() {
               <span className="rounded-full bg-rose-50 px-3 py-1 text-rose-800">{calendarStats.cancelled} hủy</span>
             </div>
           </div>
-          {role === "admin" ? (
-            <section aria-label="Biểu đồ tiết dạy theo giáo viên" className="mb-4 rounded-2xl border border-sky-200 bg-white p-3 sm:p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-black text-[var(--brand-dark)]">Tiết dạy theo giáo viên</h3>
-                  <p className="mt-1 text-xs font-semibold text-[var(--muted)]">Giáo viên chính · theo khoảng Tháng/Tuần/Ngày đang xem và bộ lọc lịch · đã dạy dựa trên điểm danh.</p>
-                </div>
-                <div className="flex flex-wrap gap-3 text-xs font-bold text-slate-700">
-                  <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-sky-300" />Được giao</span>
-                  <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-emerald-500" />Đã dạy</span>
-                </div>
-              </div>
-              {workloadRows.length === 0 ? <p className="mt-4 text-sm font-semibold text-[var(--muted)]">Chưa có tiết dạy hoặc lịch trống đăng ký trong kỳ này.</p> : (
-                <div className="app-scrollbar mt-4 max-h-[480px] space-y-3 overflow-y-auto pr-1">
-                  {workloadRows.map((row) => (
-                    <div key={row.teacherId} className="rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 sm:grid sm:grid-cols-[minmax(130px,190px)_1fr] sm:items-center sm:gap-3">
-                      <div className="mb-2 min-w-0 sm:mb-0">
-                        <p className="truncate text-xs font-black text-[var(--brand-dark)]" title={row.name}>{row.name}</p>
-                        {showRegisteredDays ? <p className="text-[11px] font-semibold text-[var(--muted)]">{row.registeredDays} ngày đăng ký trống</p> : null}
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2"><div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-sky-100"><div className="h-full rounded-full bg-sky-300" style={{ width: `${row.assigned / workloadScale * 100}%` }} /></div><strong className="w-7 text-right text-xs text-sky-800">{row.assigned}</strong></div>
-                        <div className="flex items-center gap-2"><div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-emerald-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${row.taught / workloadScale * 100}%` }} /></div><strong className="w-7 text-right text-xs text-emerald-800">{row.taught}</strong></div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          ) : null}
           {canRegisterAvailability ? (
             <div id="teacher-availability-registration" className={`mb-4 scroll-mt-4 rounded-2xl border p-4 ${availabilityRegistrationMode ? "border-emerald-300 bg-emerald-50/70" : "border-cyan-100 bg-cyan-50/45"}`}>
               <div className="flex flex-wrap items-center justify-between gap-3">

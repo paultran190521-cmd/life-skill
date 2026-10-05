@@ -13,7 +13,7 @@ function loadModule(path, requireModule = () => { throw new Error("Unexpected im
 }
 
 const availabilityPolicy = loadModule("../lib/teacher-availability.ts");
-const { teacherWorkloadRows, unassignedAvailabilityWarnings } = loadModule(
+const { teacherWorkloadRows, unassignedAvailabilityRows, unassignedAvailabilityWarnings } = loadModule(
   "../lib/teacher-workload.ts",
   (name) => {
     if (name === "@/lib/teacher-availability") return availabilityPolicy;
@@ -86,5 +86,26 @@ assert.equal(unassignedAvailabilityWarnings(
   slots,
   "2026-10-05",
 ).length, 0, "A reassigned schedule counts for its current teacher");
+
+const rangeAvailability = [
+  availability("before", "a", "2026-09-30", "all_day"),
+  availability("matched", "a", "2026-10-05", "morning"),
+  availability("unmatched", "a", "2026-10-05", "afternoon"),
+  availability("other-day", "b", "2026-10-06", "all_day"),
+];
+const rangeSchedules = [
+  schedule("matched-day", "a", "2026-10-05", "morning", { lessonPeriods: "lesson1,lesson2" }),
+  schedule("other-day-schedule", "b", "2026-10-06", "morning", { status: "cancelled" }),
+];
+const unassignedInRange = unassignedAvailabilityRows(rangeAvailability, rangeSchedules, slots, "2026-10-05", "2026-10-06");
+assert.deepEqual(unassignedInRange.map(({ teacherId, date }) => ({ teacherId, date })), [
+  { teacherId: "a", date: "2026-10-05" },
+  { teacherId: "b", date: "2026-10-06" },
+], "The chart counts only unmatched registrations inside the selected period");
+const rankedRows = teacherWorkloadRows(teachers, rangeSchedules, [], rangeAvailability.filter((entry) => entry.date >= "2026-10-05"), unassignedInRange);
+assert.deepEqual(rankedRows.map(({ teacherId, assigned, unassignedRegistrations }) => ({ teacherId, assigned, unassignedRegistrations })), [
+  { teacherId: "a", assigned: 2, unassignedRegistrations: 1 },
+  { teacherId: "b", assigned: 0, unassignedRegistrations: 1 },
+], "Teachers rank by assigned periods, with unmatched registration counts kept separately");
 
 console.log("Teacher workload and availability warnings passed");
