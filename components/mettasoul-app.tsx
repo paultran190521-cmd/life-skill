@@ -75,6 +75,7 @@ import { scheduledLessonSections } from "@/lib/lessons";
 import { attendanceGroupKey, attendanceSessionForStart } from "@/lib/attendance-grouping";
 import { canReuseLessonPlan, findReusableLessonPlan } from "@/lib/lesson-plan-reuse";
 import { activityHasEnded } from "@/lib/activity-attendance-time";
+import { summarizeConfirmedWork } from "@/lib/confirmed-work-summary";
 import { attendanceLookupKey, groupByKey, indexById, legacyScheduleGroupKey, buildTextSearchIndex, searchTextIndex } from "@/lib/view-index";
 import {
   availabilityTimeRangeKey,
@@ -8020,6 +8021,32 @@ export function MettasoulApp() {
     const visibleActivities = role === "admin" ? activityOccurrences : activityOccurrences.filter((activity) => myAssignmentIds.has(activity.id));
     const visibleMcpEntries = mcpLedgerEntries.filter((entry) => entry.status.toLowerCase() === "active");
     const mcpBalance = visibleMcpEntries.reduce((total, entry) => total + entry.points, 0);
+    const confirmedWork = summarizeConfirmedWork(
+      teachingWorkLogs.filter((log) => log.teacherId === currentTeacherId),
+      activityOccurrences,
+      activityAssignments.filter((assignment) => assignment.teacherId === currentTeacherId),
+    );
+    const confirmedRewardRows = [
+      ...confirmedWork.topicLogs.map((log) => {
+        const schedule = schedules.find((item) => item.id === log.scheduleId);
+        return {
+          id: `topic-${log.id}`,
+          date: schedule?.date || log.submittedAt.slice(0, 10),
+          title: topicReportActivity(log.activityTypeCode)?.name || "Báo cáo chuyên đề",
+          role: teachingRoleLabel(log.roleCode),
+          money: log.money || 0,
+          mcp: log.mcpPoints || 0,
+        };
+      }),
+      ...confirmedWork.activityRows.map(({ assignment, occurrence }) => ({
+        id: `activity-${assignment.id}`,
+        date: occurrence.date,
+        title: occurrence.title,
+        role: assignment.roleCode === "LEAD" ? "Người chủ trì / diễn giả" : assignment.roleCode === "PARTICIPANT" ? "Người tham dự" : "Người thực hiện",
+        money: assignment.cashAmount || 0,
+        mcp: assignment.mcpPoints || 0,
+      })),
+    ].sort((left, right) => right.date.localeCompare(left.date));
     return (
       <div className="space-y-5">
         {role === "admin" ? <ScheduleGovernancePanel schedules={schedules} teachers={teachers} schools={schools} classes={classes} timeSlots={timeSlots} activityTypes={activityTypes} activityOccurrences={activityOccurrences} activityAssignments={activityAssignments} onWorkLogsChange={setTeachingWorkLogs} /> : null}
@@ -8103,6 +8130,24 @@ export function MettasoulApp() {
             ))}
           </div>
         </Panel>
+        {role !== "admin" && currentTeacherId ? <Panel title="Tổng hợp thù lao & MCP" action={`${confirmedWork.count} hoạt động đã xác nhận`}>
+          <p className="mb-3 text-sm text-[var(--muted)]">Cộng quyền lợi hoạt động và Báo cáo chuyên đề đã được HRM xác nhận. Thù lao là số tiền trước khấu trừ; sổ MCP phía trên còn ghi điểm tiết dạy và các điều chỉnh.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3"><p className="text-xs font-bold text-emerald-800">TỔNG THÙ LAO</p><p className="mt-1 text-lg font-black text-emerald-950 sm:text-xl">{formatCurrency(confirmedWork.money)}</p></div>
+            <div className="rounded-xl border border-violet-100 bg-violet-50 p-3"><p className="text-xs font-bold text-violet-800">MCP CÔNG VIỆC</p><p className="mt-1 text-lg font-black text-violet-950 sm:text-xl">{confirmedWork.mcpPoints.toLocaleString("vi-VN")} MCP</p></div>
+          </div>
+          {confirmedRewardRows.length ? <div className="mt-3 overflow-hidden rounded-xl border border-cyan-100">
+            <table className="w-full table-fixed text-left text-sm">
+              <thead className="bg-cyan-50 text-xs font-bold text-[var(--brand-dark)]"><tr><th className="w-[47%] px-2 py-2 sm:px-3">Công việc</th><th className="w-[32%] px-1 py-2 text-right sm:px-3">Thù lao</th><th className="w-[21%] px-2 py-2 text-right sm:px-3">MCP</th></tr></thead>
+              <tbody>{confirmedRewardRows.map((row) => <tr key={row.id} className="border-t border-cyan-100 align-top">
+                <td className="break-words px-2 py-3 sm:px-3"><span className="block font-bold text-[var(--brand-dark)]">{row.title}</span><span className="mt-1 block text-xs text-[var(--muted)]">{formatDate(row.date)} · {row.role}</span></td>
+                <td className="px-1 py-3 text-right font-bold text-emerald-700 sm:px-3">{row.money ? formatCurrency(row.money) : "—"}</td>
+                <td className="px-2 py-3 text-right font-bold text-violet-700 sm:px-3">{row.mcp ? `${row.mcp > 0 ? "+" : ""}${row.mcp}` : "—"}</td>
+              </tr>)}</tbody>
+              <tfoot className="border-t-2 border-cyan-200 bg-cyan-50 font-black"><tr><td className="px-2 py-3 sm:px-3">Tổng cộng</td><td className="px-1 py-3 text-right text-emerald-800 sm:px-3">{formatCurrency(confirmedWork.money)}</td><td className="px-2 py-3 text-right text-violet-800 sm:px-3">{confirmedWork.mcpPoints.toLocaleString("vi-VN")}</td></tr></tfoot>
+            </table>
+          </div> : <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-[var(--muted)]">Chưa có hoạt động hoặc Báo cáo chuyên đề được HRM xác nhận.</p>}
+        </Panel> : null}
         <Panel title={role === "admin" ? "Hoạt động đã giao" : "Công việc & MCP của tôi"} action={`${visibleActivities.length} hoạt động`}>
           <div className="space-y-3">
             {visibleActivities.length === 0 ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-[var(--muted)]">Chưa có hoạt động phù hợp.</p> : visibleActivities.map((activity) => {
