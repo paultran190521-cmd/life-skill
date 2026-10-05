@@ -76,6 +76,7 @@ import { attendanceGroupKey, attendanceSessionForStart } from "@/lib/attendance-
 import { canReuseLessonPlan, findReusableLessonPlan } from "@/lib/lesson-plan-reuse";
 import { activityHasEnded } from "@/lib/activity-attendance-time";
 import { summarizeConfirmedWork } from "@/lib/confirmed-work-summary";
+import { teacherWorkloadRows, unassignedAvailabilityWarnings } from "@/lib/teacher-workload";
 import { attendanceLookupKey, groupByKey, indexById, legacyScheduleGroupKey, buildTextSearchIndex, searchTextIndex } from "@/lib/view-index";
 import {
   availabilityTimeRangeKey,
@@ -772,8 +773,11 @@ export function MettasoulApp() {
     [monthlyReportSchedules],
   );
   const reportTeacherIds = useMemo(
-    () => Array.from(new Set(monthlyReportSchedules.map((schedule) => schedule.teacherId))).sort(),
-    [monthlyReportSchedules],
+    () => Array.from(new Set([
+      ...monthlyReportSchedules.map((schedule) => schedule.teacherId),
+      ...teacherAvailability.filter((entry) => entry.status === "available" && entry.date.startsWith(`${scheduleReportMonth}-`)).map((entry) => entry.teacherId),
+    ])).sort(),
+    [monthlyReportSchedules, teacherAvailability, scheduleReportMonth],
   );
   const reportSchedules = useMemo(
     () => monthlyReportSchedules.filter((schedule) =>
@@ -7527,6 +7531,9 @@ export function MettasoulApp() {
   }
 
   function renderAdminAvailabilityPanel() {
+    const unassignedWarnings = unassignedAvailabilityWarnings(
+      teacherAvailability, schedules, timeSlots, currentDateKey(), 4,
+    ).filter((warning) => teacherById.get(warning.teacherId)?.active !== false);
     const days = buildCalendarDays(
       assignmentAvailabilityMonth,
       assignmentAvailabilityDate,
@@ -7636,12 +7643,46 @@ export function MettasoulApp() {
           </div>
         </div>
         <p className="mt-3 text-xs font-semibold text-[var(--muted)]">Buổi sáng gồm khung bắt đầu trước 12:00; buổi chiều từ 12:00 trở đi.</p>
+        {unassignedWarnings.length > 0 ? (
+          <div className="mt-4 space-y-2 rounded-2xl border border-rose-200 bg-rose-50 p-3" role="status" aria-label="Giáo viên đã đăng ký nhưng chưa được phân công">
+            <p className="flex items-center gap-2 text-sm font-black text-rose-800"><AlertTriangle size={16} />{unassignedWarnings.length} lượt đăng ký trong 4 ngày tới chưa được phân công lịch</p>
+            {unassignedWarnings.map((warning, index) => (
+              <button
+                key={`${warning.teacherId}-${warning.date}-${index}`}
+                type="button"
+                onClick={() => {
+                  setAssignmentAvailabilityDate(warning.date);
+                  setAssignmentAvailabilityMonth(warning.date.slice(0, 7));
+                  setAssignmentAvailabilityView("week");
+                  setAvailabilityOverviewDate(warning.date);
+                }}
+                className="block w-full rounded-xl bg-white px-3 py-2 text-left text-xs font-bold text-rose-800 ring-1 ring-rose-200 hover:bg-rose-100"
+              >
+                {teacherById.get(warning.teacherId)?.name || warning.teacherId} · {formatDate(warning.date)} · {summarizeAvailabilityEntries(warning.entries, timeSlots)} — chưa có lịch phù hợp
+              </button>
+            ))}
+          </div>
+        ) : null}
       </Panel>
     );
   }
 
   function renderAssignmentSummaryPanel() {
     const selectedReportSchedules = reportSchedules.filter((schedule) => selectedReportScheduleIds.includes(schedule.id));
+    const showRegisteredDays = scheduleReportSchoolId === "all";
+    const workloadAvailability = teacherAvailability.filter((entry) => showRegisteredDays &&
+      entry.date.startsWith(`${scheduleReportMonth}-`) &&
+      (scheduleReportWeek === "all" || mondayDateKey(entry.date) === scheduleReportWeek) &&
+      (scheduleReportTeacherId === "all" || entry.teacherId === scheduleReportTeacherId),
+    );
+    const workloadTeacherIds = new Set([...reportSchedules.map((schedule) => schedule.teacherId), ...workloadAvailability.map((entry) => entry.teacherId)]);
+    const workloadRows = teacherWorkloadRows(
+      teachers.filter((teacher) => workloadTeacherIds.has(teacher.id) && (scheduleReportTeacherId === "all" || teacher.id === scheduleReportTeacherId)),
+      reportSchedules,
+      attendance,
+      workloadAvailability,
+    ).filter((row) => row.assigned > 0 || row.taught > 0 || row.registeredDays > 0);
+    const workloadScale = Math.max(1, ...workloadRows.map((row) => row.assigned));
     const reportScopeLabel = [
       `Tháng: ${formatMonthTitle(scheduleReportMonth)}`,
       scheduleReportWeek !== "all" ? `Tuần: ${formatDate(scheduleReportWeek)}–${formatDate(addDaysToDateKey(scheduleReportWeek, 6))}` : "Tất cả tuần",
@@ -7858,6 +7899,34 @@ export function MettasoulApp() {
               <span className="rounded-lg bg-white px-3 py-1.5 ring-1 ring-cyan-100">{reportPeriodCount} tiết</span>
               <span className="rounded-lg bg-white px-3 py-1.5 ring-1 ring-cyan-100">{reportClassCount} lớp</span>
             </div>
+            <section aria-label="Biểu đồ tiết dạy theo giáo viên" className="mt-4 rounded-2xl border border-sky-200 bg-white p-3 sm:p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-black text-[var(--brand-dark)]">Tiết dạy theo giáo viên</h3>
+                  <p className="mt-1 text-xs font-semibold text-[var(--muted)]">Giáo viên chính · mỗi lịch ghép tính đúng số tiết · đã dạy dựa trên điểm danh.</p>
+                </div>
+                <div className="flex flex-wrap gap-3 text-xs font-bold text-slate-700">
+                  <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-sky-300" />Được giao</span>
+                  <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-emerald-500" />Đã dạy</span>
+                </div>
+              </div>
+              {workloadRows.length === 0 ? <p className="mt-4 text-sm font-semibold text-[var(--muted)]">Chưa có tiết dạy hoặc lịch trống đăng ký trong kỳ này.</p> : (
+                <div className="app-scrollbar mt-4 max-h-[480px] space-y-3 overflow-y-auto pr-1">
+                  {workloadRows.map((row) => (
+                    <div key={row.teacherId} className="rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 sm:grid sm:grid-cols-[minmax(130px,190px)_1fr] sm:items-center sm:gap-3">
+                      <div className="mb-2 min-w-0 sm:mb-0">
+                        <p className="truncate text-xs font-black text-[var(--brand-dark)]" title={row.name}>{row.name}</p>
+                        {showRegisteredDays ? <p className="text-[11px] font-semibold text-[var(--muted)]">{row.registeredDays} ngày đăng ký trống</p> : null}
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2"><div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-sky-100"><div className="h-full rounded-full bg-sky-300" style={{ width: `${row.assigned / workloadScale * 100}%` }} /></div><strong className="w-7 text-right text-xs text-sky-800">{row.assigned}</strong></div>
+                        <div className="flex items-center gap-2"><div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-emerald-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${row.taught / workloadScale * 100}%` }} /></div><strong className="w-7 text-right text-xs text-emerald-800">{row.taught}</strong></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
             <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
