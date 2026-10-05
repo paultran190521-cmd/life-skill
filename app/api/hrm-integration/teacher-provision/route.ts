@@ -4,6 +4,7 @@ import { appendAuditLog } from "@/lib/audit";
 import { readSheetRows } from "@/lib/google-sheets";
 import { hrmIntegrationCredentialsConfigured, provisionMettasoulTeacherInHrm } from "@/lib/hrm-integration";
 import { invalidateTeacherPaySetup } from "@/lib/hrm-teacher-pay-cache";
+import { invalidatePersonnelDirectory } from "@/lib/hrm-personnel-directory-cache";
 import { requireSessionUser } from "@/lib/route-auth";
 
 export async function POST(request: Request) {
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
       route: "/api/hrm-integration/teacher-provision", method: "POST", authMode: auth.authMode,
       decision: "allow", source: auth.source, after: { userEmail: email, eventId, idempotent: Boolean(result.idempotent) } });
     invalidateTeacherPaySetup();
+    invalidatePersonnelDirectory();
     return NextResponse.json({ status: "CONFIRMED", idempotent: Boolean(result.idempotent) });
   } catch (error) {
     return apiError(error, requestId, { route: "/api/hrm-integration/teacher-provision", method: "POST" });

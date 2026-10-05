@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createRequestId } from "@/lib/api";
-import { getAppDataFromSheets } from "@/lib/google-sheets";
+import { readSheetRowsCached } from "@/lib/google-sheets";
 import { cooperationYearsFromPersonnelCode } from "@/lib/hrm-personnel";
-import {
-  getMettasoulPersonnelDirectoryFromHrm,
-  hrmIntegrationCredentialsConfigured,
-} from "@/lib/hrm-integration";
+import { hrmIntegrationCredentialsConfigured } from "@/lib/hrm-integration";
+import { readPersonnelDirectory } from "@/lib/hrm-personnel-directory-cache";
 import { requireSessionUser } from "@/lib/route-auth";
 
 /** Resolves only personnel codes for teachers already stored in METTASOUL. */
@@ -20,11 +18,11 @@ export async function GET(request: Request) {
       return apiFailure(503, "Kết nối HRM chưa được cấu hình trên máy chủ METTASOUL.", undefined, requestId);
     }
 
-    const { teachers } = await getAppDataFromSheets({ includeHistory: false });
-    const directory = await getMettasoulPersonnelDirectoryFromHrm(
-      teachers.map((teacher) => ({ id: teacher.id, email: teacher.email, name: teacher.name })),
+    const teachers = await readSheetRowsCached("Teachers", { ttlMs: 30_000 });
+    const directory = await readPersonnelDirectory(
+      teachers.map((teacher) => ({ id: String(teacher.id || ""), email: String(teacher.email || "").trim().toLowerCase(), name: String(teacher.name || "").trim() })),
     );
-    const allowedTeacherIds = new Set(teachers.map((teacher) => teacher.id));
+    const allowedTeacherIds = new Set(teachers.map((teacher) => String(teacher.id || "")));
     const personnelByTeacherId = Object.fromEntries(
       directory.people
         .filter((person) => allowedTeacherIds.has(person.teacherId) && person.organizationStaffCode)
