@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createRequestId } from "@/lib/api";
 import { ErrorCodes } from "@/lib/error-codes";
-import { readSheetRowsBatch } from "@/lib/google-sheets";
+import { readSheetRowsCached } from "@/lib/google-sheets";
 import { getMyPayrollSummaryFromHrm, hrmIntegrationCredentialsConfigured } from "@/lib/hrm-integration";
 import { requireSessionUser } from "@/lib/route-auth";
 
@@ -22,8 +22,8 @@ export async function GET(request: Request) {
     if (!hrmIntegrationCredentialsConfigured()) {
       return apiFailure(503, "Kết nối HRM chưa được cấu hình.", ErrorCodes.externalService, requestId);
     }
-    const rows = await readSheetRowsBatch(["Teachers"] as const);
-    const teacher = rows.Teachers.find((item) => item.id === teacherId);
+    const teachers = await readSheetRowsCached("Teachers", { ttlMs: 60_000 });
+    const teacher = teachers.find((item) => item.id === teacherId);
     if (!teacher?.email) {
       return apiFailure(404, "Không tìm thấy email HRM của giáo viên.", ErrorCodes.notFound, requestId);
     }

@@ -58,7 +58,7 @@ export function ScheduleGovernancePanel({ schedules, teachers, schools, classes,
       running = true;
       try {
         const [cancellations, payroll] = await Promise.all([request<{ reports: CancellationReport[] }>("/api/schedule-cancellations"), request<{ workLogs: TeachingWorkLog[] }>("/api/teaching-work-logs")]);
-        if (!disposed) { setReports(cancellations.reports); setLogs(payroll.workLogs); onWorkLogsChange?.(payroll.workLogs); }
+        if (!disposed) { setReports(cancellations.reports); setLogs(payroll.workLogs); setError(""); onWorkLogsChange?.(payroll.workLogs); }
         // Retry approvals whose HRM result is uncertain without another admin click.
         for (const log of payroll.workLogs.filter((row) => row.activityTypeCode && row.approvedBy && row.status === "PENDING")) {
           const result = await request<{ workLog: TeachingWorkLog }>("/api/teaching-work-logs", { scheduleId: log.scheduleId, teacherId: log.teacherId, intent: "approve" });
@@ -72,7 +72,7 @@ export function ScheduleGovernancePanel({ schedules, teachers, schools, classes,
       finally { running = false; }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 15000);
+    const timer = window.setInterval(() => void refresh(), 60000);
     return () => { disposed = true; window.clearInterval(timer); };
   }, [onWorkLogsChange]);
   const describe = (scheduleId: string, teacherId: string) => {
@@ -121,9 +121,9 @@ export function ScheduleGovernancePanel({ schedules, teachers, schools, classes,
           <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Tổng thu nhập HRM</p><p className="text-lg font-black">{formatCurrency(payrollSummary.totalIncome)}</p></div>
             <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Thu nhập công việc HRM</p><p className="text-lg font-black">{formatCurrency(payrollSummary.teachingIncome)}</p></div>
-            <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Thuế TNCN</p><p className="text-lg font-black">-{formatCurrency(payrollSummary.taxDeduction)}</p></div>
-            <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Bảo hiểm và khấu trừ cố định</p><p className="text-lg font-black">-{formatCurrency(payrollSummary.insuranceDeduction)}</p></div>
-            <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Khấu trừ khác</p><p className="text-lg font-black">-{formatCurrency(payrollSummary.otherDeduction)}</p></div>
+            <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Thuế TNCN</p><p className="text-lg font-black">{payrollSummary.taxDeduction > 0 ? "-" : ""}{formatCurrency(payrollSummary.taxDeduction)}</p></div>
+            <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Bảo hiểm và khấu trừ cố định</p><p className="text-lg font-black">{payrollSummary.insuranceDeduction > 0 ? "-" : ""}{formatCurrency(payrollSummary.insuranceDeduction)}</p></div>
+            <div className="rounded-xl bg-white p-3"><p className="text-xs font-bold text-slate-600">Khấu trừ khác</p><p className="text-lg font-black">{payrollSummary.otherDeduction > 0 ? "-" : ""}{formatCurrency(payrollSummary.otherDeduction)}</p></div>
             <div className="rounded-xl bg-emerald-100 p-3"><p className="text-xs font-bold text-emerald-900">{payrollSummary.status === "FINAL" ? "Thực nhận đã chốt" : "Dự kiến thực nhận"}</p><p className="text-xl font-black text-emerald-950">{formatCurrency(payrollSummary.netIncome)}</p></div>
           </div>
           {payrollSummary.fixedDeductionDetails?.length ? <div className="mt-2 rounded-xl bg-white p-3 text-sm"><p className="font-bold">Chi tiết khấu trừ cố định theo HRM</p>{payrollSummary.fixedDeductionDetails.map((item, index) => <p key={`${item.name}-${index}`} className="mt-1 flex justify-between gap-3"><span>{item.name}</span><span className="font-bold">-{formatCurrency(item.amount)}</span></p>)}</div> : null}
