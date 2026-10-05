@@ -185,6 +185,47 @@ try {
   assert.equal(JSON.parse(captured.envelope.payload).action, "SET_TEACHER_PAY_ASSIGNMENT");
   assert.equal(JSON.parse(captured.envelope.payload).defaultProfileCode, "TEACHER_A");
 
+  process.env.HRM_METTASOUL_WEBHOOK_URL = "https://script.google.com/macros/s/test/exec";
+  const payAssignment = {
+    eventId: "pay-readback", idempotencyKey: "PAY_ASSIGN:pay-readback", teacherId: "t-1", userEmail: "teacher@example.com",
+    defaultProfileCode: "TEACHER_C", assistantProfileCode: "ASSISTANT_PRO", workerCategory: "PROFESSIONAL_TEACHER",
+    confirmExistingHrmAccount: false, actorEmail: "admin@example.com",
+  };
+  const payCalls = [];
+  globalThis.fetch = async (url, init) => {
+    const action = init.body ? JSON.parse(JSON.parse(init.body).payload).action : "REDIRECT";
+    payCalls.push({ url: String(url), init, action });
+    if (String(url).startsWith("https://script.google.com")) {
+      return new Response(null, { status: 302, headers: { Location: `https://script.googleusercontent.com/macros/echo?call=${payCalls.length}` } });
+    }
+    if (payCalls.length <= 4) return new Response("<html>expired</html>", { status: 404, headers: { "Content-Type": "text/html" } });
+    return new Response(JSON.stringify({ ok: true, code: "TEACHER_PAY_SETUP_READY", profiles: [], people: [{
+      teacherId: "t-1", identityStatus: "MANAGED", assignment: {
+        defaultProfileCode: "TEACHER_C", assistantProfileCode: "ASSISTANT_PRO",
+        workerCategory: "PROFESSIONAL_TEACHER", effectiveFrom: "2026-10-05",
+      },
+    }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  const confirmedByReadback = await setTeacherPayAssignmentInHrm(payAssignment);
+  assert.equal(confirmedByReadback.code, "PAY_ASSIGNMENT_CONFIRMED_BY_READBACK");
+  assert.equal(payCalls.length, 6);
+  assert.equal(payCalls[0].init.body, payCalls[2].init.body, "ambiguous save must replay the same event");
+  assert.equal(payCalls[4].action, "GET_TEACHER_PAY_SETUP");
+
+  globalThis.fetch = async (url, init) => {
+    if (String(url).startsWith("https://script.google.com")) {
+      return new Response(null, { status: 302, headers: { Location: "https://script.googleusercontent.com/macros/echo?unconfirmed=1" } });
+    }
+    if (!init.body) return new Response("<html>expired</html>", { status: 404, headers: { "Content-Type": "text/html" } });
+    const action = JSON.parse(JSON.parse(init.body).payload).action;
+    return action === "GET_TEACHER_PAY_SETUP"
+      ? new Response(JSON.stringify({ ok: true, profiles: [], people: [{ teacherId: "t-1", identityStatus: "MANAGED", assignment: null }] }), { status: 200, headers: { "Content-Type": "application/json" } })
+      : new Response("<html>expired</html>", { status: 404, headers: { "Content-Type": "text/html" } });
+  };
+  await assert.rejects(() => setTeacherPayAssignmentInHrm(payAssignment), (error) => error.code === "HRM_WRITE_UNCONFIRMED");
+  process.env.HRM_METTASOUL_WEBHOOK_URL = "https://hrm.example.test/webhook";
+  globalThis.fetch = captureSuccessFetch;
+
   const health = await pingHrmIntegration();
   assert.equal(JSON.parse(captured.envelope.payload).action, "PING");
   assert.equal(health.code, "READY");

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, apiFailure, createId, createRequestId } from "@/lib/api";
 import { appendAuditLog } from "@/lib/audit";
+import { ErrorCodes } from "@/lib/error-codes";
 import { readSheetRows, readSheetRowsCached } from "@/lib/google-sheets";
 import { getTeacherPaySetupFromHrm, hrmIntegrationCredentialsConfigured, setTeacherPayAssignmentInHrm } from "@/lib/hrm-integration";
 import { requireSessionUser } from "@/lib/route-auth";
@@ -76,6 +77,9 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ assignment: result.assignment, code: result.code }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
+    if ((error as { code?: string }).code === "HRM_WRITE_UNCONFIRMED") {
+      return apiFailure(502, error instanceof Error ? error.message : "Chưa xác nhận được kết quả lưu từ HRM.", ErrorCodes.externalService, requestId);
+    }
     return apiError(error, requestId, { route: "/api/hrm-integration/teacher-pay", method: "POST" });
   }
 }

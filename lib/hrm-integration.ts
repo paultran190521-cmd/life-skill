@@ -240,7 +240,34 @@ export async function setTeacherPayAssignmentInHrm(payload: {
   confirmExistingHrmAccount: boolean;
   actorEmail: string;
 }): Promise<HrmTeachingResponse & { assignment: NonNullable<HrmTeacherPayPerson["assignment"]> }> {
-  return sendSignedPayload({ source: "METTASOUL", action: "SET_TEACHER_PAY_ASSIGNMENT", ...payload }, { requireEnabled: false });
+  try {
+    return await sendSignedPayload({ source: "METTASOUL", action: "SET_TEACHER_PAY_ASSIGNMENT", ...payload }, { requireEnabled: false });
+  } catch (error) {
+    const code = String((error as { code?: string }).code || "");
+    const diagnostic = (error as { diagnostic?: HrmResponseDiagnostic }).diagnostic;
+    const responseLost = code === "HRM_UNREACHABLE"
+      || (code === "HRM_INVALID_RESPONSE" && (diagnostic?.status === 404 || diagnostic?.status === 200));
+    if (!responseLost) throw error;
+
+    // Apps Script may commit the assignment, then its one-time response URL
+    // expires. Read HRM's authoritative state before telling the admin that
+    // the save failed. The read is safe even if the POST never reached HRM.
+    try {
+      const setup = await getTeacherPaySetupFromHrm([{ id: payload.teacherId, email: payload.userEmail, name: "" }]);
+      const person = setup.people.find((item) => item.teacherId === payload.teacherId);
+      const assignment = person?.assignment;
+      if (person && person.identityStatus !== "MISSING" && person.identityStatus !== "CONFLICT"
+        && assignment
+        && assignment.defaultProfileCode === payload.defaultProfileCode
+        && assignment.assistantProfileCode === payload.assistantProfileCode
+        && assignment.workerCategory === payload.workerCategory) {
+        return { ok: true, code: "PAY_ASSIGNMENT_CONFIRMED_BY_READBACK", assignment, idempotent: true };
+      }
+    } catch {
+      // Preserve an explicit unknown outcome when HRM cannot be read back.
+    }
+    throw integrationFailure("HRM_WRITE_UNCONFIRMED", "Chưa xác nhận được kết quả lưu. Hãy bấm Tải lại HRM trước khi lưu lần nữa.");
+  }
 }
 
 /** Performs a signed, read-only connectivity check. HRM does not create a work log for PING. */
