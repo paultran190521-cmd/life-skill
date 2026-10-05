@@ -850,6 +850,7 @@ export function MettasoulApp() {
   });
   const [assignmentWeekStart, setAssignmentWeekStart] = useState(() => mondayDateKey(currentDateKey()));
   const [assignmentSummaryDate, setAssignmentSummaryDate] = useState(() => currentDateKey());
+  const [assignmentSummaryView, setAssignmentSummaryView] = useState<"periods" | "schools" | null>(null);
   const [workloadDateFrom, setWorkloadDateFrom] = useState(() => `${currentMonthKey()}-01`);
   const [workloadDateTo, setWorkloadDateTo] = useState(() => addDaysToDateKey(`${addMonths(currentMonthKey(), 1)}-01`, -1));
   const [assignmentSchoolId, setAssignmentSchoolId] = useState("");
@@ -6582,6 +6583,13 @@ export function MettasoulApp() {
   function renderAssignmentPanel() {
     const activeTopics = topics.filter((t) => t.active !== false);
     const assignmentSummary = summarizeAssignedSchedules(schedules, assignmentSummaryDate);
+    const dayAssignedSchedules = schedules.filter((schedule) => schedule.date === assignmentSummaryDate && schedule.status !== "draft" && schedule.status !== "cancelled")
+      .sort((a, b) => (slotById.get(a.timeSlotId)?.start || "").localeCompare(slotById.get(b.timeSlotId)?.start || "") || a.id.localeCompare(b.id));
+    const daySchoolCounts = Array.from(dayAssignedSchedules.reduce((counts, schedule) => {
+      if (schedule.schoolId) counts.set(schedule.schoolId, (counts.get(schedule.schoolId) || 0) + scheduleLessonPeriodCount(schedule));
+      return counts;
+    }, new Map<string, number>()))
+      .sort(([schoolA, countA], [schoolB, countB]) => countB - countA || (schoolById.get(schoolA)?.name || schoolA).localeCompare(schoolById.get(schoolB)?.name || schoolB, "vi"));
     const assignmentWeekEnd = addDaysToDateKey(mondayDateKey(assignmentSummaryDate), 6);
     const assignmentDayLabel = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][new Date(`${assignmentSummaryDate}T00:00:00`).getDay()];
 
@@ -6889,13 +6897,29 @@ export function MettasoulApp() {
               ["Tiết trong tuần", assignmentSummary.weekPeriods],
               ["Tiết trong tháng", assignmentSummary.monthPeriods],
               ["Số trường có lịch ngày này", assignmentSummary.daySchools],
-            ] as const).map(([label, value]) => (
-              <div key={label} className="flex min-h-24 flex-col items-center justify-between rounded-xl border-t-4 border-amber-500 bg-cyan-50 px-2 py-2 text-center">
-                <span className="text-xs font-black uppercase leading-tight text-cyan-950">{label}</span>
-                <strong className="text-2xl font-black text-orange-500">{value.toLocaleString("vi-VN")}</strong>
-              </div>
-            ))}
+            ] as const).map(([label, value]) => {
+              const view = label === "Tiết trong ngày" ? "periods" : label === "Số trường có lịch ngày này" ? "schools" : null;
+              const cardClass = `flex min-h-24 flex-col items-center justify-between rounded-xl border-t-4 border-amber-500 bg-cyan-50 px-2 py-2 text-center ${view ? "cursor-pointer transition hover:bg-cyan-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700" : ""} ${assignmentSummaryView === view && view ? "ring-2 ring-cyan-600" : ""}`;
+              const content = <><span className="text-xs font-black uppercase leading-tight text-cyan-950">{label}</span><strong className="text-2xl font-black text-orange-500">{value.toLocaleString("vi-VN")}</strong></>;
+              return view ? (
+                <button key={label} type="button" aria-expanded={assignmentSummaryView === view} aria-controls="assignment-summary-detail" onClick={() => setAssignmentSummaryView((current) => current === view ? null : view)} className={cardClass}>
+                  {content}
+                </button>
+              ) : <div key={label} className={cardClass}>{content}</div>;
+            })}
           </div>
+          {assignmentSummaryView ? <div id="assignment-summary-detail" className="mt-3 rounded-xl border border-cyan-200 bg-white p-3 sm:p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-black text-cyan-950">{assignmentSummaryView === "periods" ? `Tiết đã giao ngày ${formatDate(assignmentSummaryDate)}` : `Trường có lịch ngày ${formatDate(assignmentSummaryDate)}`}</h3>
+              <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-900">{assignmentSummaryView === "periods" ? `${assignmentSummary.dayPeriods} tiết` : `${assignmentSummary.daySchools} trường`}</span>
+            </div>
+            {assignmentSummaryView === "periods" ? dayAssignedSchedules.length > 0
+              ? renderScheduleList({ items: dayAssignedSchedules, sortMode: "date-asc", compact: true, showPeriodCount: true, onOpenDetail: setSelectedScheduleDetail })
+              : <p className="rounded-xl bg-slate-50 px-3 py-4 text-sm text-[var(--muted)]">Ngày này chưa có tiết nào được giao.</p>
+              : daySchoolCounts.length > 0
+                ? <div className="grid gap-2 sm:grid-cols-2">{daySchoolCounts.map(([schoolId, count]) => <div key={schoolId} className="flex items-center justify-between gap-3 rounded-xl border border-cyan-100 bg-cyan-50/50 px-3 py-3"><span className="text-sm font-bold text-cyan-950">{schoolById.get(schoolId)?.name || schoolId}</span><span className="shrink-0 rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-orange-800">{count} tiết</span></div>)}</div>
+                : <p className="rounded-xl bg-slate-50 px-3 py-4 text-sm text-[var(--muted)]">Ngày này chưa có trường nào được giao lịch.</p>}
+          </div> : null}
         </section>
         {renderAdminAvailabilityPanel()}
         <span id="assignment-school-week" className="block scroll-mt-24" aria-hidden="true" />
@@ -12211,6 +12235,7 @@ export function MettasoulApp() {
     items,
     sortMode = "sent-desc",
     compact = false,
+    showPeriodCount = false,
     selectedIds = [],
     onToggleSelect,
     onOpenDetail,
@@ -12221,6 +12246,7 @@ export function MettasoulApp() {
     items: Schedule[];
     sortMode?: CalendarSortMode;
     compact?: boolean;
+    showPeriodCount?: boolean;
     selectedIds?: string[];
     onToggleSelect?: (scheduleId: string) => void;
     onOpenDetail?: (schedule: Schedule) => void;
@@ -12297,6 +12323,7 @@ export function MettasoulApp() {
                       >
                         {meta.lesson?.title}
                       </button>
+                      {showPeriodCount ? <span className="shrink-0 rounded-full bg-orange-50 px-2 py-1 text-xs font-black text-orange-800">{scheduleLessonPeriodCount(schedule)} tiết</span> : null}
                       <span
                         className={`shrink-0 rounded-full px-2 py-1 text-xs font-black ${teachingEnvironmentChipClass(schedule.teachingEnvironment)}`}
                       >
