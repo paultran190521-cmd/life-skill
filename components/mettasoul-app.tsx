@@ -773,11 +773,8 @@ export function MettasoulApp() {
     [monthlyReportSchedules],
   );
   const reportTeacherIds = useMemo(
-    () => Array.from(new Set([
-      ...monthlyReportSchedules.map((schedule) => schedule.teacherId),
-      ...teacherAvailability.filter((entry) => entry.status === "available" && entry.date.startsWith(`${scheduleReportMonth}-`)).map((entry) => entry.teacherId),
-    ])).sort(),
-    [monthlyReportSchedules, teacherAvailability, scheduleReportMonth],
+    () => Array.from(new Set(monthlyReportSchedules.map((schedule) => schedule.teacherId))).sort(),
+    [monthlyReportSchedules],
   );
   const reportSchedules = useMemo(
     () => monthlyReportSchedules.filter((schedule) =>
@@ -7669,20 +7666,6 @@ export function MettasoulApp() {
 
   function renderAssignmentSummaryPanel() {
     const selectedReportSchedules = reportSchedules.filter((schedule) => selectedReportScheduleIds.includes(schedule.id));
-    const showRegisteredDays = scheduleReportSchoolId === "all";
-    const workloadAvailability = teacherAvailability.filter((entry) => showRegisteredDays &&
-      entry.date.startsWith(`${scheduleReportMonth}-`) &&
-      (scheduleReportWeek === "all" || mondayDateKey(entry.date) === scheduleReportWeek) &&
-      (scheduleReportTeacherId === "all" || entry.teacherId === scheduleReportTeacherId),
-    );
-    const workloadTeacherIds = new Set([...reportSchedules.map((schedule) => schedule.teacherId), ...workloadAvailability.map((entry) => entry.teacherId)]);
-    const workloadRows = teacherWorkloadRows(
-      teachers.filter((teacher) => workloadTeacherIds.has(teacher.id) && (scheduleReportTeacherId === "all" || teacher.id === scheduleReportTeacherId)),
-      reportSchedules,
-      attendance,
-      workloadAvailability,
-    ).filter((row) => row.assigned > 0 || row.taught > 0 || row.registeredDays > 0);
-    const workloadScale = Math.max(1, ...workloadRows.map((row) => row.assigned));
     const reportScopeLabel = [
       `Tháng: ${formatMonthTitle(scheduleReportMonth)}`,
       scheduleReportWeek !== "all" ? `Tuần: ${formatDate(scheduleReportWeek)}–${formatDate(addDaysToDateKey(scheduleReportWeek, 6))}` : "Tất cả tuần",
@@ -7899,34 +7882,6 @@ export function MettasoulApp() {
               <span className="rounded-lg bg-white px-3 py-1.5 ring-1 ring-cyan-100">{reportPeriodCount} tiết</span>
               <span className="rounded-lg bg-white px-3 py-1.5 ring-1 ring-cyan-100">{reportClassCount} lớp</span>
             </div>
-            <section aria-label="Biểu đồ tiết dạy theo giáo viên" className="mt-4 rounded-2xl border border-sky-200 bg-white p-3 sm:p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-black text-[var(--brand-dark)]">Tiết dạy theo giáo viên</h3>
-                  <p className="mt-1 text-xs font-semibold text-[var(--muted)]">Giáo viên chính · mỗi lịch ghép tính đúng số tiết · đã dạy dựa trên điểm danh.</p>
-                </div>
-                <div className="flex flex-wrap gap-3 text-xs font-bold text-slate-700">
-                  <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-sky-300" />Được giao</span>
-                  <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-emerald-500" />Đã dạy</span>
-                </div>
-              </div>
-              {workloadRows.length === 0 ? <p className="mt-4 text-sm font-semibold text-[var(--muted)]">Chưa có tiết dạy hoặc lịch trống đăng ký trong kỳ này.</p> : (
-                <div className="app-scrollbar mt-4 max-h-[480px] space-y-3 overflow-y-auto pr-1">
-                  {workloadRows.map((row) => (
-                    <div key={row.teacherId} className="rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 sm:grid sm:grid-cols-[minmax(130px,190px)_1fr] sm:items-center sm:gap-3">
-                      <div className="mb-2 min-w-0 sm:mb-0">
-                        <p className="truncate text-xs font-black text-[var(--brand-dark)]" title={row.name}>{row.name}</p>
-                        {showRegisteredDays ? <p className="text-[11px] font-semibold text-[var(--muted)]">{row.registeredDays} ngày đăng ký trống</p> : null}
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2"><div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-sky-100"><div className="h-full rounded-full bg-sky-300" style={{ width: `${row.assigned / workloadScale * 100}%` }} /></div><strong className="w-7 text-right text-xs text-sky-800">{row.assigned}</strong></div>
-                        <div className="flex items-center gap-2"><div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-emerald-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${row.taught / workloadScale * 100}%` }} /></div><strong className="w-7 text-right text-xs text-emerald-800">{row.taught}</strong></div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
             <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
@@ -8282,6 +8237,26 @@ export function MettasoulApp() {
     }
     const registeredAvailabilityRows = Array.from(registeredAvailabilityByDate.values())
       .sort((left, right) => left.date.localeCompare(right.date) || left.entries[0].createdAt.localeCompare(right.entries[0].createdAt));
+    const isInWorkloadRange = (date: string) => calendarViewMode === "month"
+      ? date.startsWith(`${calendarMonth}-`)
+      : date >= calendarRangeFrom && date <= calendarRangeTo;
+    const workloadSchedules = visibleSchedules.filter((schedule) => isInWorkloadRange(schedule.date));
+    const showRegisteredDays = calendarFilters.status === "all" && calendarFilters.schoolId === "all" &&
+      calendarFilters.classId === "all" && calendarFilters.timeSlotId === "all" && !deferredSearchTerm.trim();
+    const workloadAvailability = showRegisteredDays ? teacherAvailability.filter((entry) =>
+      entry.status === "available" && isInWorkloadRange(entry.date) &&
+      (calendarFilters.teacherId === "all" || entry.teacherId === calendarFilters.teacherId) &&
+      (!calendarFilters.dateFrom || entry.date >= calendarFilters.dateFrom) &&
+      (!calendarFilters.dateTo || entry.date <= calendarFilters.dateTo),
+    ) : [];
+    const workloadTeacherIds = new Set([...workloadSchedules.map((schedule) => schedule.teacherId), ...workloadAvailability.map((entry) => entry.teacherId)]);
+    const workloadRows = role === "admin" ? teacherWorkloadRows(
+      teachers.filter((teacher) => workloadTeacherIds.has(teacher.id)),
+      workloadSchedules,
+      attendance,
+      workloadAvailability,
+    ).filter((row) => row.assigned > 0 || row.taught > 0 || row.registeredDays > 0) : [];
+    const workloadScale = Math.max(1, ...workloadRows.map((row) => row.assigned));
 
     return (
       <div className="space-y-5">
@@ -8371,6 +8346,36 @@ export function MettasoulApp() {
               <span className="rounded-full bg-rose-50 px-3 py-1 text-rose-800">{calendarStats.cancelled} hủy</span>
             </div>
           </div>
+          {role === "admin" ? (
+            <section aria-label="Biểu đồ tiết dạy theo giáo viên" className="mb-4 rounded-2xl border border-sky-200 bg-white p-3 sm:p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-black text-[var(--brand-dark)]">Tiết dạy theo giáo viên</h3>
+                  <p className="mt-1 text-xs font-semibold text-[var(--muted)]">Giáo viên chính · theo khoảng Tháng/Tuần/Ngày đang xem và bộ lọc lịch · đã dạy dựa trên điểm danh.</p>
+                </div>
+                <div className="flex flex-wrap gap-3 text-xs font-bold text-slate-700">
+                  <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-sky-300" />Được giao</span>
+                  <span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-emerald-500" />Đã dạy</span>
+                </div>
+              </div>
+              {workloadRows.length === 0 ? <p className="mt-4 text-sm font-semibold text-[var(--muted)]">Chưa có tiết dạy hoặc lịch trống đăng ký trong kỳ này.</p> : (
+                <div className="app-scrollbar mt-4 max-h-[480px] space-y-3 overflow-y-auto pr-1">
+                  {workloadRows.map((row) => (
+                    <div key={row.teacherId} className="rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 sm:grid sm:grid-cols-[minmax(130px,190px)_1fr] sm:items-center sm:gap-3">
+                      <div className="mb-2 min-w-0 sm:mb-0">
+                        <p className="truncate text-xs font-black text-[var(--brand-dark)]" title={row.name}>{row.name}</p>
+                        {showRegisteredDays ? <p className="text-[11px] font-semibold text-[var(--muted)]">{row.registeredDays} ngày đăng ký trống</p> : null}
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2"><div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-sky-100"><div className="h-full rounded-full bg-sky-300" style={{ width: `${row.assigned / workloadScale * 100}%` }} /></div><strong className="w-7 text-right text-xs text-sky-800">{row.assigned}</strong></div>
+                        <div className="flex items-center gap-2"><div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-emerald-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${row.taught / workloadScale * 100}%` }} /></div><strong className="w-7 text-right text-xs text-emerald-800">{row.taught}</strong></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
           {canRegisterAvailability ? (
             <div id="teacher-availability-registration" className={`mb-4 scroll-mt-4 rounded-2xl border p-4 ${availabilityRegistrationMode ? "border-emerald-300 bg-emerald-50/70" : "border-cyan-100 bg-cyan-50/45"}`}>
               <div className="flex flex-wrap items-center justify-between gap-3">
