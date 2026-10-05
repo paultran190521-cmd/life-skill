@@ -5,6 +5,14 @@ const workspaceRoot = process.cwd();
 
 const rules = [
   {
+    file: "app/api/mcp-ledger/route.ts",
+    checks: [
+      'requireSessionUser(request, { allowHeaderFallback: false })',
+      'teacherId && auth.user.role !== "admin"',
+      'teachers.find((item) => item.id === teacherId)',
+    ],
+  },
+  {
     file: "app/api/schedules/[id]/history/route.ts",
     checks: ['requireSessionUser(request, { allowHeaderFallback: false })', 'auth.user.role !== "admin"'],
   },

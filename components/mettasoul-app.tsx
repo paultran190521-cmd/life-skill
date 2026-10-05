@@ -1009,6 +1009,9 @@ export function MettasoulApp() {
   const role = currentUser.role;
   const hasAdminAccess = sessionUser?.role === "admin";
   const currentTeacherId = currentUser.teacherId ?? "";
+  const mcpLedgerPath = hasAdminAccess && currentTeacherId
+    ? `/api/mcp-ledger?teacherId=${encodeURIComponent(currentTeacherId)}`
+    : "/api/mcp-ledger";
   const reusedPlanBySchedule = useMemo(() => {
     const result = new Map<string, LessonPlan>();
     const schedulesById = new Map(schedules.map((schedule) => [schedule.id, schedule]));
@@ -1299,7 +1302,7 @@ export function MettasoulApp() {
     let cancelled = false;
     setMcpLedgerStatus("loading");
     setMcpLedgerError("");
-    void apiRequest<{ entries: McpLedgerEntry[] }>("/api/mcp-ledger")
+    void apiRequest<{ entries: McpLedgerEntry[] }>(mcpLedgerPath)
       .then((result) => { if (!cancelled) { setMcpLedgerEntries(result.entries ?? []); setMcpLedgerStatus("ready"); } })
       .catch((error) => {
         // Attendance must remain usable if the optional ledger display is temporarily unavailable.
@@ -1307,7 +1310,7 @@ export function MettasoulApp() {
         if (!cancelled) { setMcpLedgerEntries([]); setMcpLedgerStatus("error"); setMcpLedgerError(error instanceof Error ? error.message : "Không lấy được sổ MCP từ HRM."); }
       });
     return () => { cancelled = true; };
-  }, [authStatus, hrmIntegrationConfigured, activeTab, mcpLedgerRefreshKey]);
+  }, [authStatus, hrmIntegrationConfigured, activeTab, mcpLedgerPath, mcpLedgerRefreshKey]);
   useEffect(() => {
     if (role !== "teacher" || dataStatus !== "connected" || initializedPayrollMonth.current) return;
     const months = teachingWorkLogs
@@ -3241,9 +3244,9 @@ export function MettasoulApp() {
     window.clearTimeout(teachingCelebrationTimeout.current);
     teachingCelebrationTimeout.current = window.setTimeout(() => setTeachingCelebration(0), 1800);
     if (typeof response.workLog.mcpPoints === "number" && response.workLog.mcpPoints !== 0) {
-      void apiRequest<{ entries: McpLedgerEntry[] }>("/api/mcp-ledger")
-        .then((result) => setMcpLedgerEntries(result.entries ?? []))
-        .catch(() => undefined);
+      void apiRequest<{ entries: McpLedgerEntry[] }>(mcpLedgerPath)
+        .then((result) => { setMcpLedgerEntries(result.entries ?? []); setMcpLedgerStatus("ready"); setMcpLedgerError(""); })
+        .catch(() => { setMcpLedgerStatus("error"); setMcpLedgerError("Không lấy được sổ MCP từ HRM."); });
     }
     pushToast(
       response.idempotent ? "Đã đồng bộ trước đó" : "Đã chấm công",
