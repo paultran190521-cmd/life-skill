@@ -7664,7 +7664,7 @@ export function MettasoulApp() {
         {unassignedWarnings.length > 0 ? (
           <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-3" role="status" aria-label="Giáo viên đã đăng ký nhưng chưa được phân công">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="flex items-center gap-2 text-sm font-black text-rose-800"><AlertTriangle size={16} className="shrink-0" />{unassignedWarnings.length} lượt đăng ký chưa được phân công trong 4 ngày tới</p>
+              <p className="flex items-center gap-2 text-sm font-black text-rose-800"><AlertTriangle size={16} className="shrink-0" />{unassignedWarnings.length} lượt đăng ký chưa được phân công từ hôm nay đến 4 ngày tới</p>
               <button type="button" onClick={() => { setUnassignedWarningDate(selectedWarningDate ? "" : warningDates[0]); setUnassignedWarningSearch(""); }} aria-expanded={Boolean(selectedWarningDate)} className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs font-black text-rose-800 ring-1 ring-rose-200 hover:bg-rose-100">
                 {selectedWarningDate ? "Thu gọn" : "Xem chi tiết"}{selectedWarningDate ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
@@ -7686,6 +7686,9 @@ export function MettasoulApp() {
                     setAssignmentAvailabilityDate(selectedWarningDate);
                     setAssignmentAvailabilityMonth(selectedWarningDate.slice(0, 7));
                     setAssignmentAvailabilityView("week");
+                    setDraftSchedule((current) => current.items.length === 1 && current.items.every((item) =>
+                      !item.schoolId && !item.classId && !item.lessonId && !item.teacherIds.length && !item.assistantIds.length && !item.schoolNeedIds?.length,
+                    ) ? { ...current, items: current.items.map((item) => ({ ...item, date: selectedWarningDate })) } : current);
                     setUnassignedWarningDate("");
                     window.requestAnimationFrame(() => document.getElementById("assignment-school-week")?.scrollIntoView({ behavior: "smooth", block: "start" }));
                   }} className="rounded-lg bg-rose-700 px-3 py-2 text-xs font-black text-white hover:bg-rose-800">Mở ngày để giao lịch</button>
