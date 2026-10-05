@@ -4,6 +4,7 @@ import { appendAuditLog } from "@/lib/audit";
 import { ErrorCodes } from "@/lib/error-codes";
 import { readSheetRows, readSheetRowsCached } from "@/lib/google-sheets";
 import { getTeacherPaySetupFromHrm, hrmIntegrationCredentialsConfigured, setTeacherPayAssignmentInHrm } from "@/lib/hrm-integration";
+import { invalidateTeacherPaySetup, readTeacherPaySetup } from "@/lib/hrm-teacher-pay-cache";
 import { requireSessionUser } from "@/lib/route-auth";
 
 export async function GET(request: Request) {
@@ -12,18 +13,19 @@ export async function GET(request: Request) {
     const auth = await requireSessionUser(request, { allowHeaderFallback: false });
     if (auth.user.role !== "admin") return apiFailure(403, "Chỉ quản trị viên được xem bậc đơn giá.", undefined, requestId);
     if (!hrmIntegrationCredentialsConfigured()) return apiFailure(503, "Kết nối HRM chưa được cấu hình.", undefined, requestId);
+    const fresh = new URL(request.url).searchParams.get("fresh") === "1";
     const teachers = await readSheetRowsCached("Teachers", { ttlMs: 30_000 });
     const profiles = [] as Awaited<ReturnType<typeof getTeacherPaySetupFromHrm>>["profiles"];
     const people = [] as Awaited<ReturnType<typeof getTeacherPaySetupFromHrm>>["people"];
     for (let offset = 0; offset < teachers.length; offset += 500) {
-      const result = await getTeacherPaySetupFromHrm(teachers.slice(offset, offset + 500).map((teacher) => ({
+      const result = await readTeacherPaySetup(teachers.slice(offset, offset + 500).map((teacher) => ({
         id: String(teacher.id || ""), email: String(teacher.email || "").trim().toLowerCase(), name: String(teacher.name || "").trim(),
-      })));
+      })), fresh);
       if (!profiles.length) profiles.push(...result.profiles);
       people.push(...result.people);
     }
     if (!teachers.length) {
-      const result = await getTeacherPaySetupFromHrm([]);
+      const result = await readTeacherPaySetup([], fresh);
       profiles.push(...result.profiles);
     }
     return NextResponse.json({ profiles, people }, { headers: { "Cache-Control": "private, no-store" } });
@@ -75,6 +77,7 @@ export async function POST(request: Request) {
       route: "/api/hrm-integration/teacher-pay", method: "POST", authMode: auth.authMode, decision: "allow", reason: "admin", source: auth.source,
       after: { userEmail: email, defaultProfileCode, assistantProfileCode, workerCategory, eventId },
     });
+    invalidateTeacherPaySetup();
     return NextResponse.json({ assignment: result.assignment, code: result.code }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     if ((error as { code?: string }).code === "HRM_WRITE_UNCONFIRMED") {

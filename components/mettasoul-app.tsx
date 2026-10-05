@@ -711,6 +711,7 @@ export function MettasoulApp() {
   const [teacherPayPeople, setTeacherPayPeople] = useState<Record<string, HrmTeacherPayPerson>>({});
   const [teacherPayLoadError, setTeacherPayLoadError] = useState("");
   const [teacherPayRefreshKey, setTeacherPayRefreshKey] = useState(0);
+  const teacherPayForceRefresh = useRef(false);
   const [teacherPayTargetId, setTeacherPayTargetId] = useState("");
   const [teacherPayDraft, setTeacherPayDraft] = useState({ defaultProfileCode: "", assistantProfileCode: "", workerCategory: "PROFESSIONAL_TEACHER" });
   const [confirmExistingHrmAccount, setConfirmExistingHrmAccount] = useState(false);
@@ -1070,7 +1071,9 @@ export function MettasoulApp() {
   useEffect(() => {
     if (activeTab !== "teachers" || authStatus !== "signed-in" || !hasAdminAccess) return;
     let disposed = false;
-    void apiRequest<{ profiles: HrmTeacherPayProfile[]; people: HrmTeacherPayPerson[] }>("/api/hrm-integration/teacher-pay")
+    const path = teacherPayForceRefresh.current ? "/api/hrm-integration/teacher-pay?fresh=1" : "/api/hrm-integration/teacher-pay";
+    teacherPayForceRefresh.current = false;
+    void apiRequest<{ profiles: HrmTeacherPayProfile[]; people: HrmTeacherPayPerson[] }>(path)
       .then((data) => {
         if (disposed) return;
         setTeacherPayProfiles(data.profiles);
@@ -6091,7 +6094,7 @@ export function MettasoulApp() {
                   </div>
                   <p className="mt-4 text-xs font-semibold text-[var(--muted)]">HRM xác nhận bậc và giữ đơn giá gốc. Bậc mới có hiệu lực từ ngày lưu; tiết đã xác nhận giữ mức đã ghi nhận.</p>
                   <div className="mt-5 flex justify-end gap-2">
-                    <button type="button" onClick={() => { setTeacherPayRefreshKey((value) => value + 1); }} className="rounded-xl border border-cyan-200 px-4 py-2 text-sm font-black text-cyan-800">Tải lại HRM</button>
+                    <button type="button" onClick={() => { teacherPayForceRefresh.current = true; setTeacherPayRefreshKey((value) => value + 1); }} className="rounded-xl border border-cyan-200 px-4 py-2 text-sm font-black text-cyan-800">Tải lại HRM</button>
                     <button type="button" onClick={() => saveTeacherPay(target.id)} disabled={isBusy || Boolean(teacherPayLoadError) || (identityStatus !== "MANAGED" && !(identityStatus === "EXISTING_HRM" && confirmExistingHrmAccount)) || (!teacherPayDraft.defaultProfileCode && !teacherPayDraft.assistantProfileCode)} className="rounded-xl bg-[var(--brand)] px-4 py-2 text-sm font-black text-white disabled:opacity-50">Lưu bậc trên HRM</button>
                   </div>
                 </div>
