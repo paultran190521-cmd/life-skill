@@ -5662,7 +5662,7 @@ export function MettasoulApp() {
           </div>
           <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-cyan-100 bg-white/95 px-2 py-2 shadow-[0_-18px_42px_rgba(18,46,68,0.12)] backdrop-blur-xl lg:hidden">
             <div className="app-scrollbar flex gap-2 overflow-x-auto pb-[env(safe-area-inset-bottom)]">
-              {navigationTabs.filter((item) => item.id !== "school-guide" && item.id !== "activities").map((item) => {
+              {navigationTabs.filter((item) => item.id !== "school-guide" && item.id !== "activities" && item.id !== "resources").map((item) => {
                 const Icon = item.icon;
                 const selected = activeTab === item.id;
                 const mobileLabel = item.id === "calendar" ? "Lịch" : item.label;
