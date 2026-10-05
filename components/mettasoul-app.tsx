@@ -851,6 +851,7 @@ export function MettasoulApp() {
   const [assignmentWeekStart, setAssignmentWeekStart] = useState(() => mondayDateKey(currentDateKey()));
   const [assignmentSummaryDate, setAssignmentSummaryDate] = useState(() => currentDateKey());
   const [assignmentSummaryView, setAssignmentSummaryView] = useState<"periods" | "schools" | null>(null);
+  const [assignmentSummarySchoolId, setAssignmentSummarySchoolId] = useState("");
   const [workloadDateFrom, setWorkloadDateFrom] = useState(() => `${currentMonthKey()}-01`);
   const [workloadDateTo, setWorkloadDateTo] = useState(() => addDaysToDateKey(`${addMonths(currentMonthKey(), 1)}-01`, -1));
   const [assignmentSchoolId, setAssignmentSchoolId] = useState("");
@@ -6590,6 +6591,13 @@ export function MettasoulApp() {
       return counts;
     }, new Map<string, number>()))
       .sort(([schoolA, countA], [schoolB, countB]) => countB - countA || (schoolById.get(schoolA)?.name || schoolA).localeCompare(schoolById.get(schoolB)?.name || schoolB, "vi"));
+    const selectedSummarySchool = daySchoolCounts.find(([schoolId]) => schoolId === assignmentSummarySchoolId);
+    const selectedSchoolSchedules = selectedSummarySchool ? dayAssignedSchedules.filter((schedule) => schedule.schoolId === assignmentSummarySchoolId) : [];
+    const vietnamNow = assignmentClockMs > 0 ? vietnamDateTime(assignmentClockMs) : null;
+    const currentSchoolScheduleIds = new Set(selectedSchoolSchedules.filter((schedule) => {
+      const slot = slotById.get(schedule.timeSlotId);
+      return vietnamNow?.date === assignmentSummaryDate && Boolean(slot?.start && slot?.end && slot.start <= vietnamNow.time && vietnamNow.time < slot.end);
+    }).map((schedule) => schedule.id));
     const assignmentWeekEnd = addDaysToDateKey(mondayDateKey(assignmentSummaryDate), 6);
     const assignmentDayLabel = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][new Date(`${assignmentSummaryDate}T00:00:00`).getDay()];
 
@@ -6888,7 +6896,7 @@ export function MettasoulApp() {
             <label className="flex min-h-24 flex-col justify-between rounded-xl border-t-4 border-amber-500 bg-amber-50 px-3 py-2">
               <span className="text-xs font-black uppercase text-cyan-950">Ngày cần xem</span>
               <span className="flex items-center gap-2">
-                <input type="date" value={assignmentSummaryDate} onChange={(event) => { if (event.target.value) setAssignmentSummaryDate(event.target.value); }} className="min-w-0 w-full rounded-lg border-2 border-amber-400 bg-yellow-100 px-2 py-1 text-base font-black text-blue-800 outline-none focus:border-blue-500" />
+                <input type="date" value={assignmentSummaryDate} onChange={(event) => { if (event.target.value) { setAssignmentSummaryDate(event.target.value); setAssignmentSummarySchoolId(""); } }} className="min-w-0 w-full rounded-lg border-2 border-amber-400 bg-yellow-100 px-2 py-1 text-base font-black text-blue-800 outline-none focus:border-blue-500" />
                 <span className="shrink-0 text-base font-black text-cyan-950">{assignmentDayLabel}</span>
               </span>
             </label>
@@ -6902,7 +6910,7 @@ export function MettasoulApp() {
               const cardClass = `flex min-h-24 flex-col items-center justify-between rounded-xl border-t-4 border-amber-500 bg-cyan-50 px-2 py-2 text-center ${view ? "cursor-pointer transition hover:bg-cyan-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700" : ""} ${assignmentSummaryView === view && view ? "ring-2 ring-cyan-600" : ""}`;
               const content = <><span className="text-xs font-black uppercase leading-tight text-cyan-950">{label}</span><strong className="text-2xl font-black text-orange-500">{value.toLocaleString("vi-VN")}</strong></>;
               return view ? (
-                <button key={label} type="button" aria-expanded={assignmentSummaryView === view} aria-controls="assignment-summary-detail" onClick={() => setAssignmentSummaryView((current) => current === view ? null : view)} className={cardClass}>
+                <button key={label} type="button" aria-expanded={assignmentSummaryView === view} aria-controls="assignment-summary-detail" onClick={() => { setAssignmentSummaryView((current) => current === view ? null : view); setAssignmentSummarySchoolId(""); }} className={cardClass}>
                   {content}
                 </button>
               ) : <div key={label} className={cardClass}>{content}</div>;
@@ -6917,7 +6925,13 @@ export function MettasoulApp() {
               ? renderScheduleList({ items: dayAssignedSchedules, sortMode: "date-asc", compact: true, showPeriodCount: true, onOpenDetail: setSelectedScheduleDetail })
               : <p className="rounded-xl bg-slate-50 px-3 py-4 text-sm text-[var(--muted)]">Ngày này chưa có tiết nào được giao.</p>
               : daySchoolCounts.length > 0
-                ? <div className="grid gap-2 sm:grid-cols-2">{daySchoolCounts.map(([schoolId, count]) => <div key={schoolId} className="flex items-center justify-between gap-3 rounded-xl border border-cyan-100 bg-cyan-50/50 px-3 py-3"><span className="text-sm font-bold text-cyan-950">{schoolById.get(schoolId)?.name || schoolId}</span><span className="shrink-0 rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-orange-800">{count} tiết</span></div>)}</div>
+                ? <>
+                  <div className="grid gap-2 sm:grid-cols-2">{daySchoolCounts.map(([schoolId, count]) => <button key={schoolId} type="button" aria-expanded={assignmentSummarySchoolId === schoolId} aria-controls="assignment-school-day-detail" onClick={() => { setAssignmentSummarySchoolId((current) => current === schoolId ? "" : schoolId); setAssignmentClockMs(Date.now()); }} className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left transition hover:bg-cyan-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700 ${assignmentSummarySchoolId === schoolId ? "border-orange-400 bg-orange-50 ring-2 ring-orange-300" : "border-cyan-100 bg-cyan-50/50"}`}><span className="text-sm font-bold text-cyan-950">{schoolById.get(schoolId)?.name || schoolId}</span><span className="shrink-0 rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-orange-800">{count} tiết</span></button>)}</div>
+                  {selectedSummarySchool ? <div id="assignment-school-day-detail" className="mt-4 rounded-xl border border-orange-200 bg-orange-50/40 p-3">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h4 className="text-sm font-black text-cyan-950">{schoolById.get(assignmentSummarySchoolId)?.name || assignmentSummarySchoolId} · {formatDate(assignmentSummaryDate)}</h4><span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-orange-800">{selectedSummarySchool[1]} tiết · theo giờ bắt đầu</span></div>
+                    {renderScheduleList({ items: selectedSchoolSchedules, sortMode: "date-asc", compact: true, showPeriodCount: true, showAll: true, currentScheduleIds: currentSchoolScheduleIds, onOpenDetail: setSelectedScheduleDetail })}
+                  </div> : null}
+                </>
                 : <p className="rounded-xl bg-slate-50 px-3 py-4 text-sm text-[var(--muted)]">Ngày này chưa có trường nào được giao lịch.</p>}
           </div> : null}
         </section>
@@ -12236,6 +12250,8 @@ export function MettasoulApp() {
     sortMode = "sent-desc",
     compact = false,
     showPeriodCount = false,
+    showAll = false,
+    currentScheduleIds,
     selectedIds = [],
     onToggleSelect,
     onOpenDetail,
@@ -12247,6 +12263,8 @@ export function MettasoulApp() {
     sortMode?: CalendarSortMode;
     compact?: boolean;
     showPeriodCount?: boolean;
+    showAll?: boolean;
+    currentScheduleIds?: Set<string>;
     selectedIds?: string[];
     onToggleSelect?: (scheduleId: string) => void;
     onOpenDetail?: (schedule: Schedule) => void;
@@ -12267,7 +12285,7 @@ export function MettasoulApp() {
 
     return (
       <div className="app-scrollbar overflow-x-auto">
-        <PagedList items={orderedItems} resetKey={`${orderedItems[0]?.id ?? ""}:${orderedItems[0]?.sentAt ?? ""}:${items.length}:${sortMode}`} className="space-y-3 sm:min-w-[860px]">
+        <PagedList items={orderedItems} resetKey={`${orderedItems[0]?.id ?? ""}:${orderedItems[0]?.sentAt ?? ""}:${items.length}:${sortMode}`} pageSize={showAll ? Math.max(1, items.length) : 30} className="space-y-3 sm:min-w-[860px]">
           {(pageSchedules) => pageSchedules.map((schedule) => {
             const meta = lookupSchedule(schedule);
             const checkedIn = Boolean(meta.checkIn);
@@ -12291,7 +12309,7 @@ export function MettasoulApp() {
                     onOpenDetail(schedule);
                   }
                 }}
-                className={`rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-lg sm:p-4 ${scheduleAccentBorder(schedule.status)}`}
+                className={`rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-lg sm:p-4 ${scheduleAccentBorder(schedule.status)} ${currentScheduleIds?.has(schedule.id) ? "!border-orange-500 bg-orange-50/70 ring-2 ring-orange-400 shadow-lg shadow-orange-200" : ""}`}
               >
                 <div className="grid gap-3 sm:grid-cols-[130px_1fr_160px_190px] sm:items-center sm:gap-4">
                   <div className="flex items-start gap-2">
@@ -12324,6 +12342,7 @@ export function MettasoulApp() {
                         {meta.lesson?.title}
                       </button>
                       {showPeriodCount ? <span className="shrink-0 rounded-full bg-orange-50 px-2 py-1 text-xs font-black text-orange-800">{scheduleLessonPeriodCount(schedule)} tiết</span> : null}
+                      {currentScheduleIds?.has(schedule.id) ? <span className="shrink-0 rounded-full bg-orange-500 px-2 py-1 text-xs font-black text-white">Đang diễn ra</span> : null}
                       <span
                         className={`shrink-0 rounded-full px-2 py-1 text-xs font-black ${teachingEnvironmentChipClass(schedule.teachingEnvironment)}`}
                       >
@@ -14335,6 +14354,15 @@ function formatDateTime(value: string) {
 
 function currentDateKey() {
   return toDateKey(new Date());
+}
+
+function vietnamDateTime(timestamp: number) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(timestamp));
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || "";
+  return { date: `${value("year")}-${value("month")}-${value("day")}`, time: `${value("hour")}:${value("minute")}` };
 }
 
 function mondayDateKey(dateKey: string) {
