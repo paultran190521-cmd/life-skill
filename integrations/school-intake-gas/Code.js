@@ -16,6 +16,7 @@ function onOpen() {
     .addItem('Mở thao tác theo vai trò', 'openIntakeSidebar')
     .addItem('Kích hoạt nút gửi / duyệt trên bảng', 'installIntakeActionTrigger')
     .addItem('Kiểm tra địa chỉ gửi email', 'testIntakeSender')
+    .addItem('Bảo vệ cấu hình và nút duyệt', 'repairIntakePermissions')
     .addItem('Gửi lại email thông báo của tuần đang chọn', 'retryIntakeNotification')
     .addItem('Áp dụng bộ lọc đầu bảng', 'applyIntakeFilters')
     .addItem('Xóa bộ lọc', 'clearIntakeFilters')
@@ -37,6 +38,15 @@ function installIntakeActionTrigger() {
   const installed = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === 'handleIntakeActionEdit' && trigger.getTriggerSourceId() === workbook.getId());
   if (!installed) ScriptApp.newTrigger('handleIntakeActionEdit').forSpreadsheet(workbook).onEdit().create();
   workbook.toast(installed ? 'Nút thao tác đã được kích hoạt cho email này.' : 'Đã kích hoạt nút thao tác cho email này.', 'Xác nhận lịch', 7);
+}
+
+function repairIntakePermissions() {
+  const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  if (email !== INTAKE_OWNER) throw new Error('Chỉ chủ Google Sheet được cập nhật vùng bảo vệ phân quyền.');
+  const settings = intakeSettings_();
+  protectIntakeConfig_();
+  protectIntakeActionCells_(settings);
+  SpreadsheetApp.getActive().toast('Đã bảo vệ tab Cấu hình duyệt và hai nút V1/V2.', 'Phân quyền lịch', 7);
 }
 
 function testIntakeSender() {
@@ -79,7 +89,12 @@ function handleIntakeActionEdit(e) {
   const editor = e.user && e.user.getEmail ? String(e.user.getEmail() || '').trim().toLowerCase() : '';
   const workbook = e.source, input = cell.getSheet();
   const settings = intakeSettings_();
-  if (email !== (mode === 'submit' ? settings.submitter : settings.reviewer) || (editor && editor !== email)) return;
+  if (email !== (mode === 'submit' ? settings.submitter : settings.reviewer) || (editor && editor !== email)) {
+    cell.setNote('Chưa thực hiện: chỉ email được phân công cho vòng này mới có thể thao tác.');
+    cell.setValue(false);
+    workbook.toast('Bạn không có quyền thao tác vòng này.', 'Chưa thực hiện', 8);
+    return;
+  }
   try {
     const weekStart = String(input.getRange('D3').getDisplayValue() || '').trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) throw new Error('Hãy chọn một tuần cụ thể ở ô D3 trước khi thao tác.');
@@ -154,6 +169,21 @@ function protectIntakeActionCells_(settings) {
   });
 }
 
+function protectIntakeConfig_() {
+  const sheet = SpreadsheetApp.getActive().getSheetByName('Cấu hình duyệt');
+  if (!sheet) throw new Error('Chưa có tab Cấu hình duyệt.');
+  let protection = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET)
+    .find(rule => rule.getDescription() === 'INTAKE_CONFIG:owner-only');
+  if (!protection) protection = sheet.protect().setDescription('INTAKE_CONFIG:owner-only');
+  const allowed = new Set([INTAKE_OWNER]);
+  protection.addEditors([...allowed]);
+  protection.getEditors().forEach(editor => {
+    const email = String(editor.getEmail() || '').toLowerCase();
+    if (email && !allowed.has(email)) protection.removeEditor(editor);
+  });
+  if (protection.canDomainEdit()) protection.setDomainEdit(false);
+}
+
 function intakeSaveSettings(input) {
   const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
   if (email !== INTAKE_OWNER) throw new Error('Chỉ chủ Google Sheet được đổi email của các vai trò.');
@@ -172,6 +202,7 @@ function intakeSaveSettings(input) {
     const updatedAt = Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy HH:mm:ss');
     SpreadsheetApp.getActive().getSheetByName('Cấu hình duyệt').getRange('B2:E4').setValues(
       [settings.submitter, settings.reviewer, settings.director].map(value => [value, allowed.get(value), updatedAt, email]));
+    protectIntakeConfig_();
     protectIntakeActionCells_(settings);
     return { settings, updatedAt };
   } finally { lock.releaseLock(); }
