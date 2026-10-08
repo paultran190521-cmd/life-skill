@@ -14,7 +14,7 @@ const INTAKE_FIRST_DATA_ROW = 6;
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Xác nhận lịch')
     .addItem('Mở thao tác theo vai trò', 'openIntakeSidebar')
-    .addItem('Chủ Sheet · Kích hoạt nút V1/V2', 'installIntakeActionTrigger')
+    .addItem('Người duyệt · Kích hoạt nút V1/V2', 'installIntakeActionTrigger')
     .addItem('Kiểm tra địa chỉ gửi email', 'testIntakeSender')
     .addItem('Bảo vệ cấu hình và nút duyệt', 'repairIntakePermissions')
     .addItem('Gửi lại email thông báo của tuần đang chọn', 'retryIntakeNotification')
@@ -32,7 +32,8 @@ function openIntakeSidebar() {
 
 function installIntakeActionTrigger() {
   const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
-  if (email !== INTAKE_OWNER) throw new Error('Chủ Sheet kích hoạt nút V1/V2 một lần; người được phân công có thể thao tác qua nút hoặc sidebar.');
+  const settings = intakeSettings_();
+  if (![settings.submitter, settings.reviewer].includes(email)) throw new Error('Mỹ Nhung và Nguyễn Phương cần tự kích hoạt nút bằng tài khoản Google được phân công.');
   const workbook = SpreadsheetApp.getActive();
   const installed = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === 'handleIntakeActionEdit' && trigger.getTriggerSourceId() === workbook.getId());
   if (!installed) ScriptApp.newTrigger('handleIntakeActionEdit').forSpreadsheet(workbook).onEdit().create();
@@ -84,6 +85,7 @@ function retryIntakeNotification() {
 function handleIntakeActionEdit(e) {
   if (!e || !e.range || e.range.getSheet().getName() !== INTAKE_INPUT || e.range.getRow() !== 3 || ![8, 9].includes(e.range.getColumn()) || e.value !== 'TRUE') return;
   const cell = e.range, mode = cell.getColumn() === 8 ? 'submit' : 'apply';
+  const effective = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase();
   const editor = String((e.user && e.user.getEmail ? e.user.getEmail() : '') || Session.getActiveUser().getEmail() || '').trim().toLowerCase();
   const workbook = e.source, input = cell.getSheet();
   const settings = intakeSettings_();
@@ -93,6 +95,7 @@ function handleIntakeActionEdit(e) {
     workbook.toast('Không xác định được tài khoản người bấm. Hãy dùng màn hình thao tác theo vai trò.', 'Chưa thực hiện', 8);
     return;
   }
+  if (effective !== editor) return;
   if (editor !== (mode === 'submit' ? settings.submitter : settings.reviewer)) {
     cell.setNote('Chưa thực hiện: tài khoản ' + editor + ' chưa được phân công cho vòng này.');
     cell.setValue(false);
