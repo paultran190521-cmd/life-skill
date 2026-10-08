@@ -72,6 +72,7 @@ import { normalizeScheduleParticipantScope, resolveScheduleParticipantSelection 
 import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy";
 import { findConfiguredSchoolNeedMergeSlot } from "@/lib/school-need-merge";
 import { getSchoolAssignmentProgress, isSchoolNeedEditHighlighted, schoolNeedEditLabel } from "@/lib/school-assignment-progress";
+import { assessSchoolWeekStaffing } from "@/lib/school-week-staffing";
 import { scheduledLessonSections } from "@/lib/lessons";
 import { attendanceGroupKey, attendanceSessionForStart } from "@/lib/attendance-grouping";
 import { canReuseLessonPlan, findReusableLessonPlan } from "@/lib/lesson-plan-reuse";
@@ -870,6 +871,7 @@ export function MettasoulApp() {
   const [schoolNeeds, setSchoolNeeds] = useState<SchoolTeachingNeed[]>([]);
   const [selectedSchoolNeedIds, setSelectedSchoolNeedIds] = useState<string[]>([]);
   const [schoolNeedLoadError, setSchoolNeedLoadError] = useState("");
+  const [schoolNeedLoading, setSchoolNeedLoading] = useState(false);
   const [schoolNeedImport, setSchoolNeedImport] = useState<{ rows: SchoolNeedWorkbookRow[]; revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; changes: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> } | null>(null);
   const [editingSchoolNeedId, setEditingSchoolNeedId] = useState("");
   const [editingSchoolNeedDraft, setEditingSchoolNeedDraft] = useState<SchoolNeedWorkbookRow | null>(null);
@@ -1413,6 +1415,7 @@ export function MettasoulApp() {
     let cancelled = false;
     const end = addDaysToDateKey(assignmentWeekStart, 6);
     setSchoolNeedLoadError("");
+    setSchoolNeedLoading(true);
     void apiRequest<{ needs: SchoolTeachingNeed[]; revision: string }>(`/api/school-teaching-needs?from=${assignmentWeekStart}&to=${end}&schoolId=${encodeURIComponent(assignmentSchoolId)}`)
       .then((result) => {
         if (cancelled) return;
@@ -1421,7 +1424,8 @@ export function MettasoulApp() {
         const schoolSlots = activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolName));
         setDraftSchedule({ items: draftItemsFromSchoolNeeds(result.needs, schoolSlots) });
       })
-      .catch((error) => { if (!cancelled) setSchoolNeedLoadError(error instanceof Error ? error.message : "Không tải được lịch trường."); });
+      .catch((error) => { if (!cancelled) setSchoolNeedLoadError(error instanceof Error ? error.message : "Không tải được lịch trường."); })
+      .finally(() => { if (!cancelled) setSchoolNeedLoading(false); });
     return () => { cancelled = true; };
   }, [activeTab, authStatus, role, assignmentWeekStart, assignmentSchoolId, activeTimeSlots, schools]);
 
@@ -6750,6 +6754,18 @@ export function MettasoulApp() {
     const selectedWeekNeedIds = selectedSchoolNeedIds.filter((id) => selectableWeekNeedIds.has(id));
     const assignmentProgress = getSchoolAssignmentProgress(weekNeeds, draftSchedule.items);
     const assignmentSchoolName = schoolById.get(assignmentSchoolId)?.name || "trường đã chọn";
+    const weekStaffing = assignmentSchoolId ? assessSchoolWeekStaffing({
+      needs: weekNeeds,
+      drafts: draftSchedule.items,
+      teachers: activeSchedulingTeachers,
+      availability: teacherAvailability,
+      schedules,
+      slots: [
+        ...activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, assignmentSchoolName)),
+        ...activeTimeSlots.filter((slot) => !isTimeSlotAllowedForSchool(slot, assignmentSchoolName)),
+      ],
+      canMerge: (first, second) => findConfiguredSchoolNeedMergeSlot(first, second, activeTimeSlots, assignmentSchoolName),
+    }) : null;
     const allDraftsReady = draftSchedule.items.every((item) => item.teacherIds.length > 0 && item.lessonId && item.lessonPeriods.length > 0 && item.timeSlotId);
     const canSendCompleteSchoolWeek = assignmentProgress.totalNeedCount > 0 && assignmentProgress.remainingNeedCount === 0 && draftSchedule.items.length > 0 && allDraftsReady && draftScheduleConflicts.length === 0 && draftLessonProgressionConflicts.length === 0;
     const draftNeedById = new Map(schoolNeeds.map((need) => [need.id, need]));
@@ -7082,16 +7098,28 @@ export function MettasoulApp() {
         <Panel title="Lịch trường theo tuần" action={assignmentSchoolId ? `${weekNeeds.length} tiết trong tuần` : "Chọn trường để bắt đầu"}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="rounded-2xl border-2 border-teal-400 bg-teal-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Tuần có ngày
-              <input type="date" value={assignmentWeekStart} onChange={(event) => { setAssignmentWeekStart(mondayDateKey(event.target.value)); setSelectedSchoolNeedIds([]); }} className={`${inputClass} mt-1 w-full`} />
+              <input type="date" value={assignmentWeekStart} onChange={(event) => { setSchoolNeedLoading(Boolean(assignmentSchoolId)); setAssignmentWeekStart(mondayDateKey(event.target.value)); setSelectedSchoolNeedIds([]); }} className={`${inputClass} mt-1 w-full`} />
             </label>
             <label className="rounded-2xl border-2 border-violet-400 bg-violet-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Trường
-              <select value={assignmentSchoolId} onChange={(event) => { setAssignmentSchoolId(event.target.value); setDraftSchedule({ items: event.target.value ? [] : [createDraftScheduleItem()] }); setSchoolNeeds([]); setSelectedSchoolNeedIds([]); }} className={`${inputClass} mt-1 w-full`}>
+              <select value={assignmentSchoolId} onChange={(event) => { setSchoolNeedLoading(Boolean(event.target.value)); setAssignmentSchoolId(event.target.value); setDraftSchedule({ items: event.target.value ? [] : [createDraftScheduleItem()] }); setSchoolNeeds([]); setSelectedSchoolNeedIds([]); }} className={`${inputClass} mt-1 w-full`}>
                 <option value="">Chọn trường</option>
                 {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
               </select>
             </label>
           </div>
           <p className="mt-2 text-xs font-semibold text-[var(--muted)]">Đang xem {formatDate(assignmentWeekStart)}–{formatDate(weekEnd)}. Các dòng chưa giao tự xuất hiện bên dưới theo giờ, kèm lớp và môi trường dạy.</p>
+          {assignmentSchoolId && !schoolNeedLoadError ? <div role={weekStaffing && weekStaffing.missingAssignments > 0 ? "alert" : "status"} className={"mt-3 rounded-2xl border-2 p-3 text-sm " + (schoolNeedLoading ? "border-slate-200 bg-slate-50 text-slate-700" : weekStaffing?.missingAssignments ? "border-rose-300 bg-rose-50 text-rose-950" : weekStaffing?.periodCount ? "border-emerald-300 bg-emerald-50 text-emerald-950" : "border-amber-200 bg-amber-50 text-amber-950")}>
+            {schoolNeedLoading ? <p className="font-black">Đang kiểm tra giáo viên cho tuần và trường đã chọn…</p>
+              : !weekStaffing?.periodCount ? <p className="font-black">Chưa có tiết nào của trường trong tuần này để kiểm tra giáo viên.</p>
+              : <>
+                <p className="font-black">{weekStaffing.uncertain ? "Cần kiểm tra thêm khả năng xếp giáo viên" : weekStaffing.missingAssignments ? "Thiếu giáo viên cho " + weekStaffing.missingAssignments + " lượt dạy" : "Đủ giáo viên theo lịch trống đã đăng ký"}</p>
+                <p className="mt-1 font-semibold">{weekStaffing.coveredPeriods}/{weekStaffing.periodCount} tiết đã có giáo viên · {weekStaffing.pendingPeriods} tiết còn cần giao · {weekStaffing.coverableAssignments}/{weekStaffing.requiredAssignments} lượt dạy có thể bố trí · {weekStaffing.registeredTeachers} giáo viên đăng ký rảnh trong tuần.</p>
+                {weekStaffing.mergeablePairs ? <p className="mt-1 text-xs">Đã tính {weekStaffing.mergeablePairs} cặp tiết có thể gộp thành một lượt dạy; khi giao lịch vẫn cần bấm “Gộp 2 tiết”. Các lớp/tiết khác phải có giáo viên riêng nếu trùng giờ.</p> : null}
+                {weekStaffing.firstGap ? <p className="mt-1 text-xs font-bold">Khung cần bổ sung: {formatDate(weekStaffing.firstGap.date)} · {weekStaffing.firstGap.start}–{weekStaffing.firstGap.end} · {weekStaffing.firstGap.classIds.map((id) => classById.get(id)?.name || id).join(", ")}.</p> : null}
+                {weekStaffing.reviewCount ? <p className="mt-1 text-xs font-bold">Có {weekStaffing.reviewCount} tiết cần đối chiếu lịch đã giao; chưa tính là tiết mới cần bố trí.</p> : null}
+                <p className="mt-1 text-xs">Dự báo xét giáo viên đang hoạt động, lịch trống đã đăng ký và lịch trùng giờ; chưa thay thế bước kiểm tra xung đột khi gửi.</p>
+              </>}
+          </div> : null}
           {assignmentSchoolId && (classesForSchool(classes, assignmentSchoolId).length === 0 || !activeTimeSlots.some((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || "") && !isDoubleTeachingTimeSlot(slot))) ? <p role="alert" className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">Trường này chưa có đủ lớp hoặc khung tiết đơn trong cấu hình. Hãy bổ sung trước khi nhập lịch theo từng tiết.</p> : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => void downloadSchoolNeedWorkbook(false)} className="rounded-xl border border-cyan-300 px-3 py-2 text-xs font-bold text-cyan-900">Tải mẫu Excel</button>
