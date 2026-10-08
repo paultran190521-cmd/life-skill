@@ -14,7 +14,7 @@ const INTAKE_FIRST_DATA_ROW = 6;
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Xác nhận lịch')
     .addItem('Mở thao tác theo vai trò', 'openIntakeSidebar')
-    .addItem('Kích hoạt nút gửi / duyệt trên bảng', 'installIntakeActionTrigger')
+    .addItem('Chủ Sheet · Kích hoạt nút V1/V2', 'installIntakeActionTrigger')
     .addItem('Kiểm tra địa chỉ gửi email', 'testIntakeSender')
     .addItem('Bảo vệ cấu hình và nút duyệt', 'repairIntakePermissions')
     .addItem('Gửi lại email thông báo của tuần đang chọn', 'retryIntakeNotification')
@@ -32,8 +32,7 @@ function openIntakeSidebar() {
 
 function installIntakeActionTrigger() {
   const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
-  const settings = intakeSettings_();
-  if (![settings.submitter, settings.reviewer].includes(email)) throw new Error('Email này không được giao vòng gửi hoặc duyệt lịch.');
+  if (email !== INTAKE_OWNER) throw new Error('Chủ Sheet kích hoạt nút V1/V2 một lần; người được phân công có thể thao tác qua nút hoặc sidebar.');
   const workbook = SpreadsheetApp.getActive();
   const installed = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === 'handleIntakeActionEdit' && trigger.getTriggerSourceId() === workbook.getId());
   if (!installed) ScriptApp.newTrigger('handleIntakeActionEdit').forSpreadsheet(workbook).onEdit().create();
@@ -85,14 +84,19 @@ function retryIntakeNotification() {
 function handleIntakeActionEdit(e) {
   if (!e || !e.range || e.range.getSheet().getName() !== INTAKE_INPUT || e.range.getRow() !== 3 || ![8, 9].includes(e.range.getColumn()) || e.value !== 'TRUE') return;
   const cell = e.range, mode = cell.getColumn() === 8 ? 'submit' : 'apply';
-  const email = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase();
-  const editor = e.user && e.user.getEmail ? String(e.user.getEmail() || '').trim().toLowerCase() : '';
+  const editor = String((e.user && e.user.getEmail ? e.user.getEmail() : '') || Session.getActiveUser().getEmail() || '').trim().toLowerCase();
   const workbook = e.source, input = cell.getSheet();
   const settings = intakeSettings_();
-  if (email !== (mode === 'submit' ? settings.submitter : settings.reviewer) || (editor && editor !== email)) {
-    cell.setNote('Chưa thực hiện: chỉ email được phân công cho vòng này mới có thể thao tác.');
+  if (!editor) {
+    cell.setNote('Chưa thực hiện: Google không cung cấp email người bấm cho trigger. Hãy dùng Xác nhận lịch → Mở thao tác theo vai trò.');
     cell.setValue(false);
-    workbook.toast('Bạn không có quyền thao tác vòng này.', 'Chưa thực hiện', 8);
+    workbook.toast('Không xác định được tài khoản người bấm. Hãy dùng màn hình thao tác theo vai trò.', 'Chưa thực hiện', 8);
+    return;
+  }
+  if (editor !== (mode === 'submit' ? settings.submitter : settings.reviewer)) {
+    cell.setNote('Chưa thực hiện: tài khoản ' + editor + ' chưa được phân công cho vòng này.');
+    cell.setValue(false);
+    workbook.toast('Tài khoản ' + editor + ' chưa được phân công cho vòng này.', 'Chưa thực hiện', 8);
     return;
   }
   try {
@@ -102,11 +106,14 @@ function handleIntakeActionEdit(e) {
     if (!lock.tryLock(15000)) throw new Error('Đang có thao tác xác nhận khác. Vui lòng thử lại.');
     let result;
     try {
-      const context = intakeContextForEmail_(email);
+      if (cell.getValue() !== true) return;
+      const context = intakeContextForEmail_(editor);
       const batch = mode === 'apply' ? context.pending.find(row => row.weekStart === weekStart) : null;
       if (mode === 'apply' && !batch) throw new Error('Tuần này chưa có đợt chờ duyệt vòng 2.');
       const school = String(input.getRange('F3').getDisplayValue() || 'Tất cả').trim();
-      result = intakeActionUnlocked_({ mode, school, weekStart, batchId: batch ? batch.id : '' }, email);
+      result = intakeActionUnlocked_({ mode, school, weekStart, batchId: batch ? batch.id : '' }, editor);
+      cell.setValue(false);
+      SpreadsheetApp.flush();
     } finally { lock.releaseLock(); }
     const summary = result.summary || {};
     const detail = `${mode === 'submit' ? 'Đã gửi vòng 1' : 'Đã duyệt vào app'} · ${summary.schoolCount || 0} trường · ${summary.rowCount || 0} tiết. Mới ${summary.newCount || 0}, sửa ${summary.changedCount || 0}, trùng ${summary.duplicateCount || 0}, hủy ${summary.cancelledCount || 0}.`;
