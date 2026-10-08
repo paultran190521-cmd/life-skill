@@ -14,6 +14,7 @@ const INTAKE_FIRST_DATA_ROW = 6;
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Xác nhận lịch')
     .addItem('Mở thao tác theo vai trò', 'openIntakeSidebar')
+    .addItem('Tra cứu lịch riêng theo trường', 'openIntakeLookup')
     .addItem('Người duyệt · Kích hoạt nút V1/V2', 'installIntakeActionTrigger')
     .addItem('Kiểm tra địa chỉ gửi email', 'testIntakeSender')
     .addItem('Bảo vệ cấu hình và nút duyệt', 'repairIntakePermissions')
@@ -28,6 +29,43 @@ function onOpen() {
 
 function openIntakeSidebar() {
   SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutputFromFile('Approval').setTitle('Xác nhận lịch trường'));
+}
+
+function openIntakeLookup() {
+  SpreadsheetApp.getUi().showModelessDialog(
+    HtmlService.createHtmlOutputFromFile('Lookup').setWidth(1120).setHeight(660),
+    'Tra cứu lịch đã đồng bộ'
+  );
+}
+
+function intakeLookupData() {
+  const workbook = SpreadsheetApp.getActive();
+  const input = workbook.getSheetByName(INTAKE_INPUT);
+  const catalog = workbook.getSheetByName(INTAKE_CATALOG);
+  const timeZone = workbook.getSpreadsheetTimeZone();
+  const asDate = value => value instanceof Date && !isNaN(value.getTime())
+    ? Utilities.formatDate(value, timeZone, 'yyyy-MM-dd') : '';
+  const asTime = value => value instanceof Date && !isNaN(value.getTime())
+    ? Utilities.formatDate(value, timeZone, 'HH:mm') : String(value || '').trim();
+  const schoolNames = catalog && catalog.getLastRow() > 1
+    ? catalog.getRange(2, 1, catalog.getLastRow() - 1, 1).getDisplayValues().map(row => String(row[0] || '').trim()).filter(Boolean)
+    : [];
+  const schools = new Set(schoolNames);
+  const count = Math.max(0, input.getLastRow() - INTAKE_FIRST_DATA_ROW + 1);
+  const values = count ? input.getRange(INTAKE_FIRST_DATA_ROW, 2, count, 16).getValues() : [];
+  const rows = [];
+  values.forEach((row, index) => {
+    if (String(row[15] || '').trim() !== 'Đã đồng bộ' || String(row[9] || '').trim() !== 'Dạy') return;
+    const date = asDate(row[0]), school = String(row[1] || '').trim();
+    if (!date || !school) return;
+    schools.add(school);
+    rows.push({ number: INTAKE_FIRST_DATA_ROW + index, date, school,
+      className: String(row[3] || '').trim(), period: String(row[5] || '').trim(),
+      start: asTime(row[6]), end: asTime(row[7]), environment: String(row[8] || '').trim() });
+  });
+  return { schools: [...schools].sort((a, b) => a.localeCompare(b, 'vi')), rows,
+    spreadsheetUrl: workbook.getUrl(),
+    folderUrl: 'https://drive.google.com/drive/folders/1_BgdT0KSmLYZFOGM5JXhBsQHcis4gr6U' };
 }
 
 function installIntakeActionTrigger() {

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <base target="_blank">
+  <style>
+    :root { font-family: Arial, sans-serif; color: #154452; background: #f4fafc; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 18px; }
+    .panel { border: 1px solid #cce7ef; border-radius: 16px; background: #fff; padding: 18px; box-shadow: 0 8px 28px #174f6210; }
+    .top { display: flex; justify-content: space-between; align-items: start; gap: 16px; margin-bottom: 14px; }
+    h1 { margin: 0 0 5px; font-size: 21px; color: #0d5369; }
+    p { margin: 0; color: #5a7380; font-size: 12px; }
+    .links { display: flex; gap: 8px; flex-wrap: wrap; justify-content: end; }
+    .links a, button { border: 1px solid #aacfd9; border-radius: 8px; padding: 8px 11px; background: #eaf7fa; color: #07536a; font-weight: 700; text-decoration: none; cursor: pointer; white-space: nowrap; }
+    .links a:hover, button:hover { background: #d7eff5; }
+    .cards { display: grid; grid-template-columns: minmax(190px, 1.5fr) repeat(4, minmax(120px, 1fr)); gap: 8px; }
+    .card { min-height: 98px; border-top: 3px solid #f59a17; border-radius: 11px; background: #eafbfc; padding: 10px 12px; text-align: center; }
+    .card.date { background: #fff9ea; text-align: left; }
+    .label { display: block; color: #0e4c5f; font-size: 11px; font-weight: 700; text-transform: uppercase; min-height: 29px; }
+    .value { display: block; margin-top: 6px; font-size: 26px; font-weight: 700; color: #034c62; }
+    input, select { width: 100%; border: 1px solid #b8cddd; border-radius: 7px; background: #fff; color: #17476b; font: inherit; padding: 8px; }
+    .controls { display: flex; align-items: end; gap: 12px; margin: 16px 0 8px; }
+    .controls label { flex: 1; font-size: 12px; font-weight: 700; }
+    .controls select { display: block; margin-top: 5px; font-weight: 400; }
+    .hint { margin-bottom: 13px; line-height: 1.4; }
+    .table-wrap { max-height: 280px; overflow: auto; border: 1px solid #d9e9ec; border-radius: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { position: sticky; top: 0; background: #e8f3f6; color: #155165; text-align: left; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid #e7eff1; }
+    td a { color: #075cb0; text-decoration: none; font-weight: 700; }
+    .empty { padding: 22px; text-align: center; color: #657d84; }
+    .error { color: #a82424; }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <div class="top">
+      <div><h1>Tra cứu lịch theo trường</h1><p id="scope">Đang tải lịch đã đồng bộ...</p></div>
+      <div class="links"><a id="folder" href="#" target="_blank" rel="noopener">📁 Lịch gốc</a><button type="button" id="refresh">Làm mới</button></div>
+    </div>
+    <section class="cards" aria-label="Số liệu lịch">
+      <div class="card date"><label class="label" for="day">Ngày cần xem</label><input type="date" id="day"></div>
+      <div class="card"><span class="label">Tiết trong ngày</span><span class="value" id="dayCount">0</span></div>
+      <div class="card"><span class="label">Tiết trong tuần</span><span class="value" id="weekCount">0</span></div>
+      <div class="card"><span class="label">Tiết trong tháng</span><span class="value" id="monthCount">0</span></div>
+      <div class="card"><span class="label">Trường có lịch ngày này</span><span class="value" id="schoolCount">0</span></div>
+    </section>
+    <div class="controls"><label for="school">Trường<select id="school"><option value="">Tất cả trường</option></select></label></div>
+    <p class="hint">Số liệu chỉ tính các dòng “Đã đồng bộ” và “Dạy” trên Sheet. Đây không phải số tiết đã giao giáo viên. Bộ lọc ở cửa sổ này chỉ áp dụng cho tài khoản đang xem.</p>
+    <div class="table-wrap"><table><thead><tr><th>Giờ</th><th>Trường</th><th>Lớp</th><th>Tiết</th><th>Môi trường</th><th>Dòng Sheet</th></tr></thead><tbody id="results"><tr><td colspan="6" class="empty">Đang tải...</td></tr></tbody></table></div>
+  </main>
+  <script>
+    const state = { rows: [], schools: [], spreadsheetUrl: '' };
+    const byId = id => document.getElementById(id);
+    const iso = date => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+    const display = key => key ? key.slice(8, 10) + '/' + key.slice(5, 7) + '/' + key.slice(0, 4) : '';
+    function monday(key) {
+      const date = new Date(key + 'T12:00:00');
+      date.setDate(date.getDate() - (date.getDay() + 6) % 7);
+      return iso(date);
+    }
+    function addDays(key, amount) {
+      const date = new Date(key + 'T12:00:00');
+      date.setDate(date.getDate() + amount);
+      return iso(date);
+    }
+    function cell(textValue) {
+      const td = document.createElement('td');
+      td.textContent = textValue || '';
+      return td;
+    }
+    function render() {
+      const day = byId('day').value;
+      if (!day) return;
+      const school = byId('school').value;
+      const week = monday(day), nextWeek = addDays(week, 7), month = day.slice(0, 7);
+      const scoped = state.rows.filter(row => !school || row.school === school);
+      const daily = scoped.filter(row => row.date === day).sort((a, b) => a.start.localeCompare(b.start) || a.school.localeCompare(b.school, 'vi'));
+      byId('dayCount').textContent = daily.length;
+      byId('weekCount').textContent = scoped.filter(row => row.date >= week && row.date < nextWeek).length;
+      byId('monthCount').textContent = scoped.filter(row => row.date.slice(0, 7) === month).length;
+      byId('schoolCount').textContent = new Set(daily.map(row => row.school)).size;
+      byId('scope').textContent = (school || 'Toàn bộ trường') + ' · lịch đã đồng bộ V2 · tuần ' + display(week) + '–' + display(addDays(week, 6));
+      const body = byId('results');
+      body.replaceChildren();
+      if (!daily.length) {
+        const row = document.createElement('tr'), empty = cell('Không có tiết đã đồng bộ trong ngày và trường đã chọn.');
+        empty.colSpan = 6; empty.className = 'empty'; row.appendChild(empty); body.appendChild(row); return;
+      }
+      daily.forEach(item => {
+        const row = document.createElement('tr');
+        [item.start + '–' + item.end, item.school, item.className, item.period, item.environment].forEach(value => row.appendChild(cell(value)));
+        const linkCell = document.createElement('td'), link = document.createElement('a');
+        link.href = state.spreadsheetUrl + '#gid=0&range=B' + item.number + ':L' + item.number;
+        link.target = '_blank'; link.rel = 'noopener'; link.textContent = '#' + item.number;
+        linkCell.appendChild(link); row.appendChild(linkCell); body.appendChild(row);
+      });
+    }
+    function load() {
+      byId('scope').textContent = 'Đang cập nhật lịch đã đồng bộ...';
+      google.script.run.withSuccessHandler(data => {
+        state.rows = data.rows || []; state.schools = data.schools || []; state.spreadsheetUrl = data.spreadsheetUrl || '';
+        byId('folder').href = data.folderUrl;
+        const selector = byId('school'), selected = selector.value;
+        selector.replaceChildren(new Option('Tất cả trường', ''));
+        state.schools.forEach(name => selector.add(new Option(name, name)));
+        selector.value = state.schools.includes(selected) ? selected : '';
+        render();
+      }).withFailureHandler(error => {
+        byId('scope').textContent = 'Không tải được lịch.';
+        byId('results').innerHTML = '<tr><td colspan="6" class="empty error">Không tải được dữ liệu. Hãy làm mới hoặc kiểm tra quyền mở Sheet.</td></tr>';
+      }).intakeLookupData();
+    }
+    byId('day').value = iso(new Date());
+    byId('day').addEventListener('change', render);
+    byId('school').addEventListener('change', render);
+    byId('refresh').addEventListener('click', load);
+    load();
+  </script>
+</body>
+</html>
