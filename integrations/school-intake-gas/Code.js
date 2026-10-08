@@ -89,6 +89,7 @@ function handleIntakeActionEdit(e) {
   const editor = String((e.user && e.user.getEmail ? e.user.getEmail() : '') || Session.getActiveUser().getEmail() || '').trim().toLowerCase();
   const workbook = e.source, input = cell.getSheet();
   const settings = intakeSettings_();
+  if (![settings.submitter, settings.reviewer].includes(effective)) return;
   if (!editor) {
     cell.setNote('Chưa thực hiện: Google không cung cấp email người bấm cho trigger. Hãy dùng Xác nhận lịch → Mở thao tác theo vai trò.');
     cell.setValue(false);
