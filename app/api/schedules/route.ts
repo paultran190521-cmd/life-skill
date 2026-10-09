@@ -199,7 +199,9 @@ export async function POST(request: Request) {
       checkedMergedGroups.add(schedule.mergedPeriodGroupId);
       return true;
     });
-    const conflicts = await detectScheduleConflictsSafe(conflictRepresentatives, existingSchedules);
+    const indexedConflicts = await detectScheduleConflictsSafe(conflictRepresentatives, existingSchedules);
+    const overlappingTimeConflicts = detectScheduleTimeOverlapConflicts(conflictRepresentatives, existingSchedules, slots);
+    const conflicts = dedupeScheduleConflicts([...indexedConflicts, ...overlappingTimeConflicts]);
     if (conflicts.length > 0) {
       return apiFailure(409, buildConflictMessage(conflicts), "CONFLICT", requestId);
     }
@@ -554,6 +556,79 @@ function detectScheduleConflictsWithSets(
     addDraftClassSlots(draftClassSlots, schedule, classIds);
   }
 
+  return conflicts;
+}
+
+function dedupeScheduleConflicts(conflicts: ScheduleConflict[]) {
+  const seen = new Set<string>();
+  return conflicts.filter((conflict) => {
+    const key = `${conflict.source}|${conflict.conflictType}|${conflict.date}|${conflict.timeSlotId}|${conflict.teacherId}|${conflict.classId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function detectScheduleTimeOverlapConflicts(
+  schedules: Schedule[],
+  existingRows: Array<Record<string, string>>,
+  slots: Array<Record<string, string>>,
+) {
+  const conflicts: ScheduleConflict[] = [];
+  const dedupe = new Set<string>();
+  const slotsById = new Map(slots.map((slot) => [String(slot.id || "").trim(), slot]));
+  const activeExisting = existingRows.filter((row) => normalizeComparableText(row.status || "") !== "cancelled");
+  const priorCandidates: Schedule[] = [];
+
+  const overlaps = (left: Record<string, string>, right: Record<string, string>) => {
+    const leftSlot = slotsById.get(String(left.timeSlotId || "").trim());
+    const rightSlot = slotsById.get(String(right.timeSlotId || "").trim());
+    if (!leftSlot || !rightSlot) return false;
+    const leftStart = String(leftSlot.start || "").trim();
+    const leftEnd = String(leftSlot.end || "").trim();
+    const rightStart = String(rightSlot.start || "").trim();
+    const rightEnd = String(rightSlot.end || "").trim();
+    return Boolean(leftStart && leftEnd && rightStart && rightEnd && leftStart < rightEnd && rightStart < leftEnd);
+  };
+
+  const compare = (candidate: Schedule, other: Record<string, string>, source: ScheduleConflict["source"]) => {
+    if (candidate.date !== String(other.date || "").trim() || !overlaps(candidate, other)) return;
+    const otherTeacherId = String(other.teacherId || "").trim();
+    const candidateClassIds = scheduleClassIds(candidate);
+    const otherClassIds = scheduleClassIds(other);
+    if (otherTeacherId === candidate.teacherId && hasTeacherTimeConflict([{
+      schoolId: normalizeId(other.schoolId),
+      teachingEnvironment: normalizeTeachingEnvironment(other.teachingEnvironment),
+    }], candidate)) {
+      addConflict(conflicts, dedupe, {
+        conflictType: "teacher",
+        source,
+        date: candidate.date,
+        timeSlotId: candidate.timeSlotId,
+        teacherId: candidate.teacherId,
+        classId: candidate.classId,
+      });
+    }
+    if (candidateClassIds.some((classId) => otherClassIds.includes(classId)) && !canShareClassTimeSlot({
+      groupId: String(other.groupId || "").trim() || undefined,
+      teachingEnvironment: normalizeTeachingEnvironment(other.teachingEnvironment),
+    }, toGroupClassTimeSlot(candidate))) {
+      addConflict(conflicts, dedupe, {
+        conflictType: "class",
+        source,
+        date: candidate.date,
+        timeSlotId: candidate.timeSlotId,
+        teacherId: candidate.teacherId,
+        classId: candidate.classId,
+      });
+    }
+  };
+
+  for (const candidate of schedules) {
+    for (const existing of activeExisting) compare(candidate, existing, "existing");
+    for (const prior of priorCandidates) compare(candidate, prior, "draft");
+    priorCandidates.push(candidate);
+  }
   return conflicts;
 }
 

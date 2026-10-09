@@ -860,6 +860,7 @@ export function MettasoulApp() {
   const [draftSchedule, setDraftSchedule] = useState<DraftSchedule>({
     items: [createDraftScheduleItem()],
   });
+  const [assignmentBatchItems, setAssignmentBatchItems] = useState<DraftScheduleItem[]>([]);
   const [assignmentWeekStart, setAssignmentWeekStart] = useState(() => mondayDateKey(currentDateKey()));
   const [assignmentSummaryDate, setAssignmentSummaryDate] = useState(() => currentDateKey());
   const [assignmentSummaryView, setAssignmentSummaryView] = useState<"periods" | "schools" | null>(null);
@@ -1886,13 +1887,18 @@ export function MettasoulApp() {
     setSelectedScheduleIds((ids) => ids.filter((id) => selectedDayScheduleIds.has(id)));
   }, [selectedDayScheduleIds]);
 
+  const assignmentDraftItems = useMemo(
+    () => [...assignmentBatchItems, ...draftSchedule.items],
+    [assignmentBatchItems, draftSchedule.items],
+  );
+
   const allDraftTeacherIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const item of draftSchedule.items) {
+    for (const item of assignmentDraftItems) {
       for (const tid of item.teacherIds) ids.add(tid);
     }
     return Array.from(ids);
-  }, [draftSchedule.items]);
+  }, [assignmentDraftItems]);
 
   useEffect(() => {
     if (assignmentPreviewTeacherId === "all") {
@@ -1919,7 +1925,7 @@ export function MettasoulApp() {
 
   const draftSchedulePreview = useMemo<Schedule[]>(
     () =>
-      draftSchedule.items.flatMap((item) =>
+      assignmentDraftItems.flatMap((item) =>
         item.teacherIds.map((teacherId) => ({
           id: `preview-${teacherId}-${item.id}`,
           date: item.date,
@@ -1939,7 +1945,7 @@ export function MettasoulApp() {
           assistantIds: item.assistantIds.join(","),
         })),
       ),
-    [draftSchedule],
+    [assignmentDraftItems],
   );
   const draftPreviewTeacherOptions = useMemo(
     () =>
@@ -1960,11 +1966,11 @@ export function MettasoulApp() {
       ? draftSchedulePreview
       : draftSchedulePreview.filter((schedule) => schedule.teacherId === assignmentPreviewTeacherId);
   const draftLessonProgressionConflicts = useMemo(() => {
-    const candidates = draftSchedule.items
+    const candidates = assignmentDraftItems
       .filter((item) => item.date && item.schoolId && item.lessonId && item.lessonPeriods.length > 0)
       .flatMap((item) => item.teacherIds.map((teacherId) => draftProgressionSchedule(item, teacherId)));
     return findLessonProgressionConflicts(candidates, schedules, { lookbackMonths: 5 });
-  }, [draftSchedule.items, schedules]);
+  }, [assignmentDraftItems, schedules]);
   const draftScheduleConflicts = useMemo<DraftScheduleConflict[]>(() => {
     const conflicts: DraftScheduleConflict[] = [];
     const dedupe = new Set<string>();
@@ -1987,6 +1993,12 @@ export function MettasoulApp() {
     // Draft tracking
     const draftTeacherSlots = new Map<string, TeacherTimeSlot[]>();
     const draftClassSlots = new Map<string, GroupClassTimeSlot[]>();
+    const draftTimeSchedules: Schedule[] = [];
+    const overlapsInTime = (left: Schedule, right: Schedule) => {
+      const leftSlot = slotById.get(left.timeSlotId);
+      const rightSlot = slotById.get(right.timeSlotId);
+      return Boolean(leftSlot?.start && leftSlot.end && rightSlot?.start && rightSlot.end && leftSlot.start < rightSlot.end && rightSlot.start < leftSlot.end);
+    };
 
     for (const schedule of draftSchedulePreview) {
       // Rule 4: assistants bypass teacher conflicts
@@ -2074,10 +2086,32 @@ export function MettasoulApp() {
         seenClassSlots.push(candidateClassSlot);
         draftClassSlots.set(classKey, seenClassSlots);
       }
+
+      for (const [other, source] of [
+        ...activeSchedules.map((item) => [item, "existing"] as const),
+        ...draftTimeSchedules.map((item) => [item, "draft"] as const),
+      ]) {
+        if (schedule.date !== other.date || !overlapsInTime(schedule, other)) continue;
+        if (!isAssistant && schedule.teacherId === other.teacherId && hasTeacherTimeConflict([{
+          schoolId: other.schoolId,
+          teachingEnvironment: other.teachingEnvironment ?? "in_class",
+        }], {
+          schoolId: schedule.schoolId,
+          teachingEnvironment: schedule.teachingEnvironment ?? "in_class",
+        })) {
+          pushDraftConflict(conflicts, dedupe, { source, scope: "teacher", date: schedule.date, timeSlotId: schedule.timeSlotId, teacherId: schedule.teacherId, classId: schedule.classId });
+        }
+        const candidateClassSlot: GroupClassTimeSlot = { groupId: schedule.groupId, teachingEnvironment: schedule.teachingEnvironment };
+        const otherClassSlot: GroupClassTimeSlot = { groupId: other.groupId, teachingEnvironment: other.teachingEnvironment };
+        if (scheduleParticipantClassIds(schedule).some((classId) => scheduleParticipantClassIds(other).includes(classId)) && !canShareClassTimeSlot(otherClassSlot, candidateClassSlot)) {
+          pushDraftConflict(conflicts, dedupe, { source, scope: "class", date: schedule.date, timeSlotId: schedule.timeSlotId, teacherId: schedule.teacherId, classId: schedule.classId });
+        }
+      }
+      draftTimeSchedules.push(schedule);
     }
 
     return conflicts;
-  }, [draftSchedulePreview, schedules, teachers, appUsers]);
+  }, [draftSchedulePreview, schedules, teachers, appUsers, slotById]);
 
   const roleNotifications = useMemo(
     () =>
@@ -2684,6 +2718,7 @@ export function MettasoulApp() {
   }
 
   async function createSchedules() {
+    const dispatchItems = assignmentBatchItems;
     if (draftLessonProgressionConflicts.length > 0) {
       const conflict = draftLessonProgressionConflicts[0];
       pushToast(
@@ -2693,7 +2728,7 @@ export function MettasoulApp() {
       );
       return;
     }
-    const rowsMissingLessons = draftSchedule.items
+    const rowsMissingLessons = dispatchItems
       .map((item, index) => {
         const classRoom = classById.get(item.classId);
         if (!classRoom) {
@@ -2711,7 +2746,7 @@ export function MettasoulApp() {
       return;
     }
 
-    const rowsMissingLessonPeriods = draftSchedule.items
+    const rowsMissingLessonPeriods = dispatchItems
       .map((item, index) => (item.lessonId && item.lessonPeriods.length === 0 ? index + 1 : null))
       .filter((row): row is number => row !== null);
     if (rowsMissingLessonPeriods.length > 0) {
@@ -2723,11 +2758,11 @@ export function MettasoulApp() {
       return;
     }
 
-    const validItems = draftSchedule.items.filter(
+    const validItems = dispatchItems.filter(
       (item) => item.date && item.schoolId && item.classId && item.lessonId && item.lessonPeriods.length > 0 && item.timeSlotId,
     );
 
-    if (validItems.length !== draftSchedule.items.length) {
+    if (validItems.length !== dispatchItems.length) {
       pushToast("Lịch chưa hoàn chỉnh", "Hãy chọn bài học, tên tiết và kiểm tra khung giờ cho tất cả các lớp trước khi gửi.", "warning");
       return;
     }
@@ -2764,13 +2799,10 @@ export function MettasoulApp() {
         "Danh sách giáo viên đã thay đổi. Hệ thống đã làm mới, vui lòng chọn lại giáo viên rồi gửi lịch.",
         "warning",
       );
-      setDraftSchedule((current) => ({
-        ...current,
-        items: current.items.map((item) => ({
-          ...item,
-          teacherIds: item.teacherIds.filter((tid) => activeTeacherIds.has(tid)),
-        })),
-      }));
+      setAssignmentBatchItems((items) => items.map((item) => ({
+        ...item,
+        teacherIds: item.teacherIds.filter((tid) => activeTeacherIds.has(tid)),
+      })));
       return;
     }
 
@@ -2784,15 +2816,12 @@ export function MettasoulApp() {
       return !schedulingTimeSlotsForSchool(activeTimeSlots, school?.name ?? "").some((slot) => slot.id === item.timeSlotId);
     });
     if (hasInvalidTimeSlot) {
-      setDraftSchedule((current) => ({
-        ...current,
-        items: current.items.map((item) => {
-          const school = schoolById.get(item.schoolId);
-          const schoolSlots = schedulingTimeSlotsForSchool(activeTimeSlots, school?.name ?? "");
-          return schoolSlots.some((slot) => slot.id === item.timeSlotId)
-            ? item
-            : { ...item, timeSlotId: schoolSlots[0]?.id ?? "" };
-        }),
+      setAssignmentBatchItems((items) => items.map((item) => {
+        const school = schoolById.get(item.schoolId);
+        const schoolSlots = schedulingTimeSlotsForSchool(activeTimeSlots, school?.name ?? "");
+        return schoolSlots.some((slot) => slot.id === item.timeSlotId)
+          ? item
+          : { ...item, timeSlotId: schoolSlots[0]?.id ?? "" };
       }));
       pushToast("Khung giờ không hợp lệ", "Khung giờ không thuộc trường đã chọn, đã tắt hoặc không còn được phép. Hệ thống đã chọn lại theo đúng trường.", "warning");
       return;
@@ -2853,25 +2882,20 @@ export function MettasoulApp() {
       const scheduleByNeedId = new Map(created.filter((schedule) => schedule.schoolNeedId).map((schedule) => [schedule.schoolNeedId!, schedule.id]));
       setSchoolNeeds((items) => items.map((need) => assignedNeedIds.has(need.id) ? { ...need, status: "ASSIGNED", scheduleId: scheduleByNeedId.get(need.id) || need.scheduleId, assignedDate: need.date, assignedStart: need.start, assignedEnd: need.end } : need));
     }
-    // Sending a schedule is a completed transaction. Start the next batch with
-    // no school/class/time preselected so a previous school's choices cannot
-    // accidentally carry over into the next assignment.
-    if (assignmentSchoolId) {
-      setDraftSchedule({ items: [] });
-    } else {
-      setDraftSchedule({ items: [createDraftScheduleItem({ teachingEnvironment: defaultTeachingEnvironment })] });
-    }
+    // The batch was committed. Keep the current school's unsaved form intact,
+    // but clear only the submitted batch so the admin can continue working.
+    setAssignmentBatchItems([]);
     const sentEmails = emailResults.filter((item) => item.sent).length;
     const failedEmails = emailResults.length - sentEmails;
     if (emailResults.length > 0) {
       pushToast(
-        "Đã gửi lịch dạy",
-        `Tạo ${created.length} lịch, email thành công ${sentEmails}, thất bại ${failedEmails}.`,
+        "Đã gửi đợt giao",
+        `Tạo ${created.length} lịch trong một đợt, email tổng hợp thành công ${sentEmails}, thất bại ${failedEmails}.`,
         failedEmails > 0 ? "warning" : "success",
       );
       return;
     }
-    pushToast("Đã gửi lịch dạy", `Đã tạo ${created.length} lịch thành công.`, "success");
+    pushToast("Đã gửi đợt giao", `Đã tạo ${created.length} lịch trong một đợt thành công.`, "success");
   }
 
   async function confirmSchedule(scheduleId: string) {
@@ -6752,11 +6776,15 @@ export function MettasoulApp() {
     const selectableWeekNeeds = weekNeeds.filter((need) => !need.scheduleId && need.status === "OPEN");
     const selectableWeekNeedIds = new Set(selectableWeekNeeds.map((need) => need.id));
     const selectedWeekNeedIds = selectedSchoolNeedIds.filter((id) => selectableWeekNeedIds.has(id));
-    const assignmentProgress = getSchoolAssignmentProgress(weekNeeds, draftSchedule.items);
+    const currentSchoolDraftItems = [
+      ...assignmentBatchItems.filter((item) => item.schoolId === assignmentSchoolId),
+      ...draftSchedule.items,
+    ];
+    const assignmentProgress = getSchoolAssignmentProgress(weekNeeds, currentSchoolDraftItems);
     const assignmentSchoolName = schoolById.get(assignmentSchoolId)?.name || "trường đã chọn";
     const weekStaffing = assignmentSchoolId ? assessSchoolWeekStaffing({
       needs: weekNeeds,
-      drafts: draftSchedule.items,
+      drafts: currentSchoolDraftItems,
       teachers: activeSchedulingTeachers,
       availability: teacherAvailability,
       schedules,
@@ -6766,8 +6794,10 @@ export function MettasoulApp() {
       ],
       canMerge: (first, second) => findConfiguredSchoolNeedMergeSlot(first, second, activeTimeSlots, assignmentSchoolName),
     }) : null;
-    const allDraftsReady = draftSchedule.items.every((item) => item.teacherIds.length > 0 && item.lessonId && item.lessonPeriods.length > 0 && item.timeSlotId);
-    const canSendCompleteSchoolWeek = assignmentProgress.totalNeedCount > 0 && assignmentProgress.remainingNeedCount === 0 && draftSchedule.items.length > 0 && allDraftsReady && draftScheduleConflicts.length === 0 && draftLessonProgressionConflicts.length === 0;
+    const allDraftsReady = currentSchoolDraftItems.every((item) => item.teacherIds.length > 0 && item.lessonId && item.lessonPeriods.length > 0 && item.timeSlotId);
+    const canSendCompleteSchoolWeek = assignmentProgress.totalNeedCount > 0 && assignmentProgress.remainingNeedCount === 0 && currentSchoolDraftItems.length > 0 && allDraftsReady && draftScheduleConflicts.length === 0 && draftLessonProgressionConflicts.length === 0;
+    const batchSchoolCount = new Set(assignmentBatchItems.map((item) => item.schoolId).filter(Boolean)).size;
+    const batchTeacherCount = new Set(assignmentBatchItems.flatMap((item) => item.teacherIds)).size;
     const draftNeedById = new Map(schoolNeeds.map((need) => [need.id, need]));
     const mergeSuggestions = new Map<string, { draft: DraftScheduleItem; need: SchoolTeachingNeed; slot: TimeSlot }>();
     for (const item of draftSchedule.items) {
@@ -7046,6 +7076,36 @@ export function MettasoulApp() {
       }));
     }
 
+    function addSelectedDraftItemsToDispatchBatch() {
+      const selectedItems = draftSchedule.items.filter((item) => item.teacherIds.length > 0);
+      if (selectedItems.length === 0) {
+        pushToast("Chưa có tiết để thêm", "Hãy chọn giáo viên cho ít nhất một tiết trước khi thêm vào đợt giao.", "warning");
+        return;
+      }
+      const incomplete = selectedItems.find((item) => !item.date || !item.schoolId || !item.classId || !item.lessonId || item.lessonPeriods.length === 0 || !item.timeSlotId);
+      if (incomplete) {
+        pushToast("Tiết chưa hoàn chỉnh", "Hãy chọn đủ ngày, trường, lớp, bài học, tiết và khung giờ trước khi thêm vào đợt giao.", "warning");
+        return;
+      }
+      if (draftScheduleConflicts.length > 0) {
+        const preview = formatDraftConflictLine(draftScheduleConflicts[0], teachers, classes, timeSlots);
+        pushToast("Chưa thể thêm vào đợt", `Phát hiện ${draftScheduleConflicts.length} xung đột. Ví dụ: ${preview}.`, "warning");
+        return;
+      }
+      if (draftLessonProgressionConflicts.length > 0) {
+        pushToast("Chưa thể thêm vào đợt", "Có Tiết 1 chưa đủ điều kiện giao lại trong 5 tháng.", "warning");
+        return;
+      }
+      const selectedIds = new Set(selectedItems.map((item) => item.id));
+      setAssignmentBatchItems((current) => [...current, ...selectedItems.filter((item) => !current.some((saved) => saved.id === item.id))]);
+      setDraftSchedule((current) => ({ ...current, items: current.items.filter((item) => !selectedIds.has(item.id)) }));
+      pushToast("Đã thêm vào đợt giao", `${selectedItems.length} tiết đang chờ gửi chung email theo từng giáo viên.`, "success");
+    }
+
+    function removeDispatchBatchItem(itemId: string) {
+      setAssignmentBatchItems((items) => items.filter((item) => item.id !== itemId));
+    }
+
     return (
       <div className="space-y-5">
         <section aria-label="Tổng hợp lịch đã giao" className="rounded-2xl border border-amber-200 bg-white p-3 shadow-sm sm:p-4">
@@ -7171,6 +7231,18 @@ export function MettasoulApp() {
             <div className="mt-3 flex gap-2"><button type="button" onClick={() => void saveSchoolNeedEdit()} className="rounded-lg bg-cyan-700 px-3 py-2 text-xs font-black text-white">Lưu thay đổi</button><button type="button" onClick={() => { setEditingSchoolNeedId(""); setEditingSchoolNeedDraft(null); }} className="rounded-lg border border-cyan-300 px-3 py-2 text-xs font-bold">Đóng</button></div>
           </div> : null}
         </Panel>
+        <section aria-label="Đợt giao lịch đang soạn" className="rounded-2xl border-2 border-violet-200 bg-violet-50/60 p-3 shadow-sm sm:p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="text-base font-black text-violet-950">Đợt giao lịch đang soạn</h2><p className="mt-1 text-xs font-semibold text-violet-900">Lịch chỉ được ghi và gửi email khi bấm “Gửi đợt giao”. Email được gom một lần cho mỗi giáo viên.</p></div>
+            <span className="rounded-full bg-violet-600 px-3 py-1.5 text-xs font-black text-white">{assignmentBatchItems.length} tiết · {batchSchoolCount} trường · {batchTeacherCount} email</span>
+          </div>
+          {assignmentBatchItems.length === 0 ? <p className="mt-3 rounded-xl border border-dashed border-violet-300 bg-white/80 px-3 py-3 text-sm font-semibold text-violet-800">Chưa có tiết nào trong đợt. Chọn giáo viên cho các tiết của trường rồi bấm “Thêm vào đợt giao”.</p> : <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {assignmentBatchItems.map((item) => <div key={item.id} className="flex items-center justify-between gap-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-xs text-violet-950">
+              <span className="min-w-0"><strong>{formatDate(item.date)}</strong> · {schoolById.get(item.schoolId)?.name || item.schoolId} · {classById.get(item.classId)?.name || item.classId} · {slotById.get(item.timeSlotId)?.start || "--:--"}–{slotById.get(item.timeSlotId)?.end || "--:--"}</span>
+              <button type="button" onClick={() => removeDispatchBatchItem(item.id)} disabled={isBusy} className="shrink-0 font-black text-rose-700 underline disabled:opacity-40">Bỏ</button>
+            </div>)}
+          </div>}
+        </section>
         <div className="grid items-start gap-5 xl:grid-cols-[0.9fr_1.35fr]">
           <Panel title="Tạo lịch dạy mới" action="Email xác nhận" className="xl:sticky xl:top-4 xl:max-h-[calc(100dvh-2rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain">
             <div className="grid gap-4">
@@ -7656,26 +7728,26 @@ export function MettasoulApp() {
                 </div>
               </div>
               <button
-                onClick={createSchedules}
-                disabled={isBusy || draftScheduleConflicts.length > 0 || draftLessonProgressionConflicts.length > 0}
+                onClick={addSelectedDraftItemsToDispatchBatch}
+                disabled={isBusy || !draftSchedule.items.some((item) => item.teacherIds.length > 0) || draftScheduleConflicts.length > 0 || draftLessonProgressionConflicts.length > 0}
                 className={`sticky bottom-24 z-10 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition lg:static ${
-                  isBusy || draftScheduleConflicts.length > 0 || draftLessonProgressionConflicts.length > 0
+                  isBusy || !draftSchedule.items.some((item) => item.teacherIds.length > 0) || draftScheduleConflicts.length > 0 || draftLessonProgressionConflicts.length > 0
                     ? "cursor-not-allowed bg-slate-400 shadow-none"
                     : "bg-[var(--brand)] hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]"
                 }`}
               >
-                <Send size={18} />
-                Gửi lịch và email thông báo
+                <Plus size={18} />
+                Thêm vào đợt giao
               </button>
               <p className="text-center text-xs font-semibold text-[var(--muted)]">
-                Sau khi tạo lịch thành công, biểu mẫu sẽ xóa lựa chọn trường, lớp và khung giờ để bạn chọn lại cho lượt giao tiếp theo.
+                Thao tác này chưa gửi email. Hãy đổi trường, tiếp tục thêm lịch vào đợt, rồi gửi chung một lần ở phần xem trước.
               </p>
             </div>
           </Panel>
 
           <Panel
-            title="Xem trước lịch sắp gửi"
-            action={`Sẽ tạo ${filteredDraftSchedulePreview.length}/${draftSchedulePreview.length} lịch`}
+            title="Xem trước đợt giao"
+            action={`Đợt có ${assignmentBatchItems.length} tiết · ${batchTeacherCount} email`}
           >
             <div className="space-y-3">
               {assignmentSchoolId ? <div role="status" className={`rounded-2xl border-2 p-4 ${assignmentProgress.remainingNeedCount === 0 && assignmentProgress.totalNeedCount > 0 ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}>
@@ -7721,7 +7793,7 @@ export function MettasoulApp() {
                 </div>
               ) : draftLessonProgressionConflicts.length === 0 ? (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-800">
-                  Không phát hiện xung đột lịch. Có thể gửi lịch hàng loạt an toàn.
+                  Không phát hiện xung đột lịch trong đợt giao. Có thể gửi email tổng hợp an toàn.
                 </div>
               ) : null}
               {draftLessonProgressionConflicts.length > 0 ? (
@@ -7732,6 +7804,20 @@ export function MettasoulApp() {
                   </p>
                 </div>
               ) : null}
+              <button
+                type="button"
+                onClick={() => void createSchedules()}
+                disabled={isBusy || assignmentBatchItems.length === 0 || draftScheduleConflicts.length > 0 || draftLessonProgressionConflicts.length > 0}
+                className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg shadow-violet-700/20 transition ${
+                  isBusy || assignmentBatchItems.length === 0 || draftScheduleConflicts.length > 0 || draftLessonProgressionConflicts.length > 0
+                    ? "cursor-not-allowed bg-slate-400 shadow-none"
+                    : "bg-violet-700 hover:-translate-y-0.5 hover:bg-violet-800"
+                }`}
+              >
+                <Send size={18} />
+                Gửi đợt giao & email ({batchTeacherCount} giáo viên)
+              </button>
+              <p className="text-center text-xs font-semibold text-[var(--muted)]">Khi gửi, mỗi giáo viên chỉ nhận một email tổng hợp các tiết của mình trong đợt này.</p>
               {renderScheduleList({ items: filteredDraftSchedulePreview, compact: true })}
             </div>
           </Panel>
