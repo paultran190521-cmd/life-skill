@@ -127,15 +127,12 @@ function handleIntakeActionEdit(e) {
   const editor = String((e.user && e.user.getEmail ? e.user.getEmail() : '') || Session.getActiveUser().getEmail() || '').trim().toLowerCase();
   const workbook = e.source, input = cell.getSheet();
   const settings = intakeSettings_();
-  if (![settings.submitter, settings.reviewer].includes(effective)) return;
-  if (!editor) {
-    cell.setNote('Chưa thực hiện: Google không cung cấp email người bấm cho trigger. Hãy dùng Xác nhận lịch → Mở thao tác theo vai trò.');
-    cell.setValue(false);
-    workbook.toast('Không xác định được tài khoản người bấm. Hãy dùng màn hình thao tác theo vai trò.', 'Chưa thực hiện', 8);
-    return;
-  }
-  if (effective !== editor) return;
-  if (editor !== (mode === 'submit' ? settings.submitter : settings.reviewer)) {
+  const assignedActor = mode === 'submit' ? settings.submitter : settings.reviewer;
+  // Installed triggers run under the account that installed them. Google may omit
+  // e.user for a checkbox edit, so the installer identity is the reliable role
+  // signal. A trigger installed for the other round must leave this edit untouched.
+  if (effective !== assignedActor) return;
+  if (editor && editor !== effective) {
     cell.setNote('Chưa thực hiện: tài khoản ' + editor + ' chưa được phân công cho vòng này.');
     cell.setValue(false);
     workbook.toast('Tài khoản ' + editor + ' chưa được phân công cho vòng này.', 'Chưa thực hiện', 8);
@@ -149,11 +146,11 @@ function handleIntakeActionEdit(e) {
     let result;
     try {
       if (cell.getValue() !== true) return;
-      const context = intakeContextForEmail_(editor);
+      const context = intakeContextForEmail_(effective);
       const batch = mode === 'apply' ? context.pending.find(row => row.weekStart === weekStart) : null;
       if (mode === 'apply' && !batch) throw new Error('Tuần này chưa có đợt chờ duyệt vòng 2.');
       const school = String(input.getRange('F3').getDisplayValue() || 'Tất cả').trim();
-      result = intakeActionUnlocked_({ mode, school, weekStart, batchId: batch ? batch.id : '' }, editor);
+      result = intakeActionUnlocked_({ mode, school, weekStart, batchId: batch ? batch.id : '' }, effective);
       cell.setValue(false);
       SpreadsheetApp.flush();
     } finally { lock.releaseLock(); }
