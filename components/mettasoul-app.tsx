@@ -861,6 +861,7 @@ export function MettasoulApp() {
     items: [createDraftScheduleItem()],
   });
   const [assignmentBatchItems, setAssignmentBatchItems] = useState<DraftScheduleItem[]>([]);
+  const [assignmentBatchMissingNeeds, setAssignmentBatchMissingNeeds] = useState<SchoolTeachingNeed[]>([]);
   const [assignmentWeekStart, setAssignmentWeekStart] = useState(() => mondayDateKey(currentDateKey()));
   const [assignmentSummaryDate, setAssignmentSummaryDate] = useState(() => currentDateKey());
   const [assignmentSummaryView, setAssignmentSummaryView] = useState<"periods" | "schools" | null>(null);
@@ -2719,6 +2720,7 @@ export function MettasoulApp() {
 
   async function createSchedules() {
     const dispatchItems = assignmentBatchItems;
+    const remainingMissingCount = assignmentBatchMissingNeeds.length;
     if (draftLessonProgressionConflicts.length > 0) {
       const conflict = draftLessonProgressionConflicts[0];
       pushToast(
@@ -2885,17 +2887,18 @@ export function MettasoulApp() {
     // The batch was committed. Keep the current school's unsaved form intact,
     // but clear only the submitted batch so the admin can continue working.
     setAssignmentBatchItems([]);
+    setAssignmentBatchMissingNeeds([]);
     const sentEmails = emailResults.filter((item) => item.sent).length;
     const failedEmails = emailResults.length - sentEmails;
     if (emailResults.length > 0) {
       pushToast(
         "Đã gửi đợt giao",
-        `Tạo ${created.length} lịch trong một đợt, email tổng hợp thành công ${sentEmails}, thất bại ${failedEmails}.`,
-        failedEmails > 0 ? "warning" : "success",
+        `Tạo ${created.length} lịch trong một đợt, email tổng hợp thành công ${sentEmails}, thất bại ${failedEmails}.${remainingMissingCount ? ` Còn ${remainingMissingCount} tiết chưa có giáo viên, chưa được giao.` : ""}`,
+        failedEmails > 0 || remainingMissingCount > 0 ? "warning" : "success",
       );
       return;
     }
-    pushToast("Đã gửi đợt giao", `Đã tạo ${created.length} lịch trong một đợt thành công.`, "success");
+    pushToast("Đã gửi đợt giao", `Đã tạo ${created.length} lịch trong một đợt thành công.${remainingMissingCount ? ` Còn ${remainingMissingCount} tiết chưa có giáo viên, chưa được giao.` : ""}`, remainingMissingCount > 0 ? "warning" : "success");
   }
 
   async function confirmSchedule(scheduleId: string) {
@@ -6798,6 +6801,7 @@ export function MettasoulApp() {
     const canSendCompleteSchoolWeek = assignmentProgress.totalNeedCount > 0 && assignmentProgress.remainingNeedCount === 0 && currentSchoolDraftItems.length > 0 && allDraftsReady && draftScheduleConflicts.length === 0 && draftLessonProgressionConflicts.length === 0;
     const batchSchoolCount = new Set(assignmentBatchItems.map((item) => item.schoolId).filter(Boolean)).size;
     const batchTeacherCount = new Set(assignmentBatchItems.flatMap((item) => item.teacherIds)).size;
+    const batchMissingSchoolCount = new Set(assignmentBatchMissingNeeds.map((need) => need.schoolId)).size;
     const draftNeedById = new Map(schoolNeeds.map((need) => [need.id, need]));
     const mergeSuggestions = new Map<string, { draft: DraftScheduleItem; need: SchoolTeachingNeed; slot: TimeSlot }>();
     for (const item of draftSchedule.items) {
@@ -7078,8 +7082,18 @@ export function MettasoulApp() {
 
     function addSelectedDraftItemsToDispatchBatch() {
       const selectedItems = draftSchedule.items.filter((item) => item.teacherIds.length > 0);
+      const includedNeedIds = new Set([
+        ...assignmentBatchItems.flatMap((item) => item.schoolNeedIds ?? []),
+        ...selectedItems.flatMap((item) => item.schoolNeedIds ?? []),
+      ]);
+      const missingNeeds = weekNeeds.filter((need) => need.status === "OPEN" && !need.scheduleId && !includedNeedIds.has(need.id));
       if (selectedItems.length === 0) {
-        pushToast("Chưa có tiết để thêm", "Hãy chọn giáo viên cho ít nhất một tiết trước khi thêm vào đợt giao.", "warning");
+        if (missingNeeds.length === 0) {
+          pushToast("Chưa có tiết để thêm", "Hãy chọn giáo viên cho ít nhất một tiết hoặc chọn một trường còn tiết cần giao.", "warning");
+          return;
+        }
+        setAssignmentBatchMissingNeeds((items) => [...items.filter((need) => need.schoolId !== assignmentSchoolId), ...missingNeeds]);
+        pushToast("Đã ghi nhận tiết còn thiếu", `${missingNeeds.length} tiết của ${assignmentSchoolName} chưa có giáo viên; bạn vẫn có thể tiếp tục giao và gửi các trường khác.`, "warning");
         return;
       }
       const incomplete = selectedItems.find((item) => !item.date || !item.schoolId || !item.classId || !item.lessonId || item.lessonPeriods.length === 0 || !item.timeSlotId);
@@ -7098,8 +7112,9 @@ export function MettasoulApp() {
       }
       const selectedIds = new Set(selectedItems.map((item) => item.id));
       setAssignmentBatchItems((current) => [...current, ...selectedItems.filter((item) => !current.some((saved) => saved.id === item.id))]);
+      setAssignmentBatchMissingNeeds((items) => [...items.filter((need) => need.schoolId !== assignmentSchoolId), ...missingNeeds]);
       setDraftSchedule((current) => ({ ...current, items: current.items.filter((item) => !selectedIds.has(item.id)) }));
-      pushToast("Đã thêm vào đợt giao", `${selectedItems.length} tiết đang chờ gửi chung email theo từng giáo viên.`, "success");
+      pushToast("Đã thêm vào đợt giao", `${selectedItems.length} tiết sẵn sàng gửi. ${missingNeeds.length ? `${missingNeeds.length} tiết còn thiếu giáo viên đã được đánh dấu để bổ sung sau.` : ""}`, missingNeeds.length ? "warning" : "success");
     }
 
     function removeDispatchBatchItem(itemId: string) {
@@ -7234,7 +7249,7 @@ export function MettasoulApp() {
         <section aria-label="Đợt giao lịch đang soạn" className="rounded-2xl border-2 border-violet-200 bg-violet-50/60 p-3 shadow-sm sm:p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><h2 className="text-base font-black text-violet-950">Đợt giao lịch đang soạn</h2><p className="mt-1 text-xs font-semibold text-violet-900">Lịch chỉ được ghi và gửi email khi bấm “Gửi đợt giao”. Email được gom một lần cho mỗi giáo viên.</p></div>
-            <span className="rounded-full bg-violet-600 px-3 py-1.5 text-xs font-black text-white">{assignmentBatchItems.length} tiết · {batchSchoolCount} trường · {batchTeacherCount} email</span>
+            <span className="rounded-full bg-violet-600 px-3 py-1.5 text-xs font-black text-white">{assignmentBatchItems.length} tiết · {batchSchoolCount} trường · {batchTeacherCount} email{assignmentBatchMissingNeeds.length ? ` · ${assignmentBatchMissingNeeds.length} tiết thiếu GV` : ""}</span>
           </div>
           {assignmentBatchItems.length === 0 ? <p className="mt-3 rounded-xl border border-dashed border-violet-300 bg-white/80 px-3 py-3 text-sm font-semibold text-violet-800">Chưa có tiết nào trong đợt. Chọn giáo viên cho các tiết của trường rồi bấm “Thêm vào đợt giao”.</p> : <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {assignmentBatchItems.map((item) => <div key={item.id} className="flex items-center justify-between gap-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-xs text-violet-950">
@@ -7242,6 +7257,10 @@ export function MettasoulApp() {
               <button type="button" onClick={() => removeDispatchBatchItem(item.id)} disabled={isBusy} className="shrink-0 font-black text-rose-700 underline disabled:opacity-40">Bỏ</button>
             </div>)}
           </div>}
+          {assignmentBatchMissingNeeds.length > 0 ? <div role="alert" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
+            <p className="font-black">Còn {assignmentBatchMissingNeeds.length} tiết chưa có giáo viên tại {batchMissingSchoolCount} trường — vẫn có thể gửi các tiết đã đủ người.</p>
+            <div className="mt-2 space-y-1">{assignmentBatchMissingNeeds.slice(0, 8).map((need) => <p key={need.id}><strong>{schoolById.get(need.schoolId)?.name || need.schoolId}</strong> · {formatDate(need.date)} · {classById.get(need.classId)?.name || need.classId} · {need.start}–{need.end}</p>)}</div>
+          </div> : null}
         </section>
         <div className="grid items-start gap-5 xl:grid-cols-[0.9fr_1.35fr]">
           <Panel title="Tạo lịch dạy mới" action="Email xác nhận" className="xl:sticky xl:top-4 xl:max-h-[calc(100dvh-2rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain">
@@ -7729,9 +7748,9 @@ export function MettasoulApp() {
               </div>
               <button
                 onClick={addSelectedDraftItemsToDispatchBatch}
-                disabled={isBusy || !draftSchedule.items.some((item) => item.teacherIds.length > 0) || draftScheduleConflicts.length > 0 || draftLessonProgressionConflicts.length > 0}
+                disabled={isBusy || (!draftSchedule.items.some((item) => item.teacherIds.length > 0) && !weekNeeds.some((need) => need.status === "OPEN" && !need.scheduleId)) || draftScheduleConflicts.length > 0 || draftLessonProgressionConflicts.length > 0}
                 className={`sticky bottom-24 z-10 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg shadow-cyan-700/20 transition lg:static ${
-                  isBusy || !draftSchedule.items.some((item) => item.teacherIds.length > 0) || draftScheduleConflicts.length > 0 || draftLessonProgressionConflicts.length > 0
+                  isBusy || (!draftSchedule.items.some((item) => item.teacherIds.length > 0) && !weekNeeds.some((need) => need.status === "OPEN" && !need.scheduleId)) || draftScheduleConflicts.length > 0 || draftLessonProgressionConflicts.length > 0
                     ? "cursor-not-allowed bg-slate-400 shadow-none"
                     : "bg-[var(--brand)] hover:-translate-y-0.5 hover:bg-[var(--brand-dark)]"
                 }`}
