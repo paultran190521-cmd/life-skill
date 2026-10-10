@@ -35,6 +35,8 @@ assert.equal(rules[1].values[2].dataValidation.condition.values[0].userEnteredVa
 assert.equal(JSON.stringify(input), before, "Rebuilding validation must not alter schedules or sync status");
 
 const gas = fs.readFileSync(new URL("../integrations/school-intake-gas/Code.js", import.meta.url), "utf8");
+assert.match(gas, /Trigger hiện tại chạy bằng/, "A stale installer must explain why a V1\/V2 click was not processed");
+assert.match(gas, /must never\s+\/\/ consume the click|must never[\s\S]{0,120}consume the click/, "A stale trigger must not consume the correctly assigned trigger's click");
 let sent;
 const context = vm.createContext({});
 vm.runInContext(gas, context);

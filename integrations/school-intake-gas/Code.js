@@ -71,11 +71,11 @@ function intakeLookupData() {
 function installIntakeActionTrigger() {
   const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
   const settings = intakeSettings_();
-  if (![settings.submitter, settings.reviewer].includes(email)) throw new Error('Mỹ Nhung và Nguyễn Phương cần tự kích hoạt nút bằng tài khoản Google được phân công.');
+  if (![settings.submitter, settings.reviewer].includes(email)) throw new Error('Chỉ email đang được phân công V1 hoặc V2 mới có thể kích hoạt nút duyệt.');
   const workbook = SpreadsheetApp.getActive();
   const installed = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === 'handleIntakeActionEdit' && trigger.getTriggerSourceId() === workbook.getId());
   if (!installed) ScriptApp.newTrigger('handleIntakeActionEdit').forSpreadsheet(workbook).onEdit().create();
-  workbook.toast(installed ? 'Nút thao tác đã được kích hoạt cho email này.' : 'Đã kích hoạt nút thao tác cho email này.', 'Xác nhận lịch', 7);
+  workbook.toast((installed ? 'Nút thao tác đã được kích hoạt cho ' : 'Đã kích hoạt nút thao tác cho ') + email + '. Nếu vừa đổi người duyệt, hãy bấm lại V1/V2 một lần.', 'Xác nhận lịch', 8);
 }
 
 function repairIntakePermissions() {
@@ -128,10 +128,14 @@ function handleIntakeActionEdit(e) {
   const workbook = e.source, input = cell.getSheet();
   const settings = intakeSettings_();
   const assignedActor = mode === 'submit' ? settings.submitter : settings.reviewer;
-  // Installed triggers run under the account that installed them. Google may omit
-  // e.user for a checkbox edit, so the installer identity is the reliable role
-  // signal. A trigger installed for the other round must leave this edit untouched.
-  if (effective !== assignedActor) return;
+  // Installed triggers run under the account that installed them. A prior
+  // assignee's trigger can still exist after roles are changed. It must never
+  // consume the click before the correctly assigned trigger receives it.
+  if (effective !== assignedActor) {
+    cell.setNote('Đang chờ trigger của ' + assignedActor + '. Trigger hiện tại chạy bằng ' + (effective || 'tài khoản không xác định') + ', nên không thể gửi/duyệt lịch. Mở Xác nhận lịch → Người duyệt · Kích hoạt nút V1/V2 bằng email được phân công, rồi bấm lại.');
+    workbook.toast('Nút này cần trigger của ' + assignedActor + '. Hãy kích hoạt lại theo email được phân công.', 'Chưa thực hiện', 10);
+    return;
+  }
   if (editor && editor !== effective) {
     cell.setNote('Chưa thực hiện: tài khoản ' + editor + ' chưa được phân công cho vòng này.');
     cell.setValue(false);
