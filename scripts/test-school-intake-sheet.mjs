@@ -75,4 +75,28 @@ context.SpreadsheetApp = { getActive: () => ({ getSheetByName: (name) => name ==
 assert.equal(vm.runInContext("repairIntakeDropdowns_()", context), 2);
 assert.deepEqual(Array.from(repairedRules[0][1].values), ["12A1", "12A2"]);
 assert.deepEqual(Array.from(repairedRules[1][1].values), ["10A1"]);
+
+context.Date = Date;
+context.Utilities = {
+  formatDate(date, _timeZone, format) {
+    const yyyy = String(date.getFullYear());
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return format === "yyyy-MM" ? `${yyyy}-${mm}` : `${yyyy}-${mm}-${dd}`;
+  },
+};
+const weekOptions = vm.runInContext(`intakeWeekOptions_('Tất cả', [
+  [new Date(2026, 9, 1)],
+  [new Date(2026, 9, 5)],
+  [new Date(2026, 9, 11)],
+  [new Date(2026, 10, 2)],
+  ['not-a-date']
+])`, context);
+assert.deepEqual(Array.from(weekOptions), ["Tất cả", "2026-09-28", "2026-10-05", "2026-11-02"], "Week options must normalize each schedule date to its Monday");
+const octoberWeekOptions = vm.runInContext(`intakeWeekOptions_('2026-10', [
+  [new Date(2026, 9, 1)],
+  [new Date(2026, 9, 5)],
+  [new Date(2026, 10, 2)]
+])`, context);
+assert.deepEqual(Array.from(octoberWeekOptions), ["Tất cả", "2026-09-28", "2026-10-05"], "Month filtering must retain the Monday that starts an October schedule week");
 console.log("School intake dropdown and email checks passed");

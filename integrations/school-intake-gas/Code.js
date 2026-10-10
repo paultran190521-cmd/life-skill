@@ -547,18 +547,32 @@ function intakeCatalogOptionsFromEntries_(entries, school) {
 function refreshIntakeWeekOptions_() {
   const input = SpreadsheetApp.getActive().getSheetByName(INTAKE_INPUT);
   const month = String(input.getRange('B3').getDisplayValue() || 'Tất cả');
-  const weeks = ['Tất cả'];
-  if (/^\d{4}-\d{2}$/.test(month)) {
-    const [year, part] = month.split('-').map(Number);
-    const cursor = new Date(Date.UTC(year, part - 1, 1));
-    cursor.setUTCDate(cursor.getUTCDate() - ((cursor.getUTCDay() + 6) % 7));
-    const stop = Date.UTC(year, part, 1);
-    while (cursor.getTime() < stop) {
-      weeks.push(Utilities.formatDate(cursor, 'UTC', 'yyyy-MM-dd'));
-      cursor.setUTCDate(cursor.getUTCDate() + 7);
-    }
-  }
-  input.getRange('D3').setValue('Tất cả').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(weeks, true).setAllowInvalid(false).build());
+  const selectedWeek = String(input.getRange('D3').getDisplayValue() || 'Tất cả');
+  // getLastRow() reaches 100,000 because formula columns extend to that row.
+  // Reading only the date column keeps the filter responsive while preserving every real schedule week.
+  const dateRows = input.getMaxRows() >= INTAKE_FIRST_DATA_ROW
+    ? input.getRange(INTAKE_FIRST_DATA_ROW, 2, input.getMaxRows() - INTAKE_FIRST_DATA_ROW + 1, 1).getValues()
+    : [];
+  const weeks = intakeWeekOptions_(month, dateRows);
+  const weekCell = input.getRange('D3');
+  weekCell.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(weeks, true).setAllowInvalid(false).build());
+  weekCell.setValue(weeks.includes(selectedWeek) ? selectedWeek : 'Tất cả');
+  return weeks;
+}
+
+function intakeWeekOptions_(month, dateRows) {
+  const filterMonth = /^\d{4}-\d{2}$/.test(month) ? month : '';
+  const weeks = new Set();
+  dateRows.forEach(row => {
+    const value = row[0];
+    if (!(value instanceof Date) || isNaN(value.getTime())) return;
+    if (filterMonth && Utilities.formatDate(value, 'Asia/Ho_Chi_Minh', 'yyyy-MM') !== filterMonth) return;
+    const monday = new Date(value.getTime());
+    monday.setHours(12, 0, 0, 0);
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    weeks.add(Utilities.formatDate(monday, 'Asia/Ho_Chi_Minh', 'yyyy-MM-dd'));
+  });
+  return ['Tất cả'].concat([...weeks].sort());
 }
 
 function academicWeekLabel_(weekStart) {
