@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { externalServiceError } from "@/lib/app-error";
 import { uniqueWorkLogRows } from "@/lib/worklog-rows";
 import { getAvatarUrl } from "@/lib/avatar";
 import type {
@@ -67,6 +68,54 @@ type SheetRow = Record<string, string>;
 let sheetsClient: ReturnType<typeof google.sheets> | null = null;
 const headerCache = new Map<SheetName, { headers: string[]; expiresAt: number }>();
 const rowCache = new Map<SheetName, { rows: SheetRow[]; expiresAt: number }>();
+
+type GoogleApiFailure = {
+  code?: unknown;
+  status?: unknown;
+  response?: { status?: unknown };
+};
+
+function googleApiStatus(error: unknown) {
+  if (!error || typeof error !== "object") return 0;
+  const failure = error as GoogleApiFailure;
+  const status = failure.response?.status ?? failure.status ?? failure.code;
+  return typeof status === "number" ? status : Number(status) || 0;
+}
+
+/** Google occasionally returns a transient 5xx for harmless read requests. */
+export function isRetryableGoogleSheetsReadError(error: unknown) {
+  return [408, 429, 500, 502, 503, 504].includes(googleApiStatus(error));
+}
+
+async function waitForGoogleSheetsRetry(delayMs: number) {
+  await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+}
+
+/**
+ * Retry reads only. Retrying writes can duplicate an append after a timeout,
+ * whereas every caller here is safe to execute again before a write begins.
+ */
+async function withGoogleSheetsReadRetry<T>(operation: () => Promise<T>): Promise<T> {
+  const attempts = readPositiveIntEnv("GOOGLE_SHEETS_READ_ATTEMPTS", 2);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableGoogleSheetsReadError(error) || attempt === attempts) break;
+      // gaxios has its own short retries. This additional retry gives a fresh
+      // request after Google returns a persistent transient 5xx.
+      await waitForGoogleSheetsRetry(500 * attempt);
+    }
+  }
+
+  if (isRetryableGoogleSheetsReadError(lastError)) {
+    throw externalServiceError("Google Sheets đang tạm thời không phản hồi. Hệ thống chưa thay đổi dữ liệu; vui lòng thử lại sau ít phút.");
+  }
+  throw lastError;
+}
 
 function getSheetsClient() {
   if (sheetsClient) {
@@ -147,7 +196,7 @@ async function flushSheetReads() {
     if (error instanceof Error && /Unable to parse range/i.test(error.message)) {
       await Promise.all([...batch].map(async ([name, waiter]) => {
         try {
-          const result = await getSheetsClient().spreadsheets.values.get({ spreadsheetId: spreadsheetId(), range: quoteSheetName(name) });
+          const result = await withGoogleSheetsReadRetry(() => getSheetsClient().spreadsheets.values.get({ spreadsheetId: spreadsheetId(), range: quoteSheetName(name) }));
           waiter.resolve(toRows(result.data.values || []));
         } catch (failure) { waiter.reject(failure); }
       }));
@@ -191,10 +240,10 @@ export async function readSheetRowsBatch<T extends SheetName>(sheetNames: readon
     return {} as Record<T, SheetRow[]>;
   }
 
-  const response = await getSheetsClient().spreadsheets.values.batchGet({
+  const response = await withGoogleSheetsReadRetry(() => getSheetsClient().spreadsheets.values.batchGet({
     spreadsheetId: spreadsheetId(),
     ranges: uniqueNames.map((sheetName) => quoteSheetName(sheetName)),
-  });
+  }));
 
   const batches = response.data.valueRanges || [];
   const bySheet = {} as Record<T, SheetRow[]>;
@@ -275,10 +324,10 @@ export async function ensureSheetHeaders(sheetName: SheetName, requiredHeaders: 
   await ensureSheetExists(sheetName, requiredHeaders.length);
 
   const client = getSheetsClient();
-  const response = await client.spreadsheets.values.get({
+  const response = await withGoogleSheetsReadRetry(() => client.spreadsheets.values.get({
     spreadsheetId: spreadsheetId(),
     range: `${quoteSheetName(sheetName)}!1:1`,
-  });
+  }));
 
   const headers = (response.data.values?.[0] || []).map((header) => normalizeSheetHeader(header));
   const missingHeaders = requiredHeaders.filter((header) => !headers.includes(header));
@@ -288,10 +337,10 @@ export async function ensureSheetHeaders(sheetName: SheetName, requiredHeaders: 
   }
 
   const nextHeaders = [...headers, ...missingHeaders];
-  const metadata = await client.spreadsheets.get({
+  const metadata = await withGoogleSheetsReadRetry(() => client.spreadsheets.get({
     spreadsheetId: spreadsheetId(),
     fields: "sheets(properties(sheetId,title,gridProperties(columnCount)))",
-  });
+  }));
   const sheetProperties = metadata.data.sheets?.find((item) => item.properties?.title === sheetName)?.properties;
   const columnCount = sheetProperties?.gridProperties?.columnCount || 0;
   if (sheetProperties?.sheetId !== undefined && columnCount > 0 && columnCount < nextHeaders.length) {
@@ -313,10 +362,10 @@ export async function ensureSheetHeaders(sheetName: SheetName, requiredHeaders: 
 
 async function ensureSheetExists(sheetName: SheetName, minColumnCount: number) {
   const client = getSheetsClient();
-  const response = await client.spreadsheets.get({
+  const response = await withGoogleSheetsReadRetry(() => client.spreadsheets.get({
     spreadsheetId: spreadsheetId(),
     fields: "sheets(properties(title))",
-  });
+  }));
   const exists = response.data.sheets?.some((sheet) => sheet.properties?.title === sheetName);
   if (exists) {
     return;
@@ -947,10 +996,10 @@ async function getHeaders(sheetName: SheetName) {
     }
   }
 
-  const response = await getSheetsClient().spreadsheets.values.get({
+  const response = await withGoogleSheetsReadRetry(() => getSheetsClient().spreadsheets.values.get({
     spreadsheetId: spreadsheetId(),
     range: `${quoteSheetName(sheetName)}!1:1`,
-  });
+  }));
 
   const headers = (response.data.values?.[0] || []).map((header) => normalizeSheetHeader(header));
   if (headers.length === 0) {
