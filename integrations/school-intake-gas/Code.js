@@ -128,9 +128,11 @@ function retryIntakeNotification() {
 
 function handleIntakeSubmitEdit(e) { handleIntakeActionEdit_(e, 'submit'); }
 function handleIntakeApplyEdit(e) { handleIntakeActionEdit_(e, 'apply'); }
-// Kept only for already-installed legacy triggers. New installations use the
-// separate handlers above so a former assignee cannot block the current role.
-function handleIntakeActionEdit(e) { handleIntakeActionEdit_(e, ''); }
+// Old installations used one shared handler. It must be a no-op: installable
+// triggers are owned by the original installer, so leaving it active can show
+// a stale-permission warning alongside the correctly assigned V1/V2 trigger.
+// New installations use the two dedicated handlers above.
+function handleIntakeActionEdit(e) { return; }
 
 function handleIntakeActionEdit_(e, expectedMode) {
   if (!e || !e.range || e.range.getSheet().getName() !== INTAKE_INPUT || e.range.getRow() !== 3 || ![8, 9].includes(e.range.getColumn()) || e.value !== 'TRUE') return;
