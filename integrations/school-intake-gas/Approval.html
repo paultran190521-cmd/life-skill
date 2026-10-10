@@ -38,8 +38,9 @@
   <section class="card hidden" id="submitter">
     <strong id="submitter-label">Vòng 1 · Gửi lịch</strong>
     <label for="school">Phạm vi trường</label><select id="school"></select>
-    <label for="week">Tuần cần gửi (bắt buộc)</label><select id="week"></select>
-    <button class="secondary" onclick="act('preview','submitter')">Kiểm tra lịch</button>
+    <label for="week">Lọc tuần để kiểm tra (tùy chọn)</label><select id="week"></select>
+    <p class="small">Gửi V1 luôn lấy toàn bộ lịch chưa gửi của trường đã chọn; bộ lọc tuần chỉ áp dụng khi kiểm tra.</p>
+    <button class="secondary" onclick="act('preview','submitter')">Kiểm tra lịch theo bộ lọc</button>
     <button onclick="act('submit','submitter')">Xác nhận nhập lịch và gửi người duyệt</button>
   </section>
   <section class="card hidden" id="reviewer">
@@ -104,11 +105,11 @@
     }
     $('school').innerHTML=['Tất cả',...data.schools].map(name=>'<option>'+name.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</option>').join('');
     if(data.selection.school&&data.selection.school!=='Tất cả')$('school').value=data.selection.school;
-    $('week').innerHTML=data.weeks.map(item=>'<option value="'+item.value+'">'+item.label+'</option>').join('');
+    $('week').innerHTML=['<option value="">Tất cả các tuần · chỉ để kiểm tra</option>',...data.weeks.map(item=>'<option value="'+item.value+'">'+item.label+'</option>')].join('');
     if(data.selection.weekStart&&data.selection.weekStart!=='Tất cả')$('week').value=data.selection.weekStart;
-    $('batch').innerHTML=data.pending.map(row=>'<option value="'+row.id+'">'+row.school+' · tuần '+row.weekStart+' · '+row.count+' tiết</option>').join('');
+    $('batch').innerHTML=data.pending.map(row=>'<option value="'+row.id+'">'+row.school+' · '+(row.weekStart?'tuần '+row.weekStart:'tất cả các tuần')+' · '+row.count+' tiết</option>').join('');
     $('notify-box').classList.toggle('hidden',!data.canReview||!data.unnotified.length);
-    $('notify-batch').innerHTML=data.unnotified.map(row=>'<option value="'+row.id+'">'+row.school+' · tuần '+row.weekStart+' · '+row.count+' tiết</option>').join('');
+    $('notify-batch').innerHTML=data.unnotified.map(row=>'<option value="'+row.id+'">'+row.school+' · '+(row.weekStart?'tuần '+row.weekStart:'tất cả các tuần')+' · '+row.count+' tiết</option>').join('');
     $('lock-week').innerHTML=data.weeks.map(item=>'<option value="'+item.value+'">'+item.label+'</option>').join('');
     if(data.selection.weekStart&&data.selection.weekStart!=='Tất cả')$('lock-week').value=data.selection.weekStart;
     $('lock-week').onchange=updateLockStatus;updateLockStatus();
@@ -117,7 +118,7 @@
     $('lock-status').textContent=week?(locked?'Đã khóa · muốn sửa cần mở lại':'Đang mở · có thể khóa sau khi tuần kết thúc'):'Chưa có tuần trong bảng';
     $('lock-button').disabled=!week||!!locked;$('unlock-button').disabled=!week||!locked;
   }
-  const confirmationText={submit:'Gửi lịch chưa gửi của tuần và phạm vi trường đã chọn cho email duyệt vòng 2?',apply:'Xác nhận lịch của các trường trong đợt này và chuyển vào METTASOUL?',reject:'Trả lại lịch cho người nhập sửa?',notify:'Gửi thông báo lịch đã duyệt cho email giám đốc?',lockWeek:'Khóa toàn bộ lịch của tuần này sau khi đã kết thúc?',unlockWeek:'Mở lại tuần này để sửa lịch?'};
+  const confirmationText={submit:'Gửi toàn bộ lịch chưa gửi của trường đã chọn (không giới hạn theo tuần) cho email duyệt vòng 2?',apply:'Xác nhận lịch của các trường trong đợt này và chuyển vào METTASOUL?',reject:'Trả lại lịch cho người nhập sửa?',notify:'Gửi thông báo lịch đã duyệt cho email giám đốc?',lockWeek:'Khóa toàn bộ lịch của tuần này sau khi đã kết thúc?',unlockWeek:'Mở lại tuần này để sửa lịch?'};
   function act(mode,source){
     if(confirmationText[mode]){pendingAction={mode,source};$('confirm-message').textContent=confirmationText[mode];$('confirm-dialog').showModal();return}
     runAction(mode,source);
@@ -127,12 +128,13 @@
     show('Đang kiểm tra và xử lý...');
     const selected=context&&context.pending.find(row=>row.id===$('batch').value);
     const submitterAction=source==='submitter'||mode==='submit';
+    const actionWeek=mode==='lockWeek'||mode==='unlockWeek'?$('lock-week').value:submitterAction?(mode==='preview'?$('week').value:''):selected?.weekStart;
     google.script.run.withSuccessHandler(result=>{
       const s=result.summary||{};let message='Trạng thái: '+(result.status||'Đã kiểm tra')+'\n'+(s.schoolCount||0)+' trường · '+(s.rowCount||0)+' tiết\nMới: '+(s.newCount||0)+' · sửa: '+(s.changedCount||0)+' · trùng: '+(s.duplicateCount||0)+' · hủy: '+(s.cancelledCount||0);
       if(result.mail&&!result.mail.sent&&result.mail.reason)message+='\nEmail chưa gửi được: '+result.mail.reason;
       if(result.changes&&result.changes.length)message+='\n\n'+result.changes.map(x=>x.action+' · '+x.description+(x.previous&&x.action==='CHANGED'?'\n  Trước: '+x.previous:'')).join('\n');
       show(message,false);if(result.status)load();
-    }).withFailureHandler(fail).intakeAction({mode,school:submitterAction?$('school').value:selected?.school,weekStart:mode==='lockWeek'||mode==='unlockWeek'?$('lock-week').value:submitterAction?$('week').value:selected?.weekStart,batchId:mode==='notify'?$('notify-batch').value:submitterAction?'':$('batch').value,note:$('reason').value});
+    }).withFailureHandler(fail).intakeAction({mode,school:submitterAction?$('school').value:selected?.school,weekStart:actionWeek,batchId:mode==='notify'?$('notify-batch').value:submitterAction?'':$('batch').value,note:$('reason').value});
   }
   load();
 </script>

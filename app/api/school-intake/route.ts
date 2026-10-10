@@ -26,7 +26,7 @@ async function selectedRows(school: string, weekStart: string, options: { eligib
     .filter((row) => {
       const values = raw[row.number - 1] || [];
       if (options.rowIds) return options.rowIds.has(row.rowId);
-      if (weekStartOf(row.date || "") !== weekStart || (school !== "Tất cả" && row.school !== school)) return false;
+      if ((weekStart && weekStartOf(row.date || "") !== weekStart) || (school !== "Tất cả" && row.school !== school)) return false;
       return !options.eligibleOnly || !["Chờ duyệt vòng 2", "Chờ Nguyễn Phương duyệt", "Đã đồng bộ", "Đã xóa trong app"].includes(values[16] || "");
     });
   const missingIds = rows.filter((row) => !row.rowId);
@@ -163,15 +163,20 @@ export async function POST(request: Request) {
     } else {
       school = String(body.school || "").trim();
       weekStart = String(body.weekStart || "").trim();
-      if (!school || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || weekStartOf(weekStart) !== weekStart) return apiFailure(400, "Hãy chọn một tuần cụ thể và trường hoặc Tất cả.", undefined, requestId);
+      if (!school || (weekStart && (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || weekStartOf(weekStart) !== weekStart))) return apiFailure(400, "Hãy chọn trường; tuần chỉ dùng để lọc khi kiểm tra.", undefined, requestId);
       rows = await selectedRows(school, weekStart, { eligibleOnly: true });
     }
-    if (weekLocks.get(weekStart)?.locked && body.mode !== "preview") return apiFailure(423, "Tuần này đã khóa. Người duyệt vòng 2 cần mở khóa trước khi sửa hoặc duyệt lịch.", undefined, requestId);
-    if (rows.length < 1 || rows.length > 2000) return apiFailure(400, "Tuần này cần từ 1 đến 2.000 tiết hợp lệ.", undefined, requestId);
+    const lockedRowWeeks = [...new Set(rows.map((row) => weekStartOf(row.date || "")).filter((week) => week && weekLocks.get(week)?.locked))];
+    if (lockedRowWeeks.length && body.mode !== "preview") return apiFailure(423, `Có ${lockedRowWeeks.length} tuần đã khóa trong phạm vi gửi. Người duyệt vòng 2 cần mở khóa trước khi sửa hoặc duyệt lịch.`, undefined, requestId);
+    if (rows.length < 1 || rows.length > 2000) return apiFailure(400, "Phạm vi gửi cần từ 1 đến 2.000 tiết hợp lệ.", undefined, requestId);
     if (body.mode === "submit") {
       const pending = (await readIntakeTab("Đợt duyệt", "R", 1000)).slice(1).map((row, index) => parseIntakeBatch(row, index + 2))
-        .find((item) => item.weekStart === weekStart && item.status === "WAITING_REVIEW");
-      if (pending) return apiFailure(409, "Tuần này đang có một đợt chờ duyệt vòng 2. Hãy xử lý đợt đó trước khi gửi tiếp.", undefined, requestId);
+        .filter((item) => item.status === "WAITING_REVIEW");
+      const rowIds = new Set(rows.map((row) => row.rowId));
+      const pendingIds = new Set(pending.map((item) => item.id));
+      const history = await readIntakeTab("Lịch sử", "R", 3000);
+      const overlap = history.slice(1).some((row) => pendingIds.has(row[0]) && rowIds.has(row[1]));
+      if (overlap) return apiFailure(409, "Có dòng trong phạm vi này đang chờ duyệt vòng 2. Hãy xử lý đợt đó trước khi gửi lại.", undefined, requestId);
     }
 
     const context = await loadContext();

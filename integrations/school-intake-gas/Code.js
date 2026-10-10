@@ -139,18 +139,18 @@ function handleIntakeActionEdit(e) {
     return;
   }
   try {
-    const weekStart = String(input.getRange('D3').getDisplayValue() || '').trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) throw new Error('Hãy chọn một tuần cụ thể ở ô D3 trước khi thao tác.');
+    const selectedWeek = String(input.getRange('D3').getDisplayValue() || '').trim();
+    const weekStart = /^\d{4}-\d{2}-\d{2}$/.test(selectedWeek) ? selectedWeek : '';
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(15000)) throw new Error('Đang có thao tác xác nhận khác. Vui lòng thử lại.');
     let result;
     try {
       if (cell.getValue() !== true) return;
-      const context = intakeContextForEmail_(effective);
-      const batch = mode === 'apply' ? context.pending.find(row => row.weekStart === weekStart) : null;
-      if (mode === 'apply' && !batch) throw new Error('Tuần này chưa có đợt chờ duyệt vòng 2.');
       const school = String(input.getRange('F3').getDisplayValue() || 'Tất cả').trim();
-      result = intakeActionUnlocked_({ mode, school, weekStart, batchId: batch ? batch.id : '' }, effective);
+      const context = intakeContextForEmail_(effective);
+      const candidates = mode === 'apply' ? context.pending.filter(row => (!weekStart || row.weekStart === weekStart) && (school === 'Tất cả' || row.school === school)) : [];
+      if (mode === 'apply' && candidates.length !== 1) throw new Error(candidates.length ? 'Có nhiều đợt chờ duyệt phù hợp. Hãy mở Xác nhận lịch và chọn đúng đợt.' : 'Không có đợt chờ duyệt phù hợp. Hãy kiểm tra bộ lọc hoặc mở Xác nhận lịch.');
+      result = intakeActionUnlocked_({ mode, school, weekStart: mode === 'submit' ? '' : weekStart, batchId: candidates[0] ? candidates[0].id : '' }, effective);
       cell.setValue(false);
       SpreadsheetApp.flush();
     } finally { lock.releaseLock(); }
@@ -322,7 +322,7 @@ function intakeActionUnlocked_(input, actorEmail) {
         intro: context.email + ' đã gửi lịch để bạn kiểm tra và xác nhận.',
         account: context.settings.reviewer, week: input.weekStart, batchId: result.batchId,
         summary: result.summary, action: 'Mở bảng lịch để duyệt', url: sheetUrl, event: 'submitted',
-        instruction: 'Chọn đúng tuần ở đầu tab Nhập lịch, kiểm tra các dòng và bấm xác nhận vòng 2.',
+        instruction: 'Tuần ở đầu tab chỉ dùng để lọc khi kiểm tra. Mở Xác nhận lịch, chọn đúng đợt và xác nhận vòng 2.',
       });
       result.mail.sent = true;
     } else if (mode === 'apply' && result.status === 'SYNCED') {
