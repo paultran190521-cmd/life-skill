@@ -73,9 +73,15 @@ function installIntakeActionTrigger() {
   const settings = intakeSettings_();
   if (![settings.submitter, settings.reviewer].includes(email)) throw new Error('Chỉ email đang được phân công V1 hoặc V2 mới có thể kích hoạt nút duyệt.');
   const workbook = SpreadsheetApp.getActive();
-  const installed = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === 'handleIntakeActionEdit' && trigger.getTriggerSourceId() === workbook.getId());
-  if (!installed) ScriptApp.newTrigger('handleIntakeActionEdit').forSpreadsheet(workbook).onEdit().create();
-  workbook.toast((installed ? 'Nút thao tác đã được kích hoạt cho ' : 'Đã kích hoạt nút thao tác cho ') + email + '. Nếu vừa đổi người duyệt, hãy bấm lại V1/V2 một lần.', 'Xác nhận lịch', 8);
+  // V1 and V2 use separate handlers. A legacy shared handler can belong to a
+  // previous assignee, so it must never be treated as this user's trigger.
+  const handlers = [];
+  if (email === settings.submitter) handlers.push('handleIntakeSubmitEdit');
+  if (email === settings.reviewer) handlers.push('handleIntakeApplyEdit');
+  const existing = ScriptApp.getProjectTriggers();
+  const created = handlers.filter(handler => !existing.some(trigger => trigger.getHandlerFunction() === handler && trigger.getTriggerSourceId() === workbook.getId()));
+  created.forEach(handler => ScriptApp.newTrigger(handler).forSpreadsheet(workbook).onEdit().create());
+  workbook.toast(created.length ? 'Đã kích hoạt ' + created.map(handler => handler === 'handleIntakeSubmitEdit' ? 'V1' : 'V2').join(' và ') + ' cho ' + email + '.' : 'Trigger V1/V2 của ' + email + ' đã sẵn sàng.', 'Xác nhận lịch', 8);
 }
 
 function repairIntakePermissions() {
@@ -120,9 +126,16 @@ function retryIntakeNotification() {
   } finally { lock.releaseLock(); }
 }
 
-function handleIntakeActionEdit(e) {
+function handleIntakeSubmitEdit(e) { handleIntakeActionEdit_(e, 'submit'); }
+function handleIntakeApplyEdit(e) { handleIntakeActionEdit_(e, 'apply'); }
+// Kept only for already-installed legacy triggers. New installations use the
+// separate handlers above so a former assignee cannot block the current role.
+function handleIntakeActionEdit(e) { handleIntakeActionEdit_(e, ''); }
+
+function handleIntakeActionEdit_(e, expectedMode) {
   if (!e || !e.range || e.range.getSheet().getName() !== INTAKE_INPUT || e.range.getRow() !== 3 || ![8, 9].includes(e.range.getColumn()) || e.value !== 'TRUE') return;
   const cell = e.range, mode = cell.getColumn() === 8 ? 'submit' : 'apply';
+  if (expectedMode && mode !== expectedMode) return;
   const effective = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase();
   const editor = String((e.user && e.user.getEmail ? e.user.getEmail() : '') || Session.getActiveUser().getEmail() || '').trim().toLowerCase();
   const workbook = e.source, input = cell.getSheet();
