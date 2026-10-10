@@ -27,6 +27,7 @@ const input = ["intake-1", ...fields, "", "", "SAME", "", "Đã đồng bộ", n
 assert.equal(exports.isIntakeRowDirty(input, effective), false);
 assert.equal(exports.isIntakeRowDirty(input.map((value, index) => index === 7 ? "0,2916666667" : index === 8 ? "0.3229166667" : value), effective), false);
 assert.equal(exports.appNeedDiffersFromEffective(need, effective, schools, classes), false);
+assert.equal(exports.appNeedDiffersFromEffective(need, [effective[0], "2026-10-05", ...effective.slice(2)], schools, classes), false, "ISO effective dates must match the same Vietnamese calendar date");
 assert.equal(exports.isIntakeRowDirty(input.map((value, index) => index === 4 ? "10A2" : value), effective), true);
 assert.equal(exports.isIntakeRowDirty(input.map((value, index) => index === 16 ? "Đã sửa · cần gửi lại" : value), effective), true);
 assert.equal(exports.appNeedDiffersFromEffective({ ...need, start: "07:05" }, effective, schools, classes), true);

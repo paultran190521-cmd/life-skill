@@ -46,7 +46,23 @@ function normalizeIntakeTime(value: string) {
 
 export function appNeedDiffersFromEffective(need: SchoolTeachingNeed, effective: string[], schools: School[], classes: ClassRoom[]) {
   const fields = needFields(need, schools, classes);
-  return fields.some((value, index) => value !== (effective[index + 1] || ""));
+  return fields.some((value, index) => {
+    const expected = effective[index + 1] || "";
+    // Older effective rows were written with ISO dates while intake rows use
+    // the Vietnamese display format. They describe the same calendar day.
+    if (index === 0) return normalizeIntakeDate(value) !== normalizeIntakeDate(expected);
+    if (index === 6 || index === 7) return normalizeIntakeTime(value) !== normalizeIntakeTime(expected);
+    return value !== expected;
+  });
+}
+
+function normalizeIntakeDate(value: string) {
+  const trimmed = String(value || "").trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const vietnamese = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
+  if (vietnamese) return `${vietnamese[3]}-${vietnamese[2].padStart(2, "0")}-${vietnamese[1].padStart(2, "0")}`;
+  return trimmed;
 }
 
 export async function findIntakeLink(needId: string): Promise<IntakeLink | null> {
