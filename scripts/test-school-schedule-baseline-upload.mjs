@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { buildFixedSchoolBaselineBatch, buildRecurringPatternsFromWeeklyRows } from "../lib/school-schedule-baseline-upload.ts";
-import { findSchoolSchedulePatternImportConflicts, planSchoolSchedulePatternBatchSnapshot, planSchoolSchedulePatternImport, planSchoolSchedulePatternSnapshot } from "../lib/school-schedule-patterns.ts";
+import { findSchoolSchedulePatternImportConflicts, normalizeSchoolSchedulePattern, planSchoolSchedulePatternBatchSnapshot, planSchoolSchedulePatternImport, planSchoolSchedulePatternSnapshot } from "../lib/school-schedule-patterns.ts";
 
 const school = "TRƯỜNG THPT NAM SÀI GÒN";
 const row = (date, className, start, sourceNote = "") => ({ date, school, grade: "Khối 2", className, session: "Chiều", periodLabel: "Tiết 5", start, end: "14:20", environment: "Trong lớp", sourceStatus: "Dạy", sourceNote });
@@ -10,6 +10,13 @@ const selected = buildRecurringPatternsFromWeeklyRows(raw, school, "2026-10-12",
 assert.equal(selected.patterns.length, 2);
 assert.deepEqual(selected.patterns.map((item) => item.weekday), [1, 2]);
 assert.equal(selected.diagnostics.selectedWeekRows, 2);
+const catalogSchools = [{ id: "school-nsg", name: school }];
+const catalogClasses = ["2/1", "2/2"].map((name) => ({ id: `class-${name}`, schoolId: "school-nsg", name, grade: "Khối 2" }));
+const uploadedRows = selected.patterns.map((item) => ({ ...item, weekday: String(item.weekday) }));
+assert.deepEqual(uploadedRows.map((item) => normalizeSchoolSchedulePattern(item, catalogSchools, catalogClasses).weekday), [1, 2], "the API must accept weekday strings emitted by the Excel upload UI");
+assert.equal(normalizeSchoolSchedulePattern({ ...uploadedRows[0], weekday: "7" }, catalogSchools, catalogClasses).weekday, 7);
+assert.equal(normalizeSchoolSchedulePattern({ ...uploadedRows[0], weekday: "Thứ 2" }, catalogSchools, catalogClasses).weekday, 1);
+assert.throws(() => normalizeSchoolSchedulePattern({ ...uploadedRows[0], weekday: "8" }, catalogSchools, catalogClasses), /Thứ dạy không hợp lệ/);
 assert.throws(() => buildRecurringPatternsFromWeeklyRows([row("12/10/2026", "2/1", "13:45"), row("19/10/2026", "2/1", "14:00")], school, "2026-10-12", "2026-10-12", "2026-11-20"), /không trùng lịch/);
 assert.throws(() => buildRecurringPatternsFromWeeklyRows(raw, school, "2026-10-12", "2026-11-20", "2026-10-12"), /kết thúc hiệu lực/);
 assert.throws(() => buildRecurringPatternsFromWeeklyRows([row("12/10/2026", "2/1", "13:45"), row("12/10/2026", "2/1", "13:45")], school, "2026-10-12", "2026-10-12", "2026-11-20"), /trùng/);

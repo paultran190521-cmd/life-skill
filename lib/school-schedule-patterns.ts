@@ -38,6 +38,7 @@ function timeKey(value: unknown, label: string) {
 function parseWeekday(value: unknown) {
   if (typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 7) return value;
   const key = comparable(value);
+  if (/^[1-7]$/.test(key)) return Number(key);
   const found = new Map([
     ["thu 2", 1], ["thu hai", 1], ["monday", 1],
     ["thu 3", 2], ["thu ba", 2], ["tuesday", 2],
