@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { buildRecurringPatternsFromWeeklyRows } from "../lib/school-schedule-baseline-upload.ts";
-import { findSchoolSchedulePatternImportConflicts, planSchoolSchedulePatternImport, planSchoolSchedulePatternSnapshot } from "../lib/school-schedule-patterns.ts";
+import { buildFixedSchoolBaselineBatch, buildRecurringPatternsFromWeeklyRows } from "../lib/school-schedule-baseline-upload.ts";
+import { findSchoolSchedulePatternImportConflicts, planSchoolSchedulePatternBatchSnapshot, planSchoolSchedulePatternImport, planSchoolSchedulePatternSnapshot } from "../lib/school-schedule-patterns.ts";
 
 const school = "TRƯỜNG THPT NAM SÀI GÒN";
 const row = (date, className, start, sourceNote = "") => ({ date, school, grade: "Khối 2", className, session: "Chiều", periodLabel: "Tiết 5", start, end: "14:20", environment: "Trong lớp", sourceStatus: "Dạy", sourceNote });
@@ -37,4 +37,16 @@ const disjointRange = { ...overlapping, effectiveFrom: "2026-11-21", effectiveTo
 assert.equal(findSchoolSchedulePatternImportConflicts(planSchoolSchedulePatternImport([disjointRange], [base]), [base]).length, 0);
 const replaced = planSchoolSchedulePatternSnapshot([{ ...base, id: undefined, classId: "class-2" }], [base], "school-1", "2026-10-12", "2026-11-20");
 assert.equal(findSchoolSchedulePatternImportConflicts(replaced.rows, [base], replaced.superseded).length, 0, "retired rules do not collide with their replacement");
+const fourSchools = ["Nam Sài Gòn", "Chi Lăng", "Tân Túc", "Dương Văn Thì"].map((name, index) => ({ id: `school-${index + 1}`, name }));
+const fourRows = fourSchools.flatMap((item) => ["12/10/2026", "19/10/2026"].map((date) => ({ ...row(date, "2/1", "13:45"), school: item.name })));
+const batch = buildFixedSchoolBaselineBatch(fourRows, fourSchools, "2026-10-12", "2027-01-11");
+assert.equal(batch.patterns.length, 4);
+assert.equal(batch.scopes.length, 4);
+assert.equal(batch.diagnostics.every((item) => item.sourceWeeks === 2), true);
+assert.throws(() => buildFixedSchoolBaselineBatch([...fourRows, { ...fourRows[0], date: "20/10/2026" }], fourSchools, "2026-10-12", "2027-01-11"), /ít hơn tuần đầy đủ|khác lịch nền mẫu/);
+const batchExisting = fourSchools.map((item) => ({ ...base, schoolId: item.id, id: `pattern-${item.id}`, effectiveTo: "2027-01-11" }));
+const batchPlan = planSchoolSchedulePatternBatchSnapshot(batchExisting.map((item) => ({ ...item, id: undefined })), batchExisting, batch.scopes);
+assert.equal(batchPlan.rows.length, 4);
+assert.equal(batchPlan.rows.every((item) => item.action === "SAME"), true);
+assert.throws(() => planSchoolSchedulePatternBatchSnapshot(batchExisting.slice(0, 3), batchExisting, batch.scopes), /ít nhất một quy tắc/);
 console.log("School baseline upload and snapshot policy checks passed.");

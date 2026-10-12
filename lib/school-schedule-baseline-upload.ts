@@ -1,6 +1,10 @@
 import type { SchoolNeedInput } from "./school-teaching-needs";
 import type { SchoolSchedulePatternInput } from "./school-schedule-patterns";
 
+export const fixedBaselineSchoolLabels = ["Nam Sài Gòn", "Chi Lăng", "Tân Túc", "Dương Văn Thì"] as const;
+
+export type FixedBaselineScope = { schoolId: string; effectiveFrom: string; effectiveTo: string };
+
 function comparable(value: unknown) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -18,6 +22,56 @@ function mondayDateKey(value: string) {
   const date = new Date(`${dateKey(value, "Tuần mẫu")}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
   return date.toISOString().slice(0, 10);
+}
+
+function recurringSignature(row: SchoolNeedInput) {
+  const day = dateKey(row.date, "Ngày dạy");
+  const weekday = ((new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
+  return [weekday, comparable(row.grade), comparable(row.className), comparable(row.session), comparable(row.periodLabel), row.start, row.end, comparable(row.environment)].join("|");
+}
+
+/** One existing workbook supplies four schools; the first effective week must be a complete recurring sample. */
+export function buildFixedSchoolBaselineBatch(
+  rows: SchoolNeedInput[], schools: Array<{ id: string; name: string }>, effectiveFrom: string, effectiveTo: string,
+): {
+  patterns: SchoolSchedulePatternInput[];
+  scopes: FixedBaselineScope[];
+  diagnostics: Array<{ school: string; sampleWeekStart: string; weeklyPeriods: number; sourceWeeks: number }>;
+} {
+  const from = dateKey(effectiveFrom, "Ngày bắt đầu hiệu lực");
+  const to = dateKey(effectiveTo, "Ngày kết thúc hiệu lực");
+  if (to < from) throw new Error("Ngày kết thúc hiệu lực phải sau hoặc bằng ngày bắt đầu.");
+  const sampleWeekStart = mondayDateKey(from);
+  if (sampleWeekStart !== from) throw new Error("Ngày bắt đầu lịch nền phải là thứ Hai của tuần mẫu.");
+  const patterns: SchoolSchedulePatternInput[] = [];
+  const scopes: FixedBaselineScope[] = [];
+  const diagnostics: Array<{ school: string; sampleWeekStart: string; weeklyPeriods: number; sourceWeeks: number }> = [];
+  for (const label of fixedBaselineSchoolLabels) {
+    const key = comparable(label);
+    const sourceNames = [...new Set(rows.map((row) => String(row.school || "").trim()))].filter((name) => comparable(name).includes(key));
+    const catalogSchools = schools.filter((school) => comparable(school.name).includes(key));
+    if (sourceNames.length !== 1 || catalogSchools.length !== 1) throw new Error(`Không xác định duy nhất trường ${label} trong Excel và danh mục CRM.`);
+    const sourceName = sourceNames[0];
+    const catalogSchool = catalogSchools[0];
+    const built = buildRecurringPatternsFromWeeklyRows(rows, sourceName, sampleWeekStart, from, to);
+    const sampleRows = rows.filter((row) => comparable(row.school) === comparable(sourceName) && mondayDateKey(dateKey(row.date, "Ngày dạy")) === sampleWeekStart);
+    const expected = sampleRows.map(recurringSignature).sort().join("\n");
+    const representedWeeks = new Map<string, SchoolNeedInput[]>();
+    for (const row of rows.filter((item) => comparable(item.school) === comparable(sourceName))) {
+      const day = dateKey(row.date, "Ngày dạy");
+      if (day < from || day > to) continue;
+      const week = mondayDateKey(day);
+      representedWeeks.set(week, [...(representedWeeks.get(week) || []), row]);
+    }
+    for (const [week, weekRows] of representedWeeks) {
+      const fingerprint = weekRows.map(recurringSignature).sort().join("\n");
+      if (fingerprint !== expected) throw new Error(`${label}: tuần ${week} khác lịch nền mẫu. Hãy cập nhật tuần ngoại lệ riêng, không nhập đè âm thầm.`);
+    }
+    patterns.push(...built.patterns.map((pattern) => ({ ...pattern, school: catalogSchool.name })));
+    scopes.push({ schoolId: catalogSchool.id, effectiveFrom: from, effectiveTo: to });
+    diagnostics.push({ school: catalogSchool.name, sampleWeekStart, weeklyPeriods: built.patterns.length, sourceWeeks: representedWeeks.size });
+  }
+  return { patterns, scopes, diagnostics };
 }
 
 /** Convert one explicit dated week into recurring rules, with a user supplied validity range. */

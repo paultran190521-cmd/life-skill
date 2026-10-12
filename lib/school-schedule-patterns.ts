@@ -154,6 +154,23 @@ export function planSchoolSchedulePatternSnapshot(incoming: NormalizedPatternInp
   return { rows, superseded: scoped.filter((row) => !matched.has(row.id)) };
 }
 
+/** A single workbook replaces the complete recurring snapshot for each listed school. */
+export function planSchoolSchedulePatternBatchSnapshot(
+  incoming: NormalizedPatternInput[], existing: SchoolSchedulePattern[], scopes: Array<{ schoolId: string; effectiveFrom: string; effectiveTo: string }>,
+) {
+  if (!scopes.length || new Set(scopes.map((scope) => scope.schoolId)).size !== scopes.length) throw new Error("Danh sách trường lịch nền bị thiếu hoặc trùng.");
+  const scopeIds = new Set(scopes.map((scope) => scope.schoolId));
+  if (incoming.some((row) => !scopeIds.has(row.schoolId))) throw new Error("File có trường nằm ngoài phạm vi lịch nền đã chọn.");
+  const rows: ReturnType<typeof planSchoolSchedulePatternSnapshot>["rows"] = [];
+  const superseded: SchoolSchedulePattern[] = [];
+  for (const scope of scopes) {
+    const plan = planSchoolSchedulePatternSnapshot(incoming.filter((row) => row.schoolId === scope.schoolId), existing, scope.schoolId, scope.effectiveFrom, scope.effectiveTo);
+    rows.push(...plan.rows);
+    superseded.push(...plan.superseded);
+  }
+  return { rows, superseded };
+}
+
 /** Check the proposed active set, but do not reject unrelated conflicts that predate this import. */
 export function findSchoolSchedulePatternImportConflicts(
   plan: ReturnType<typeof planSchoolSchedulePatternImport>, existing: SchoolSchedulePattern[], superseded: SchoolSchedulePattern[] = [],
@@ -277,6 +294,41 @@ export function planPatternMaterialization(patterns: SchoolSchedulePattern[], ne
   return { candidateCount, creates, updates, retirements, skippedCount, hasPendingSupersededReview, conflicts };
 }
 
-export function schoolScheduleImportChecksum(rows: unknown[]) {
+/** Preflight all weeks before writing any school-week materialization. */
+export function planPatternMaterializationRange(
+  patterns: SchoolSchedulePattern[], needs: SchoolTeachingNeed[], scopes: Array<{ schoolId: string; effectiveFrom: string; effectiveTo: string }>,
+) {
+  const creates: ReturnType<typeof planPatternMaterialization>["creates"] = [];
+  const updates: ReturnType<typeof planPatternMaterialization>["updates"] = [];
+  const retirements: ReturnType<typeof planPatternMaterialization>["retirements"] = [];
+  const conflicts: string[] = [];
+  let candidateCount = 0;
+  let skippedCount = 0;
+  let weekCount = 0;
+  let overriddenWeekCount = 0;
+  for (const scope of scopes) {
+    const from = dateKey(scope.effectiveFrom, "Ngày bắt đầu hiệu lực");
+    const to = dateKey(scope.effectiveTo, "Ngày kết thúc hiệu lực");
+    if (to < from) throw new Error("Ngày kết thúc hiệu lực phải sau hoặc bằng ngày bắt đầu.");
+    if ((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000 > 370) throw new Error("Khoảng lịch nền vượt quá một năm.");
+    for (let week = mondayDateKey(from); week <= to;) {
+      const plan = planPatternMaterialization(patterns, needs, scope.schoolId, week);
+      weekCount += 1;
+      candidateCount += plan.candidateCount;
+      skippedCount += plan.skippedCount;
+      creates.push(...plan.creates);
+      updates.push(...plan.updates);
+      retirements.push(...plan.retirements);
+      conflicts.push(...plan.conflicts.map((key) => `${scope.schoolId}:${week}:${key}`));
+      if (plan.candidateCount && plan.skippedCount === plan.candidateCount && needs.some((need) => need.schoolId === scope.schoolId && need.sourceKind === "WEEKLY_OVERRIDE" && mondayDateKey(need.date) === week)) overriddenWeekCount += 1;
+      const next = new Date(`${week}T00:00:00Z`);
+      next.setUTCDate(next.getUTCDate() + 7);
+      week = next.toISOString().slice(0, 10);
+    }
+  }
+  return { candidateCount, creates, updates, retirements, skippedCount, conflicts, weekCount, overriddenWeekCount };
+}
+
+export function schoolScheduleImportChecksum(rows: unknown) {
   return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
 }

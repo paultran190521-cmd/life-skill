@@ -894,10 +894,10 @@ export function MettasoulApp() {
   const [schoolNeedLoadError, setSchoolNeedLoadError] = useState("");
   const [schoolNeedLoading, setSchoolNeedLoading] = useState(false);
   const [schoolNeedImport, setSchoolNeedImport] = useState<{ rows: SchoolNeedWorkbookRow[]; revision: string; fileName: string; schoolId: string; weekStart: string; summary: { newCount: number; changedCount: number; cancelCount: number; duplicateCount: number; reviewCount: number }; changes: Array<{ action: "NEW" | "CHANGED" | "SAME" | "CANCELLED"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> } | null>(null);
-  const [semesterPatternImport, setSemesterPatternImport] = useState<{ rows: SchoolSchedulePatternWorkbookRow[]; revision: string; source?: { schoolId: string; effectiveFrom: string; effectiveTo: string; fullSnapshot: true }; summary: { newCount: number; changedCount: number; duplicateCount: number; supersededCount?: number }; changes: Array<{ action: "NEW" | "CHANGED" | "SAME" | "SUPERSEDED"; before?: SchoolSchedulePattern; after?: SchoolSchedulePatternWorkbookRow }> } | null>(null);
-  const [schoolScheduleUploadMode, setSchoolScheduleUploadMode] = useState<"weekly" | "baseline" | null>(null);
-  const [baselineEffectiveFrom, setBaselineEffectiveFrom] = useState("");
-  const [baselineEffectiveTo, setBaselineEffectiveTo] = useState("");
+  const [semesterPatternImport, setSemesterPatternImport] = useState<{ rows: SchoolSchedulePatternWorkbookRow[]; revision: string; source?: { schoolId?: string; effectiveFrom?: string; effectiveTo?: string; fullSnapshot: true; scopes?: Array<{ schoolId: string; effectiveFrom: string; effectiveTo: string }>; materializeAllWeeks?: boolean }; summary: { newCount: number; changedCount: number; duplicateCount: number; supersededCount?: number; generatedCount?: number; updatedNeedCount?: number; retiredNeedCount?: number; reviewCount?: number; overriddenWeekCount?: number; weekCount?: number }; changes: Array<{ action: "NEW" | "CHANGED" | "SAME" | "SUPERSEDED"; before?: SchoolSchedulePattern; after?: SchoolSchedulePatternWorkbookRow }> } | null>(null);
+  const [schoolScheduleUploadMode, setSchoolScheduleUploadMode] = useState<"weekly" | "baseline" | null>("baseline");
+  const [baselineEffectiveFrom, setBaselineEffectiveFrom] = useState("2026-10-12");
+  const [baselineEffectiveTo, setBaselineEffectiveTo] = useState("2027-01-11");
   const [editingSchoolNeedId, setEditingSchoolNeedId] = useState("");
   const [editingSchoolNeedDraft, setEditingSchoolNeedDraft] = useState<SchoolNeedWorkbookRow | null>(null);
   const [teacherDraft, setTeacherDraft] = useState({
@@ -7030,7 +7030,7 @@ export function MettasoulApp() {
         catalogSheet["!cols"] = [34, 3, 34, 15, 3, 44, 19, 3, 45, 24, 3, 70, 14, 14, 3, 12, 22].map((wch) => ({ wch }));
         applyMettasoulExcelBrand(XLSX, catalogSheet, { headerRow: 0 });
         XLSX.utils.book_append_sheet(workbook, catalogSheet, "Danh muc");
-        const guide = XLSX.utils.aoa_to_sheet([["HƯỚNG DẪN LỊCH NỀN HỌC KỲ"], ["Mỗi dòng là một tiết lặp theo Thứ trong khoảng Từ ngày–Đến ngày."], ["File của một trường và một khoảng hiệu lực là toàn bộ lịch nền; xóa dòng trong file nghĩa là thay quy tắc cũ."], ["Muốn sửa quy tắc đã có: tải lịch nền hiện tại và giữ nguyên Mã quy tắc."], ["Lịch tuần tải lên sau đó là ngoại lệ và được ưu tiên hơn lịch nền."], ["Nhập lịch nền không tự gửi lịch giáo viên; chọn trường/tuần và xác nhận Áp dụng lịch nền trong CRM."]]);
+        const guide = XLSX.utils.aoa_to_sheet([["HƯỚNG DẪN LỊCH NỀN HỌC KỲ"], ["Mỗi dòng là một tiết lặp theo Thứ trong khoảng Từ ngày–Đến ngày."], ["File của một trường và một khoảng hiệu lực là toàn bộ lịch nền; xóa dòng trong file nghĩa là thay quy tắc cũ."], ["Muốn sửa quy tắc đã có: tải lịch nền hiện tại và giữ nguyên Mã quy tắc."], ["Lịch tuần tải lên sau đó là ngoại lệ và được ưu tiên hơn lịch nền."], ["Nhập một file GSheet cho bốn trường cố định sẽ tự tạo lịch nền cho toàn bộ các tuần trong khoảng hiệu lực; không tự gửi lịch giáo viên."]]);
         guide["!cols"] = [{ wch: 110 }];
         XLSX.utils.book_append_sheet(workbook, guide, "Huong dan");
         const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
@@ -7042,11 +7042,10 @@ export function MettasoulApp() {
     async function previewSemesterPatternWorkbook(file: File) {
       try {
         if (!/\.xlsx$/i.test(file.name)) throw new Error("Hãy chọn file Excel .xlsx đúng mẫu.");
-        if (!assignmentSchoolId) throw new Error("Hãy chọn trường trước khi tải lịch nền.");
         const XLSX = await import("xlsx-js-style");
         const { buildSchoolNeedTemplateCatalog } = await import("@/lib/school-need-template");
         const { extractGsheetScheduleRows, isGsheetScheduleInputSheet } = await import("@/lib/school-schedule-gsheet-import");
-        const { buildRecurringPatternsFromWeeklyRows } = await import("@/lib/school-schedule-baseline-upload");
+        const { buildFixedSchoolBaselineBatch } = await import("@/lib/school-schedule-baseline-upload");
         const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
         const gsheetName = workbook.SheetNames.find(isGsheetScheduleInputSheet);
         const sheet = workbook.Sheets[gsheetName || (workbook.Sheets["Lich nen hoc ky"] ? "Lich nen hoc ky" : workbook.SheetNames[0])];
@@ -7056,15 +7055,16 @@ export function MettasoulApp() {
         const selectedSchoolName = schoolById.get(assignmentSchoolId)?.name || "";
         const comparableName = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").trim().toLowerCase().replace(/\s+/g, " ");
         let rows: SchoolSchedulePatternWorkbookRow[];
-        let source: { schoolId: string; effectiveFrom: string; effectiveTo: string; fullSnapshot: true } | undefined;
+        let source: { schoolId?: string; effectiveFrom?: string; effectiveTo?: string; fullSnapshot: true; scopes?: Array<{ schoolId: string; effectiveFrom: string; effectiveTo: string }>; materializeAllWeeks?: boolean } | undefined;
         if (gsheetName) {
           if (!baselineEffectiveFrom || !baselineEffectiveTo) throw new Error("Hãy chọn ngày bắt đầu và kết thúc hiệu lực của lịch nền trước khi tải file.");
           const sourceRows = extractGsheetScheduleRows(XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true }), { readDate, readTime });
-          const { patterns, diagnostics } = buildRecurringPatternsFromWeeklyRows(sourceRows, selectedSchoolName, assignmentWeekStart, baselineEffectiveFrom, baselineEffectiveTo);
+          const { patterns, scopes, diagnostics } = buildFixedSchoolBaselineBatch(sourceRows, schools, baselineEffectiveFrom, baselineEffectiveTo);
           rows = patterns.map((row) => ({ ...row, weekday: String(row.weekday || ""), effectiveFrom: String(row.effectiveFrom || ""), effectiveTo: String(row.effectiveTo || ""), school: String(row.school || ""), className: String(row.className || ""), periodLabel: String(row.periodLabel || ""), start: String(row.start || ""), end: String(row.end || ""), environment: String(row.environment || "") }));
-          source = { schoolId: assignmentSchoolId, effectiveFrom: baselineEffectiveFrom, effectiveTo: baselineEffectiveTo, fullSnapshot: true };
-          pushToast("Đã đọc lịch nền từ Excel", `${diagnostics.selectedWeekRows} tiết của ${selectedSchoolName} trong tuần ${formatDate(assignmentWeekStart)}; đối chiếu trước khi lưu quy tắc lặp.`, "info");
+          source = { fullSnapshot: true, scopes, materializeAllWeeks: true };
+          pushToast("Đã đọc lịch nền từ Excel", `${patterns.length} tiết lặp của ${diagnostics.length} trường; đối chiếu trước khi tạo lịch nền các tuần.`, "info");
         } else {
+          if (!assignmentSchoolId) throw new Error("Hãy chọn trường trước khi sửa lịch nền từ file CRM.");
           if (!baselineEffectiveFrom || !baselineEffectiveTo) throw new Error("Hãy chọn ngày bắt đầu và kết thúc hiệu lực của lịch nền trước khi tải file.");
           const raw = XLSX.utils.sheet_to_json<Record<string, string | number>>(sheet, { defval: "", raw: true }).filter((row) => ["Từ ngày", "Trường", "Lớp", "Thứ"].some((key) => String(row[key] || "").trim()));
           rows = raw.filter((row) => comparableName(String(row["Trường"] || "")) === comparableName(selectedSchoolName)).map((row) => {
@@ -7073,10 +7073,10 @@ export function MettasoulApp() {
             return { id: String(row["Mã quy tắc (giữ khi sửa)"] || "").trim(), effectiveFrom: readDate(row["Từ ngày"] || ""), effectiveTo: readDate(row["Đến ngày"] || ""), weekday: String(row["Thứ"] || "").trim(), school, grade: String(row["Khối"] || "").trim(), className: String(row["Lớp"] || "").trim(), session, periodLabel, start: period?.start || readTime(row["Bắt đầu"] || ""), end: period?.end || readTime(row["Kết thúc"] || ""), environment: String(row["Môi trường"] || "").trim(), sourceNote: String(row["Nguồn/Ghi chú"] || "").trim() };
           });
           if (rows.some((row) => row.effectiveFrom !== baselineEffectiveFrom || row.effectiveTo !== baselineEffectiveTo)) throw new Error("File lịch nền chứa khoảng hiệu lực khác ngày đã chọn. Mỗi lần chỉ cập nhật một trường và một khoảng hiệu lực.");
-          source = { schoolId: assignmentSchoolId, effectiveFrom: baselineEffectiveFrom, effectiveTo: baselineEffectiveTo, fullSnapshot: true };
+          source = { schoolId: assignmentSchoolId, effectiveFrom: baselineEffectiveFrom, effectiveTo: baselineEffectiveTo, fullSnapshot: true, scopes: [{ schoolId: assignmentSchoolId, effectiveFrom: baselineEffectiveFrom, effectiveTo: baselineEffectiveTo }], materializeAllWeeks: true };
         }
-        if (rows.length === 0) throw new Error(`File chưa có dòng lịch nền của ${selectedSchoolName}.`);
-        const result = await saveRequest<{ revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; supersededCount?: number }; rows: Array<{ action: "NEW" | "CHANGED" | "SAME" | "SUPERSEDED"; before?: SchoolSchedulePattern; after?: SchoolSchedulePatternWorkbookRow }> }>("Đang đối chiếu lịch nền học kỳ...", "/api/school-schedule-patterns", { method: "POST", body: JSON.stringify({ mode: "preview", rows, source }) });
+        if (rows.length === 0) throw new Error("File chưa có dòng lịch nền phù hợp.");
+        const result = await saveRequest<{ revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; supersededCount?: number; generatedCount?: number; updatedNeedCount?: number; retiredNeedCount?: number; reviewCount?: number; overriddenWeekCount?: number; weekCount?: number }; rows: Array<{ action: "NEW" | "CHANGED" | "SAME" | "SUPERSEDED"; before?: SchoolSchedulePattern; after?: SchoolSchedulePatternWorkbookRow }> }>("Đang đối chiếu lịch nền học kỳ...", "/api/school-schedule-patterns", { method: "POST", body: JSON.stringify({ mode: "preview", rows, source }) });
         setSemesterPatternImport({ rows, source, revision: result.revision, summary: result.summary, changes: result.rows });
       } catch (error) { handleSaveError(error); }
     }
@@ -7084,20 +7084,16 @@ export function MettasoulApp() {
     async function applySemesterPatternWorkbook() {
       if (!semesterPatternImport) return;
       try {
-        const result = await saveRequest<{ summary: { newCount: number; changedCount: number; duplicateCount: number; supersededCount?: number } }>("Đang lưu lịch nền học kỳ...", "/api/school-schedule-patterns", { method: "POST", body: JSON.stringify({ mode: "apply", revision: semesterPatternImport.revision, rows: semesterPatternImport.rows, source: semesterPatternImport.source }) });
+        const result = await saveRequest<{ summary: { newCount: number; changedCount: number; duplicateCount: number; supersededCount?: number; generatedCount?: number; updatedNeedCount?: number } }>("Đang lưu lịch nền học kỳ...", "/api/school-schedule-patterns", { method: "POST", body: JSON.stringify({ mode: "apply", revision: semesterPatternImport.revision, rows: semesterPatternImport.rows, source: semesterPatternImport.source }) });
         setSemesterPatternImport(null);
-        pushToast("Đã lưu lịch nền cố định", `${result.summary.newCount} quy tắc mới · ${result.summary.changedCount} quy tắc sửa · ${result.summary.supersededCount || 0} quy tắc cũ được thay. Chọn “Áp dụng lịch nền vào tuần đang xem” khi cần giao tuần đó.`, "success");
-      } catch (error) { handleSaveError(error); }
-    }
-
-    async function materializeSemesterWeek() {
-      if (!assignmentSchoolId) return;
-      if (!window.confirm(`Áp dụng lịch nền cố định cho ${schoolById.get(assignmentSchoolId)?.name || "trường này"} trong tuần ${formatDate(assignmentWeekStart)}? Thao tác có thể tạo hoặc cập nhật các tiết chưa được thay bằng lịch tuần.`)) return;
-      try {
-        const result = await saveRequest<{ createdCount: number; updatedCount: number; candidateCount: number; needs: SchoolTeachingNeed[] }>("Đang cập nhật lịch nền của tuần...", "/api/school-schedule-patterns/materialize", { method: "POST", body: JSON.stringify({ schoolId: assignmentSchoolId, weekStart: assignmentWeekStart }) });
-        setSchoolNeeds(result.needs);
-        setDraftSchedule({ items: draftItemsFromSchoolNeeds(result.needs, activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || ""))) });
-        pushToast("Đã cập nhật lịch nền", `${result.createdCount} tiết mới · ${result.updatedCount} tiết sửa trong tuần.`, "success");
+        pushToast("Đã lưu lịch nền cố định", `${result.summary.newCount} quy tắc mới · ${result.summary.generatedCount || 0} tiết được tạo cho các tuần · ${result.summary.updatedNeedCount || 0} tiết cập nhật. Tuần có lịch tải riêng được giữ nguyên.`, "success");
+        if (assignmentSchoolId) {
+          try {
+            const current = await apiRequest<{ needs: SchoolTeachingNeed[] }>(`/api/school-teaching-needs?from=${assignmentWeekStart}&to=${weekEnd}&schoolId=${encodeURIComponent(assignmentSchoolId)}`);
+            setSchoolNeeds(current.needs);
+            setDraftSchedule({ items: draftItemsFromSchoolNeeds(current.needs, activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || ""))) });
+          } catch { pushToast("Cần tải lại lịch đang xem", "Lịch nền đã lưu nhưng chưa làm mới được tuần trên màn hình. Hãy chọn lại trường hoặc tải lại trang.", "info"); }
+        }
       } catch (error) { handleSaveError(error); }
     }
 
@@ -7320,7 +7316,7 @@ export function MettasoulApp() {
               <input type="date" value={assignmentWeekStart} onChange={(event) => { setSchoolNeedLoading(Boolean(assignmentSchoolId)); setAssignmentWeekStart(mondayDateKey(event.target.value)); setSelectedSchoolNeedIds([]); setSchoolNeedImport(null); setSemesterPatternImport(null); }} className={`${inputClass} mt-1 w-full`} />
             </label>
             <label className="rounded-2xl border-2 border-violet-400 bg-violet-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Trường
-              <select value={assignmentSchoolId} onChange={(event) => { setSchoolNeedLoading(Boolean(event.target.value)); setAssignmentSchoolId(event.target.value); setDraftSchedule({ items: event.target.value ? [] : [createDraftScheduleItem()] }); setSchoolNeeds([]); setSelectedSchoolNeedIds([]); setSchoolNeedImport(null); setSemesterPatternImport(null); setBaselineEffectiveFrom(""); setBaselineEffectiveTo(""); }} className={`${inputClass} mt-1 w-full`}>
+              <select value={assignmentSchoolId} onChange={(event) => { setSchoolNeedLoading(Boolean(event.target.value)); setAssignmentSchoolId(event.target.value); setDraftSchedule({ items: event.target.value ? [] : [createDraftScheduleItem()] }); setSchoolNeeds([]); setSelectedSchoolNeedIds([]); setSchoolNeedImport(null); setSemesterPatternImport(null); }} className={`${inputClass} mt-1 w-full`}>
                 <option value="">Chọn trường</option>
                 {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
               </select>
@@ -7354,20 +7350,19 @@ export function MettasoulApp() {
             </div>
           </div> : null}
           {schoolScheduleUploadMode === "baseline" ? <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50/50 p-3">
-            <p className="text-xs font-semibold text-slate-700">Chọn tuần điển hình ở trên và một khoảng hiệu lực. File GSheet được lấy các tiết của tuần mẫu làm lịch lặp; file CRM xuất ra là toàn bộ lịch nền trong khoảng này, dòng bị xóa sẽ thay quy tắc cũ.</p>
+            <p className="text-xs font-semibold text-slate-700">Tải một file Excel GSheet cho Nam Sài Gòn, Chi Lăng, Tân Túc và Dương Văn Thì; không cần chọn trường. Hệ thống lấy tuần đầu của khoảng hiệu lực làm mẫu, kiểm tra các tuần có trong file và tạo lịch nền cho toàn bộ khoảng. File CRM xuất ra vẫn dùng để sửa lịch nền của từng trường.</p>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               <label className="text-xs font-bold text-violet-950">Áp dụng từ ngày<input type="date" value={baselineEffectiveFrom} onChange={(event) => { setBaselineEffectiveFrom(event.target.value); setSemesterPatternImport(null); }} className={`${inputClass} mt-1 w-full`} /></label>
               <label className="text-xs font-bold text-violet-950">Đến ngày<input type="date" value={baselineEffectiveTo} onChange={(event) => { setBaselineEffectiveTo(event.target.value); setSemesterPatternImport(null); }} className={`${inputClass} mt-1 w-full`} /></label>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <label className={`rounded-xl bg-violet-700 px-3 py-2 text-xs font-bold text-white ${assignmentSchoolId ? "cursor-pointer" : "cursor-not-allowed opacity-40"}`}>Chọn Excel lịch nền
-                <input type="file" accept=".xlsx" disabled={!assignmentSchoolId} className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void previewSemesterPatternWorkbook(file); event.target.value = ""; }} />
+              <label className="cursor-pointer rounded-xl bg-violet-700 px-3 py-2 text-xs font-bold text-white">Chọn Excel lịch nền
+                <input type="file" accept=".xlsx" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void previewSemesterPatternWorkbook(file); event.target.value = ""; }} />
               </label>
               <button type="button" disabled={!assignmentSchoolId} onClick={() => void downloadSemesterPatternWorkbook(true)} className="rounded-xl border border-violet-300 px-3 py-2 text-xs font-bold text-violet-900 disabled:opacity-40">Tải Excel nền đang có để sửa</button>
             </div>
-            <button type="button" disabled={!assignmentSchoolId || Boolean(pendingAction)} onClick={() => void materializeSemesterWeek()} className="mt-3 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900 disabled:opacity-40">Áp dụng lịch nền vào tuần đang xem</button>
           </div> : null}
-          <p className="mt-2 text-xs font-semibold text-[var(--muted)]">Lịch nền là mặc định cho các tuần; chọn “Áp dụng lịch nền” khi cần giao một tuần mới. Lịch tuần tải lên hoặc sửa trong CRM được ưu tiên ở tuần tương ứng; mỗi lần lưu có người sửa và phiên bản.</p>
+          <p className="mt-2 text-xs font-semibold text-[var(--muted)]">Lịch nền tự tạo các tuần trong khoảng hiệu lực sau khi xác nhận nhập. Lịch tuần tải lên hoặc sửa trong CRM được ưu tiên ở tuần tương ứng; mỗi lần lưu có người sửa và phiên bản. Không tự gửi lịch giáo viên.</p>
           {schoolScheduleUploadMode === "weekly" && schoolNeedImport ? <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
             <p className="font-black">Đối chiếu toàn bộ tuần: {schoolNeedImport.summary.newCount} mới · {schoolNeedImport.summary.changedCount} sửa · {schoolNeedImport.summary.cancelCount} hủy · {schoolNeedImport.summary.duplicateCount} không đổi · {schoolNeedImport.summary.reviewCount} lịch đã giao cần xem lại.</p>
             <div className="mt-2 max-h-48 space-y-1 overflow-auto">{schoolNeedImport.changes.filter((change) => change.action !== "SAME").map((change, index) => <p key={`${change.after.id || "new"}-${index}`} className="rounded-lg bg-white/80 px-2 py-1 text-xs">
@@ -7378,10 +7373,11 @@ export function MettasoulApp() {
           </div> : null}
           {schoolScheduleUploadMode === "baseline" && semesterPatternImport ? <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-950">
             <p className="font-black">Đối chiếu lịch nền: {semesterPatternImport.summary.newCount} mới · {semesterPatternImport.summary.changedCount} sửa · {semesterPatternImport.summary.supersededCount || 0} quy tắc cũ được thay · {semesterPatternImport.summary.duplicateCount} không đổi.</p>
+            {semesterPatternImport.source?.materializeAllWeeks ? <p className="mt-1 font-semibold">Dự kiến {semesterPatternImport.summary.generatedCount || 0} tiết mới · {semesterPatternImport.summary.updatedNeedCount || 0} tiết cập nhật · {semesterPatternImport.summary.retiredNeedCount || 0} tiết hủy · {semesterPatternImport.summary.reviewCount || 0} tiết đã giao cần xem lại; {semesterPatternImport.summary.overriddenWeekCount || 0} tuần có lịch thay riêng được giữ nguyên. Phạm vi: 4 trường, {formatDate(baselineEffectiveFrom)}–{formatDate(baselineEffectiveTo)}.</p> : null}
             <div className="mt-2 max-h-40 space-y-1 overflow-auto">{semesterPatternImport.changes.filter((change) => change.action !== "SAME").map((change, index) => change.action === "SUPERSEDED" && change.before
               ? <p key={`old-${change.before.id}-${index}`} className="rounded-lg bg-white/80 px-2 py-1 text-xs"><strong>Thay quy tắc cũ</strong> · {classById.get(change.before.classId)?.name || change.before.classId} · Thứ {change.before.weekday + 1} · {change.before.start}–{change.before.end}</p>
               : change.after ? <p key={`${change.after.id || "new"}-${index}`} className="rounded-lg bg-white/80 px-2 py-1 text-xs"><strong>{change.action === "NEW" ? "Mới" : "Sửa"}</strong> · {change.after.school} · {change.after.className} · {change.after.weekday} · {change.after.start}–{change.after.end} · {formatDate(change.after.effectiveFrom)}–{formatDate(change.after.effectiveTo)}</p> : null)}</div>
-            <button type="button" onClick={() => void applySemesterPatternWorkbook()} className="mt-2 rounded-lg bg-violet-700 px-3 py-2 text-xs font-black text-white">Xác nhận lưu lịch nền học kỳ</button>
+            <button type="button" disabled={Boolean(pendingAction)} onClick={() => void applySemesterPatternWorkbook()} className="mt-2 rounded-lg bg-violet-700 px-3 py-2 text-xs font-black text-white disabled:opacity-40">Xác nhận lưu lịch nền học kỳ</button>
           </div> : null}
           {schoolNeedLoadError ? <p role="alert" className="mt-3 text-sm text-rose-700">{schoolNeedLoadError}</p> : null}
           {weekNeeds.length > 0 ? <div className="mt-4 flex flex-wrap gap-3">{Array.from(new Set(weekNeeds.map((need) => need.date))).sort().map((date) => {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { materializePatternNeed, planPatternMaterialization } from "../lib/school-schedule-patterns.ts";
+import { materializePatternNeed, planPatternMaterialization, planPatternMaterializationRange } from "../lib/school-schedule-patterns.ts";
 
 const rule = {
   id: "pattern-1", schoolId: "school-1", classId: "class-1", weekday: 1,
@@ -56,4 +56,13 @@ assert.equal(planPatternMaterialization([oldRule, replacement], [retiredOnce], "
 const occupied = { ...base, id: "need-other", patternId: "pattern-other", date: "2026-10-13", start: "08:10", end: "08:45" };
 assert.equal(planPatternMaterialization([changedRule], [base, occupied], "school-1", monday).conflicts.length, 1);
 assert.equal(planPatternMaterialization([rule], [], "school-1", "2027-01-04").candidateCount, 0);
+const range = planPatternMaterializationRange([rule], [], [{ schoolId: "school-1", effectiveFrom: "2026-10-12", effectiveTo: "2026-10-26" }]);
+assert.equal(range.creates.length, 3);
+assert.equal(range.weekCount, 3);
+const generated = range.creates.map((item, index) => ({ ...item, id: `need-generated-${index}`, status: "OPEN" }));
+const repeated = planPatternMaterializationRange([rule], generated, [{ schoolId: "school-1", effectiveFrom: "2026-10-12", effectiveTo: "2026-10-26" }]);
+assert.equal(repeated.creates.length, 0, "repeating a three-month import must not duplicate generated weeks");
+const overrideRange = planPatternMaterializationRange([rule], [weeklyFirst], [{ schoolId: "school-1", effectiveFrom: "2026-10-12", effectiveTo: "2026-10-26" }]);
+assert.equal(overrideRange.creates.length, 2);
+assert.equal(overrideRange.overriddenWeekCount, 1);
 console.log("School pattern materialization policy checks passed.");
