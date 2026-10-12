@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { hasPendingSchoolNeedReview, importedNeedStatus, isSchoolNeedCancelled, normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedImport, planSchoolNeedWeeklySnapshot, reconciledNeedStatus, schoolNeedContentChanged, schoolNeedRequiresReview, schoolNeedRevision } from "../lib/school-teaching-needs.ts";
+import { hasPendingSchoolNeedReview, importedNeedStatus, isSchoolNeedCancelled, normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedImport, planSchoolNeedWeeklyBatch, planSchoolNeedWeeklySnapshot, reconciledNeedStatus, schoolNeedContentChanged, schoolNeedRequiresReview, schoolNeedRevision } from "../lib/school-teaching-needs.ts";
 
 const schools = [{ id: "s-nsg", name: "Trường Tiểu học Nam Sài Gòn", district: "" }];
 const classes = [{ id: "c-21", schoolId: "s-nsg", name: "2/1", grade: "2" }, { id: "c-22", schoolId: "s-nsg", name: "2/2", grade: "2" }];
@@ -66,4 +66,14 @@ assert.equal(planSchoolNeedWeeklySnapshot([weeklyRow], [{ ...baseWeek, sourceKin
 assert.equal(planSchoolNeedWeeklySnapshot([weeklyRow], [{ ...assignedBase, status: "REVIEW", sourceStatus: "Trường hủy tiết" }], "s-nsg", "2026-10-12").omissions.length, 0);
 assert.throws(() => planSchoolNeedWeeklySnapshot([weeklyRow], [], "s-nsg", "2026-10-13"), /thứ Hai/);
 assert.throws(() => planSchoolNeedWeeklySnapshot([{ ...weeklyRow, date: "2026-10-19" }], [], "s-nsg", "2026-10-12"), /ngoài trường hoặc tuần/);
+const multiSchool = planSchoolNeedWeeklyBatch(
+  [weeklyRow, { ...weeklyRow, schoolId: "school-other", classId: "other-class" }],
+  [baseWeek, assignedBase, otherWeek, { ...otherSchool, classId: "other-class" }, { ...baseWeek, id: "untouched-school", schoolId: "school-untouched" }],
+  "2026-10-12",
+);
+assert.deepEqual(multiSchool.map((item) => item.scope.schoolId), ["s-nsg", "school-other"]);
+assert.deepEqual(multiSchool[0].omissions.map((item) => item.id), ["need-2"]);
+assert.equal(multiSchool[1].omissions.length, 0);
+assert.equal(multiSchool.some((item) => item.scope.schoolId === "school-untouched"), false);
+assert.throws(() => planSchoolNeedWeeklyBatch([{ ...weeklyRow, date: "2026-10-19" }], [], "2026-10-12"), /ngoài trường hoặc tuần/);
 console.log("School teaching need import checks passed.");

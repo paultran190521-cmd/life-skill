@@ -199,3 +199,12 @@ export function planSchoolNeedWeeklySnapshot(incoming: NormalizedNeedInput[], ex
   const omissions = scoped.filter((row) => !touched.has(row.id) && row.status !== "CANCELLED" && !(row.status === "REVIEW" && row.sourceStatus === "Trường hủy tiết"));
   return { rows, omissions, scope: { schoolId, weekStart: monday, weekEnd: sunday } };
 }
+
+/** One workbook may contain several schools. Only schools represented in the selected week are replaced. */
+export function planSchoolNeedWeeklyBatch(incoming: NormalizedNeedInput[], existing: SchoolTeachingNeed[], weekStart: string) {
+  if (!incoming.length) throw new Error("File lịch tuần cần ít nhất một dòng trong tuần đã chọn.");
+  const schoolIds = [...new Set(incoming.map((row) => row.schoolId))];
+  return schoolIds.map((schoolId) => planSchoolNeedWeeklySnapshot(
+    incoming.filter((row) => row.schoolId === schoolId), existing, schoolId, weekStart,
+  ));
+}
