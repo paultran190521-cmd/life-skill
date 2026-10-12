@@ -124,6 +124,7 @@ import type {
   ResourceLink,
   Schedule,
   School,
+  SchoolSchedulePattern,
   SchoolTeachingNeed,
   Teacher,
   TeacherAvailability,
@@ -200,6 +201,22 @@ type SchoolNeedWorkbookRow = {
   end: string;
   environment: string;
   sourceNote?: string;
+};
+
+type SchoolSchedulePatternWorkbookRow = {
+  id?: string;
+  effectiveFrom: string;
+  school: string;
+  grade?: string;
+  className: string;
+  session?: string;
+  periodLabel: string;
+  start: string;
+  end: string;
+  environment: string;
+  sourceNote?: string;
+  effectiveTo: string;
+  weekday: string;
 };
 
 type AppData = {
@@ -874,7 +891,8 @@ export function MettasoulApp() {
   const [selectedSchoolNeedIds, setSelectedSchoolNeedIds] = useState<string[]>([]);
   const [schoolNeedLoadError, setSchoolNeedLoadError] = useState("");
   const [schoolNeedLoading, setSchoolNeedLoading] = useState(false);
-  const [schoolNeedImport, setSchoolNeedImport] = useState<{ rows: SchoolNeedWorkbookRow[]; revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; changes: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> } | null>(null);
+  const [schoolNeedImport, setSchoolNeedImport] = useState<{ rows: SchoolNeedWorkbookRow[]; revision: string; fileName: string; schoolId: string; weekStart: string; summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; changes: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> } | null>(null);
+  const [semesterPatternImport, setSemesterPatternImport] = useState<{ rows: SchoolSchedulePatternWorkbookRow[]; revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number }; changes: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolSchedulePattern; after: SchoolSchedulePatternWorkbookRow }> } | null>(null);
   const [editingSchoolNeedId, setEditingSchoolNeedId] = useState("");
   const [editingSchoolNeedDraft, setEditingSchoolNeedDraft] = useState<SchoolNeedWorkbookRow | null>(null);
   const [teacherDraft, setTeacherDraft] = useState({
@@ -6923,22 +6941,104 @@ export function MettasoulApp() {
             sourceNote: String(row["Nguồn/Ghi chú"] || "").trim(),
           };
         });
-        const result = await saveRequest<{ revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; rows: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> }>("Đang đối chiếu lịch trường...", "/api/school-teaching-needs", { method: "POST", body: JSON.stringify({ mode: "preview", rows }) });
-        setSchoolNeedImport({ rows, revision: result.revision, summary: result.summary, changes: result.rows });
+        if (!assignmentSchoolId) throw new Error("Hãy chọn trường trước khi tải Excel lên.");
+        const result = await saveRequest<{ revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; rows: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> }>("Đang đối chiếu lịch trường...", "/api/school-teaching-needs", { method: "POST", body: JSON.stringify({ mode: "preview", rows, source: { fileName: file.name, schoolId: assignmentSchoolId, weekStart: assignmentWeekStart } }) });
+        setSchoolNeedImport({ rows, revision: result.revision, fileName: file.name, schoolId: assignmentSchoolId, weekStart: assignmentWeekStart, summary: result.summary, changes: result.rows });
       } catch (error) { handleSaveError(error); }
     }
 
     async function applySchoolNeedWorkbook() {
       if (!schoolNeedImport) return;
       try {
-        const result = await saveRequest<{ summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; needs: SchoolTeachingNeed[] }>("Đang nhập lịch trường...", "/api/school-teaching-needs", { method: "POST", body: JSON.stringify({ mode: "apply", revision: schoolNeedImport.revision, rows: schoolNeedImport.rows }) });
+        const result = await saveRequest<{ summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; needs: SchoolTeachingNeed[] }>("Đang nhập lịch trường...", "/api/school-teaching-needs", { method: "POST", body: JSON.stringify({ mode: "apply", revision: schoolNeedImport.revision, rows: schoolNeedImport.rows, source: { fileName: schoolNeedImport.fileName, schoolId: schoolNeedImport.schoolId, weekStart: schoolNeedImport.weekStart } }) });
         setSchoolNeedImport(null);
         const currentWeekNeeds = result.needs.filter((need) => need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd);
         setSchoolNeeds(currentWeekNeeds);
         setSelectedSchoolNeedIds([]);
         const schoolName = schoolById.get(assignmentSchoolId)?.name || "";
         setDraftSchedule({ items: draftItemsFromSchoolNeeds(currentWeekNeeds, activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolName))) });
-        pushToast("Đã nhập lịch trường", `${result.summary.newCount} dòng mới · ${result.summary.changedCount} dòng sửa · ${result.summary.duplicateCount} dòng trùng.`, "success");
+        pushToast("Đã nhập lịch trường", `${result.summary.newCount} dòng mới · ${result.summary.changedCount} dòng sửa · ${result.summary.duplicateCount} dòng trùng. Bản nhập đã được lưu phiên bản trong CRM.`, "success");
+      } catch (error) { handleSaveError(error); }
+    }
+
+    async function downloadSemesterPatternWorkbook(includeCurrent: boolean) {
+      try {
+        const XLSX = await import("xlsx-js-style");
+        const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula } = await import("@/lib/school-need-template");
+        const catalog = buildSchoolNeedTemplateCatalog(schools, classes, activeTimeSlots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot);
+        if (catalog.schools.length === 0 || catalog.classes.length === 0 || catalog.periods.length === 0) throw new Error("Cần có trường, lớp và khung giờ đang hoạt động trước khi tải mẫu.");
+        let patterns: SchoolSchedulePattern[] = [];
+        if (includeCurrent) patterns = (await apiRequest<{ patterns: SchoolSchedulePattern[] }>(`/api/school-schedule-patterns?schoolId=${encodeURIComponent(assignmentSchoolId)}`)).patterns;
+        const weekdayLabel = (weekday: number) => weekday === 7 ? "Chủ nhật" : `Thứ ${weekday + 1}`;
+        const rows = patterns.map((pattern) => {
+          const classRoom = classById.get(pattern.classId);
+          return [pattern.id, pattern.effectiveFrom, schoolById.get(pattern.schoolId)?.name || "", classRoom?.grade || "", classRoom?.name || "", pattern.start < "12:00" ? "Sáng" : "Chiều", pattern.periodLabel, pattern.start, pattern.end, teachingEnvironmentOptions.find((option) => option.value === pattern.teachingEnvironment)?.label || "Trong lớp", pattern.sourceNote || "", pattern.effectiveTo, weekdayLabel(pattern.weekday)];
+        });
+        const headers = ["Mã quy tắc (giữ khi sửa)", "Từ ngày", "Trường", "Khối", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Nguồn/Ghi chú", "Đến ngày", "Thứ"];
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        worksheet["!cols"] = [22, 16, 34, 15, 20, 12, 25, 14, 14, 21, 34, 16, 14].map((wch) => ({ wch }));
+        worksheet["!ref"] = `A1:M${Math.max(1001, rows.length + 1)}`;
+        worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
+        applyMettasoulExcelBrand(XLSX, worksheet, { headerRow: 0 });
+        for (let row = 2; row <= Math.max(1001, rows.length + 1); row++) {
+          for (const column of ["B", "L"]) { worksheet[`${column}${row}`] ||= { t: "z" }; worksheet[`${column}${row}`].s = { numFmt: "dd/mm/yyyy" }; }
+          worksheet[`H${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "M", catalog) };
+          worksheet[`I${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "N", catalog) };
+        }
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Lich nen hoc ky");
+        const catalogSheet = XLSX.utils.aoa_to_sheet(schoolNeedCatalogRows(catalog));
+        catalogSheet["!cols"] = [34, 3, 34, 15, 3, 44, 19, 3, 45, 24, 3, 70, 14, 14, 3, 12, 22].map((wch) => ({ wch }));
+        applyMettasoulExcelBrand(XLSX, catalogSheet, { headerRow: 0 });
+        XLSX.utils.book_append_sheet(workbook, catalogSheet, "Danh muc");
+        const guide = XLSX.utils.aoa_to_sheet([["HƯỚNG DẪN LỊCH NỀN HỌC KỲ"], ["Mỗi dòng là một tiết lặp theo Thứ trong khoảng Từ ngày–Đến ngày."], ["Muốn sửa quy tắc đã có: tải lịch nền hiện tại và giữ nguyên Mã quy tắc."], ["Lịch tuần tải lên sau đó là ngoại lệ và được ưu tiên hơn lịch nền."], ["Nhập lịch nền không tự gửi lịch giáo viên; vào Giao lịch, chọn tuần/trường rồi tạo lịch tuần từ lịch nền."]]);
+        guide["!cols"] = [{ wch: 110 }];
+        XLSX.utils.book_append_sheet(workbook, guide, "Huong dan");
+        const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+        const url = URL.createObjectURL(new Blob([Uint8Array.from(addSchoolNeedTemplateControls(new Uint8Array(bytes), catalog))], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+        const link = document.createElement("a"); link.href = url; link.download = includeCurrent ? `lich-nen-hoc-ky-${assignmentSchoolId}.xlsx` : "mau-lich-nen-hoc-ky-mettasoul.xlsx"; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (error) { handleSaveError(error); }
+    }
+
+    async function previewSemesterPatternWorkbook(file: File) {
+      try {
+        if (!/\.xlsx$/i.test(file.name)) throw new Error("Hãy chọn file Excel .xlsx đúng mẫu.");
+        const XLSX = await import("xlsx-js-style");
+        const { buildSchoolNeedTemplateCatalog } = await import("@/lib/school-need-template");
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+        const sheet = workbook.Sheets["Lich nen hoc ky"] || workbook.Sheets[workbook.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json<Record<string, string | number>>(sheet, { defval: "", raw: true }).filter((row) => ["Từ ngày", "Trường", "Lớp", "Thứ"].some((key) => String(row[key] || "").trim()));
+        if (raw.length === 0) throw new Error("File chưa có dòng lịch nền nào.");
+        const catalog = buildSchoolNeedTemplateCatalog(schools, classes, activeTimeSlots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot);
+        const readDate = (value: string | number) => typeof value === "number" ? (() => { const date = XLSX.SSF.parse_date_code(value); return date ? `${date.y}-${String(date.m).padStart(2, "0")}-${String(date.d).padStart(2, "0")}` : ""; })() : String(value || "").trim();
+        const readTime = (value: string | number) => typeof value === "number" ? (() => { const time = XLSX.SSF.parse_date_code(value); return time ? `${String(time.H).padStart(2, "0")}:${String(time.M).padStart(2, "0")}` : ""; })() : String(value || "").trim();
+        const rows: SchoolSchedulePatternWorkbookRow[] = raw.map((row) => {
+          const school = String(row["Trường"] || "").trim(); const session = String(row["Buổi"] || "").trim(); const periodLabel = String(row["Tiết"] || "").trim();
+          const period = catalog.periods.find((item) => item.school === school && item.session === session && item.label === periodLabel);
+          return { id: String(row["Mã quy tắc (giữ khi sửa)"] || "").trim(), effectiveFrom: readDate(row["Từ ngày"] || ""), effectiveTo: readDate(row["Đến ngày"] || ""), weekday: String(row["Thứ"] || "").trim(), school, grade: String(row["Khối"] || "").trim(), className: String(row["Lớp"] || "").trim(), session, periodLabel, start: period?.start || readTime(row["Bắt đầu"] || ""), end: period?.end || readTime(row["Kết thúc"] || ""), environment: String(row["Môi trường"] || "").trim(), sourceNote: String(row["Nguồn/Ghi chú"] || "").trim() };
+        });
+        const result = await saveRequest<{ revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number }; rows: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolSchedulePattern; after: SchoolSchedulePatternWorkbookRow }> }>("Đang đối chiếu lịch nền học kỳ...", "/api/school-schedule-patterns", { method: "POST", body: JSON.stringify({ mode: "preview", rows }) });
+        setSemesterPatternImport({ rows, revision: result.revision, summary: result.summary, changes: result.rows });
+      } catch (error) { handleSaveError(error); }
+    }
+
+    async function applySemesterPatternWorkbook() {
+      if (!semesterPatternImport) return;
+      try {
+        const result = await saveRequest<{ summary: { newCount: number; changedCount: number; duplicateCount: number } }>("Đang lưu lịch nền học kỳ...", "/api/school-schedule-patterns", { method: "POST", body: JSON.stringify({ mode: "apply", revision: semesterPatternImport.revision, rows: semesterPatternImport.rows }) });
+        setSemesterPatternImport(null);
+        pushToast("Đã lưu lịch nền học kỳ", `${result.summary.newCount} quy tắc mới · ${result.summary.changedCount} quy tắc sửa. Chọn tuần và bấm “Tạo lịch tuần từ lịch nền” để dùng khi giao lịch.`, "success");
+      } catch (error) { handleSaveError(error); }
+    }
+
+    async function materializeSemesterWeek() {
+      if (!assignmentSchoolId) return;
+      try {
+        const result = await saveRequest<{ createdCount: number; candidateCount: number; needs: SchoolTeachingNeed[] }>("Đang tạo lịch tuần từ lịch nền...", "/api/school-schedule-patterns/materialize", { method: "POST", body: JSON.stringify({ schoolId: assignmentSchoolId, weekStart: assignmentWeekStart }) });
+        const next = [...weekNeeds, ...result.needs];
+        setSchoolNeeds((current) => [...current.filter((need) => !(need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd)), ...next]);
+        setDraftSchedule({ items: draftItemsFromSchoolNeeds(next, activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || ""))) });
+        pushToast("Đã tạo lịch tuần", result.createdCount ? `Đã tạo ${result.createdCount}/${result.candidateCount} tiết từ lịch nền học kỳ.` : result.candidateCount ? "Các tiết lịch nền của tuần này đã có sẵn hoặc đã được thay bằng lịch tuần." : "Không có lịch nền hiệu lực cho tuần này.", result.createdCount ? "success" : "warning");
       } catch (error) { handleSaveError(error); }
     }
 
@@ -6961,32 +7061,14 @@ export function MettasoulApp() {
     async function saveSchoolNeedEdit() {
       if (!editingSchoolNeedDraft) return;
       try {
-        const result = await saveRequest<{ need: SchoolTeachingNeed; intakeSynced?: boolean; intakeWarning?: string }>("Đang sửa lịch trường...", "/api/school-teaching-needs", { method: "PATCH", body: JSON.stringify(editingSchoolNeedDraft) });
+        const result = await saveRequest<{ need: SchoolTeachingNeed }>("Đang sửa lịch trường...", "/api/school-teaching-needs", { method: "PATCH", body: JSON.stringify(editingSchoolNeedDraft) });
         const next = weekNeeds.map((need) => need.id === result.need.id ? result.need : need);
         setSchoolNeeds(next);
         setSelectedSchoolNeedIds((ids) => ids.filter((id) => next.some((need) => need.id === id && !need.scheduleId)));
         setDraftSchedule({ items: draftItemsFromSchoolNeeds(next.filter((need) => need.schoolId === assignmentSchoolId && need.date >= assignmentWeekStart && need.date <= weekEnd), activeTimeSlots.filter((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || ""))) });
         setEditingSchoolNeedId("");
         setEditingSchoolNeedDraft(null);
-        pushToast("Đã sửa dòng lịch trường", result.intakeSynced === false ? `App đã lưu, nhưng Sheet chưa cập nhật: ${result.intakeWarning || "Cần đồng bộ lại."}` : result.need.status === "REVIEW" ? "Lịch đã giao cần admin xem lại trước khi áp dụng thay đổi. Google Sheet đã cập nhật." : "Danh sách cần giao và Google Sheet đã cập nhật.", result.intakeSynced === false || result.need.status === "REVIEW" ? "warning" : "success");
-      } catch (error) { handleSaveError(error); }
-    }
-
-    async function compareSchoolNeedWithSheet(need: SchoolTeachingNeed) {
-      try {
-        const preview = await saveRequest<{ app: string[]; sheet: string[] | null; sheetStatus: string; conflict: boolean; revision: string; appUpdatedAt: string }>(
-          "Đang đối chiếu Google Sheet...", `/api/school-teaching-needs/intake-sync?id=${encodeURIComponent(need.id)}`);
-        if (!preview.conflict && preview.sheet) {
-          pushToast("Đã đồng bộ", "Dòng lịch trong app và Google Sheet đang khớp nhau.", "success");
-          return;
-        }
-        const labels = ["Ngày", "Trường", "Khối", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Tình trạng", "Ghi chú"];
-        const differences = preview.sheet ? labels.flatMap((label, index) => preview.app[index] === preview.sheet?.[index] ? [] : [`${label}: Sheet «${preview.sheet?.[index] || "trống"}» → App «${preview.app[index] || "trống"}»`]) : ["Dòng này chưa có trên Google Sheet."];
-        if (!window.confirm(`Trạng thái Sheet: ${preview.sheetStatus}.\n${differences.join("\n")}\n\nChọn bản trong app làm chuẩn và cập nhật Google Sheet? Các thay đổi chưa gửi duyệt trên Sheet của dòng này sẽ được lưu vào lịch sử rồi thay thế.`)) return;
-        await saveRequest("Đang đồng bộ bản app sang Sheet...", "/api/school-teaching-needs/intake-sync", {
-          method: "POST", body: JSON.stringify({ id: need.id, action: "keepApp", appUpdatedAt: preview.appUpdatedAt, revision: preview.revision }),
-        });
-        pushToast("Đã đồng bộ Google Sheet", "Dòng lịch và lịch sử sửa đã cập nhật theo bản app.", "success");
+        pushToast("Đã sửa dòng lịch trường", result.need.status === "REVIEW" ? "Lịch đã giao cần admin xem lại trước khi áp dụng thay đổi. Người sửa đã được lưu và thông báo vận hành đã tạo." : "Danh sách cần giao đã cập nhật trong CRM; người sửa và phiên bản mới đã được lưu.", result.need.status === "REVIEW" ? "warning" : "success");
       } catch (error) { handleSaveError(error); }
     }
 
@@ -7197,12 +7279,19 @@ export function MettasoulApp() {
           </div> : null}
           {assignmentSchoolId && (classesForSchool(classes, assignmentSchoolId).length === 0 || !activeTimeSlots.some((slot) => isTimeSlotAllowedForSchool(slot, schoolById.get(assignmentSchoolId)?.name || "") && !isDoubleTeachingTimeSlot(slot))) ? <p role="alert" className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">Trường này chưa có đủ lớp hoặc khung tiết đơn trong cấu hình. Hãy bổ sung trước khi nhập lịch theo từng tiết.</p> : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => void downloadSchoolNeedWorkbook(false)} className="rounded-xl border border-cyan-300 px-3 py-2 text-xs font-bold text-cyan-900">Tải mẫu Excel</button>
+            <button type="button" onClick={() => void downloadSchoolNeedWorkbook(false)} className="rounded-xl border border-cyan-300 px-3 py-2 text-xs font-bold text-cyan-900">Tải mẫu lịch tuần</button>
             <button type="button" disabled={!assignmentSchoolId || weekNeeds.length === 0} onClick={() => void downloadSchoolNeedWorkbook(true)} className="rounded-xl border border-cyan-300 px-3 py-2 text-xs font-bold text-cyan-900 disabled:opacity-40">Tải lịch tuần để sửa</button>
             <label className="cursor-pointer rounded-xl bg-cyan-700 px-3 py-2 text-xs font-bold text-white">Tải Excel lịch trường lên
               <input type="file" accept=".xlsx" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void previewSchoolNeedWorkbook(file); event.target.value = ""; }} />
             </label>
+            <button type="button" onClick={() => void downloadSemesterPatternWorkbook(false)} className="rounded-xl border border-violet-300 px-3 py-2 text-xs font-bold text-violet-900">Tải mẫu lịch nền học kỳ</button>
+            <button type="button" disabled={!assignmentSchoolId} onClick={() => void downloadSemesterPatternWorkbook(true)} className="rounded-xl border border-violet-300 px-3 py-2 text-xs font-bold text-violet-900 disabled:opacity-40">Tải lịch nền để sửa</button>
+            <label className="cursor-pointer rounded-xl bg-violet-700 px-3 py-2 text-xs font-bold text-white">Tải lịch nền học kỳ lên
+              <input type="file" accept=".xlsx" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void previewSemesterPatternWorkbook(file); event.target.value = ""; }} />
+            </label>
+            <button type="button" disabled={!assignmentSchoolId || Boolean(pendingAction)} onClick={() => void materializeSemesterWeek()} className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-900 disabled:opacity-40">Tạo lịch tuần từ lịch nền</button>
           </div>
+          <p className="mt-2 text-xs font-semibold text-[var(--muted)]">Lịch nền học kỳ chỉ tạo dữ liệu mặc định. Lịch tuần tải lên hoặc sửa trực tiếp trong CRM là bản ưu tiên cho tuần đó; mọi thao tác được lưu người sửa và phiên bản.</p>
           {schoolNeedImport ? <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
             <p className="font-black">Đối chiếu: {schoolNeedImport.summary.newCount} mới · {schoolNeedImport.summary.changedCount} sửa · {schoolNeedImport.summary.duplicateCount} trùng · {schoolNeedImport.summary.reviewCount} lịch đã giao cần xem lại.</p>
             <div className="mt-2 max-h-48 space-y-1 overflow-auto">{schoolNeedImport.changes.filter((change) => change.action !== "SAME").map((change, index) => <p key={`${change.after.id || "new"}-${index}`} className="rounded-lg bg-white/80 px-2 py-1 text-xs">
@@ -7210,6 +7299,11 @@ export function MettasoulApp() {
               {change.before ? ` (cũ: ${formatDate(change.before.date)} · ${classById.get(change.before.classId)?.name || change.before.classId} · ${change.before.start}–${change.before.end})` : ""}
             </p>)}</div>
             <button type="button" onClick={() => void applySchoolNeedWorkbook()} className="mt-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white">Xác nhận nhập các dòng mới và sửa</button>
+          </div> : null}
+          {semesterPatternImport ? <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-950">
+            <p className="font-black">Đối chiếu lịch nền: {semesterPatternImport.summary.newCount} mới · {semesterPatternImport.summary.changedCount} sửa · {semesterPatternImport.summary.duplicateCount} không đổi.</p>
+            <div className="mt-2 max-h-40 space-y-1 overflow-auto">{semesterPatternImport.changes.filter((change) => change.action !== "SAME").map((change, index) => <p key={`${change.after.id || "new"}-${index}`} className="rounded-lg bg-white/80 px-2 py-1 text-xs"><strong>{change.action === "NEW" ? "Mới" : "Sửa"}</strong> · {change.after.school} · {change.after.className} · {change.after.weekday} · {change.after.start}–{change.after.end} · {formatDate(change.after.effectiveFrom)}–{formatDate(change.after.effectiveTo)}</p>)}</div>
+            <button type="button" onClick={() => void applySemesterPatternWorkbook()} className="mt-2 rounded-lg bg-violet-700 px-3 py-2 text-xs font-black text-white">Xác nhận lưu lịch nền học kỳ</button>
           </div> : null}
           {schoolNeedLoadError ? <p role="alert" className="mt-3 text-sm text-rose-700">{schoolNeedLoadError}</p> : null}
           {weekNeeds.length > 0 ? <div className="mt-4 flex flex-wrap gap-3">{Array.from(new Set(weekNeeds.map((need) => need.date))).sort().map((date) => {
@@ -7227,7 +7321,7 @@ export function MettasoulApp() {
               const editLabel = schoolNeedEditLabel(need);
               return <div key={need.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm sm:text-base ${edited ? "border-red-300 bg-red-50" : `${assignmentCardBorderClasses[index % assignmentCardBorderClasses.length]} bg-white`}`}>
                 <div className="flex min-w-0 items-center gap-3">{selectableWeekNeedIds.has(need.id) ? <input type="checkbox" aria-label={`Chọn tiết ${formatDate(need.date)} ${classById.get(need.classId)?.name || need.classId} ${need.start}–${need.end} để xóa`} checked={selectedWeekNeedIds.includes(need.id)} disabled={Boolean(pendingAction)} onChange={(event) => setSelectedSchoolNeedIds((ids) => event.target.checked ? Array.from(new Set([...ids, need.id])) : ids.filter((id) => id !== need.id))} className="h-4 w-4 shrink-0 accent-rose-600 disabled:opacity-40" /> : null}<span className="min-w-0"><strong>{formatDate(need.date)} · {need.start}–{need.end}</strong> · {classById.get(need.classId)?.name || need.classId} · {need.periodLabel}{editLabel ? <span className={`mt-1 block text-xs font-bold sm:text-sm ${edited ? "text-red-700" : "text-slate-600"}`}>Sửa lúc {editLabel}</span> : null}</span></div>
-                <span className="flex flex-wrap items-center gap-3"><span className={need.status === "OPEN" ? "font-bold text-amber-800" : need.status === "REVIEW" ? "font-bold text-rose-700" : "font-bold text-emerald-700"}>{need.status === "OPEN" ? "Cần giao" : need.status === "REVIEW" ? "Cần xem lại lịch đã giao" : need.status === "ASSIGNED" ? `Đã giao: ${teacherName(schedules.find((schedule) => schedule.id === need.scheduleId || schedule.schoolNeedId === need.id)?.teacherId || "")}` : "Đã hủy"}</span>{need.status === "REVIEW" ? <button type="button" onClick={() => void reconcileSchoolNeed(need)} className="font-bold text-rose-700 underline">Đối chiếu và áp dụng</button> : null}<button type="button" onClick={() => startEditSchoolNeed(need)} className="font-bold text-cyan-800 underline">Sửa</button><button type="button" onClick={() => void compareSchoolNeedWithSheet(need)} className="font-bold text-violet-800 underline">Đối chiếu Sheet</button>{!need.scheduleId ? <button type="button" onClick={() => void deleteSchoolNeed(need)} className="font-bold text-rose-700 underline">Xóa</button> : null}</span>
+                <span className="flex flex-wrap items-center gap-3"><span className={need.status === "OPEN" ? "font-bold text-amber-800" : need.status === "REVIEW" ? "font-bold text-rose-700" : "font-bold text-emerald-700"}>{need.status === "OPEN" ? "Cần giao" : need.status === "REVIEW" ? "Cần xem lại lịch đã giao" : need.status === "ASSIGNED" ? `Đã giao: ${teacherName(schedules.find((schedule) => schedule.id === need.scheduleId || schedule.schoolNeedId === need.id)?.teacherId || "")}` : "Đã hủy"}</span>{need.status === "REVIEW" ? <button type="button" onClick={() => void reconcileSchoolNeed(need)} className="font-bold text-rose-700 underline">Đối chiếu và áp dụng</button> : null}<button type="button" onClick={() => startEditSchoolNeed(need)} className="font-bold text-cyan-800 underline">Sửa</button>{!need.scheduleId ? <button type="button" onClick={() => void deleteSchoolNeed(need)} className="font-bold text-rose-700 underline">Xóa</button> : null}</span>
               </div>;
             })}
           </div> : null}

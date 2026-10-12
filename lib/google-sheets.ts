@@ -42,6 +42,8 @@ type SheetName =
   | "TimeSlots"
   | "Schedules"
   | "SchoolTeachingNeeds"
+  | "SchoolSchedulePatterns"
+  | "SchoolScheduleImports"
   | "LessonPlans"
   | "LessonPlanMessages"
   | "LessonPlanAttachments"
@@ -800,7 +802,17 @@ export const scheduleHeaders = [
 export const schoolTeachingNeedHeaders = [
   "id", "date", "schoolId", "classId", "periodLabel", "start", "end",
   "teachingEnvironment", "sourceNote", "scheduleId", "assignedDate", "assignedStart", "assignedEnd", "status", "createdAt", "updatedAt",
-  "lastEditedAt", "lastEditedBy",
+  "lastEditedAt", "lastEditedBy", "sourceKind", "sourceImportId", "sourceVersion", "patternId",
+];
+
+export const schoolSchedulePatternHeaders = [
+  "id", "schoolId", "classId", "weekday", "periodLabel", "start", "end", "teachingEnvironment",
+  "effectiveFrom", "effectiveTo", "sourceNote", "status", "version", "createdAt", "updatedAt", "lastEditedAt", "lastEditedBy",
+];
+
+export const schoolScheduleImportHeaders = [
+  "id", "kind", "schoolId", "scopeWeekStart", "effectiveFrom", "effectiveTo", "fileName", "checksum",
+  "rowCount", "newCount", "changedCount", "unchangedCount", "reviewCount", "version", "createdAt", "createdBy",
 ];
 
 export const notificationHeaders = [

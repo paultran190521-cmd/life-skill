@@ -168,6 +168,53 @@ export type SchoolTeachingNeed = {
   /** Last administrative content change, separate from assignment/status updates. */
   lastEditedAt?: string;
   lastEditedBy?: string;
+  /** Provenance is retained so a weekly exception can be distinguished from a semester baseline. */
+  sourceKind?: "WEEKLY_IMPORT" | "WEEKLY_OVERRIDE" | "SEMESTER_BASE" | "DIRECT_EDIT";
+  sourceImportId?: string;
+  sourceVersion?: number;
+  /** Set only for a weekly row materialized from a semester rule. */
+  patternId?: string;
+};
+
+/** A recurring school period that is effective for part or all of a semester. */
+export type SchoolSchedulePattern = {
+  id: string;
+  schoolId: string;
+  classId: string;
+  weekday: number;
+  periodLabel: string;
+  start: string;
+  end: string;
+  teachingEnvironment: TeachingEnvironment;
+  effectiveFrom: string;
+  effectiveTo: string;
+  sourceNote?: string;
+  status: "ACTIVE" | "SUPERSEDED";
+  version: number;
+  createdAt?: string;
+  updatedAt?: string;
+  lastEditedAt?: string;
+  lastEditedBy?: string;
+};
+
+/** Immutable evidence of an Excel import accepted by the CRM. */
+export type SchoolScheduleImport = {
+  id: string;
+  kind: "WEEKLY_OVERRIDE" | "SEMESTER_BASE";
+  schoolId: string;
+  scopeWeekStart?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  fileName?: string;
+  checksum: string;
+  rowCount: number;
+  newCount: number;
+  changedCount: number;
+  unchangedCount: number;
+  reviewCount: number;
+  version: number;
+  createdAt: string;
+  createdBy: string;
 };
 
 export type LessonPlan = {

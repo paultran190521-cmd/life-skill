@@ -168,6 +168,26 @@ export async function sendActivityRewardEmail(input: {
   return sendViaResend(args);
 }
 
+/** Sends an operational notice through the configured provider without pretending it is a teacher schedule. */
+export async function sendOperationalEmail(input: {
+  to?: string;
+  subject: string;
+  html: string;
+  event: string;
+  scheduleIds?: string[];
+}) {
+  const requestId = createEmailRequestId();
+  const to = normalizeEmailAddress(input.to);
+  const scheduleIds = input.scheduleIds || [];
+  if (!to || !isValidEmailAddress(to)) {
+    return { sent: false, skipped: true, reason: "Recipient email is missing or invalid." };
+  }
+  const args = { to, subject: input.subject, html: input.html, from: process.env.EMAIL_FROM, requestId, scheduleIds, teacherId: "" };
+  if (process.env.EMAIL_PROVIDER === "gas") return sendViaGas(args);
+  if (process.env.EMAIL_PROVIDER === "smtp") return sendViaSmtp(args);
+  return sendViaResend(args);
+}
+
 export async function sendAttendanceReminderEmail(input: Omit<ScheduleDigestInput, "kind">) {
   return sendScheduleDigestEmail({ ...input, kind: "attendance-reminder" });
 }
