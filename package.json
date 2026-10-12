@@ -19,6 +19,7 @@
     "test:schedule-participants": "node scripts/test-schedule-participant-scope.mjs",
     "test:school-time-slots": "node scripts/test-school-time-slot-policy.mjs",
     "test:school-schedule-direct-import": "node scripts/test-school-schedule-direct-import.mjs",
+    "test:school-schedule-gsheet-import": "node scripts/test-school-schedule-gsheet-import.mjs",
     "test:teacher-availability": "node scripts/test-teacher-availability.mjs",
     "test:teaching-work-log": "node scripts/test-teaching-work-log.mjs && node scripts/test-hrm-integration.mjs",
     "test:teacher-attendance-experience": "node scripts/test-teacher-attendance-experience.mjs",

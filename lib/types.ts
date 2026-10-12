@@ -157,6 +157,10 @@ export type SchoolTeachingNeed = {
   end: string;
   teachingEnvironment: TeachingEnvironment;
   sourceNote?: string;
+  /** Original row identifier when this record was first brought in from the legacy Google Sheet. */
+  legacySourceRowId?: string;
+  /** School-facing status retained from the source workbook, for example Dạy or Trường hủy tiết. */
+  sourceStatus?: string;
   scheduleId?: string;
   /** Snapshot of the school period when its teacher was last assigned. */
   assignedDate?: string;

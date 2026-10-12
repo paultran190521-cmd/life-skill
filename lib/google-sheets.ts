@@ -801,7 +801,7 @@ export const scheduleHeaders = [
 
 export const schoolTeachingNeedHeaders = [
   "id", "date", "schoolId", "classId", "periodLabel", "start", "end",
-  "teachingEnvironment", "sourceNote", "scheduleId", "assignedDate", "assignedStart", "assignedEnd", "status", "createdAt", "updatedAt",
+  "teachingEnvironment", "sourceNote", "legacySourceRowId", "sourceStatus", "scheduleId", "assignedDate", "assignedStart", "assignedEnd", "status", "createdAt", "updatedAt",
   "lastEditedAt", "lastEditedBy", "sourceKind", "sourceImportId", "sourceVersion", "patternId",
 ];
 

@@ -13,6 +13,8 @@ export type SchoolNeedInput = {
   end?: string;
   environment?: string;
   sourceNote?: string;
+  legacySourceRowId?: string;
+  sourceStatus?: string;
 };
 
 export type NormalizedNeedInput = Omit<SchoolTeachingNeed, "id" | "status" | "scheduleId" | "assignedDate" | "assignedStart" | "assignedEnd" | "createdAt" | "updatedAt" | "lastEditedAt" | "lastEditedBy"> & { id?: string };
@@ -47,6 +49,18 @@ function environmentOf(value: unknown): TeachingEnvironment | null {
   return null;
 }
 
+function sourceStatusOf(value: unknown) {
+  const raw = String(value || "").trim();
+  const normalized = comparable(raw);
+  if (!normalized || normalized === "day") return "Dạy";
+  if (normalized === "truong huy tiet") return "Trường hủy tiết";
+  throw new Error(`Tình trạng lịch không hợp lệ: ${raw}.`);
+}
+
+export function isSchoolNeedCancelled(input: Pick<SchoolNeedInput, "sourceStatus">) {
+  return comparable(input.sourceStatus) === "truong huy tiet";
+}
+
 export function normalizeSchoolNeedInput(input: SchoolNeedInput, schools: School[], classes: ClassRoom[]): NormalizedNeedInput {
   const date = parseDate(input.date);
   if (!date) throw new Error("Ngày dạy phải có dạng YYYY-MM-DD hoặc DD/MM/YYYY.");
@@ -64,7 +78,19 @@ export function normalizeSchoolNeedInput(input: SchoolNeedInput, schools: School
   if (!periodLabel) throw new Error("Thiếu tên tiết hoặc số tiết.");
   const teachingEnvironment = environmentOf(input.environment);
   if (!teachingEnvironment) throw new Error(`Môi trường dạy không hợp lệ: ${input.environment}.`);
-  return { id: String(input.id || "").trim() || undefined, date, schoolId: school.id, classId: classRoom.id, periodLabel, start, end, teachingEnvironment, sourceNote: String(input.sourceNote || "").trim().slice(0, 500) };
+  return {
+    id: String(input.id || "").trim() || undefined,
+    date,
+    schoolId: school.id,
+    classId: classRoom.id,
+    periodLabel,
+    start,
+    end,
+    teachingEnvironment,
+    sourceNote: String(input.sourceNote || "").trim().slice(0, 500),
+    legacySourceRowId: String(input.legacySourceRowId || "").trim().slice(0, 180),
+    sourceStatus: sourceStatusOf(input.sourceStatus),
+  };
 }
 
 export function schoolNeedIdentity(row: Pick<NormalizedNeedInput, "date" | "schoolId" | "classId" | "start" | "end">) {
@@ -78,7 +104,7 @@ export function schoolNeedRequiresReview(current: SchoolTeachingNeed, next: Norm
 }
 
 export function schoolNeedContentChanged(current: SchoolTeachingNeed, next: NormalizedNeedInput) {
-  return (["date", "schoolId", "classId", "periodLabel", "start", "end", "teachingEnvironment", "sourceNote"] as const)
+  return (["date", "schoolId", "classId", "periodLabel", "start", "end", "teachingEnvironment", "sourceNote", "legacySourceRowId", "sourceStatus"] as const)
     .some((key) => String(current[key] || "") !== String(next[key] || ""));
 }
 
@@ -115,11 +141,12 @@ export function schoolNeedRevision(rows: SchoolTeachingNeed[]) {
 export function planSchoolNeedImport(incoming: NormalizedNeedInput[], existing: SchoolTeachingNeed[]) {
   const byId = new Map(existing.map((row) => [row.id, row]));
   const byIdentity = new Map(existing.map((row) => [schoolNeedIdentity(row), row]));
+  const byLegacySourceRowId = new Map(existing.filter((row) => row.legacySourceRowId).map((row) => [row.legacySourceRowId!, row]));
   const seen = new Set<string>();
   return incoming.map((row, index) => {
     if (row.id && !byId.has(row.id)) throw new Error(`Dòng ${index + 2}: mã dòng không có trong hệ thống; hãy dùng file xuất từ app.`);
     const identity = schoolNeedIdentity(row);
-    const target = row.id ? byId.get(row.id) : byIdentity.get(identity);
+    const target = row.id ? byId.get(row.id) : row.legacySourceRowId ? byLegacySourceRowId.get(row.legacySourceRowId) || byIdentity.get(identity) : byIdentity.get(identity);
     const existingAtIdentity = byIdentity.get(identity);
     if (target && existingAtIdentity && existingAtIdentity.id !== target.id) throw new Error(`Dòng ${index + 2}: ngày, trường, lớp và giờ đang thuộc một dòng lịch khác.`);
     const uniqueness = target ? `id:${target.id}` : `new:${identity}`;

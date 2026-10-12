@@ -6,6 +6,11 @@ assert.doesNotMatch(needRoute, /mirrorAppNeedToIntake|assertAppNeedCanEditIntake
 assert.match(needRoute, /SchoolScheduleImports/);
 assert.match(needRoute, /sourceKind: "WEEKLY_OVERRIDE"/);
 assert.match(needRoute, /sourceKind: "DIRECT_EDIT"/);
+assert.match(needRoute, /isSchoolNeedCancelled/);
+
+const needRules = fs.readFileSync("lib/school-teaching-needs.ts", "utf8");
+assert.match(needRules, /legacySourceRowId/);
+assert.match(needRules, /byLegacySourceRowId/);
 assert.match(needRoute, /notifySchoolScheduleChange/);
 assert.match(needRoute, /lastEditedBy: editorName/);
 
@@ -22,6 +27,8 @@ assert.match(materialize, /existingByIdentity/);
 const app = fs.readFileSync("components/mettasoul-app.tsx", "utf8");
 assert.match(app, /Tải mẫu lịch nền học kỳ/);
 assert.match(app, /Tạo lịch tuần từ lịch nền/);
+assert.match(app, /extractGsheetScheduleRows/);
+assert.match(app, /Mã CRM \(giữ khi sửa\)/);
 assert.doesNotMatch(app, />Đối chiếu Sheet</);
 
 console.log("Direct CRM schedule import checks passed.");

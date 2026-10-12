@@ -191,6 +191,7 @@ type DraftSchedule = {
 
 type SchoolNeedWorkbookRow = {
   id?: string;
+  legacySourceRowId?: string;
   date: string;
   school: string;
   grade?: string;
@@ -200,6 +201,7 @@ type SchoolNeedWorkbookRow = {
   start: string;
   end: string;
   environment: string;
+  sourceStatus?: string;
   sourceNote?: string;
 };
 
@@ -6842,21 +6844,22 @@ export function MettasoulApp() {
     async function downloadSchoolNeedWorkbook(includeCurrent: boolean) {
       const XLSX = await import("xlsx-js-style");
       const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula } = await import("@/lib/school-need-template");
+      const { schoolScheduleGsheetHeaders } = await import("@/lib/school-schedule-gsheet-import");
       const catalog = buildSchoolNeedTemplateCatalog(schools, classes, activeTimeSlots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot);
       if (catalog.schools.length === 0 || catalog.classes.length === 0 || catalog.periods.length === 0) {
         pushToast("Chưa đủ danh mục", "Cần có trường, lớp và khung giờ đang hoạt động trước khi tải mẫu.", "warning");
         return;
       }
       const workbook = XLSX.utils.book_new();
-      const headers = ["Mã dòng (giữ khi sửa)", "Ngày dạy", "Trường", "Khối", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Nguồn/Ghi chú"];
+      const headers = [...schoolScheduleGsheetHeaders];
       const data = includeCurrent ? weekNeeds.map((need) => [
-        need.id, need.date, schoolById.get(need.schoolId)?.name || "", classById.get(need.classId)?.grade || "", classById.get(need.classId)?.name || "",
+        need.legacySourceRowId || "", need.date, schoolById.get(need.schoolId)?.name || "", classById.get(need.classId)?.grade || "", classById.get(need.classId)?.name || "",
         need.start < "12:00" ? "Sáng" : "Chiều", need.periodLabel, need.start, need.end,
-        teachingEnvironmentOptions.find((option) => option.value === need.teachingEnvironment)?.label || "Trong lớp", need.sourceNote || "",
+        teachingEnvironmentOptions.find((option) => option.value === need.teachingEnvironment)?.label || "Trong lớp", need.sourceStatus || (need.status === "CANCELLED" ? "Trường hủy tiết" : "Dạy"), need.sourceNote || "", need.id,
       ]) : [];
       const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
-      worksheet["!cols"] = [21, 16, 34, 15, 20, 12, 25, 14, 14, 21, 34].map((wch) => ({ wch }));
-      worksheet["!ref"] = `A1:K${Math.max(1001, data.length + 1)}`;
+      worksheet["!cols"] = [21, 16, 34, 15, 20, 12, 25, 14, 14, 21, 20, 34, 24].map((wch) => ({ wch }));
+      worksheet["!ref"] = `A1:M${Math.max(1001, data.length + 1)}`;
       worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
       applyMettasoulExcelBrand(XLSX, worksheet, { headerRow: 0 });
       for (let row = 2; row <= Math.max(1001, data.length + 1); row++) {
@@ -6879,8 +6882,9 @@ export function MettasoulApp() {
       XLSX.utils.book_append_sheet(workbook, catalogSheet, "Danh muc");
       const guide = XLSX.utils.aoa_to_sheet([
         ["HƯỚNG DẪN NHẬP LỊCH TRƯỜNG"],
-        ["Mỗi dòng là một lớp, một tiết, một ngày dạy. Agent chuyển lịch theo thứ và khoảng hiệu lực thành các ngày cụ thể."],
-        ["Lần nhập đầu để trống Mã dòng. Khi sửa, tải bản hiện tại từ app rồi giữ nguyên mã của dòng cần sửa."],
+        ["Mẫu này giữ nguyên các cột lịch của tab Nhập lịch trên Google Sheet: Mã dòng, ngày, trường, lớp, tiết, giờ, môi trường, tình trạng và ghi chú."],
+        ["Có thể tải thẳng file GSheet có tab Nhập lịch. CRM tự đọc các dòng lịch của tuần và trường đang chọn; cột duyệt/đồng bộ cũ không được dùng làm lệnh nhập."],
+        ["Lần nhập đầu để trống Mã CRM. Khi sửa lịch đã vào CRM, tải lịch tuần hiện tại và giữ nguyên Mã CRM; Mã dòng GSheet được giữ để nhận diện bản cập nhật nguồn."],
         ["Ngày dạy là ô ngày hợp lệ. Excel có thể không hiện lịch bật lên tùy phiên bản; nhập hoặc dán ngày theo DD/MM/YYYY."],
         ["Chọn Trường → Khối → Lớp; chọn Buổi → Tiết. Giờ bắt đầu/kết thúc tự lấy theo tiết của trường."],
         ["Danh mục trường, lớp và giờ được chụp từ app tại lúc tải mẫu. Nếu cấu hình thay đổi, hãy tải mẫu mới."],
@@ -6906,44 +6910,71 @@ export function MettasoulApp() {
         if (!/\.xlsx$/i.test(file.name)) throw new Error("Hãy chọn file Excel .xlsx đúng mẫu.");
         const XLSX = await import("xlsx-js-style");
         const { buildSchoolNeedTemplateCatalog } = await import("@/lib/school-need-template");
+        const { extractGsheetScheduleRows, isGsheetScheduleInputSheet } = await import("@/lib/school-schedule-gsheet-import");
         const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-        const sheet = workbook.Sheets["Lich truong"] || workbook.Sheets[workbook.SheetNames[0]];
-        const raw = XLSX.utils.sheet_to_json<Record<string, string | number>>(sheet, { defval: "", raw: true })
-          .filter((row) => ["Ngày dạy", "Trường", "Khối", "Lớp", "Buổi", "Tiết"].some((key) => String(row[key] || "").trim()));
-        if (raw.length === 0) throw new Error("File chưa có dòng lịch nào.");
+        const gsheetName = workbook.SheetNames.find(isGsheetScheduleInputSheet);
+        const sheetName = gsheetName || (workbook.Sheets["Lich truong"] ? "Lich truong" : workbook.SheetNames[0]);
+        const sheet = workbook.Sheets[sheetName];
         const catalog = buildSchoolNeedTemplateCatalog(schools, classes, activeTimeSlots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot);
-        const readDate = (value: string | number) => {
+        const readDate = (value: string | number | boolean | Date | null | undefined) => {
           if (typeof value !== "number") return String(value || "").trim();
           const date = XLSX.SSF.parse_date_code(value);
           return date ? `${date.y}-${String(date.m).padStart(2, "0")}-${String(date.d).padStart(2, "0")}` : "";
         };
-        const readTime = (value: string | number) => {
+        const readTime = (value: string | number | boolean | Date | null | undefined) => {
           if (typeof value !== "number") return String(value || "").trim();
           const time = XLSX.SSF.parse_date_code(value);
           return time ? `${String(time.H).padStart(2, "0")}:${String(time.M).padStart(2, "0")}` : "";
         };
-        const rows: SchoolNeedWorkbookRow[] = raw.map((row) => {
-          const school = String(row["Trường"] || "").trim();
-          const session = String(row["Buổi"] || "").trim();
-          const periodLabel = String(row["Tiết"] || "").trim();
+        const resolveRow = (row: SchoolNeedWorkbookRow): SchoolNeedWorkbookRow => {
+          const school = String(row.school || "").trim();
+          const session = String(row.session || "").trim();
+          const periodLabel = String(row.periodLabel || "").trim();
           const selectedPeriod = catalog.periods.find((period) => period.school === school && period.session === session && period.label === periodLabel);
           return {
-            id: String(row["Mã dòng (giữ khi sửa)"] || "").trim(),
-            date: readDate(row["Ngày dạy"] || ""),
+            id: String(row.id || "").trim(),
+            legacySourceRowId: String(row.legacySourceRowId || "").trim(),
+            date: String(row.date || "").trim(),
             school,
-            grade: String(row["Khối"] || "").trim(),
-            className: String(row["Lớp"] || "").trim(),
+            grade: String(row.grade || "").trim(),
+            className: String(row.className || "").trim(),
             session,
             periodLabel,
-            start: selectedPeriod?.start || readTime(row["Bắt đầu"] || ""),
-            end: selectedPeriod?.end || readTime(row["Kết thúc"] || ""),
-            environment: String(row["Môi trường"] || "").trim(),
-            sourceNote: String(row["Nguồn/Ghi chú"] || "").trim(),
+            start: selectedPeriod?.start || readTime(row.start),
+            end: selectedPeriod?.end || readTime(row.end),
+            environment: String(row.environment || "").trim(),
+            sourceStatus: String(row.sourceStatus || "Dạy").trim(),
+            sourceNote: String(row.sourceNote || "").trim(),
           };
-        });
+        };
+        const rows: SchoolNeedWorkbookRow[] = gsheetName
+          ? extractGsheetScheduleRows(XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true }), { readDate, readTime }).map((row) => resolveRow(row as SchoolNeedWorkbookRow))
+          : XLSX.utils.sheet_to_json<Record<string, string | number>>(sheet, { defval: "", raw: true })
+            .filter((row) => ["Ngày dạy", "Trường", "Khối", "Lớp", "Buổi", "Tiết"].some((key) => String(row[key] || "").trim()))
+            .map((row) => resolveRow({
+              id: String(row["Mã CRM (giữ khi sửa)"] || row["Mã dòng (giữ khi sửa)"] || "").trim(),
+              legacySourceRowId: String(row["Mã dòng"] || "").trim(),
+              date: readDate(row["Ngày dạy"] || ""),
+              school: String(row["Trường"] || "").trim(),
+              grade: String(row["Khối"] || "").trim(),
+              className: String(row["Lớp"] || "").trim(),
+              session: String(row["Buổi"] || "").trim(),
+              periodLabel: String(row["Tiết"] || "").trim(),
+              start: readTime(row["Bắt đầu"] || ""),
+              end: readTime(row["Kết thúc"] || ""),
+              environment: String(row["Môi trường"] || "").trim(),
+              sourceStatus: String(row["Tình trạng"] || "Dạy").trim(),
+              sourceNote: String(row["Nguồn/Ghi chú"] || "").trim(),
+            }));
+        if (rows.length === 0) throw new Error("File chưa có dòng lịch nào.");
         if (!assignmentSchoolId) throw new Error("Hãy chọn trường trước khi tải Excel lên.");
-        const result = await saveRequest<{ revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; rows: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> }>("Đang đối chiếu lịch trường...", "/api/school-teaching-needs", { method: "POST", body: JSON.stringify({ mode: "preview", rows, source: { fileName: file.name, schoolId: assignmentSchoolId, weekStart: assignmentWeekStart } }) });
-        setSchoolNeedImport({ rows, revision: result.revision, fileName: file.name, schoolId: assignmentSchoolId, weekStart: assignmentWeekStart, summary: result.summary, changes: result.rows });
+        const selectedSchoolName = schoolById.get(assignmentSchoolId)?.name || "";
+        const comparableName = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").trim().toLowerCase().replace(/\s+/g, " ");
+        const scopedRows = rows.filter((row) => comparableName(row.school) === comparableName(selectedSchoolName) && row.date >= assignmentWeekStart && row.date <= weekEnd);
+        if (scopedRows.length === 0) throw new Error(`Không tìm thấy lịch của ${selectedSchoolName} trong tuần ${assignmentWeekStart} trong file đã chọn.`);
+        if (gsheetName && scopedRows.length < rows.length) pushToast("Đã nhận mẫu GSheet", `CRM chỉ lấy ${scopedRows.length}/${rows.length} dòng của trường và tuần đang chọn; các dòng ngoài phạm vi được giữ nguyên trong file nguồn.`, "info");
+        const result = await saveRequest<{ revision: string; summary: { newCount: number; changedCount: number; duplicateCount: number; reviewCount: number }; rows: Array<{ action: "NEW" | "CHANGED" | "SAME"; before?: SchoolTeachingNeed; after: SchoolTeachingNeed }> }>("Đang đối chiếu lịch trường...", "/api/school-teaching-needs", { method: "POST", body: JSON.stringify({ mode: "preview", rows: scopedRows, source: { fileName: file.name, schoolId: assignmentSchoolId, weekStart: assignmentWeekStart } }) });
+        setSchoolNeedImport({ rows: scopedRows, revision: result.revision, fileName: file.name, schoolId: assignmentSchoolId, weekStart: assignmentWeekStart, summary: result.summary, changes: result.rows });
       } catch (error) { handleSaveError(error); }
     }
 

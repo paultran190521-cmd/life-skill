@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedRequiresReview, schoolNeedRevision } from "../lib/school-teaching-needs.ts";
+import { isSchoolNeedCancelled, normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedRequiresReview, schoolNeedRevision } from "../lib/school-teaching-needs.ts";
 
 const schools = [{ id: "s-nsg", name: "Trường Tiểu học Nam Sài Gòn", district: "" }];
 const classes = [{ id: "c-21", schoolId: "s-nsg", name: "2/1", grade: "2" }, { id: "c-22", schoolId: "s-nsg", name: "2/2", grade: "2" }];
@@ -11,6 +11,7 @@ assert.equal(normalized.start, "07:30");
 assert.equal(normalized.classId, "c-21");
 assert.throws(() => normalizeSchoolNeedInput({ ...row, grade: "Khối 3" }, schools, classes), /không thuộc/);
 assert.equal(normalized.teachingEnvironment, "in_class");
+assert.equal(normalized.sourceStatus, "Dạy");
 assert.equal(normalizeSchoolNeedInput({ ...row, environment: "Ngoài sân" }, schools, classes).teachingEnvironment, "outdoor");
 assert.equal(normalizeSchoolNeedInput({ ...row, environment: "Nhà thi đấu" }, schools, classes).teachingEnvironment, "gym");
 assert.throws(() => normalizeSchoolNeedInput({ ...row, className: "3/9" }, schools, classes), /không thuộc/);
@@ -21,6 +22,10 @@ const existing = [{ ...normalized, id: "need-1", status: "OPEN", scheduleId: "",
 assert.equal(schoolNeedContentChanged(existing[0], normalized), false);
 assert.equal(schoolNeedContentChanged(existing[0], { ...normalized, sourceNote: "Trường cập nhật" }), true);
 assert.equal(planSchoolNeedImport([normalized], existing)[0].action, "SAME");
+const legacyImported = normalizeSchoolNeedInput({ ...row, legacySourceRowId: "intake-a1", sourceStatus: "Trường hủy tiết" }, schools, classes);
+assert.equal(legacyImported.legacySourceRowId, "intake-a1");
+assert.equal(isSchoolNeedCancelled(legacyImported), true);
+assert.equal(planSchoolNeedImport([{ ...legacyImported, date: "2026-10-02", start: "08:10", end: "08:45" }], [{ ...existing[0], legacySourceRowId: "intake-a1" }])[0].action, "CHANGED");
 assert.equal(planSchoolNeedImport([{ ...normalized, id: "need-1", start: "08:10" }], existing)[0].action, "CHANGED");
 assert.equal(planSchoolNeedImport([{ ...normalized, classId: "c-22" }], existing)[0].action, "NEW");
 assert.throws(() => planSchoolNeedImport([normalized, normalized], existing), /trùng/);

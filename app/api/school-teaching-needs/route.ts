@@ -5,7 +5,7 @@ import { appendSheetRows, deleteSheetRowsByIds, ensureSheetHeaders, notification
 import { requireSessionUser } from "@/lib/route-auth";
 import { schoolScheduleImportChecksum } from "@/lib/school-schedule-patterns";
 import { notifySchoolScheduleChange } from "@/lib/school-schedule-notification";
-import { normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedIdentity, schoolNeedRequiresReview, schoolNeedRevision, type SchoolNeedInput } from "@/lib/school-teaching-needs";
+import { isSchoolNeedCancelled, normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedIdentity, schoolNeedRequiresReview, schoolNeedRevision, type NormalizedNeedInput, type SchoolNeedInput } from "@/lib/school-teaching-needs";
 import type { ClassRoom, Notification, School, SchoolScheduleImport, SchoolTeachingNeed } from "@/lib/types";
 
 const sheet = "SchoolTeachingNeeds" as const;
@@ -14,6 +14,12 @@ function addDays(dateKey: string, days: number) {
   const date = new Date(`${dateKey}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function importedNeedStatus(current: SchoolTeachingNeed | undefined, next: NormalizedNeedInput) {
+  if (isSchoolNeedCancelled(next)) return "CANCELLED" as const;
+  if (current && schoolNeedRequiresReview(current, next)) return "REVIEW" as const;
+  return current?.scheduleId ? "ASSIGNED" as const : "OPEN" as const;
 }
 
 async function loadRows() {
@@ -88,12 +94,12 @@ export async function POST(request: Request) {
     const editorName = user.name?.trim() || user.email || user.id;
     const importId = createId("school-import");
     const newRows: SchoolTeachingNeed[] = plan.filter((item) => item.action === "NEW").map((item) => ({
-      ...item.row, id: createId("need"), scheduleId: "", status: "OPEN", createdAt: now, updatedAt: now, lastEditedAt: now, lastEditedBy: editorName,
+      ...item.row, id: createId("need"), scheduleId: "", status: importedNeedStatus(undefined, item.row), createdAt: now, updatedAt: now, lastEditedAt: now, lastEditedBy: editorName,
       sourceKind: "WEEKLY_OVERRIDE", sourceImportId: importId, sourceVersion: importVersion,
     }));
     const updates = plan.filter((item) => item.action === "CHANGED" && item.target).map((item) => ({
       id: item.target!.id,
-      patch: { ...item.row, id: item.target!.id, status: schoolNeedRequiresReview(item.target!, item.row) ? "REVIEW" : item.target!.scheduleId ? "ASSIGNED" : "OPEN", updatedAt: now, lastEditedAt: now, lastEditedBy: editorName, sourceKind: "WEEKLY_OVERRIDE" as const, sourceImportId: importId, sourceVersion: importVersion },
+      patch: { ...item.row, id: item.target!.id, status: importedNeedStatus(item.target!, item.row), updatedAt: now, lastEditedAt: now, lastEditedBy: editorName, sourceKind: "WEEKLY_OVERRIDE" as const, sourceImportId: importId, sourceVersion: importVersion },
     }));
     if (newRows.length) await appendSheetRows(sheet, newRows);
     if (updates.length) await updateSheetRowsById(sheet, updates);
@@ -126,7 +132,7 @@ export async function PATCH(request: Request) {
     }
     const now = new Date().toISOString();
     const editorName = user.name?.trim() || user.email || user.id;
-    const patch: Partial<SchoolTeachingNeed> = { ...next, id: current.id, status: schoolNeedRequiresReview(current, next) ? "REVIEW" : current.scheduleId ? "ASSIGNED" : "OPEN", updatedAt: now, lastEditedAt: now, lastEditedBy: editorName, sourceKind: "DIRECT_EDIT", sourceVersion: Number(current.sourceVersion || 0) + 1 };
+    const patch: Partial<SchoolTeachingNeed> = { ...next, id: current.id, status: importedNeedStatus(current, next), updatedAt: now, lastEditedAt: now, lastEditedBy: editorName, sourceKind: "DIRECT_EDIT", sourceVersion: Number(current.sourceVersion || 0) + 1 };
     await updateSheetRowsById(sheet, [{ id: current.id, patch }]);
     await appendAuditLog({ requestId, actor: user, action: "school_need.update", entityType: "SchoolTeachingNeed", entityId: current.id, route: "/api/school-teaching-needs", method: "PATCH", authMode: "enforce", decision: "allow", reason: "admin", source, before: current, after: patch });
     const updated: SchoolTeachingNeed = { ...current, ...patch };
