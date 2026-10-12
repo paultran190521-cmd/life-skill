@@ -61,6 +61,16 @@ export function isSchoolNeedCancelled(input: Pick<SchoolNeedInput, "sourceStatus
   return comparable(input.sourceStatus) === "truong huy tiet";
 }
 
+export function importedNeedStatus(current: SchoolTeachingNeed | undefined, next: NormalizedNeedInput): SchoolTeachingNeed["status"] {
+  if (current && schoolNeedRequiresReview(current, next)) return "REVIEW";
+  if (isSchoolNeedCancelled(next)) return current?.scheduleId ? "REVIEW" : "CANCELLED";
+  return current?.scheduleId ? "ASSIGNED" : "OPEN";
+}
+
+export function reconciledNeedStatus(need: SchoolTeachingNeed, keepTeacher: boolean): SchoolTeachingNeed["status"] {
+  return keepTeacher ? "ASSIGNED" : isSchoolNeedCancelled(need) ? "CANCELLED" : "OPEN";
+}
+
 export function normalizeSchoolNeedInput(input: SchoolNeedInput, schools: School[], classes: ClassRoom[]): NormalizedNeedInput {
   const date = parseDate(input.date);
   if (!date) throw new Error("Ngày dạy phải có dạng YYYY-MM-DD hoặc DD/MM/YYYY.");
@@ -95,6 +105,18 @@ export function normalizeSchoolNeedInput(input: SchoolNeedInput, schools: School
 
 export function schoolNeedIdentity(row: Pick<NormalizedNeedInput, "date" | "schoolId" | "classId" | "start" | "end">) {
   return [row.date, row.schoolId, row.classId, row.start, row.end].join("|");
+}
+
+export function hasPendingSchoolNeedReview(needs: SchoolTeachingNeed[], schoolId: string, date: string) {
+  const key = parseDate(date);
+  if (!key) return false;
+  const monday = new Date(`${key}T00:00:00Z`);
+  monday.setUTCDate(monday.getUTCDate() - (monday.getUTCDay() + 6) % 7);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(sunday.getUTCDate() + 6);
+  const from = monday.toISOString().slice(0, 10);
+  const to = sunday.toISOString().slice(0, 10);
+  return needs.some((need) => need.schoolId === schoolId && need.date >= from && need.date <= to && need.status === "REVIEW");
 }
 
 export function schoolNeedRequiresReview(current: SchoolTeachingNeed, next: NormalizedNeedInput) {
@@ -156,4 +178,24 @@ export function planSchoolNeedImport(incoming: NormalizedNeedInput[], existing: 
     const changed = schoolNeedContentChanged(target, row);
     return { action: changed ? "CHANGED" as const : "SAME" as const, row, target };
   });
+}
+
+/** A weekly file is a complete snapshot for one school and one week. Omitted active needs are withdrawn. */
+export function planSchoolNeedWeeklySnapshot(incoming: NormalizedNeedInput[], existing: SchoolTeachingNeed[], schoolId: string, weekStart: string) {
+  const monday = parseDate(weekStart);
+  if (!monday || new Date(`${monday}T00:00:00Z`).getUTCDay() !== 1) throw new Error("Tuần cập nhật phải bắt đầu vào thứ Hai.");
+  if (!schoolId) throw new Error("Cần chọn trường trước khi nhập lịch tuần.");
+  const end = new Date(`${monday}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + 6);
+  const sunday = end.toISOString().slice(0, 10);
+  if (!incoming.length) throw new Error("File lịch tuần cần ít nhất một dòng để xác nhận phạm vi cập nhật.");
+  if (incoming.some((row) => row.schoolId !== schoolId || row.date < monday || row.date > sunday)) throw new Error("File có dòng nằm ngoài trường hoặc tuần đang chọn.");
+  const scoped = existing.filter((row) => row.schoolId === schoolId && row.date >= monday && row.date <= sunday);
+  const compared = planSchoolNeedImport(incoming, scoped);
+  const touched = new Set(compared.map((item) => item.target?.id).filter((id): id is string => Boolean(id)));
+  const rows = compared.map((item) => item.action === "SAME" && item.target?.sourceKind !== "WEEKLY_OVERRIDE"
+    ? { ...item, action: "CHANGED" as const, provenanceOnly: true }
+    : { ...item, provenanceOnly: false });
+  const omissions = scoped.filter((row) => !touched.has(row.id) && row.status !== "CANCELLED" && !(row.status === "REVIEW" && row.sourceStatus === "Trường hủy tiết"));
+  return { rows, omissions, scope: { schoolId, weekStart: monday, weekEnd: sunday } };
 }

@@ -6,6 +6,7 @@ import { readSheetRowsBatch, updateSheetRowsById } from "@/lib/google-sheets";
 import { requireSessionUser } from "@/lib/route-auth";
 import { invalidateScheduleConflictIndex } from "@/lib/schedule-conflict-index";
 import { findConfiguredSchoolNeedMergeSlot } from "@/lib/school-need-merge";
+import { isSchoolNeedCancelled, reconciledNeedStatus } from "@/lib/school-teaching-needs";
 import { isTimeSlotAllowedForSchool } from "@/lib/time-slots";
 import type { ClassRoom, Schedule, School, SchoolTeachingNeed, TimeSlot } from "@/lib/types";
 
@@ -60,7 +61,8 @@ export async function POST(request: Request) {
     const oldClass = classes.find((row) => row.id === assigned.classId);
     const newClass = classes.find((row) => row.id === target.classId);
     const gradeCompatible = target.teachingEnvironment !== "in_class" || (oldClass?.grade === newClass?.grade);
-    const keepTeacher = Boolean(sameTime && sameSchool && sameClass && sameEnvironment && gradeCompatible && nextSchool && isTimeSlotAllowedForSchool(oldSlot, nextSchool.name));
+    const canceledBySchool = completeNeeds.some((need) => isSchoolNeedCancelled(need));
+    const keepTeacher = !canceledBySchool && Boolean(sameTime && sameSchool && sameClass && sameEnvironment && gradeCompatible && nextSchool && isTimeSlotAllowedForSchool(oldSlot, nextSchool.name));
 
     if (keepTeacher) {
       const conflicts = schedules.some((other) => {
@@ -74,7 +76,7 @@ export async function POST(request: Request) {
       await updateSheetRowsById("SchoolTeachingNeeds", completeNeeds.map((need) => ({ id: need.id, patch: { status: "ASSIGNED", updatedAt: now.toISOString() } })));
     } else {
       await updateSheetRowsById("Schedules", group.map((row) => ({ id: row.id, patch: { status: "cancelled", cancelledAt: now.toISOString(), updatedAt: now.toISOString() } })));
-      await updateSheetRowsById("SchoolTeachingNeeds", completeNeeds.map((need) => ({ id: need.id, patch: { scheduleId: "", assignedDate: "", assignedStart: "", assignedEnd: "", status: "OPEN", updatedAt: now.toISOString() } })));
+      await updateSheetRowsById("SchoolTeachingNeeds", completeNeeds.map((need) => ({ id: need.id, patch: { scheduleId: "", assignedDate: "", assignedStart: "", assignedEnd: "", status: reconciledNeedStatus(need, false), updatedAt: now.toISOString() } })));
     }
     invalidateScheduleConflictIndex();
     const updateEmails = !keepTeacher ? [] : await Promise.all(Array.from(new Set(group.map((row) => row.teacherId))).map(async (teacherId) => {
@@ -90,7 +92,7 @@ export async function POST(request: Request) {
         return { teacherId, ...await sendScheduleCancellationEmail({ teacher: { name: teacher?.name, email: teacher?.email }, schedules: group.filter((row) => row.teacherId === teacherId), schoolName: schools.find((row) => row.id === assigned.schoolId)?.name || "", classNames: Array.from(new Set(group.map((row) => classes.find((item) => item.id === row.classId)?.name || row.classId))), slot: oldSlot }) };
       } catch (error) { return { teacherId, sent: false, reason: error instanceof Error ? error.message : "Không gửi được email thay đổi lịch." }; }
     }));
-    await appendAuditLog({ requestId, actor: user, action: keepTeacher ? "school_need.reconcile_keep_teacher" : "school_need.reconcile_reassign", entityType: "SchoolTeachingNeed", entityId: target.id, route: "/api/school-teaching-needs/reconcile", method: "POST", authMode: "enforce", decision: "allow", reason: "admin", source, before: { schedules: group, needs: completeNeeds }, after: { keepTeacher, scheduleIds: group.map((row) => row.id) } });
-    return NextResponse.json({ outcome: keepTeacher ? "KEPT" : "REASSIGN", scheduleIds: group.map((row) => row.id), needIds: completeNeeds.map((need) => need.id), cancellationEmails, updateEmails });
+    await appendAuditLog({ requestId, actor: user, action: keepTeacher ? "school_need.reconcile_keep_teacher" : canceledBySchool ? "school_need.reconcile_cancelled" : "school_need.reconcile_reassign", entityType: "SchoolTeachingNeed", entityId: target.id, route: "/api/school-teaching-needs/reconcile", method: "POST", authMode: "enforce", decision: "allow", reason: "admin", source, before: { schedules: group, needs: completeNeeds }, after: { keepTeacher, canceledBySchool, scheduleIds: group.map((row) => row.id) } });
+    return NextResponse.json({ outcome: keepTeacher ? "KEPT" : canceledBySchool ? "CANCELLED" : "REASSIGN", scheduleIds: group.map((row) => row.id), needIds: completeNeeds.map((need) => need.id), needStatuses: completeNeeds.map((need) => ({ id: need.id, status: reconciledNeedStatus(need, keepTeacher) })), cancellationEmails, updateEmails });
   } catch (error) { return apiError(error, requestId); }
 }

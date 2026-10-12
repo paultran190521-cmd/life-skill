@@ -5,22 +5,10 @@ import { appendSheetRows, deleteSheetRowsByIds, ensureSheetHeaders, notification
 import { requireSessionUser } from "@/lib/route-auth";
 import { schoolScheduleImportChecksum } from "@/lib/school-schedule-patterns";
 import { notifySchoolScheduleChange } from "@/lib/school-schedule-notification";
-import { isSchoolNeedCancelled, normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedIdentity, schoolNeedRequiresReview, schoolNeedRevision, type NormalizedNeedInput, type SchoolNeedInput } from "@/lib/school-teaching-needs";
+import { importedNeedStatus, isSchoolNeedCancelled, normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedWeeklySnapshot, schoolNeedContentChanged, schoolNeedIdentity, schoolNeedRequiresReview, schoolNeedRevision, type SchoolNeedInput } from "@/lib/school-teaching-needs";
 import type { ClassRoom, Notification, School, SchoolScheduleImport, SchoolTeachingNeed } from "@/lib/types";
 
 const sheet = "SchoolTeachingNeeds" as const;
-
-function addDays(dateKey: string, days: number) {
-  const date = new Date(`${dateKey}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
-function importedNeedStatus(current: SchoolTeachingNeed | undefined, next: NormalizedNeedInput) {
-  if (isSchoolNeedCancelled(next)) return "CANCELLED" as const;
-  if (current && schoolNeedRequiresReview(current, next)) return "REVIEW" as const;
-  return current?.scheduleId ? "ASSIGNED" as const : "OPEN" as const;
-}
 
 async function loadRows() {
   await ensureSheetHeaders(sheet, schoolTeachingNeedHeaders);
@@ -61,29 +49,30 @@ export async function POST(request: Request) {
     const { needs, schools, classes } = await loadRows();
     const revision = schoolNeedRevision(needs);
     if (body.mode === "apply" && body.revision !== revision) return apiFailure(409, "Lịch trường đã thay đổi. Hãy xem lại bản đối chiếu trước khi nhập.", undefined, requestId);
-    let plan: ReturnType<typeof planSchoolNeedImport>;
+    const sourceSchoolId = String(body.source?.schoolId || "").trim();
+    const sourceWeekStart = String(body.source?.weekStart || "").trim();
+    if (!schools.some((school) => school.id === sourceSchoolId)) return apiFailure(400, "Hãy chọn trường hợp lệ cho đợt nhập lịch tuần.", undefined, requestId);
+    let snapshot: ReturnType<typeof planSchoolNeedWeeklySnapshot>;
     try {
       const normalized = body.rows.map((row, index) => {
         try { return normalizeSchoolNeedInput(row, schools, classes); }
         catch (error) { throw new Error(`Dòng ${index + 2}: ${error instanceof Error ? error.message : "Dữ liệu không hợp lệ."}`); }
       });
-      plan = planSchoolNeedImport(normalized, needs);
+      snapshot = planSchoolNeedWeeklySnapshot(normalized, needs, sourceSchoolId, sourceWeekStart);
     } catch (error) {
       return apiFailure(400, error instanceof Error ? error.message : "File lịch không hợp lệ.", undefined, requestId);
     }
-    const sourceSchoolId = String(body.source?.schoolId || "").trim();
-    const sourceWeekStart = String(body.source?.weekStart || "").trim();
-    if (sourceSchoolId && !schools.some((school) => school.id === sourceSchoolId)) return apiFailure(400, "Trường của đợt nhập không hợp lệ.", undefined, requestId);
-    if (sourceWeekStart && !/^\d{4}-\d{2}-\d{2}$/.test(sourceWeekStart)) return apiFailure(400, "Tuần của đợt nhập không hợp lệ.", undefined, requestId);
-    if (sourceSchoolId && plan.some((item) => item.row.schoolId !== sourceSchoolId)) return apiFailure(400, "File có dòng thuộc trường khác với trường đang chọn.", undefined, requestId);
-    if (sourceWeekStart && plan.some((item) => item.row.date < sourceWeekStart || item.row.date > addDays(sourceWeekStart, 6))) return apiFailure(400, "File có dòng nằm ngoài tuần đang chọn.", undefined, requestId);
+    const plan = snapshot.rows;
+    const omissionRows = snapshot.omissions.map((row) => ({ action: "CANCELLED" as const, before: row, after: { ...row, sourceStatus: "Trường hủy tiết", status: row.scheduleId ? "REVIEW" as const : "CANCELLED" as const } }));
     const summary = {
       newCount: plan.filter((item) => item.action === "NEW").length,
       changedCount: plan.filter((item) => item.action === "CHANGED").length,
       duplicateCount: plan.filter((item) => item.action === "SAME").length,
-      reviewCount: plan.filter((item) => item.action === "CHANGED" && item.target && schoolNeedRequiresReview(item.target, item.row)).length,
+      cancelCount: omissionRows.length + plan.filter((item) => item.action !== "SAME" && isSchoolNeedCancelled(item.row)).length,
+      reviewCount: plan.filter((item) => item.action === "CHANGED" && item.target && (schoolNeedRequiresReview(item.target, item.row) || isSchoolNeedCancelled(item.row) && Boolean(item.target.scheduleId))).length + omissionRows.filter((item) => item.after.status === "REVIEW").length,
     };
-    if (body.mode !== "apply") return NextResponse.json({ revision, summary, rows: plan.map((item) => ({ action: item.action, before: item.target, after: item.row })) });
+    if (body.mode !== "apply") return NextResponse.json({ revision, summary, rows: [...plan.map((item) => ({ action: item.action, before: item.target, after: item.row })), ...omissionRows] });
+    if (!summary.newCount && !summary.changedCount && !omissionRows.length) return NextResponse.json({ summary, unchanged: true, needs: needs.filter((row) => row.schoolId === sourceSchoolId && row.date >= snapshot.scope.weekStart && row.date <= snapshot.scope.weekEnd) });
 
     await Promise.all([ensureSheetHeaders("SchoolScheduleImports", schoolScheduleImportHeaders), ensureSheetHeaders("Notifications", notificationHeaders)]);
     const importRows = await readSheetRowsBatch(["SchoolScheduleImports"] as const);
@@ -101,16 +90,21 @@ export async function POST(request: Request) {
       id: item.target!.id,
       patch: { ...item.row, id: item.target!.id, status: importedNeedStatus(item.target!, item.row), updatedAt: now, lastEditedAt: now, lastEditedBy: editorName, sourceKind: "WEEKLY_OVERRIDE" as const, sourceImportId: importId, sourceVersion: importVersion },
     }));
+    const cancellations = omissionRows.map((item) => ({
+      id: item.before.id,
+      patch: { status: item.after.status, sourceStatus: "Trường hủy tiết", sourceKind: "WEEKLY_OVERRIDE" as const, sourceImportId: importId, sourceVersion: importVersion, updatedAt: now, lastEditedAt: now, lastEditedBy: editorName },
+    }));
     if (newRows.length) await appendSheetRows(sheet, newRows);
-    if (updates.length) await updateSheetRowsById(sheet, updates);
-    const importRecord: SchoolScheduleImport = { id: importId, kind: "WEEKLY_OVERRIDE", schoolId: sourceSchoolId || plan[0]?.row.schoolId || "", scopeWeekStart: sourceWeekStart, fileName: String(body.source?.fileName || "").slice(0, 180), checksum: schoolScheduleImportChecksum(plan.map((item) => item.row)), rowCount: plan.length, newCount: summary.newCount, changedCount: summary.changedCount, unchangedCount: summary.duplicateCount, reviewCount: summary.reviewCount, version: importVersion, createdAt: now, createdBy: editorName };
+    if (updates.length || cancellations.length) await updateSheetRowsById(sheet, [...updates, ...cancellations]);
+    const importRecord: SchoolScheduleImport = { id: importId, kind: "WEEKLY_OVERRIDE", schoolId: sourceSchoolId, scopeWeekStart: snapshot.scope.weekStart, fileName: String(body.source?.fileName || "").slice(0, 180), checksum: schoolScheduleImportChecksum(plan.map((item) => item.row)), rowCount: plan.length, newCount: summary.newCount, changedCount: summary.changedCount + omissionRows.length, unchangedCount: summary.duplicateCount, reviewCount: summary.reviewCount, version: importVersion, createdAt: now, createdBy: editorName };
     await appendSheetRows("SchoolScheduleImports", [importRecord]);
-    const notification: Notification = { id: createId("n"), title: "Lịch trường đã cập nhật", body: `${editorName} đã nhập ${summary.newCount} dòng mới, sửa ${summary.changedCount} dòng${summary.reviewCount ? `; ${summary.reviewCount} lịch đã giao cần đối chiếu` : ""}.`, role: "admin", senderName: editorName, senderEmail: user.email, createdAt: now, read: false };
+    const notification: Notification = { id: createId("n"), title: "Lịch trường đã cập nhật", body: `${editorName} đã nhập ${summary.newCount} dòng mới, sửa ${summary.changedCount} dòng, hủy ${summary.cancelCount} dòng${summary.reviewCount ? `; ${summary.reviewCount} lịch đã giao cần đối chiếu` : ""}.`, role: "admin", senderName: editorName, senderEmail: user.email, createdAt: now, read: false };
     await appendSheetRows("Notifications", [{ ...notification, updatedAt: now }]);
     await appendAuditLog({ requestId, actor: user, action: "school_need.import", entityType: "SchoolTeachingNeed", entityId: importId, route: "/api/school-teaching-needs", method: "POST", authMode: "enforce", decision: "allow", reason: "admin", source, after: { ...summary, importId, importVersion, fileName: importRecord.fileName } });
     const importedSchool = schools.find((school) => school.id === importRecord.schoolId);
-    const emailResult = await notifySchoolScheduleChange({ action: "IMPORT", actorName: editorName, schoolName: importedSchool?.name || importRecord.schoolId, weekStart: sourceWeekStart, newCount: summary.newCount, changedCount: summary.changedCount, reviewCount: summary.reviewCount, fileName: importRecord.fileName });
-    return NextResponse.json({ summary, import: importRecord, notification, emailResult, needs: [...needs.filter((row) => !updates.some((update) => update.id === row.id)), ...updates.map((update) => ({ ...needs.find((row) => row.id === update.id)!, ...update.patch })), ...newRows] });
+    const emailResult = await notifySchoolScheduleChange({ action: "IMPORT", actorName: editorName, schoolName: importedSchool?.name || importRecord.schoolId, weekStart: sourceWeekStart, newCount: summary.newCount, changedCount: summary.changedCount + omissionRows.length, reviewCount: summary.reviewCount, fileName: importRecord.fileName });
+    const patches = new Map([...updates, ...cancellations].map((item) => [item.id, item.patch]));
+    return NextResponse.json({ summary, import: importRecord, notification, emailResult, needs: [...needs.map((row) => ({ ...row, ...(patches.get(row.id) || {}) })), ...newRows] });
   } catch (error) { return apiError(error, requestId); }
 }
 

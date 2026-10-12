@@ -24,7 +24,8 @@ function comparable(value: unknown) {
 
 function dateKey(value: unknown, label: string) {
   const date = String(value || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) throw new Error(`${label} không hợp lệ.`);
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) throw new Error(`${label} không hợp lệ.`);
   return date;
 }
 
@@ -119,6 +120,66 @@ export function planSchoolSchedulePatternImport(incoming: NormalizedPatternInput
   });
 }
 
+/** Replace one school's exact effective range as a complete recurring-rule snapshot. */
+export function planSchoolSchedulePatternSnapshot(incoming: NormalizedPatternInput[], existing: SchoolSchedulePattern[], schoolId: string, effectiveFrom: string, effectiveTo: string) {
+  if (!schoolId || !incoming.length) throw new Error("Lịch nền cần trường và ít nhất một quy tắc.");
+  const from = dateKey(effectiveFrom, "Ngày bắt đầu hiệu lực");
+  const to = dateKey(effectiveTo, "Ngày kết thúc hiệu lực");
+  if (to < from) throw new Error("Ngày kết thúc hiệu lực phải sau hoặc bằng ngày bắt đầu.");
+  if (incoming.some((row) => row.schoolId !== schoolId || row.effectiveFrom !== from || row.effectiveTo !== to)) throw new Error("File có quy tắc nằm ngoài trường hoặc thời hạn đã chọn.");
+  const activeSchool = existing.filter((row) => row.status === "ACTIVE" && row.schoolId === schoolId);
+  if (activeSchool.some((row) => row.effectiveFrom <= to && row.effectiveTo >= from && (row.effectiveFrom !== from || row.effectiveTo !== to))) {
+    throw new Error("Khoảng hiệu lực giao với lịch nền đang có. Hãy dùng đúng khoảng hiệu lực cũ hoặc sửa lịch nền hiện có trong file CRM.");
+  }
+  const scoped = activeSchool.filter((row) => row.effectiveFrom === from && row.effectiveTo === to);
+  const logicalKey = (row: Pick<NormalizedPatternInput, "schoolId" | "classId" | "weekday" | "periodLabel" | "effectiveFrom" | "effectiveTo">) =>
+    [row.schoolId, row.classId, row.weekday, comparable(row.periodLabel), row.effectiveFrom, row.effectiveTo].join("|");
+  const byId = new Map(scoped.map((row) => [row.id, row]));
+  const byIdentity = new Map(scoped.map((row) => [schoolSchedulePatternIdentity(row), row]));
+  const logicalGroups = new Map<string, SchoolSchedulePattern[]>();
+  for (const row of scoped) logicalGroups.set(logicalKey(row), [...(logicalGroups.get(logicalKey(row)) || []), row]);
+  const matched = new Set<string>();
+  const seen = new Set<string>();
+  const rows = incoming.map((row, index) => {
+    const identity = schoolSchedulePatternIdentity(row);
+    if (seen.has(identity)) throw new Error(`Dòng ${index + 2}: quy tắc bị lặp trong file.`);
+    seen.add(identity);
+    if (row.id && !byId.has(row.id)) throw new Error(`Dòng ${index + 2}: mã quy tắc không thuộc trường và khoảng hiệu lực đang thay.`);
+    const logical = logicalGroups.get(logicalKey(row)) || [];
+    const target = row.id ? byId.get(row.id) : byIdentity.get(identity) || (logical.length === 1 ? logical[0] : undefined);
+    if (target && matched.has(target.id)) throw new Error(`Dòng ${index + 2}: nhiều dòng cùng thay một quy tắc cũ.`);
+    if (target) matched.add(target.id);
+    return { action: !target ? "NEW" as const : schoolSchedulePatternChanged(target, row) ? "CHANGED" as const : "SAME" as const, target, row };
+  });
+  return { rows, superseded: scoped.filter((row) => !matched.has(row.id)) };
+}
+
+/** Check the proposed active set, but do not reject unrelated conflicts that predate this import. */
+export function findSchoolSchedulePatternImportConflicts(
+  plan: ReturnType<typeof planSchoolSchedulePatternImport>, existing: SchoolSchedulePattern[], superseded: SchoolSchedulePattern[] = [],
+) {
+  const replacedIds = new Set([...superseded.map((row) => row.id), ...plan.filter((item) => item.action === "CHANGED" && item.target).map((item) => item.target!.id)]);
+  const proposed = [
+    ...existing.filter((row) => row.status === "ACTIVE" && !replacedIds.has(row.id)).map((row) => ({ row, changed: false })),
+    ...plan.filter((item) => item.action === "NEW" || item.action === "CHANGED").map((item) => ({ row: item.row, changed: true })),
+  ];
+  const conflicts: Array<{ first: string; second: string }> = [];
+  for (let i = 0; i < proposed.length; i += 1) {
+    for (let j = i + 1; j < proposed.length; j += 1) {
+      const left = proposed[i];
+      const right = proposed[j];
+      if (!left.changed && !right.changed) continue;
+      const a = left.row;
+      const b = right.row;
+      if (a.schoolId !== b.schoolId || a.classId !== b.classId || a.weekday !== b.weekday) continue;
+      if (a.effectiveFrom > b.effectiveTo || b.effectiveFrom > a.effectiveTo) continue;
+      if (a.start >= b.end || b.start >= a.end) continue;
+      conflicts.push({ first: String(a.id || schoolSchedulePatternIdentity(a)), second: String(b.id || schoolSchedulePatternIdentity(b)) });
+    }
+  }
+  return conflicts;
+}
+
 export function mondayDateKey(value: string) {
   const date = new Date(`${dateKey(value, "Tuần") }T00:00:00Z`);
   const offset = (date.getUTCDay() + 6) % 7;
@@ -150,6 +211,70 @@ export function materializePatternNeed(pattern: SchoolSchedulePattern, weekStart
     patternId: pattern.id,
     sourceVersion: pattern.version,
   };
+}
+
+function materializedIdentity(row: Pick<SchoolTeachingNeed, "date" | "schoolId" | "classId" | "start" | "end">) {
+  return [row.date, row.schoolId, row.classId, row.start, row.end].join("|");
+}
+
+function materializedContentChanged(current: SchoolTeachingNeed, next: Omit<SchoolTeachingNeed, "id" | "status">) {
+  return (["date", "schoolId", "classId", "periodLabel", "start", "end", "teachingEnvironment", "sourceNote"] as const)
+    .some((key) => String(current[key] || "") !== String(next[key] || ""));
+}
+
+function materializedNeedsReview(current: SchoolTeachingNeed, next: Omit<SchoolTeachingNeed, "id" | "status">) {
+  return Boolean(current.scheduleId) && (current.status === "REVIEW" ||
+    (["date", "schoolId", "classId", "start", "end", "teachingEnvironment"] as const).some((key) => current[key] !== next[key]));
+}
+
+/** Reconcile only rows still owned by their recurring rule. Weekly uploads and direct edits take precedence. */
+export function planPatternMaterialization(patterns: SchoolSchedulePattern[], needs: SchoolTeachingNeed[], schoolId: string, weekStart: string) {
+  const monday = mondayDateKey(weekStart);
+  const sunday = new Date(`${monday}T00:00:00Z`);
+  sunday.setUTCDate(sunday.getUTCDate() + 6);
+  const weekEnd = sunday.toISOString().slice(0, 10);
+  const scopedNeeds = needs.filter((need) => need.schoolId === schoolId && need.date >= monday && need.date <= weekEnd);
+  const supersededIds = new Set(patterns.filter((pattern) => pattern.status === "SUPERSEDED").map((pattern) => pattern.id));
+  const retirements = scopedNeeds.filter((need) => need.sourceKind === "SEMESTER_BASE" && supersededIds.has(need.patternId || "") && need.status !== "CANCELLED" && !(need.status === "REVIEW" && need.sourceStatus === "Trường hủy tiết"))
+    .map((target) => ({ target, status: target.scheduleId ? "REVIEW" as const : "CANCELLED" as const }));
+  const hasPendingSupersededReview = scopedNeeds.some((need) => need.sourceKind === "SEMESTER_BASE" && supersededIds.has(need.patternId || "") && Boolean(need.scheduleId) && need.status !== "CANCELLED");
+  const retiringIds = new Set(retirements.map((item) => item.target.id));
+  const activeNeeds = scopedNeeds.filter((need) => !retiringIds.has(need.id) && !(need.sourceKind === "SEMESTER_BASE" && supersededIds.has(need.patternId || "") && (need.status === "CANCELLED" || need.status === "REVIEW" && need.sourceStatus === "Trường hủy tiết")));
+  const byPatternDate = new Map(activeNeeds.filter((need) => need.patternId).map((need) => [`${need.patternId}|${need.date}`, need]));
+  const byPatternId = new Map(activeNeeds.filter((need) => need.patternId).map((need) => [need.patternId!, need]));
+  const byIdentity = new Map(activeNeeds.map((need) => [materializedIdentity(need), need]));
+  const hasWeeklySnapshot = scopedNeeds.some((need) => need.sourceKind === "WEEKLY_OVERRIDE");
+  const creates: Array<Omit<SchoolTeachingNeed, "id" | "status">> = [];
+  const updates: Array<{ target: SchoolTeachingNeed; row: Omit<SchoolTeachingNeed, "id" | "status">; status: SchoolTeachingNeed["status"] }> = [];
+  const conflicts: string[] = [];
+  let skippedCount = 0;
+  let candidateCount = 0;
+  for (const pattern of patterns) {
+    if (pattern.status !== "ACTIVE" || pattern.schoolId !== schoolId) continue;
+    const row = materializePatternNeed(pattern, monday);
+    if (!row) continue;
+    candidateCount += 1;
+    if (hasWeeklySnapshot || hasPendingSupersededReview) { skippedCount += 1; continue; }
+    const patternDate = `${pattern.id}|${row.date}`;
+    const identity = materializedIdentity(row);
+    const existing = byPatternDate.get(patternDate) || byPatternId.get(pattern.id);
+    const occupying = byIdentity.get(identity);
+    if (existing) {
+      if (existing.sourceKind !== "SEMESTER_BASE" || existing.status === "CANCELLED") { skippedCount += 1; continue; }
+      if (occupying && occupying.id !== existing.id) { conflicts.push(patternDate); continue; }
+      if (materializedContentChanged(existing, row) || Number(existing.sourceVersion || 0) !== Number(pattern.version || 0)) {
+        const status = materializedNeedsReview(existing, row) ? "REVIEW" : existing.scheduleId ? "ASSIGNED" : "OPEN";
+        updates.push({ target: existing, row, status });
+        byIdentity.delete(materializedIdentity(existing));
+        byIdentity.set(identity, existing);
+      } else skippedCount += 1;
+      continue;
+    }
+    if (occupying) { skippedCount += 1; continue; }
+    creates.push(row);
+    byIdentity.set(identity, { ...row, id: patternDate, status: "OPEN" });
+  }
+  return { candidateCount, creates, updates, retirements, skippedCount, hasPendingSupersededReview, conflicts };
 }
 
 export function schoolScheduleImportChecksum(rows: unknown[]) {

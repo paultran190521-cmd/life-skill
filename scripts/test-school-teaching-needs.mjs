@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { isSchoolNeedCancelled, normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedImport, schoolNeedContentChanged, schoolNeedRequiresReview, schoolNeedRevision } from "../lib/school-teaching-needs.ts";
+import { hasPendingSchoolNeedReview, importedNeedStatus, isSchoolNeedCancelled, normalizeSchoolNeedInput, planSchoolNeedDeletion, planSchoolNeedImport, planSchoolNeedWeeklySnapshot, reconciledNeedStatus, schoolNeedContentChanged, schoolNeedRequiresReview, schoolNeedRevision } from "../lib/school-teaching-needs.ts";
 
 const schools = [{ id: "s-nsg", name: "Trường Tiểu học Nam Sài Gòn", district: "" }];
 const classes = [{ id: "c-21", schoolId: "s-nsg", name: "2/1", grade: "2" }, { id: "c-22", schoolId: "s-nsg", name: "2/2", grade: "2" }];
@@ -25,6 +25,7 @@ assert.equal(planSchoolNeedImport([normalized], existing)[0].action, "SAME");
 const legacyImported = normalizeSchoolNeedInput({ ...row, legacySourceRowId: "intake-a1", sourceStatus: "Trường hủy tiết" }, schools, classes);
 assert.equal(legacyImported.legacySourceRowId, "intake-a1");
 assert.equal(isSchoolNeedCancelled(legacyImported), true);
+assert.equal(importedNeedStatus(undefined, legacyImported), "CANCELLED");
 assert.equal(planSchoolNeedImport([{ ...legacyImported, date: "2026-10-02", start: "08:10", end: "08:45" }], [{ ...existing[0], legacySourceRowId: "intake-a1" }])[0].action, "CHANGED");
 assert.equal(planSchoolNeedImport([{ ...normalized, id: "need-1", start: "08:10" }], existing)[0].action, "CHANGED");
 assert.equal(planSchoolNeedImport([{ ...normalized, classId: "c-22" }], existing)[0].action, "NEW");
@@ -32,6 +33,10 @@ assert.throws(() => planSchoolNeedImport([normalized, normalized], existing), /t
 assert.throws(() => planSchoolNeedImport([{ ...normalized, id: "unknown" }], existing), /mã dòng/);
 assert.throws(() => planSchoolNeedImport([{ ...normalized, id: "need-1", classId: "c-22" }], [...existing, { ...existing[0], id: "need-2", classId: "c-22" }]), /thuộc một dòng lịch khác/);
 const assigned = { ...existing[0], scheduleId: "sch-1", status: "ASSIGNED" };
+assert.equal(importedNeedStatus(assigned, legacyImported), "REVIEW", "source cancellation must not silently cancel an assigned teacher schedule");
+assert.equal(reconciledNeedStatus({ ...assigned, sourceStatus: "Trường hủy tiết" }, false), "CANCELLED");
+assert.equal(reconciledNeedStatus(assigned, false), "OPEN");
+assert.equal(reconciledNeedStatus(assigned, true), "ASSIGNED");
 const secondOpen = { ...existing[0], id: "need-2", classId: "c-22" };
 const deletionVersions = [{ id: "need-1", updatedAt: "t1" }, { id: "need-2", updatedAt: "t1" }];
 assert.deepEqual(planSchoolNeedDeletion([existing[0], secondOpen], ["need-1", "need-2"], deletionVersions).ids, ["need-1", "need-2"]);
@@ -43,4 +48,22 @@ assert.equal(planSchoolNeedDeletion([existing[0], { ...assigned, id: "need-2" }]
 assert.equal(schoolNeedRequiresReview(assigned, { ...normalized, sourceNote: "Trường xác nhận" }), false);
 assert.equal(schoolNeedRequiresReview(assigned, { ...normalized, start: "08:10" }), true);
 assert.notEqual(schoolNeedRevision(existing), schoolNeedRevision([{ ...existing[0], updatedAt: "t2" }]));
+const baseWeek = { ...existing[0], date: "2026-10-12", sourceKind: "SEMESTER_BASE", patternId: "pattern-1" };
+const assignedBase = { ...baseWeek, id: "need-2", classId: "c-22", scheduleId: "schedule-2", status: "ASSIGNED" };
+const otherWeek = { ...baseWeek, id: "need-3", date: "2026-10-19" };
+const otherSchool = { ...baseWeek, id: "need-4", schoolId: "school-other" };
+const weeklyRow = { ...normalized, date: "2026-10-12" };
+const snapshot = planSchoolNeedWeeklySnapshot([weeklyRow], [baseWeek, assignedBase, otherWeek, otherSchool], "s-nsg", "2026-10-12");
+assert.equal(snapshot.rows[0].action, "CHANGED", "an unchanged base row must become a weekly override marker");
+assert.equal(snapshot.omissions.length, 1);
+assert.equal(snapshot.omissions[0].id, "need-2");
+assert.deepEqual(snapshot.scope, { schoolId: "s-nsg", weekStart: "2026-10-12", weekEnd: "2026-10-18" });
+assert.equal(hasPendingSchoolNeedReview([{ ...assignedBase, status: "REVIEW" }], "s-nsg", "2026-10-14"), true);
+assert.equal(hasPendingSchoolNeedReview([{ ...assignedBase, status: "REVIEW" }], "s-nsg", "2026-10-19"), false);
+assert.equal(hasPendingSchoolNeedReview([{ ...assignedBase, status: "REVIEW" }], "school-other", "2026-10-14"), false);
+assert.equal(planSchoolNeedWeeklySnapshot([weeklyRow], [{ ...baseWeek, sourceKind: "WEEKLY_OVERRIDE" }], "s-nsg", "2026-10-12").rows[0].action, "SAME");
+assert.equal(planSchoolNeedWeeklySnapshot([weeklyRow], [{ ...baseWeek, sourceKind: "DIRECT_EDIT" }], "s-nsg", "2026-10-12").rows[0].action, "CHANGED");
+assert.equal(planSchoolNeedWeeklySnapshot([weeklyRow], [{ ...assignedBase, status: "REVIEW", sourceStatus: "Trường hủy tiết" }], "s-nsg", "2026-10-12").omissions.length, 0);
+assert.throws(() => planSchoolNeedWeeklySnapshot([weeklyRow], [], "s-nsg", "2026-10-13"), /thứ Hai/);
+assert.throws(() => planSchoolNeedWeeklySnapshot([{ ...weeklyRow, date: "2026-10-19" }], [], "s-nsg", "2026-10-12"), /ngoài trường hoặc tuần/);
 console.log("School teaching need import checks passed.");

@@ -31,6 +31,7 @@ import { isTeacherAvailableForSlot } from "@/lib/teacher-availability";
 import { isTimeSlotAllowedForSchool } from "@/lib/time-slots";
 import { findLessonProgressionConflicts } from "@/lib/lesson-progression-policy";
 import { findConfiguredSchoolNeedMergeSlot } from "@/lib/school-need-merge";
+import { hasPendingSchoolNeedReview } from "@/lib/school-teaching-needs";
 import { validateTopicReport } from "@/lib/topic-report-policy";
 import type { LessonPeriod, Notification, Schedule, ScheduleParticipantScope, SchoolTeachingNeed, TeacherAvailability, TeachingEnvironment } from "@/lib/types";
 
@@ -111,6 +112,7 @@ export async function POST(request: Request) {
       for (const item of normalizedItems) {
         const needIds = item.schoolNeedIds || [];
         if (needIds.length === 0) continue;
+        if (hasPendingSchoolNeedReview(sourceNeeds, item.schoolId, item.date)) return apiFailure(409, "Tuần của trường còn lịch đã giao cần đối chiếu. Hãy xử lý các dòng cần xem lại trước khi giao tiếp.", "CONFLICT", requestId);
         if (needIds.length > 2 || item.teacherIds.length !== 1) return apiFailure(400, "Mỗi lớp hoặc cụm tiết cần đúng một giáo viên chính.", undefined, requestId);
         const source = needIds.map((id) => sourceNeeds.find((row) => row.id === id));
         const slot = slots.find((row) => row.id === item.timeSlotId);
