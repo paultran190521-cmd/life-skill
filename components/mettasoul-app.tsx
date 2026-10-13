@@ -7841,25 +7841,34 @@ export function MettasoulApp() {
                               ))}
                             </select>
                           ) : null}
-                          <select
-                            value={item.lessonId}
-                            onChange={(e) => {
-                              const lessonId = e.target.value;
-                              const lesson = activeLessons.find((entry) => entry.id === lessonId);
-                              updateDraftItem(item.id, { lessonId, lessonPeriods: item.schoolNeedIds?.length === 2 && lesson?.lesson2Title ? ["lesson1", "lesson2"] : defaultLessonPeriods(lesson) });
-                            }}
-                            className={inputClass}
-                          >
-                            {rowLessons.length === 0 ? (
-                              <option value="">Chưa có bài học phù hợp</option>
-                            ) : (
-                              rowLessons.map((lesson) => (
+                          <div className="min-w-0">
+                            <select
+                              value={item.lessonId}
+                              aria-label="Chọn bài học"
+                              aria-describedby={`lesson-selection-status-${item.id}`}
+                              onChange={(e) => {
+                                const lessonId = e.target.value;
+                                const lesson = activeLessons.find((entry) => entry.id === lessonId);
+                                updateDraftItem(item.id, { lessonId, lessonPeriods: item.schoolNeedIds?.length === 2 && lesson?.lesson2Title ? ["lesson1", "lesson2"] : defaultLessonPeriods(lesson) });
+                              }}
+                              className={inputClass}
+                            >
+                              <option value="">{rowLessons.length === 0 ? "Chưa có bài học phù hợp" : "Chọn bài học"}</option>
+                              {rowLessons.map((lesson) => (
                                 <option key={lesson.id} value={lesson.id}>
                                   {lesson.title}
                                 </option>
-                              ))
-                            )}
-                          </select>
+                              ))}
+                            </select>
+                            <p
+                              id={`lesson-selection-status-${item.id}`}
+                              role="status"
+                              aria-live="polite"
+                              className={`mt-1.5 text-xs font-black ${rowLessons.some((lesson) => lesson.id === item.lessonId) ? "text-emerald-700" : "text-rose-700"}`}
+                            >
+                              {rowLessons.some((lesson) => lesson.id === item.lessonId) ? "Rất tốt! Bài đã được chọn." : "Chưa chọn bài học — hãy chọn bài trước khi giao."}
+                            </p>
+                          </div>
                           {(() => {
                             const selectedLesson = activeLessons.find((lesson) => lesson.id === item.lessonId);
                             const periodOptions = lessonPeriodOptions(selectedLesson);
