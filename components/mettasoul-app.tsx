@@ -193,6 +193,29 @@ function isDispatchItemComplete(item: DraftScheduleItem) {
   return Boolean(item.date && item.schoolId && item.classId && item.lessonId && item.lessonPeriods.length > 0 && item.timeSlotId && item.teacherIds.length > 0);
 }
 
+function previewSchedulesForDraftItems(items: DraftScheduleItem[]): Schedule[] {
+  return items.flatMap((item) =>
+    item.teacherIds.map((teacherId) => ({
+      id: `preview-${teacherId}-${item.id}`,
+      date: item.date,
+      teacherId,
+      schoolId: item.schoolId,
+      classId: item.classId,
+      participantClassIds: item.classIds.join(","),
+      participantScope: item.participantScope,
+      participantGrade: item.participantGrade || undefined,
+      lessonId: item.lessonId,
+      lessonPeriods: item.lessonPeriods.join(","),
+      timeSlotId: item.timeSlotId,
+      teachingEnvironment: item.teachingEnvironment,
+      activityTypeCode: item.activityTypeCode,
+      groupId: item.teacherIds.length > 1 || item.classIds.length > 1 ? `preview-group-${item.id}` : undefined,
+      status: "draft" as const,
+      assistantIds: item.assistantIds.join(","),
+    })),
+  );
+}
+
 type SchoolNeedWorkbookRow = {
   id?: string;
   legacySourceRowId?: string;
@@ -1935,14 +1958,20 @@ export function MettasoulApp() {
     return assignmentBatchScopeNeeds.filter((need) => need.status === "OPEN" && !need.scheduleId && !includedNeedIds.has(need.id));
   }, [activeAssignmentBatchItems, assignmentBatchScopeNeeds]);
   const assignmentDraftItems = activeAssignmentBatchItems;
+  const currentFormPreview = useMemo(
+    () => previewSchedulesForDraftItems(draftSchedule.items),
+    [draftSchedule.items],
+  );
+  const draftSchedulePreview = useMemo(
+    () => previewSchedulesForDraftItems(assignmentDraftItems),
+    [assignmentDraftItems],
+  );
 
   const allDraftTeacherIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const item of assignmentDraftItems) {
-      for (const tid of item.teacherIds) ids.add(tid);
-    }
+    for (const schedule of [...currentFormPreview, ...draftSchedulePreview]) ids.add(schedule.teacherId);
     return Array.from(ids);
-  }, [assignmentDraftItems]);
+  }, [currentFormPreview, draftSchedulePreview]);
 
   useEffect(() => {
     if (assignmentPreviewTeacherId === "all") {
@@ -1967,30 +1996,6 @@ export function MettasoulApp() {
     });
   }, [selectedCalendarDate]);
 
-  const draftSchedulePreview = useMemo<Schedule[]>(
-    () =>
-      assignmentDraftItems.flatMap((item) =>
-        item.teacherIds.map((teacherId) => ({
-          id: `preview-${teacherId}-${item.id}`,
-          date: item.date,
-          teacherId,
-          schoolId: item.schoolId,
-          classId: item.classId,
-          participantClassIds: item.classIds.join(","),
-          participantScope: item.participantScope,
-          participantGrade: item.participantGrade || undefined,
-          lessonId: item.lessonId,
-          lessonPeriods: item.lessonPeriods.join(","),
-          timeSlotId: item.timeSlotId,
-          teachingEnvironment: item.teachingEnvironment,
-          activityTypeCode: item.activityTypeCode,
-          groupId: item.teacherIds.length > 1 || item.classIds.length > 1 ? `preview-group-${item.id}` : undefined,
-          status: "sent" as const,
-          assistantIds: item.assistantIds.join(","),
-        })),
-      ),
-    [assignmentDraftItems],
-  );
   const draftPreviewTeacherOptions = useMemo(
     () =>
       allDraftTeacherIds
@@ -2000,11 +2005,15 @@ export function MettasoulApp() {
   );
   const draftPreviewScheduleCountByTeacher = useMemo(() => {
     const countByTeacher = new Map<string, number>();
-    for (const schedule of draftSchedulePreview) {
+    for (const schedule of [...currentFormPreview, ...draftSchedulePreview]) {
       countByTeacher.set(schedule.teacherId, (countByTeacher.get(schedule.teacherId) || 0) + 1);
     }
     return countByTeacher;
-  }, [draftSchedulePreview]);
+  }, [currentFormPreview, draftSchedulePreview]);
+  const filteredCurrentFormPreview =
+    assignmentPreviewTeacherId === "all"
+      ? currentFormPreview
+      : currentFormPreview.filter((schedule) => schedule.teacherId === assignmentPreviewTeacherId);
   const filteredDraftSchedulePreview =
     assignmentPreviewTeacherId === "all"
       ? draftSchedulePreview
@@ -7966,7 +7975,7 @@ export function MettasoulApp() {
 
           <Panel
             title="Xem trước đợt giao"
-            action={`Dự kiến gửi ${activeAssignmentBatchItems.length} tiết · ${batchTeacherCount} email`}
+            action={`Đang chọn ${currentFormPreview.length} lịch · Dự kiến gửi ${activeAssignmentBatchItems.length} tiết`}
           >
             <div className="space-y-3">
               {assignmentSchoolId ? <div role="status" className={`rounded-2xl border-2 p-4 ${assignmentProgress.remainingNeedCount === 0 && assignmentProgress.totalNeedCount > 0 ? "border-emerald-300 bg-emerald-50" : "border-amber-300 bg-amber-50"}`}>
@@ -8036,8 +8045,24 @@ export function MettasoulApp() {
                 <Send size={18} />
                 Gửi đợt giao & email ({batchTeacherCount} giáo viên)
               </button>
-              <p className="text-center text-xs font-semibold text-[var(--muted)]">Khi gửi, mỗi giáo viên chỉ nhận một email tổng hợp các tiết của mình trong đợt này.</p>
-              {renderScheduleList({ items: filteredDraftSchedulePreview, compact: true })}
+              <p className="text-center text-xs font-semibold text-[var(--muted)]">Khi gửi, mỗi giáo viên chỉ nhận một email tổng hợp các tiết đã thêm vào đợt.</p>
+              {filteredCurrentFormPreview.length > 0 ? (
+                <section aria-label="Lịch đang chọn trên form" className="space-y-2">
+                  <p className="rounded-xl bg-cyan-50 px-3 py-2 text-sm font-black text-cyan-900">Đang chọn bên trái · chưa thêm vào đợt, chưa gửi</p>
+                  {renderScheduleList({ items: filteredCurrentFormPreview, compact: true })}
+                </section>
+              ) : null}
+              {filteredDraftSchedulePreview.length > 0 ? (
+                <section aria-label="Lịch đã thêm vào đợt giao" className="space-y-2">
+                  <p className="rounded-xl bg-violet-50 px-3 py-2 text-sm font-black text-violet-900">Đã thêm vào đợt · dự kiến gửi email</p>
+                  {renderScheduleList({ items: filteredDraftSchedulePreview, compact: true })}
+                </section>
+              ) : null}
+              {filteredCurrentFormPreview.length === 0 && filteredDraftSchedulePreview.length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 p-6 text-center text-sm font-semibold text-[var(--muted)]">
+                  Chưa có lịch phù hợp. Hãy chọn giáo viên bên trái hoặc đổi bộ lọc.
+                </p>
+              ) : null}
             </div>
           </Panel>
         </div>
