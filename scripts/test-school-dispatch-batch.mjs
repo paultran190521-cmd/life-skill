@@ -31,6 +31,15 @@ assert.match(source, /role="alert" className="mt-3 rounded-xl border border-rose
 assert.match(source, /selectionConflictMessages\.length > 0/);
 assert.match(source, /disabled=\{isBusy \|\| activeAssignmentBatchItems\.length === 0 \|\| draftScheduleConflicts\.length > 0 \|\| draftLessonProgressionConflicts\.length > 0\}/);
 assert.match(source, /assignmentBatchMissingNeeds\.filter\(\(need\) => need\.schoolId === schoolId\)\.length/);
+assert.match(source, /const batchTeacherSelectedNeedIds = new Set\(\[\.\.\.assignmentBatchItems, \.\.\.draftSchedule\.items\]/);
+assert.match(source, /withoutTeacherCount: assignmentBatchMissingNeeds\.filter/);
+assert.match(source, /Trường còn tiết cần giao trong đợt đang soạn:/);
+assert.match(source, /motion-safe:animate-pulse motion-reduce:animate-none/);
+assert.doesNotMatch(source, /assignmentBatchMissingNeeds\.slice\(0, 8\)/);
+assert.match(source, /function returnDispatchBatchItemForTeacherSelection\(item: DraftScheduleItem\) \{\s*editDispatchBatchItem\(\{ \.\.\.item, teacherIds: \[\], assistantIds: \[\] \}\);/);
+assert.match(source, /aria-label="Tiết đã thêm vào đợt giao"/);
+assert.match(source, /assignmentBatchItems\.map\(\(item\) => <div key=\{item\.id\}/);
+assert.match(source, /Trả về để chọn lại giáo viên/);
 assert.match(source, /Đưa về sửa/);
 assert.match(source, /Để sau/);
 
