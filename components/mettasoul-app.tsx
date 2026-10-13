@@ -918,6 +918,7 @@ export function MettasoulApp() {
   const [workloadDateTo, setWorkloadDateTo] = useState(() => addDaysToDateKey(`${addMonths(currentMonthKey(), 1)}-01`, -1));
   const [assignmentSchoolId, setAssignmentSchoolId] = useState("");
   const [isSchoolNeedListExpanded, setIsSchoolNeedListExpanded] = useState(true);
+  const [isSchoolScheduleToolsExpanded, setIsSchoolScheduleToolsExpanded] = useState(true);
   const [assignmentClockMs, setAssignmentClockMs] = useState(0);
   const [schoolNeeds, setSchoolNeeds] = useState<SchoolTeachingNeed[]>([]);
   const [selectedSchoolNeedIds, setSelectedSchoolNeedIds] = useState<string[]>([]);
@@ -7380,6 +7381,20 @@ export function MettasoulApp() {
             </label>
           </div>
           <p className="mt-2 text-xs font-semibold text-[var(--muted)]">Đang xem {formatDate(assignmentWeekStart)}–{formatDate(weekEnd)}. Các dòng chưa giao tự xuất hiện bên dưới theo giờ, kèm lớp và môi trường dạy.</p>
+          <button
+            type="button"
+            aria-expanded={isSchoolScheduleToolsExpanded}
+            aria-controls="assignment-school-schedule-tools"
+            onClick={() => setIsSchoolScheduleToolsExpanded((expanded) => !expanded)}
+            className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-left text-sm font-black text-cyan-950 transition hover:bg-cyan-100"
+          >
+            <span>Kiểm tra nhân lực và tải Excel lịch trường</span>
+            <span className="inline-flex shrink-0 items-center gap-1 text-cyan-800">
+              {isSchoolScheduleToolsExpanded ? "Thu gọn" : "Mở rộng"}
+              <ChevronDown className={`size-4 transition-transform ${isSchoolScheduleToolsExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
+            </span>
+          </button>
+          <div id="assignment-school-schedule-tools" hidden={!isSchoolScheduleToolsExpanded}>
           {assignmentSchoolId && !schoolNeedLoadError ? <div role={weekStaffing && weekStaffing.missingAssignments > 0 ? "alert" : "status"} className={"mt-3 rounded-2xl border-2 p-3 text-sm " + (schoolNeedLoading ? "border-slate-200 bg-slate-50 text-slate-700" : weekStaffing?.missingAssignments ? "border-rose-300 bg-rose-50 text-rose-950" : weekStaffing?.periodCount ? "border-emerald-300 bg-emerald-50 text-emerald-950" : "border-amber-200 bg-amber-50 text-amber-950")}>
             {schoolNeedLoading ? <p className="font-black">Đang kiểm tra giáo viên cho tuần và trường đã chọn…</p>
               : !weekStaffing?.periodCount ? <p className="font-black">Chưa có tiết nào của trường trong tuần này để kiểm tra giáo viên.</p>
@@ -7437,6 +7452,7 @@ export function MettasoulApp() {
               : change.after ? <p key={`${change.after.id || "new"}-${index}`} className="rounded-lg bg-white/80 px-2 py-1 text-xs"><strong>{change.action === "NEW" ? "Mới" : "Sửa"}</strong> · {change.after.school} · {change.after.className} · {change.after.weekday} · {change.after.start}–{change.after.end} · {formatDate(change.after.effectiveFrom)}–{formatDate(change.after.effectiveTo)}</p> : null)}</div>
             <button type="button" disabled={Boolean(pendingAction)} onClick={() => void applySemesterPatternWorkbook()} className="mt-2 rounded-lg bg-violet-700 px-3 py-2 text-xs font-black text-white disabled:opacity-40">Xác nhận lưu lịch nền học kỳ</button>
           </div> : null}
+          </div>
           {schoolNeedLoadError ? <p role="alert" className="mt-3 text-sm text-rose-700">{schoolNeedLoadError}</p> : null}
           {weekNeeds.length > 0 ? <div className="mt-4 flex flex-wrap gap-3">{Array.from(new Set(weekNeeds.map((need) => need.date))).sort().map((date) => {
             const dayNeeds = weekNeeds.filter((need) => need.date === date);
