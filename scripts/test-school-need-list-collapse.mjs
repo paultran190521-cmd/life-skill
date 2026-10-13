@@ -7,7 +7,7 @@ const end = source.indexOf('</section> : null}', start);
 assert.ok(start >= 0 && end > start, "school need list has its own collapsible section");
 const section = source.slice(start, end);
 
-assert.match(source, /const \[isSchoolNeedListExpanded, setIsSchoolNeedListExpanded\] = useState\(true\)/);
+assert.match(source, /const \[isSchoolNeedListExpanded, setIsSchoolNeedListExpanded\] = useState\(false\)/);
 assert.match(section, /aria-expanded=\{isSchoolNeedListExpanded\}/);
 assert.match(section, /aria-controls="assignment-school-needs-list"/);
 assert.match(section, /onClick=\{\(\) => setIsSchoolNeedListExpanded\(\(expanded\) => !expanded\)\}/);

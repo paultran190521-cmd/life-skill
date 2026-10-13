@@ -917,7 +917,8 @@ export function MettasoulApp() {
   const [workloadDateFrom, setWorkloadDateFrom] = useState(() => `${currentMonthKey()}-01`);
   const [workloadDateTo, setWorkloadDateTo] = useState(() => addDaysToDateKey(`${addMonths(currentMonthKey(), 1)}-01`, -1));
   const [assignmentSchoolId, setAssignmentSchoolId] = useState("");
-  const [isSchoolNeedListExpanded, setIsSchoolNeedListExpanded] = useState(true);
+  const [isSchoolNeedListExpanded, setIsSchoolNeedListExpanded] = useState(false);
+  const [isWeeklyAssignmentListExpanded, setIsWeeklyAssignmentListExpanded] = useState(false);
   const [isSchoolScheduleToolsExpanded, setIsSchoolScheduleToolsExpanded] = useState(true);
   const [assignmentClockMs, setAssignmentClockMs] = useState(0);
   const [schoolNeeds, setSchoolNeeds] = useState<SchoolTeachingNeed[]>([]);
@@ -6856,7 +6857,7 @@ export function MettasoulApp() {
     const selectableWeekNeedIds = new Set(selectableWeekNeeds.map((need) => need.id));
     const selectedWeekNeedIds = selectedSchoolNeedIds.filter((id) => selectableWeekNeedIds.has(id));
     const currentSchoolDraftItems = [
-      ...activeAssignmentBatchItems.filter((item) => item.schoolId === assignmentSchoolId),
+      ...activeAssignmentBatchItems.filter((item) => item.schoolId === assignmentSchoolId && item.date >= assignmentWeekStart && item.date <= weekEnd),
       ...draftSchedule.items,
     ];
     const assignmentProgress = getSchoolAssignmentProgress(weekNeeds, currentSchoolDraftItems);
@@ -6877,13 +6878,14 @@ export function MettasoulApp() {
     const canSendCompleteSchoolWeek = assignmentProgress.totalNeedCount > 0 && assignmentProgress.remainingNeedCount === 0 && currentSchoolDraftItems.length > 0 && allDraftsReady && !draftSchedule.items.some((item) => item.teacherIds.length > 0) && draftScheduleConflicts.length === 0 && draftLessonProgressionConflicts.length === 0;
     const batchSchoolCount = new Set(assignmentBatchItems.map((item) => item.schoolId).filter(Boolean)).size;
     const batchTeacherCount = new Set(activeAssignmentBatchItems.flatMap((item) => item.teacherIds)).size;
+    const currentWeekBatchMissingNeeds = assignmentBatchMissingNeeds.filter((need) => need.date >= assignmentWeekStart && need.date <= weekEnd);
     const batchTeacherSelectedNeedIds = new Set([...assignmentBatchItems, ...draftSchedule.items]
       .filter((item) => item.teacherIds.length > 0)
       .flatMap((item) => item.schoolNeedIds ?? []));
-    const batchMissingBySchool = [...new Set(assignmentBatchMissingNeeds.map((need) => need.schoolId))].map((schoolId) => ({
+    const batchMissingBySchool = [...new Set(currentWeekBatchMissingNeeds.map((need) => need.schoolId))].map((schoolId) => ({
       schoolId,
-      count: assignmentBatchMissingNeeds.filter((need) => need.schoolId === schoolId).length,
-      withoutTeacherCount: assignmentBatchMissingNeeds.filter((need) => need.schoolId === schoolId && !batchTeacherSelectedNeedIds.has(need.id)).length,
+      count: currentWeekBatchMissingNeeds.filter((need) => need.schoolId === schoolId).length,
+      withoutTeacherCount: currentWeekBatchMissingNeeds.filter((need) => need.schoolId === schoolId && !batchTeacherSelectedNeedIds.has(need.id)).length,
     }));
     const stagedNeedIds = new Set(assignmentBatchItems.flatMap((item) => item.schoolNeedIds ?? []));
     const draftItemsAwaitingBatch = draftSchedule.items.filter((item) => item.teacherIds.length > 0 && !assignmentBatchItems.some((saved) => saved.id === item.id || (item.schoolNeedIds ?? []).some((id) => stagedNeedIds.has(id))));
@@ -7381,10 +7383,10 @@ export function MettasoulApp() {
         <Panel title="Lịch trường theo tuần" action={assignmentSchoolId ? `${weekNeeds.filter((need) => need.status !== "CANCELLED").length} tiết trong tuần` : "Chọn tuần để tải lịch"}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="rounded-2xl border-2 border-teal-400 bg-teal-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Tuần có ngày
-              <input type="date" value={assignmentWeekStart} onChange={(event) => { setSchoolNeedLoading(Boolean(assignmentSchoolId)); setAssignmentWeekStart(mondayDateKey(event.target.value)); setSelectedSchoolNeedIds([]); setSchoolNeedImport(null); setSemesterPatternImport(null); }} className={`${inputClass} mt-1 w-full`} />
+              <input type="date" value={assignmentWeekStart} onChange={(event) => { if (!event.target.value) return; setSchoolNeedLoading(Boolean(assignmentSchoolId)); setAssignmentWeekStart(mondayDateKey(event.target.value)); setSchoolNeeds([]); setDraftSchedule({ items: assignmentSchoolId ? [] : [createDraftScheduleItem()] }); setIsSchoolNeedListExpanded(false); setIsWeeklyAssignmentListExpanded(false); setSelectedSchoolNeedIds([]); setEditingSchoolNeedId(""); setEditingSchoolNeedDraft(null); setAssignmentPreviewTeacherId("all"); setSchoolNeedImport(null); setSemesterPatternImport(null); }} className={`${inputClass} mt-1 w-full`} />
             </label>
             <label className="rounded-2xl border-2 border-violet-400 bg-violet-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Trường (để xem/giao lịch, không cần khi tải Excel tuần)
-              <select value={assignmentSchoolId} onChange={(event) => { setSchoolNeedLoading(Boolean(event.target.value)); setAssignmentSchoolId(event.target.value); setDraftSchedule({ items: event.target.value ? [] : [createDraftScheduleItem()] }); setSchoolNeeds([]); setSelectedSchoolNeedIds([]); setSchoolNeedImport(null); setSemesterPatternImport(null); }} className={`${inputClass} mt-1 w-full`}>
+              <select value={assignmentSchoolId} onChange={(event) => { setSchoolNeedLoading(Boolean(event.target.value)); setAssignmentSchoolId(event.target.value); setDraftSchedule({ items: event.target.value ? [] : [createDraftScheduleItem()] }); setSchoolNeeds([]); setIsSchoolNeedListExpanded(false); setIsWeeklyAssignmentListExpanded(false); setSelectedSchoolNeedIds([]); setEditingSchoolNeedId(""); setEditingSchoolNeedDraft(null); setAssignmentPreviewTeacherId("all"); setSchoolNeedImport(null); setSemesterPatternImport(null); }} className={`${inputClass} mt-1 w-full`}>
                 <option value="">Chọn trường</option>
                 {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
               </select>
@@ -7521,12 +7523,23 @@ export function MettasoulApp() {
             <span className="rounded-full bg-violet-600 px-3 py-1.5 text-xs font-black text-white">{assignmentBatchItems.length} tiết · {batchSchoolCount} trường · {activeAssignmentBatchItems.length} sẵn sàng xét gửi · {batchTeacherCount} email{assignmentBatchDeferredIds.length ? ` · ${assignmentBatchDeferredIds.length} để sau` : ""}</span>
           </div>
           {batchMissingBySchool.length > 0 ? <div role="alert" className="mt-3 rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
-            <p className="font-black">Trường còn tiết cần giao trong đợt đang soạn:</p>
+            <p className="font-black">Trường còn tiết cần giao trong tuần {formatDate(assignmentWeekStart)}–{formatDate(weekEnd)}:</p>
             <div className="mt-2 space-y-1">{batchMissingBySchool.map(({ schoolId, count, withoutTeacherCount }) => <p key={schoolId} className="font-black motion-safe:animate-pulse motion-reduce:animate-none">{schoolById.get(schoolId)?.name || schoolId}: {withoutTeacherCount === count ? `${count} tiết chưa có giáo viên` : `${count} tiết chưa được giao (${withoutTeacherCount} tiết chưa có giáo viên)`}</p>)}</div>
           </div> : null}
         </section>
         <div className="grid items-start gap-5 xl:grid-cols-[0.9fr_1.35fr]">
           <Panel title="Tạo lịch dạy mới" action="Email xác nhận" className="xl:sticky xl:top-4 xl:max-h-[calc(100dvh-2rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain">
+            {assignmentSchoolId ? <button
+              type="button"
+              aria-expanded={isWeeklyAssignmentListExpanded}
+              aria-controls="assignment-weekly-draft-list"
+              onClick={() => setIsWeeklyAssignmentListExpanded((expanded) => !expanded)}
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-3 text-left text-sm font-black text-cyan-950 transition hover:bg-cyan-100"
+            >
+              <span>{formatDate(assignmentWeekStart)}–{formatDate(weekEnd)} · {schoolNeedLoading ? "Đang tải tiết cần giao…" : `${selectableWeekNeeds.length} tiết chưa giao, ${assignmentProgress.remainingNeedCount} tiết chưa có giáo viên`}</span>
+              <span className="inline-flex shrink-0 items-center gap-1 text-cyan-800">{isWeeklyAssignmentListExpanded ? "Thu gọn" : "Mở tiết tuần này"}<ChevronDown className={`size-4 transition-transform ${isWeeklyAssignmentListExpanded ? "rotate-180" : ""}`} aria-hidden="true" /></span>
+            </button> : null}
+            <div id="assignment-weekly-draft-list" hidden={Boolean(assignmentSchoolId) && !isWeeklyAssignmentListExpanded}>
             <div className="grid gap-4">
               <div className="rounded-2xl border border-cyan-100 bg-cyan-50/55 p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -8053,6 +8066,7 @@ export function MettasoulApp() {
               <p className="text-center text-xs font-semibold text-[var(--muted)]">
                 Chỉ tiết đã đủ bài học, tiết học, giáo viên, lớp và khung giờ mới được thêm vào đợt. Thao tác này chưa gửi email.
               </p>
+            </div>
             </div>
           </Panel>
 
