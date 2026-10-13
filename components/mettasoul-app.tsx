@@ -2024,7 +2024,13 @@ export function MettasoulApp() {
       .flatMap((item) => item.teacherIds.map((teacherId) => draftProgressionSchedule(item, teacherId)));
     return findLessonProgressionConflicts(candidates, schedules, { lookbackMonths: 5 });
   }, [assignmentDraftItems, schedules]);
-  const draftScheduleConflicts = useMemo<DraftScheduleConflict[]>(() => {
+  const selectionLessonProgressionConflicts = useMemo(() => {
+    const candidates = [...assignmentDraftItems, ...draftSchedule.items]
+      .filter((item) => item.date && item.schoolId && item.lessonId && item.lessonPeriods.length > 0)
+      .flatMap((item) => item.teacherIds.map((teacherId) => draftProgressionSchedule(item, teacherId)));
+    return findLessonProgressionConflicts(candidates, schedules, { lookbackMonths: 5 });
+  }, [assignmentDraftItems, draftSchedule.items, schedules]);
+  function findDraftTimeConflicts(previewSchedules: Schedule[]): DraftScheduleConflict[] {
     const conflicts: DraftScheduleConflict[] = [];
     const dedupe = new Set<string>();
     const activeSchedules = schedules.filter((schedule) => schedule.status !== "cancelled");
@@ -2053,7 +2059,7 @@ export function MettasoulApp() {
       return Boolean(leftSlot?.start && leftSlot.end && rightSlot?.start && rightSlot.end && leftSlot.start < rightSlot.end && rightSlot.start < leftSlot.end);
     };
 
-    for (const schedule of draftSchedulePreview) {
+    for (const schedule of previewSchedules) {
       // Rule 4: assistants bypass teacher conflicts
       const isAssistant = assistantTeacherIds.has(schedule.teacherId);
 
@@ -2164,7 +2170,18 @@ export function MettasoulApp() {
     }
 
     return conflicts;
-  }, [draftSchedulePreview, schedules, teachers, appUsers, slotById]);
+  }
+  const { selectionScheduleConflicts, draftScheduleConflicts } = useMemo(() => ({
+    selectionScheduleConflicts: findDraftTimeConflicts([
+      ...draftSchedulePreview,
+      ...currentFormPreview.filter((schedule) => schedule.date && schedule.schoolId && schedule.timeSlotId),
+    ]),
+    draftScheduleConflicts: findDraftTimeConflicts(draftSchedulePreview),
+  }), [currentFormPreview, draftSchedulePreview, schedules, teachers, appUsers, slotById]);
+  const selectionConflictMessages = useMemo(
+    () => Array.from(new Set(selectionScheduleConflicts.map((conflict) => formatDraftConflictLine(conflict, teachers, classes, timeSlots)))),
+    [selectionScheduleConflicts, teachers, classes, timeSlots],
+  );
 
   const roleNotifications = useMemo(
     () =>
@@ -7567,6 +7584,14 @@ export function MettasoulApp() {
                     const rowAvailableStudentAssistants = rowDateStudentAssistants.filter((teacher) =>
                       !selectedSlot || isTeacherAvailableForSlot(teacherAvailability, teacher.id, item.date, selectedSlot),
                     );
+                    const rowConflictMessages = Array.from(new Set(selectionScheduleConflicts
+                      .filter((conflict) => conflict.date === item.date && conflict.timeSlotId === item.timeSlotId && (
+                        conflict.scope === "teacher" ? item.teacherIds.includes(conflict.teacherId) : item.classIds.includes(conflict.classId) || item.classId === conflict.classId
+                      ))
+                      .map((conflict) => formatDraftConflictLine(conflict, teachers, classes, timeSlots))));
+                    const rowProgressionConflict = selectionLessonProgressionConflicts.find((conflict) =>
+                      String(conflict.candidate.id) === `progression-preview-${item.id}`,
+                    );
                     return (
                       <div key={item.id} className="rounded-2xl border-2 bg-white p-3 shadow-sm" style={{ borderColor: cardHasRecentEdit ? "#dc2626" : assignmentCardBorderColors[(item.borderColorIndex ?? index) % assignmentCardBorderColors.length] }}>
                         <div className="mb-2 flex items-center justify-between">
@@ -7950,6 +7975,17 @@ export function MettasoulApp() {
                             <p className="mt-2 rounded-xl border border-violet-100 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700">Không có trợ giảng nào khớp khung giờ đã chọn.</p>
                           ) : null}
                         </div>
+                        {rowConflictMessages.length > 0 ? (
+                          <div role="alert" className="mt-3 rounded-xl border border-rose-300 bg-rose-50 p-3 text-xs font-semibold text-rose-900">
+                            <p className="font-black">Lịch vừa chọn đang bị trùng giờ; có thể đổi giáo viên/khung giờ hoặc để tiết này lại sau.</p>
+                            {rowConflictMessages.slice(0, 3).map((message) => <p key={message} className="mt-1">{message}</p>)}
+                          </div>
+                        ) : null}
+                        {rowProgressionConflict ? (
+                          <p role="alert" className="mt-3 rounded-xl border border-rose-300 bg-rose-50 p-3 text-xs font-semibold text-rose-900">
+                            Giáo viên đã dạy Tiết 1 của bài này tại cùng lớp trong vòng 5 tháng (ngày {String(rowProgressionConflict.existing.date || "")}). Cần đổi giáo viên hoặc bài/tiết trước khi gửi.
+                          </p>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -8006,29 +8042,30 @@ export function MettasoulApp() {
                   </select>
                 </label>
               </div>
-              {draftScheduleConflicts.length > 0 ? (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
+              {selectionConflictMessages.length > 0 ? (
+                <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
                   <p className="text-sm font-black text-rose-800">
-                    Phát hiện {draftScheduleConflicts.length} xung đột, cần xử lý trước khi gửi
+                    Phát hiện {selectionConflictMessages.length} xung đột ngay trong lịch đang chọn hoặc đợt giao
                   </p>
+                  <p className="mt-1 text-xs font-semibold text-rose-800">Có thể tiếp tục sắp xếp hoặc để tiết trùng lại sau. Chỉ các tiết đã thêm vào đợt mới được xét gửi; tiết trùng trong đợt sẽ bị chặn gửi.</p>
                   <div className="mt-2 space-y-2">
-                    {draftScheduleConflicts.slice(0, 8).map((conflict) => (
-                      <div key={conflict.key} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-800">
-                        {formatDraftConflictLine(conflict, teachers, classes, timeSlots)}
+                    {selectionConflictMessages.slice(0, 8).map((message) => (
+                      <div key={message} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-800">
+                        {message}
                       </div>
                     ))}
                   </div>
                 </div>
-              ) : draftLessonProgressionConflicts.length === 0 ? (
+              ) : selectionLessonProgressionConflicts.length === 0 ? (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-bold text-emerald-800">
-                  Không phát hiện xung đột lịch trong đợt giao. Có thể gửi email tổng hợp an toàn.
+                  Không phát hiện xung đột lịch trong lựa chọn hiện tại và đợt giao.
                 </div>
               ) : null}
-              {draftLessonProgressionConflicts.length > 0 ? (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
+              {selectionLessonProgressionConflicts.length > 0 ? (
+                <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
                   <p className="text-sm font-black text-rose-800">Không thể giao lại Tiết 1 cho cùng lớp trong vòng 5 tháng</p>
                   <p className="mt-1 text-xs font-semibold text-rose-800">
-                    Giáo viên đã dạy bài này tại chính lớp, cùng trường ngày {String(draftLessonProgressionConflicts[0].existing.date || "")}.
+                    Giáo viên đã dạy bài này tại chính lớp, cùng trường ngày {String(selectionLessonProgressionConflicts[0].existing.date || "")}.
                   </p>
                 </div>
               ) : null}
@@ -14236,7 +14273,7 @@ function formatDraftConflictLine(
   const reason =
     conflict.source === "existing"
       ? "đã có lịch ở hệ thống"
-      : "bị trùng trong danh sách chuẩn bị gửi";
+      : "bị trùng với lịch đang chọn hoặc đã thêm vào đợt";
   return `${conflict.date} · ${slotLabel} · ${target} ${reason}`;
 }
 

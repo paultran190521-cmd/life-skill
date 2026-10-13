@@ -17,6 +17,14 @@ assert.match(source, /const draftSchedulePreview = useMemo\(\s*\(\) => previewSc
 assert.match(source, /Đang chọn bên trái · chưa thêm vào đợt, chưa gửi/);
 assert.match(source, /renderScheduleList\(\{ items: filteredCurrentFormPreview, compact: true \}\)/);
 assert.match(source, /Đã thêm vào đợt · dự kiến gửi email/);
+assert.match(source, /selectionScheduleConflicts: findDraftTimeConflicts\(\[/);
+assert.match(source, /\.\.\.draftSchedulePreview,\s*\.\.\.currentFormPreview\.filter/);
+assert.match(source, /draftScheduleConflicts: findDraftTimeConflicts\(draftSchedulePreview\)/);
+assert.match(source, /selectionLessonProgressionConflicts = useMemo/);
+assert.match(source, /rowConflictMessages\.length > 0/);
+assert.match(source, /role="alert" className="mt-3 rounded-xl border border-rose-300 bg-rose-50/);
+assert.match(source, /selectionConflictMessages\.length > 0/);
+assert.match(source, /disabled=\{isBusy \|\| activeAssignmentBatchItems\.length === 0 \|\| draftScheduleConflicts\.length > 0 \|\| draftLessonProgressionConflicts\.length > 0\}/);
 assert.match(source, /assignmentBatchMissingNeeds\.filter\(\(need\) => need\.schoolId === schoolId\)\.length/);
 assert.match(source, /Đưa về sửa/);
 assert.match(source, /Để sau/);
