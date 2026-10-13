@@ -917,6 +917,7 @@ export function MettasoulApp() {
   const [workloadDateFrom, setWorkloadDateFrom] = useState(() => `${currentMonthKey()}-01`);
   const [workloadDateTo, setWorkloadDateTo] = useState(() => addDaysToDateKey(`${addMonths(currentMonthKey(), 1)}-01`, -1));
   const [assignmentSchoolId, setAssignmentSchoolId] = useState("");
+  const [isSchoolNeedListExpanded, setIsSchoolNeedListExpanded] = useState(true);
   const [assignmentClockMs, setAssignmentClockMs] = useState(0);
   const [schoolNeeds, setSchoolNeeds] = useState<SchoolTeachingNeed[]>([]);
   const [selectedSchoolNeedIds, setSelectedSchoolNeedIds] = useState<string[]>([]);
@@ -7438,6 +7439,21 @@ export function MettasoulApp() {
             const editedCount = dayNeeds.filter((need) => assignmentClockMs > 0 && isSchoolNeedEditHighlighted(need, assignmentClockMs)).length;
             return <span key={date} className="rounded-2xl bg-cyan-50 px-4 py-2 text-sm font-bold text-cyan-900 sm:text-base">{formatDate(date)} · {new Set(dayNeeds.map((need) => need.classId)).size} lớp · {dayNeeds.length} tiết · {dayNeeds.filter((need) => need.status === "OPEN").length} cần giao{editedCount ? <strong className="ml-2 text-rose-700">· {editedCount} lịch vừa sửa</strong> : null}</span>;
           })}</div> : null}
+          {assignmentSchoolId ? <section aria-label="Danh sách tiết của trường trong tuần" className="mt-4 rounded-2xl border border-cyan-200 bg-cyan-50/30 p-3">
+            <button
+              type="button"
+              aria-expanded={isSchoolNeedListExpanded}
+              aria-controls="assignment-school-needs-list"
+              onClick={() => setIsSchoolNeedListExpanded((expanded) => !expanded)}
+              className="flex w-full items-center justify-between gap-3 rounded-xl px-2 py-1 text-left text-sm font-black text-cyan-950 transition hover:bg-cyan-50"
+            >
+              <span>Danh sách tiết của trường · {weekNeeds.length} tiết ({selectableWeekNeeds.length} cần giao)</span>
+              <span className="inline-flex shrink-0 items-center gap-1 text-cyan-800">
+                {isSchoolNeedListExpanded ? "Thu gọn" : "Mở danh sách"}
+                <ChevronDown className={`size-4 transition-transform ${isSchoolNeedListExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
+              </span>
+            </button>
+            <div id="assignment-school-needs-list" hidden={!isSchoolNeedListExpanded}>
           {selectableWeekNeeds.length > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
             <button type="button" disabled={Boolean(pendingAction)} onClick={() => setSelectedSchoolNeedIds(selectedWeekNeedIds.length === selectableWeekNeeds.length ? [] : selectableWeekNeeds.map((need) => need.id))} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-700 disabled:opacity-40">{selectedWeekNeedIds.length === selectableWeekNeeds.length ? "Bỏ chọn tất cả" : `Chọn tất cả ${selectableWeekNeeds.length} tiết chưa giao`}</button>
             <button type="button" disabled={selectedWeekNeedIds.length === 0 || Boolean(pendingAction)} onClick={() => void deleteSelectedSchoolNeeds(selectedWeekNeedIds)} className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 font-bold text-rose-700 disabled:cursor-not-allowed disabled:opacity-40">Xóa {selectedWeekNeedIds.length} tiết đã chọn</button>
@@ -7466,6 +7482,8 @@ export function MettasoulApp() {
             </div>
             <div className="mt-3 flex gap-2"><button type="button" onClick={() => void saveSchoolNeedEdit()} className="rounded-lg bg-cyan-700 px-3 py-2 text-xs font-black text-white">Lưu thay đổi</button><button type="button" onClick={() => { setEditingSchoolNeedId(""); setEditingSchoolNeedDraft(null); }} className="rounded-lg border border-cyan-300 px-3 py-2 text-xs font-bold">Đóng</button></div>
           </div> : null}
+            </div>
+          </section> : null}
         </Panel>
         <section aria-label="Đợt giao lịch đang soạn" className="rounded-2xl border-2 border-violet-200 bg-violet-50/60 p-3 shadow-sm sm:p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
