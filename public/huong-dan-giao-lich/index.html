@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Quy trình tải và giao lịch | METTASOUL</title>
+  <meta name="description" content="Hướng dẫn người phụ trách nhập lịch nền, cập nhật lịch tuần và giao lịch giáo viên trên METTASOUL." />
+  <style>
+    :root { font-family: Arial, Helvetica, sans-serif; color: #14394b; background: #f2f8fa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; line-height: 1.6; }
+    a { color: #056c81; }
+    .wrap { max-width: 1080px; margin: auto; padding: 24px 18px 64px; }
+    header { padding: 34px; border-radius: 24px; background: linear-gradient(125deg, #003f50, #087d8b); color: white; }
+    header p { max-width: 730px; margin-bottom: 0; }
+    h1 { margin: 0; font-size: clamp(1.9rem, 4vw, 3rem); line-height: 1.2; }
+    h2 { margin: 0 0 14px; font-size: 1.45rem; }
+    h3 { margin: 20px 0 8px; font-size: 1.08rem; }
+    p { margin: 8px 0; }
+    nav { display: flex; flex-wrap: wrap; gap: 9px; margin: 18px 0; }
+    nav a { padding: 7px 12px; border: 1px solid #b9dce4; border-radius: 999px; background: white; font-weight: 700; text-decoration: none; }
+    section { margin-top: 18px; padding: 26px; border: 1px solid #d1e5eb; border-radius: 20px; background: white; box-shadow: 0 8px 30px #12495a0b; }
+    .lead { font-size: 1.08rem; font-weight: 700; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .card { padding: 17px; border: 1px solid #cde5e9; border-radius: 15px; background: #f6fcfd; }
+    .card.violet { border-color: #d9c7fa; background: #faf7ff; }
+    .card h3 { margin-top: 0; }
+    .callout { margin: 16px 0; padding: 14px 17px; border-left: 5px solid #de9e16; border-radius: 10px; background: #fff8e5; }
+    .callout.danger { border-left-color: #d84a58; background: #fff1f2; }
+    .callout.good { border-left-color: #159470; background: #eafaf3; }
+    ol, ul { padding-left: 1.5rem; }
+    li { padding-left: 2px; margin: 7px 0; }
+    .step-list { counter-reset: step; list-style: none; padding: 0; }
+    .step-list > li { position: relative; margin: 0 0 15px; padding: 0 0 0 47px; counter-increment: step; }
+    .step-list > li::before { content: counter(step); position: absolute; left: 0; top: 1px; display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; background: #087d8b; color: white; font-weight: 800; }
+    .tag { display: inline-block; padding: 1px 8px; border-radius: 7px; background: #e8f7fa; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px; border-bottom: 1px solid #dbe9ed; text-align: left; vertical-align: top; }
+    th { background: #eef8fa; }
+    .table-wrap { overflow-x: auto; }
+    .checklist { list-style: none; padding: 0; }
+    .checklist li { padding: 7px 0 7px 30px; position: relative; }
+    .checklist li::before { content: "□"; position: absolute; left: 0; font-size: 1.2rem; line-height: 1.3; }
+    footer { padding: 22px 4px; color: #526f7b; font-size: .92rem; }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } section, header { padding: 21px; } }
+    @media print { :root { background: white; } .wrap { max-width: none; padding: 0; } header { color: #14394b; background: white; padding: 0 0 15px; } nav { display: none; } section { box-shadow: none; break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <h1>Quy trình tải và giao lịch</h1>
+      <p>Hướng dẫn dành cho người phụ trách lịch trường trên CRM METTASOUL. Làm theo hai giai đoạn riêng: <strong>đưa lịch trường lên hệ thống</strong>, sau đó <strong>xếp giáo viên và gửi đợt giao</strong>.</p>
+    </header>
+
+    <nav aria-label="Đi nhanh đến nội dung">
+      <a href="#phan-biet">Chọn loại lịch</a><a href="#nen">Tải lịch nền</a><a href="#tuan">Cập nhật tuần</a><a href="#giao">Giao giáo viên</a><a href="#kiem-tra">Kiểm tra sau gửi</a><a href="#luu-y">Lưu ý quan trọng</a>
+    </nav>
+
+    <section id="phan-biet">
+      <h2>1. Trước tiên, chọn đúng loại lịch</h2>
+      <div class="grid">
+        <div class="card violet">
+          <h3>Lịch nền cố định</h3>
+          <p>Dùng cho lịch ổn định, lặp lại nhiều tuần hoặc nhiều tháng. Hiện quy trình một file Excel GSheet áp dụng cho <strong>Nam Sài Gòn, Chi Lăng, Tân Túc và Dương Văn Thì</strong>.</p>
+          <p>Chỉ tải lại khi cần sửa quy tắc lặp hoặc khoảng hiệu lực. Hệ thống sẽ tạo lịch cho các tuần trong khoảng sau khi xác nhận.</p>
+        </div>
+        <div class="card">
+          <h3>Lịch tuần cập nhật</h3>
+          <p>Dùng khi một hoặc nhiều trường thay đổi lịch của <strong>một tuần cụ thể</strong>. Một file Excel có thể chứa nhiều trường; không cần tải từng trường một.</p>
+          <p>Lịch tuần được ưu tiên ở đúng tuần đã chọn; các tuần khác và trường không có trong file không bị thay đổi.</p>
+        </div>
+      </div>
+      <div class="callout"><strong>Nhớ phân biệt:</strong> tải lịch trường lên CRM chỉ tạo hoặc cập nhật nhu cầu tiết dạy. Thao tác này <strong>chưa giao giáo viên và chưa gửi email</strong>. Không dùng quy trình duyệt V1/V2 của GSheet cho luồng này.</div>
+    </section>
+
+    <section id="nen">
+      <h2>2. Tải hoặc sửa lịch nền cố định</h2>
+      <ol class="step-list">
+        <li>Đăng nhập tài khoản được phép giao lịch, mở mục <strong>Giao lịch</strong> → <strong>Lịch trường theo tuần</strong>. Nếu khối công cụ đang gọn, bấm <strong>Kiểm tra nhân lực và tải Excel lịch trường</strong> để mở.</li>
+        <li>Chọn <strong>Lịch nền cố định</strong>. Điền chính xác <strong>Áp dụng từ ngày</strong> và <strong>Đến ngày</strong> theo đợt lịch cần nhập; không mặc định dùng lại mốc cũ khi mở một học kỳ mới.</li>
+        <li>Chuẩn bị file <strong>.xlsx</strong> đúng mẫu Excel GSheet của bốn trường cố định, giữ các dòng lịch của những trường đang có lịch. Nếu sửa lịch nền đã lưu của <em>một trường</em>, chọn trường đó rồi bấm <strong>Tải Excel nền đang có để sửa</strong>; giữ nguyên cột mã quy tắc khi sửa dòng cũ.</li>
+        <li>Bấm <strong>Chọn Excel lịch nền</strong>. Hệ thống hiển thị bản đối chiếu: quy tắc mới/sửa, số tiết dự kiến tạo/cập nhật/hủy, lịch đã giao cần xem lại và các tuần có lịch riêng được giữ nguyên.</li>
+        <li>Chỉ khi danh sách đối chiếu đúng với file nguồn và khoảng hiệu lực mới bấm <strong>Xác nhận lưu lịch nền học kỳ</strong>. Chờ thông báo lưu thành công, sau đó chọn tuần và trường để kiểm tra số tiết.</li>
+      </ol>
+      <div class="callout danger"><strong>Cẩn trọng khi tải lại lịch nền:</strong> file là ảnh chụp đầy đủ của phạm vi cập nhật. Dòng quy tắc cũ vắng trong file có thể bị thay thế; tiết đã giao bị thay đổi sẽ được đánh dấu cần xem lại. Hãy kiểm tra kỹ số tiết “hủy” và “đã giao cần xem lại”, đặc biệt với ngày đã dạy. Nếu không chủ định sửa cả lịch lặp, hãy dùng <strong>Lịch tuần cập nhật</strong>.</div>
+    </section>
+
+    <section id="tuan">
+      <h2>3. Cập nhật lịch của một tuần</h2>
+      <ol class="step-list">
+        <li>Ở ô <strong>Tuần có ngày</strong>, chọn một ngày bất kỳ thuộc tuần cần cập nhật. Đọc dòng “Đang xem …–…” để xác nhận đúng tuần.</li>
+        <li>Chọn <strong>Lịch tuần cập nhật</strong>. <strong>Không cần chọn trường</strong> trước khi tải Excel. Nếu muốn sửa từ dữ liệu hiện có, bấm <strong>Tải Excel tuần của các trường để sửa</strong>.</li>
+        <li>Chuẩn bị một file <strong>.xlsx</strong> chứa <strong>toàn bộ tiết của tuần đó đối với từng trường có trong file</strong>, kể cả tiết của ngày đã dạy nếu trường ấy đã có lịch trong tuần. Có thể để nhiều trường trong cùng file.</li>
+        <li>Bấm <strong>Chọn Excel lịch tuần</strong>. CRM chỉ lấy những dòng thuộc tuần đã chọn; dòng thuộc tuần khác trong file không được nhập.</li>
+        <li>Đọc kỹ bảng đối chiếu <strong>mới · sửa · hủy · không đổi · lịch đã giao cần xem lại</strong> và danh sách trường trong file. Nếu sai, sửa file rồi chọn lại; nếu đúng, bấm <strong>Xác nhận cập nhật các trường trong tuần</strong>.</li>
+        <li>Chọn lần lượt tuần và trường để xem số tiết sau cập nhật. Danh sách tiết và số “cần giao” chỉ thuộc trường/tuần đang mở.</li>
+      </ol>
+      <div class="callout danger"><strong>Quy tắc quan trọng:</strong> với mỗi trường xuất hiện trong file tuần, tiết cũ của chính tuần đó mà <strong>thiếu khỏi file</strong> sẽ được đối chiếu là <strong>hủy</strong>. Ví dụ trường A có 10 tiết trên CRM, file tuần chỉ còn 9 tiết thì 1 tiết vắng mặt sẽ được đề xuất hủy. Trường B không có trong file và các tuần khác vẫn giữ nguyên. Đừng dùng file chỉ chứa vài dòng thay đổi.</div>
+    </section>
+
+    <section id="giao">
+      <h2>4. Xếp giáo viên và gửi đợt giao</h2>
+      <ol class="step-list">
+        <li>Chọn <strong>Tuần có ngày</strong> và <strong>Trường</strong> để xem các tiết cần giao của đúng trường/tuần. Có thể mở/thu gọn <strong>Danh sách tiết của trường</strong> và <strong>Danh sách tiết dạy cần giao</strong>.</li>
+        <li>Trong cột <strong>Tạo lịch dạy mới</strong>, hoàn chỉnh từng tiết: ngày, trường, lớp, khung giờ, môi trường dạy, <strong>bài học</strong>, <strong>tiết học</strong> và giáo viên. Chú ý dòng cảnh báo dưới ô bài: đỏ là chưa chọn, xanh là đã chọn.</li>
+        <li>Khi chọn giáo viên, xem ngay cảnh báo xung đột trong khu vực <strong>Xem trước đợt giao</strong>. Hệ thống đối chiếu cả lịch đã có và các tiết đang chuẩn bị giao, kể cả ở trường khác cùng giờ. Nếu có trùng, đổi giáo viên, đổi giờ hợp lệ hoặc để tiết đó giao sau; không cố gửi khi còn cảnh báo.</li>
+        <li>Bấm <strong>Thêm vào đợt giao</strong> cho các tiết đã đủ thông tin. Chuyển sang trường khác trong cùng tuần, tiếp tục chọn giáo viên và thêm vào <strong>cùng một đợt</strong>. Danh sách đã thêm hiện ở cột bên phải; có thể bấm <strong>Trả về để chọn lại giáo viên</strong> hoặc <strong>Để sau</strong>.</li>
+        <li>Đọc số tiết còn thiếu theo từng trường và danh sách dự kiến gửi. Không cần đợi xếp đủ toàn bộ các trường: có thể gửi phần đã xếp được, còn tiết thiếu tiếp tục giao ở đợt sau.</li>
+        <li>Chỉ khi không còn xung đột và đúng danh sách người nhận, bấm <strong>Gửi đợt giao &amp; email</strong>. Đây mới là thao tác lưu lịch đã giao và gửi email tổng hợp cho từng giáo viên trong đợt.</li>
+      </ol>
+      <div class="callout"><strong>Đợt đang soạn chưa được tự lưu qua lần tải lại trang.</strong> Đừng đóng hoặc làm mới trình duyệt khi chưa gửi xong; nếu phải dừng, hãy hoàn thành một đợt nhỏ trước. Nút <strong>Thêm vào đợt giao</strong> chưa gửi email.</div>
+    </section>
+
+    <section id="kiem-tra">
+      <h2>5. Kiểm tra sau mỗi lần thao tác</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Sau thao tác</th><th>Cần thấy gì</th><th>Nếu chưa đúng</th></tr></thead>
+        <tbody>
+          <tr><td>Tải lịch nền</td><td>Thông báo lưu thành công; tuần/trường tương ứng có số tiết phù hợp; tuần có lịch cập nhật riêng vẫn được giữ.</td><td>Kiểm tra lại khoảng hiệu lực, file nguồn và bản đối chiếu. Không tải lại liên tục khi chưa rõ tác động.</td></tr>
+          <tr><td>Tải lịch tuần</td><td>Số “mới/sửa/hủy” đúng dự kiến; trường có trong file được cập nhật, trường ngoài file không đổi.</td><td>Kiểm tra đã chọn đúng tuần và file chứa đủ tiết của mỗi trường.</td></tr>
+          <tr><td>Thêm vào đợt giao</td><td>Tiết xuất hiện trong danh sách ở cột phải; số tiết/giáo viên dự kiến gửi được cập nhật.</td><td>Kiểm tra bài học, tiết học, giáo viên, lớp và giờ còn thiếu; đọc cảnh báo trùng.</td></tr>
+          <tr><td>Gửi đợt giao</td><td>Lịch đã giao xuất hiện trong danh sách; số tiết còn cần giao giảm; kiểm tra giáo viên nhận đúng email tổng hợp.</td><td>Nếu có lỗi hoặc chưa xác nhận được email, không bấm gửi lặp ngay; ghi lại thời điểm, trường và thông báo lỗi để đối chiếu.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="luu-y">
+      <h2>Checklist trước khi bấm xác nhận hoặc gửi</h2>
+      <ul class="checklist">
+        <li>Đúng chế độ: lịch nền cố định hay lịch tuần cập nhật.</li>
+        <li>Đúng tuần hoặc đúng khoảng hiệu lực; đúng file <strong>.xlsx</strong> và các trường cần cập nhật.</li>
+        <li>Đã đọc số tiết mới, sửa, hủy và lịch đã giao cần xem lại; không có dòng hủy ngoài ý muốn.</li>
+        <li>Tiết định giao có đủ bài học, tiết học, giáo viên, lớp và giờ; không còn xung đột.</li>
+        <li>Đã xem danh sách bên phải và số tiết còn thiếu của từng trường trước khi gửi email.</li>
+      </ul>
+      <p class="lead">Công thức nhớ nhanh: <span class="tag">Tải lịch → Đối chiếu → Xác nhận nhập → Xếp giáo viên → Thêm vào đợt → Kiểm tra xung đột → Gửi &amp; kiểm tra email</span>.</p>
+    </section>
+    <footer>METTASOUL · Tài liệu thao tác cho người phụ trách lịch trường · Cập nhật theo giao diện ngày 14/10/2026.</footer>
+  </main>
+</body>
+</html>
