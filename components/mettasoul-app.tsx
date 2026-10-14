@@ -7065,7 +7065,7 @@ export function MettasoulApp() {
       try {
         if (includeCurrent && (!assignmentSchoolId || !baselineEffectiveFrom || !baselineEffectiveTo)) throw new Error("Hãy chọn trường và khoảng hiệu lực của lịch nền cần sửa trước khi tải Excel.");
         const XLSX = await import("xlsx-js-style");
-        const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula } = await import("@/lib/school-need-template");
+        const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula, schoolPatternWeekdayLabel } = await import("@/lib/school-need-template");
         const catalog = buildSchoolNeedTemplateCatalog(schools, classes, activeTimeSlots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot);
         if (catalog.schools.length === 0 || catalog.classes.length === 0 || catalog.periods.length === 0) throw new Error("Cần có trường, lớp và khung giờ đang hoạt động trước khi tải mẫu.");
         let patterns: SchoolSchedulePattern[] = [];
@@ -7074,10 +7074,9 @@ export function MettasoulApp() {
             .filter((pattern) => pattern.effectiveFrom === baselineEffectiveFrom && pattern.effectiveTo === baselineEffectiveTo);
           if (!patterns.length) throw new Error("Không có lịch nền đúng khoảng hiệu lực đã chọn. Hãy kiểm tra ngày bắt đầu và kết thúc.");
         }
-        const weekdayLabel = (weekday: number) => weekday === 7 ? "Chủ nhật" : `Thứ ${weekday + 1}`;
         const rows = patterns.map((pattern) => {
           const classRoom = classById.get(pattern.classId);
-          return [pattern.id, pattern.effectiveFrom, schoolById.get(pattern.schoolId)?.name || "", classRoom?.grade || "", classRoom?.name || "", pattern.start < "12:00" ? "Sáng" : "Chiều", pattern.periodLabel, pattern.start, pattern.end, teachingEnvironmentOptions.find((option) => option.value === pattern.teachingEnvironment)?.label || "Trong lớp", pattern.sourceNote || "", pattern.effectiveTo, weekdayLabel(pattern.weekday)];
+          return [pattern.id, pattern.effectiveFrom, schoolById.get(pattern.schoolId)?.name || "", classRoom?.grade || "", classRoom?.name || "", pattern.start < "12:00" ? "Sáng" : "Chiều", pattern.periodLabel, pattern.start, pattern.end, teachingEnvironmentOptions.find((option) => option.value === pattern.teachingEnvironment)?.label || "Trong lớp", pattern.sourceNote || "", pattern.effectiveTo, schoolPatternWeekdayLabel(pattern.weekday)];
         });
         const headers = ["Mã quy tắc (giữ khi sửa)", "Từ ngày", "Trường", "Khối", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Nguồn/Ghi chú", "Đến ngày", "Thứ"];
         const workbook = XLSX.utils.book_new();

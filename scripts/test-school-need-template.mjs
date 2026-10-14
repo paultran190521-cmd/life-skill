@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { strFromU8, unzipSync } from "fflate";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import XLSX from "xlsx-js-style";
-import { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula } from "../lib/school-need-template.ts";
+import { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula, schoolPatternWeekdayLabel } from "../lib/school-need-template.ts";
 
 const schools = [{ id: "s1", name: "Trường A" }, { id: "s2", name: "Trường B" }];
 const classes = [
@@ -21,9 +21,12 @@ assert.deepEqual(catalog.grades.map((item) => item.grade), ["Khối 1", "Khối 
 assert.equal(catalog.periods.length, 3);
 assert.equal(catalog.names.find((name) => name.name === "CLASSES_1_2")?.column, "G");
 assert.match(schoolNeedTimeFormula(2, "M", catalog), /IF\(OR\(\$C2=""/);
+assert.equal(schoolPatternWeekdayLabel("1"), "Thứ 2");
+assert.equal(schoolPatternWeekdayLabel(7), "Chủ nhật");
+assert.throws(() => schoolPatternWeekdayLabel("11"), /không hợp lệ/);
 
 const workbook = XLSX.utils.book_new();
-XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["ID", "Ngày", "Trường", "Khối", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Ghi chú"]]), "Lich truong");
+XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["ID", "Ngày", "Trường", "Khối", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Ghi chú"], ["p1", "2026-10-12", "Trường A", "Khối 1", "1A", "Sáng", "Tiết 1", "07:00", "07:45", "Trong lớp", ""]]), "Lich truong");
 XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(schoolNeedCatalogRows(catalog)), "Danh muc");
 const bytes = addSchoolNeedTemplateControls(new Uint8Array(XLSX.write(workbook, { bookType: "xlsx", type: "array" })), catalog);
 const files = unzipSync(bytes);
@@ -33,4 +36,14 @@ assert.match(sheetXml, /<dataValidations count="7">/);
 assert.match(sheetXml, /sqref="E2:E1001"/);
 assert.match(workbookXml, /<definedName name="CLASSES_1_2">/);
 assert.equal(XLSX.read(bytes, { type: "array" }).SheetNames.length, 2);
+
+// The CRM writer emits ignoredErrors. Excel removes sheet1.xml on repair when
+// dataValidations are appended after it, leaving the user's exported schedule blank.
+const sourceFiles = unzipSync(new Uint8Array(XLSX.write(workbook, { bookType: "xlsx", type: "array" })));
+const sourceSheet = strFromU8(sourceFiles["xl/worksheets/sheet1.xml"]);
+sourceFiles["xl/worksheets/sheet1.xml"] = strToU8(sourceSheet.replace(/<\/worksheet>/, '<ignoredErrors><ignoredError numberStoredAsText="1" sqref="A2:A1001"/></ignoredErrors></worksheet>'));
+const repairedBytes = addSchoolNeedTemplateControls(zipSync(sourceFiles), catalog);
+const repairedSheetXml = strFromU8(unzipSync(repairedBytes)["xl/worksheets/sheet1.xml"]);
+assert.ok(repairedSheetXml.indexOf("<dataValidations") < repairedSheetXml.indexOf("<ignoredErrors"));
+assert.equal(XLSX.utils.sheet_to_json(XLSX.read(repairedBytes, { type: "array" }).Sheets["Lich truong"]).length, 1);
 console.log("School need template catalog and Excel controls passed.");

@@ -88,6 +88,12 @@ export function schoolNeedTimeFormula(row: number, column: "M" | "N", catalog: S
   return `IF(OR($C${row}="",$F${row}="",$G${row}=""),"",IFERROR(INDEX('Danh muc'!$${column}$2:$${column}$${last},MATCH($C${row}&"|"&$F${row}&"|"&$G${row},'Danh muc'!$L$2:$L$${last},0)),""))`;
 }
 
+export function schoolPatternWeekdayLabel(value: number | string) {
+  const weekday = Number(value);
+  if (!Number.isInteger(weekday) || weekday < 1 || weekday > 7) throw new Error("Thứ trong lịch nền không hợp lệ.");
+  return weekday === 7 ? "Chủ nhật" : `Thứ ${weekday + 1}`;
+}
+
 function xmlEscape(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
@@ -117,7 +123,8 @@ export function addSchoolNeedTemplateControls(bytes: Uint8Array, catalog: School
     list("J2:J1001", "ENVIRONMENTS", "Hãy chọn môi trường dạy."),
   ];
   const validationXml = `<${sheetPrefix}dataValidations count="${validations.length}">${validations.join("")}</${sheetPrefix}dataValidations>`;
-  const insertion = /<(?:\w+:)?(?:hyperlinks|printOptions|pageMargins|pageSetup|headerFooter|drawing|legacyDrawing|extLst)\b/;
+  // dataValidations must precede ignoredErrors and all subsequent worksheet elements.
+  const insertion = /<(?:\w+:)?(?:ignoredErrors|hyperlinks|printOptions|pageMargins|pageSetup|headerFooter|drawing|legacyDrawing|extLst)\b/;
   const match = insertion.exec(sheetXml);
   const closingSheet = `</${sheetPrefix}worksheet>`;
   const nextSheet = match ? sheetXml.slice(0, match.index) + validationXml + sheetXml.slice(match.index) : sheetXml.replace(closingSheet, `${validationXml}${closingSheet}`);
