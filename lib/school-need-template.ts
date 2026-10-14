@@ -94,6 +94,18 @@ export function schoolPatternWeekdayLabel(value: number | string) {
   return weekday === 7 ? "Chủ nhật" : `Thứ ${weekday + 1}`;
 }
 
+/** The statistics tab reads the unchanged import columns C (school) and E (class). */
+export function schoolScheduleStatisticsFormulas(sheetName: string, summaryRow: number, lastDataRow: number) {
+  const sheet = `'${sheetName.replace(/'/g, "''")}'`;
+  const schools = `${sheet}!$C$2:$C$${lastDataRow}`;
+  const classes = `${sheet}!$E$2:$E$${lastDataRow}`;
+  const schoolCell = `$A${summaryRow}`;
+  return {
+    classes: `SUMPRODUCT((${schools}=${schoolCell})*(${classes}<>"")/COUNTIFS(${schools},${schools},${classes},${classes}))`,
+    lessons: `COUNTIFS(${schools},${schoolCell},${classes},"<>")`,
+  };
+}
+
 function xmlEscape(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
@@ -105,13 +117,19 @@ export function addSchoolNeedTemplateControls(bytes: Uint8Array, catalog: School
   const sheetPath = "xl/worksheets/sheet1.xml";
   const workbookXml = strFromU8(files[workbookPath]);
   const sheetXml = strFromU8(files[sheetPath]);
-  if (!workbookXml || !sheetXml || /<(?:\w+:)?definedNames\b/.test(workbookXml) || /<(?:\w+:)?dataValidations\b/.test(sheetXml)) throw new Error("Không thể thêm danh sách chọn vào file Excel.");
+  if (!workbookXml || !sheetXml || /<(?:\w+:)?dataValidations\b/.test(sheetXml)) throw new Error("Không thể thêm danh sách chọn vào file Excel.");
   const workbookPrefix = /<([\w]+:)?workbook\b/.exec(workbookXml)?.[1] || "";
   const sheetPrefix = /<([\w]+:)?worksheet\b/.exec(sheetXml)?.[1] || "";
   const definedNames = catalog.names.map((range) => `<${workbookPrefix}definedName name="${range.name}">'Danh muc'!$${range.column}$${range.first}:$${range.column}$${range.last}</${workbookPrefix}definedName>`).join("");
   const closingWorkbook = `</${workbookPrefix}workbook>`;
   const calcSettings = /<(?:\w+:)?calcPr\b/.test(workbookXml) ? "" : `<${workbookPrefix}calcPr calcId="0" fullCalcOnLoad="1"/>`;
-  const nextWorkbook = workbookXml.replace(closingWorkbook, `<${workbookPrefix}definedNames>${definedNames}</${workbookPrefix}definedNames>${calcSettings}${closingWorkbook}`);
+  // Excel filters already create _xlnm._FilterDatabase in definedNames.
+  // Keep that internal name and add the CRM dropdown names beside it.
+  const existingNames = /<((?:\w+:)?)definedNames\b/.exec(workbookXml);
+  const namesXml = existingNames
+    ? workbookXml.replace(`</${existingNames[1]}definedNames>`, `${definedNames}</${existingNames[1]}definedNames>`)
+    : workbookXml.replace(closingWorkbook, `<${workbookPrefix}definedNames>${definedNames}</${workbookPrefix}definedNames>${closingWorkbook}`);
+  const nextWorkbook = calcSettings ? namesXml.replace(closingWorkbook, `${calcSettings}${closingWorkbook}`) : namesXml;
   const list = (sqref: string, formula: string, message: string) => `<${sheetPrefix}dataValidation type="list" allowBlank="1" showErrorMessage="1" errorStyle="stop" errorTitle="Chọn từ danh sách" error="${xmlEscape(message)}" sqref="${sqref}"><${sheetPrefix}formula1>${xmlEscape(formula)}</${sheetPrefix}formula1></${sheetPrefix}dataValidation>`;
   const validations = [
     `<${sheetPrefix}dataValidation type="date" operator="between" allowBlank="1" showErrorMessage="1" errorStyle="stop" errorTitle="Ngày không hợp lệ" error="Hãy nhập một ngày hợp lệ." sqref="B2:B1001"><${sheetPrefix}formula1>DATE(2020,1,1)</${sheetPrefix}formula1><${sheetPrefix}formula2>DATE(2100,12,31)</${sheetPrefix}formula2></${sheetPrefix}dataValidation>`,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import XLSX from "xlsx-js-style";
-import { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula, schoolPatternWeekdayLabel } from "../lib/school-need-template.ts";
+import { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula, schoolPatternWeekdayLabel, schoolScheduleStatisticsFormulas } from "../lib/school-need-template.ts";
 
 const schools = [{ id: "s1", name: "Trường A" }, { id: "s2", name: "Trường B" }];
 const classes = [
@@ -24,9 +24,22 @@ assert.match(schoolNeedTimeFormula(2, "M", catalog), /IF\(OR\(\$C2=""/);
 assert.equal(schoolPatternWeekdayLabel("1"), "Thứ 2");
 assert.equal(schoolPatternWeekdayLabel(7), "Chủ nhật");
 assert.throws(() => schoolPatternWeekdayLabel("11"), /không hợp lệ/);
+const weeklyFormulas = schoolScheduleStatisticsFormulas("Lich truong", 4, 1001);
+assert.match(weeklyFormulas.classes, /SUMPRODUCT\(/);
+assert.match(weeklyFormulas.classes, /\$A4/);
+assert.match(weeklyFormulas.lessons, /COUNTIFS\('Lich truong'!\$C\$2:\$C\$1001,\$A4/);
+assert.match(schoolScheduleStatisticsFormulas("Lich nen hoc ky", 4, 1001).lessons, /'Lich nen hoc ky'!/);
 
 const workbook = XLSX.utils.book_new();
-XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["ID", "Ngày", "Trường", "Khối", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Ghi chú"], ["p1", "2026-10-12", "Trường A", "Khối 1", "1A", "Sáng", "Tiết 1", "07:00", "07:45", "Trong lớp", ""]]), "Lich truong");
+const scheduleSheet = XLSX.utils.aoa_to_sheet([["ID", "Ngày", "Trường", "Khối", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Ghi chú"], ["p1", "2026-10-12", "Trường A", "Khối 1", "1A", "Sáng", "Tiết 1", "07:00", "07:45", "Trong lớp", ""], ["p2", "2026-10-12", "Trường B", "Khối 1", "1B", "Chiều", "Tiết 1C", "13:00", "13:45", "Trong lớp", ""]]);
+scheduleSheet["!autofilter"] = { ref: "A1:K1001" };
+scheduleSheet["!rows"] = [{}, {}, { hidden: true }];
+XLSX.utils.book_append_sheet(workbook, scheduleSheet, "Lich truong");
+const summarySheet = XLSX.utils.aoa_to_sheet([["THỐNG KÊ LỊCH TUẦN"], ["Lọc trường"], ["Trường", "Số lớp", "Số tiết"], ["Trường A", "", ""]]);
+summarySheet.B4 = { t: "n", f: weeklyFormulas.classes };
+summarySheet.C4 = { t: "n", f: weeklyFormulas.lessons };
+summarySheet["!autofilter"] = { ref: "A3:C4" };
+XLSX.utils.book_append_sheet(workbook, summarySheet, "Thong ke");
 XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(schoolNeedCatalogRows(catalog)), "Danh muc");
 const bytes = addSchoolNeedTemplateControls(new Uint8Array(XLSX.write(workbook, { bookType: "xlsx", type: "array" })), catalog);
 const files = unzipSync(bytes);
@@ -34,8 +47,14 @@ const sheetXml = strFromU8(files["xl/worksheets/sheet1.xml"]);
 const workbookXml = strFromU8(files["xl/workbook.xml"]);
 assert.match(sheetXml, /<dataValidations count="7">/);
 assert.match(sheetXml, /sqref="E2:E1001"/);
+assert.match(sheetXml, /<autoFilter ref="A1:K1001"\/>/);
 assert.match(workbookXml, /<definedName name="CLASSES_1_2">/);
-assert.equal(XLSX.read(bytes, { type: "array" }).SheetNames.length, 2);
+assert.match(workbookXml, /<definedName name="_xlnm\._FilterDatabase" localSheetId="0">/);
+assert.match(workbookXml, /<definedName name="_xlnm\._FilterDatabase" localSheetId="1">/);
+assert.equal((workbookXml.match(/<definedNames>/g) || []).length, 1);
+assert.deepEqual(XLSX.read(bytes, { type: "array" }).SheetNames, ["Lich truong", "Thong ke", "Danh muc"]);
+assert.equal(XLSX.utils.sheet_to_json(XLSX.read(bytes, { type: "array" }).Sheets["Lich truong"]).length, 2);
+assert.match(strFromU8(files["xl/worksheets/sheet2.xml"]), /<autoFilter ref="A3:C4"\/>/);
 
 // The CRM writer emits ignoredErrors. Excel removes sheet1.xml on repair when
 // dataValidations are appended after it, leaving the user's exported schedule blank.
@@ -45,5 +64,25 @@ sourceFiles["xl/worksheets/sheet1.xml"] = strToU8(sourceSheet.replace(/<\/worksh
 const repairedBytes = addSchoolNeedTemplateControls(zipSync(sourceFiles), catalog);
 const repairedSheetXml = strFromU8(unzipSync(repairedBytes)["xl/worksheets/sheet1.xml"]);
 assert.ok(repairedSheetXml.indexOf("<dataValidations") < repairedSheetXml.indexOf("<ignoredErrors"));
-assert.equal(XLSX.utils.sheet_to_json(XLSX.read(repairedBytes, { type: "array" }).Sheets["Lich truong"]).length, 1);
+assert.equal(XLSX.utils.sheet_to_json(XLSX.read(repairedBytes, { type: "array" }).Sheets["Lich truong"]).length, 2);
+
+const baseline = XLSX.utils.book_new();
+const baselineSheet = XLSX.utils.aoa_to_sheet([
+  ["Mã quy tắc (giữ khi sửa)", "Từ ngày", "Trường", "Khối", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Nguồn/Ghi chú", "Đến ngày", "Thứ"],
+  ["rule-1", "2026-10-12", "Trường A", "Khối 1", "1A", "Sáng", "Tiết 1", "07:00", "07:45", "Trong lớp", "", "2027-01-11", "Thứ 2"],
+]);
+baselineSheet["!autofilter"] = { ref: "A1:M1001" };
+XLSX.utils.book_append_sheet(baseline, baselineSheet, "Lich nen hoc ky");
+const baselineSummary = XLSX.utils.aoa_to_sheet([["THỐNG KÊ LỊCH NỀN"], ["Lọc trường"], ["Trường", "Số lớp", "Số tiết lặp"], ["Trường A", "", ""]]);
+const baselineFormulas = schoolScheduleStatisticsFormulas("Lich nen hoc ky", 4, 1001);
+baselineSummary.B4 = { t: "n", f: baselineFormulas.classes };
+baselineSummary.C4 = { t: "n", f: baselineFormulas.lessons };
+baselineSummary["!autofilter"] = { ref: "A3:C4" };
+XLSX.utils.book_append_sheet(baseline, baselineSummary, "Thong ke");
+XLSX.utils.book_append_sheet(baseline, XLSX.utils.aoa_to_sheet(schoolNeedCatalogRows(catalog)), "Danh muc");
+const baselineBytes = addSchoolNeedTemplateControls(new Uint8Array(XLSX.write(baseline, { bookType: "xlsx", type: "array" })), catalog);
+const reopenedBaseline = XLSX.read(baselineBytes, { type: "array" });
+assert.deepEqual(reopenedBaseline.SheetNames, ["Lich nen hoc ky", "Thong ke", "Danh muc"]);
+assert.equal(XLSX.utils.sheet_to_json(reopenedBaseline.Sheets["Lich nen hoc ky"]).length, 1);
+assert.equal(reopenedBaseline.Sheets["Lich nen hoc ky"].M2.v, "Thứ 2");
 console.log("School need template catalog and Excel controls passed.");

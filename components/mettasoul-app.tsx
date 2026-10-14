@@ -6912,7 +6912,7 @@ export function MettasoulApp() {
 
     async function downloadSchoolNeedWorkbook(includeCurrent: boolean) {
       const XLSX = await import("xlsx-js-style");
-      const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula } = await import("@/lib/school-need-template");
+      const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula, schoolScheduleStatisticsFormulas } = await import("@/lib/school-need-template");
       const { schoolScheduleGsheetHeaders } = await import("@/lib/school-schedule-gsheet-import");
       const catalog = buildSchoolNeedTemplateCatalog(schools, classes, activeTimeSlots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot);
       if (catalog.schools.length === 0 || catalog.classes.length === 0 || catalog.periods.length === 0) {
@@ -6933,6 +6933,7 @@ export function MettasoulApp() {
       worksheet["!cols"] = [21, 16, 34, 15, 20, 12, 25, 14, 14, 21, 20, 34, 24].map((wch) => ({ wch }));
       worksheet["!ref"] = `A1:M${Math.max(1001, data.length + 1)}`;
       worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
+      worksheet["!autofilter"] = { ref: `A1:M${Math.max(1001, data.length + 1)}` };
       applyMettasoulExcelBrand(XLSX, worksheet, { headerRow: 0 });
       for (let row = 2; row <= Math.max(1001, data.length + 1); row++) {
         const dateAddress = `B${row}`;
@@ -6948,6 +6949,23 @@ export function MettasoulApp() {
         worksheet[`I${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "N", catalog) };
       }
       XLSX.utils.book_append_sheet(workbook, worksheet, "Lich truong");
+      const statsSchools = catalog.schools;
+      const statistics = XLSX.utils.aoa_to_sheet([
+        ["THỐNG KÊ LỊCH TUẦN"],
+        ["Lọc cột Trường bên dưới để xem số lớp và số tiết. Lọc chỉ ẩn dòng trong Excel, không xóa lịch khi tải lại CRM."],
+        ["Trường", "Số lớp", "Số tiết"],
+        ...statsSchools.map((school) => [school, "", ""]),
+      ]);
+      statsSchools.forEach((_, index) => {
+        const row = index + 4;
+        const formulas = schoolScheduleStatisticsFormulas("Lich truong", row, Math.max(1001, data.length + 1));
+        statistics[`B${row}`] = { t: "n", f: formulas.classes };
+        statistics[`C${row}`] = { t: "n", f: formulas.lessons };
+      });
+      statistics["!cols"] = [{ wch: 38 }, { wch: 16 }, { wch: 16 }];
+      statistics["!autofilter"] = { ref: `A3:C${statsSchools.length + 3}` };
+      applyMettasoulExcelBrand(XLSX, statistics, { headerRow: 2, titleRow: 0, dataStartRow: 3 });
+      XLSX.utils.book_append_sheet(workbook, statistics, "Thong ke");
       const catalogSheet = XLSX.utils.aoa_to_sheet(schoolNeedCatalogRows(catalog));
       catalogSheet["!cols"] = [34, 3, 34, 15, 3, 44, 19, 3, 45, 24, 3, 70, 14, 14, 3, 12, 22].map((wch) => ({ wch }));
       applyMettasoulExcelBrand(XLSX, catalogSheet, { headerRow: 0 });
@@ -6963,6 +6981,7 @@ export function MettasoulApp() {
         ["Môi trường chọn từ danh sách. Khi đổi trường hoặc khối, nhớ chọn lại các ô phụ thuộc trên cùng dòng."],
         ["Tên bài và tên tiết học được admin chọn trên màn hình Giao lịch; không nhập vào file này."],
         ["Với mỗi trường có mặt trong file, file là toàn bộ lịch của trường đó trong tuần đã chọn. Tiết đang có nhưng vắng trong file sẽ được đánh dấu hủy sau khi xác nhận; trường không có trong file được giữ nguyên."],
+        ["Tab Thong ke tự đếm số lớp khác nhau và số tiết theo trường. Bộ lọc Excel chỉ đổi cách xem; CRM vẫn đọc toàn bộ dòng ở tab Lich truong khi tải lại."],
         ["Trường chưa có lớp hoặc tiết đơn sẽ có danh sách phụ thuộc trống; hãy hoàn thiện cấu hình trong app trước khi nhập."],
       ]);
       guide["!cols"] = [{ wch: 110 }];
@@ -7065,7 +7084,7 @@ export function MettasoulApp() {
       try {
         if (includeCurrent && (!assignmentSchoolId || !baselineEffectiveFrom || !baselineEffectiveTo)) throw new Error("Hãy chọn trường và khoảng hiệu lực của lịch nền cần sửa trước khi tải Excel.");
         const XLSX = await import("xlsx-js-style");
-        const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula, schoolPatternWeekdayLabel } = await import("@/lib/school-need-template");
+        const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula, schoolPatternWeekdayLabel, schoolScheduleStatisticsFormulas } = await import("@/lib/school-need-template");
         const catalog = buildSchoolNeedTemplateCatalog(schools, classes, activeTimeSlots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot);
         if (catalog.schools.length === 0 || catalog.classes.length === 0 || catalog.periods.length === 0) throw new Error("Cần có trường, lớp và khung giờ đang hoạt động trước khi tải mẫu.");
         let patterns: SchoolSchedulePattern[] = [];
@@ -7084,6 +7103,7 @@ export function MettasoulApp() {
         worksheet["!cols"] = [22, 16, 34, 15, 20, 12, 25, 14, 14, 21, 34, 16, 14].map((wch) => ({ wch }));
         worksheet["!ref"] = `A1:M${Math.max(1001, rows.length + 1)}`;
         worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
+        worksheet["!autofilter"] = { ref: `A1:M${Math.max(1001, rows.length + 1)}` };
         applyMettasoulExcelBrand(XLSX, worksheet, { headerRow: 0 });
         for (let row = 2; row <= Math.max(1001, rows.length + 1); row++) {
           for (const column of ["B", "L"]) { worksheet[`${column}${row}`] ||= { t: "z" }; worksheet[`${column}${row}`].s = { numFmt: "dd/mm/yyyy" }; }
@@ -7091,11 +7111,28 @@ export function MettasoulApp() {
           worksheet[`I${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "N", catalog) };
         }
         XLSX.utils.book_append_sheet(workbook, worksheet, "Lich nen hoc ky");
+        const statsSchools = includeCurrent ? Array.from(new Set(rows.map((row) => String(row[2] || "")))).filter(Boolean) : catalog.schools;
+        const statistics = XLSX.utils.aoa_to_sheet([
+          ["THỐNG KÊ LỊCH NỀN"],
+          ["Lọc cột Trường bên dưới. Số tiết là số quy tắc lặp, không phải tổng tiết đã sinh cho nhiều tuần."],
+          ["Trường", "Số lớp", "Số tiết lặp"],
+          ...statsSchools.map((school) => [school, "", ""]),
+        ]);
+        statsSchools.forEach((_, index) => {
+          const row = index + 4;
+          const formulas = schoolScheduleStatisticsFormulas("Lich nen hoc ky", row, Math.max(1001, rows.length + 1));
+          statistics[`B${row}`] = { t: "n", f: formulas.classes };
+          statistics[`C${row}`] = { t: "n", f: formulas.lessons };
+        });
+        statistics["!cols"] = [{ wch: 38 }, { wch: 16 }, { wch: 18 }];
+        statistics["!autofilter"] = { ref: `A3:C${statsSchools.length + 3}` };
+        applyMettasoulExcelBrand(XLSX, statistics, { headerRow: 2, titleRow: 0, dataStartRow: 3 });
+        XLSX.utils.book_append_sheet(workbook, statistics, "Thong ke");
         const catalogSheet = XLSX.utils.aoa_to_sheet(schoolNeedCatalogRows(catalog));
         catalogSheet["!cols"] = [34, 3, 34, 15, 3, 44, 19, 3, 45, 24, 3, 70, 14, 14, 3, 12, 22].map((wch) => ({ wch }));
         applyMettasoulExcelBrand(XLSX, catalogSheet, { headerRow: 0 });
         XLSX.utils.book_append_sheet(workbook, catalogSheet, "Danh muc");
-        const guide = XLSX.utils.aoa_to_sheet([["HƯỚNG DẪN LỊCH NỀN HỌC KỲ"], ["Mỗi dòng là một tiết lặp theo Thứ trong khoảng Từ ngày–Đến ngày."], ["File của một trường và một khoảng hiệu lực là toàn bộ lịch nền; xóa dòng trong file nghĩa là thay quy tắc cũ."], ["Muốn sửa quy tắc đã có: tải lịch nền hiện tại và giữ nguyên Mã quy tắc."], ["Lịch tuần tải lên sau đó là ngoại lệ và được ưu tiên hơn lịch nền."], ["Nhập một file GSheet cho bốn trường cố định sẽ tự tạo lịch nền cho toàn bộ các tuần trong khoảng hiệu lực; không tự gửi lịch giáo viên."]]);
+        const guide = XLSX.utils.aoa_to_sheet([["HƯỚNG DẪN LỊCH NỀN HỌC KỲ"], ["Mỗi dòng là một tiết lặp theo Thứ trong khoảng Từ ngày–Đến ngày."], ["File của một trường và một khoảng hiệu lực là toàn bộ lịch nền; xóa dòng trong file nghĩa là thay quy tắc cũ."], ["Muốn sửa quy tắc đã có: tải lịch nền hiện tại và giữ nguyên Mã quy tắc."], ["Tab Thong ke đếm lớp và quy tắc lặp theo trường. Bộ lọc Excel chỉ đổi cách xem; CRM vẫn đọc toàn bộ tab Lich nen hoc ky."], ["Lịch tuần tải lên sau đó là ngoại lệ và được ưu tiên hơn lịch nền."], ["Nhập một file GSheet cho bốn trường cố định sẽ tự tạo lịch nền cho toàn bộ các tuần trong khoảng hiệu lực; không tự gửi lịch giáo viên."]]);
         guide["!cols"] = [{ wch: 110 }];
         XLSX.utils.book_append_sheet(workbook, guide, "Huong dan");
         const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
