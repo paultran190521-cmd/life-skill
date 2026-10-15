@@ -16,7 +16,8 @@ function loadTs(path, imports = {}) {
   return module.exports;
 }
 const availabilityPolicy = loadTs("../lib/teacher-availability.ts");
-const { assessSchoolWeekStaffing } = loadTs("../lib/school-week-staffing.ts", { "./teacher-availability": availabilityPolicy });
+const periodCount = loadTs("../lib/school-need-period-count.ts");
+const { assessSchoolWeekStaffing } = loadTs("../lib/school-week-staffing.ts", { "./teacher-availability": availabilityPolicy, "./school-need-period-count": periodCount });
 const date = "2026-10-08";
 const slots = [
   { id: "a", label: "Tiết 1", start: "07:00", end: "07:45" },
@@ -59,6 +60,8 @@ const chosen = check({
   teachers: [teacher("T1")], availability: [available("T1")],
 });
 assert.deepEqual([chosen.coveredPeriods, chosen.pendingPeriods, chosen.missingAssignments], [1, 1, 1]);
+const paired = check({ needs: [{ ...need("paired", "A", "13:30", "15:00"), periodLabel: "Khung 90 phút từ 13:30" }], teachers: [teacher("T1")], availability: [available("T1")] });
+assert.deepEqual([paired.periodCount, paired.pendingPeriods, paired.requiredAssignments], [2, 2, 1]);
 const twoTeachers = check({
   needs: [need("one", "A"), need("two", "B")],
   teachers: [teacher("T1"), teacher("T2")], availability: [available("T1"), available("T2")],

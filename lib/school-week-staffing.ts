@@ -1,4 +1,5 @@
 import { availabilityTimeRangeKey, isTeacherAvailableForSlot } from "./teacher-availability";
+import { schoolNeedPeriodTotal } from "./school-need-period-count";
 import type { Schedule, SchoolTeachingNeed, TeacherAvailability, TimeSlot } from "./types";
 
 type Draft = { schoolNeedIds?: string[]; teacherIds: string[]; timeSlotId: string };
@@ -137,15 +138,15 @@ export function assessSchoolWeekStaffing(input: {
     }
   }
   return {
-    periodCount: active.length,
-    coveredPeriods: active.filter((need) => need.status === "ASSIGNED" && Boolean(need.scheduleId) || selected.has(need.id)).length,
-    pendingPeriods: pending.length,
+    periodCount: schoolNeedPeriodTotal(active),
+    coveredPeriods: schoolNeedPeriodTotal(active.filter((need) => need.status === "ASSIGNED" && Boolean(need.scheduleId) || selected.has(need.id))),
+    pendingPeriods: schoolNeedPeriodTotal(pending),
     requiredAssignments: units.length,
     coverableAssignments,
     missingAssignments: units.length - coverableAssignments,
     mergeablePairs,
     registeredTeachers,
-    reviewCount: active.filter((need) => need.status === "REVIEW").length,
+    reviewCount: schoolNeedPeriodTotal(active.filter((need) => need.status === "REVIEW")),
     uncertain,
     firstGap,
   };

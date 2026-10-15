@@ -105,6 +105,8 @@ import {
   normalizeTimeSlotLabel,
   normalizeTimeValue,
 } from "@/lib/time-slots";
+import { schoolNeedPeriodCount, schoolNeedPeriodTotal } from "@/lib/school-need-period-count";
+import { isNamedLegacyPairSlot } from "@/lib/school-time-slot-names";
 import type {
   Attendance,
   ActivityAssignment,
@@ -6884,8 +6886,8 @@ export function MettasoulApp() {
       .flatMap((item) => item.schoolNeedIds ?? []));
     const batchMissingBySchool = [...new Set(currentWeekBatchMissingNeeds.map((need) => need.schoolId))].map((schoolId) => ({
       schoolId,
-      count: currentWeekBatchMissingNeeds.filter((need) => need.schoolId === schoolId).length,
-      withoutTeacherCount: currentWeekBatchMissingNeeds.filter((need) => need.schoolId === schoolId && !batchTeacherSelectedNeedIds.has(need.id)).length,
+      count: schoolNeedPeriodTotal(currentWeekBatchMissingNeeds.filter((need) => need.schoolId === schoolId)),
+      withoutTeacherCount: schoolNeedPeriodTotal(currentWeekBatchMissingNeeds.filter((need) => need.schoolId === schoolId && !batchTeacherSelectedNeedIds.has(need.id))),
     }));
     const stagedNeedIds = new Set(assignmentBatchItems.flatMap((item) => item.schoolNeedIds ?? []));
     const draftItemsAwaitingBatch = draftSchedule.items.filter((item) => item.teacherIds.length > 0 && !assignmentBatchItems.some((saved) => saved.id === item.id || (item.schoolNeedIds ?? []).some((id) => stagedNeedIds.has(id))));
@@ -6912,7 +6914,7 @@ export function MettasoulApp() {
 
     async function downloadSchoolNeedWorkbook(includeCurrent: boolean) {
       const XLSX = await import("xlsx-js-style");
-      const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula, schoolScheduleStatisticsFormulas } = await import("@/lib/school-need-template");
+      const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula, schoolNeedPeriodCountFormula, schoolNeedUniqueClassFormula, schoolScheduleStatisticsFormulas } = await import("@/lib/school-need-template");
       const { schoolScheduleGsheetHeaders } = await import("@/lib/school-schedule-gsheet-import");
       const catalog = buildSchoolNeedTemplateCatalog(schools, classes, activeTimeSlots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot);
       if (catalog.schools.length === 0 || catalog.classes.length === 0 || catalog.periods.length === 0) {
@@ -6929,12 +6931,13 @@ export function MettasoulApp() {
         need.start < "12:00" ? "Sáng" : "Chiều", need.periodLabel, need.start, need.end,
         teachingEnvironmentOptions.find((option) => option.value === need.teachingEnvironment)?.label || "Trong lớp", need.sourceStatus || (need.status === "CANCELLED" ? "Trường hủy tiết" : "Dạy"), need.sourceNote || "", need.id,
       ]) : [];
-      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
-      worksheet["!cols"] = [21, 16, 34, 15, 20, 12, 25, 14, 14, 21, 20, 34, 24].map((wch) => ({ wch }));
-      worksheet["!ref"] = `A1:M${Math.max(1001, data.length + 1)}`;
+      const worksheet = XLSX.utils.aoa_to_sheet([[...headers, "Số tiết (tự tính)", "Lớp duy nhất (tự tính)"], ...data]);
+      worksheet["!cols"] = [...[21, 16, 34, 15, 20, 12, 25, 14, 14, 21, 20, 34, 24].map((wch) => ({ wch })), { hidden: true }, { hidden: true }];
+      worksheet["!ref"] = `A1:O${Math.max(1001, data.length + 1)}`;
       worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
       worksheet["!autofilter"] = { ref: `A1:M${Math.max(1001, data.length + 1)}` };
       applyMettasoulExcelBrand(XLSX, worksheet, { headerRow: 0 });
+      const countedClasses = new Set<string>();
       for (let row = 2; row <= Math.max(1001, data.length + 1); row++) {
         const dateAddress = `B${row}`;
         worksheet[dateAddress] ||= { t: "z" };
@@ -6943,10 +6946,15 @@ export function MettasoulApp() {
         const schoolName = need ? schoolById.get(need.schoolId)?.name || "" : "";
         const session = need?.start && need.start < "12:00" ? "Sáng" : "Chiều";
         const matchingPeriod = need ? catalog.periods.find((period) => period.school === schoolName && period.session === session && period.start === need.start && period.end === need.end) : undefined;
-        if (need && !matchingPeriod) continue;
         if (matchingPeriod) worksheet[`G${row}`] = { t: "s", v: matchingPeriod.label };
-        worksheet[`H${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "M", catalog) };
-        worksheet[`I${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "N", catalog) };
+        if (!need || matchingPeriod) {
+          worksheet[`H${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "M", catalog), v: need?.start || "" };
+          worksheet[`I${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "N", catalog), v: need?.end || "" };
+        }
+        const classKey = need ? `${need.schoolId}|${need.classId}` : "";
+        worksheet[`N${row}`] = { t: "n", f: schoolNeedPeriodCountFormula(row), v: need ? schoolNeedPeriodCount(need) : 0 };
+        worksheet[`O${row}`] = { t: "n", f: schoolNeedUniqueClassFormula(row), v: classKey && !countedClasses.has(classKey) ? 1 : 0 };
+        if (classKey) countedClasses.add(classKey);
       }
       XLSX.utils.book_append_sheet(workbook, worksheet, "Lich truong");
       const statsSchools = catalog.schools;
@@ -6959,8 +6967,9 @@ export function MettasoulApp() {
       statsSchools.forEach((_, index) => {
         const row = index + 4;
         const formulas = schoolScheduleStatisticsFormulas("Lich truong", row, Math.max(1001, data.length + 1));
-        statistics[`B${row}`] = { t: "n", f: formulas.classes };
-        statistics[`C${row}`] = { t: "n", f: formulas.lessons };
+        const schoolNeeds = exportNeeds.filter((need) => schoolById.get(need.schoolId)?.name === statsSchools[index]);
+        statistics[`B${row}`] = { t: "n", f: formulas.classes, v: new Set(schoolNeeds.map((need) => need.classId)).size };
+        statistics[`C${row}`] = { t: "n", f: formulas.lessons, v: schoolNeedPeriodTotal(schoolNeeds) };
       });
       statistics["!cols"] = [{ wch: 38 }, { wch: 16 }, { wch: 16 }];
       statistics["!autofilter"] = { ref: `A3:C${statsSchools.length + 3}` };
@@ -6981,7 +6990,7 @@ export function MettasoulApp() {
         ["Môi trường chọn từ danh sách. Khi đổi trường hoặc khối, nhớ chọn lại các ô phụ thuộc trên cùng dòng."],
         ["Tên bài và tên tiết học được admin chọn trên màn hình Giao lịch; không nhập vào file này."],
         ["Với mỗi trường có mặt trong file, file là toàn bộ lịch của trường đó trong tuần đã chọn. Tiết đang có nhưng vắng trong file sẽ được đánh dấu hủy sau khi xác nhận; trường không có trong file được giữ nguyên."],
-        ["Tab Thong ke tự đếm số lớp khác nhau và số tiết theo trường. Bộ lọc Excel chỉ đổi cách xem; CRM vẫn đọc toàn bộ dòng ở tab Lich truong khi tải lại."],
+        ["Tab Thong ke tự đếm số lớp khác nhau và số tiết học theo trường; khung hai tiết được tính là 2. Bộ lọc Excel chỉ đổi cách xem; CRM vẫn đọc toàn bộ dòng ở tab Lich truong khi tải lại."],
         ["Trường chưa có lớp hoặc tiết đơn sẽ có danh sách phụ thuộc trống; hãy hoàn thiện cấu hình trong app trước khi nhập."],
       ]);
       guide["!cols"] = [{ wch: 110 }];
@@ -7084,7 +7093,7 @@ export function MettasoulApp() {
       try {
         if (includeCurrent && (!assignmentSchoolId || !baselineEffectiveFrom || !baselineEffectiveTo)) throw new Error("Hãy chọn trường và khoảng hiệu lực của lịch nền cần sửa trước khi tải Excel.");
         const XLSX = await import("xlsx-js-style");
-        const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula, schoolPatternWeekdayLabel, schoolScheduleStatisticsFormulas } = await import("@/lib/school-need-template");
+        const { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula, schoolNeedPeriodCountFormula, schoolNeedUniqueClassFormula, schoolPatternWeekdayLabel, schoolScheduleStatisticsFormulas } = await import("@/lib/school-need-template");
         const catalog = buildSchoolNeedTemplateCatalog(schools, classes, activeTimeSlots, isTimeSlotAllowedForSchool, isDoubleTeachingTimeSlot);
         if (catalog.schools.length === 0 || catalog.classes.length === 0 || catalog.periods.length === 0) throw new Error("Cần có trường, lớp và khung giờ đang hoạt động trước khi tải mẫu.");
         let patterns: SchoolSchedulePattern[] = [];
@@ -7099,16 +7108,22 @@ export function MettasoulApp() {
         });
         const headers = ["Mã quy tắc (giữ khi sửa)", "Từ ngày", "Trường", "Khối", "Lớp", "Buổi", "Tiết", "Bắt đầu", "Kết thúc", "Môi trường", "Nguồn/Ghi chú", "Đến ngày", "Thứ"];
         const workbook = XLSX.utils.book_new();
-        const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-        worksheet["!cols"] = [22, 16, 34, 15, 20, 12, 25, 14, 14, 21, 34, 16, 14].map((wch) => ({ wch }));
-        worksheet["!ref"] = `A1:M${Math.max(1001, rows.length + 1)}`;
+        const worksheet = XLSX.utils.aoa_to_sheet([[...headers, "Số tiết (tự tính)", "Lớp duy nhất (tự tính)"], ...rows]);
+        worksheet["!cols"] = [...[22, 16, 34, 15, 20, 12, 25, 14, 14, 21, 34, 16, 14].map((wch) => ({ wch })), { hidden: true }, { hidden: true }];
+        worksheet["!ref"] = `A1:O${Math.max(1001, rows.length + 1)}`;
         worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
         worksheet["!autofilter"] = { ref: `A1:M${Math.max(1001, rows.length + 1)}` };
         applyMettasoulExcelBrand(XLSX, worksheet, { headerRow: 0 });
+        const countedPatternClasses = new Set<string>();
         for (let row = 2; row <= Math.max(1001, rows.length + 1); row++) {
           for (const column of ["B", "L"]) { worksheet[`${column}${row}`] ||= { t: "z" }; worksheet[`${column}${row}`].s = { numFmt: "dd/mm/yyyy" }; }
-          worksheet[`H${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "M", catalog) };
-          worksheet[`I${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "N", catalog) };
+          const pattern = patterns[row - 2];
+          worksheet[`H${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "M", catalog), v: pattern?.start || "" };
+          worksheet[`I${row}`] = { t: "str", f: schoolNeedTimeFormula(row, "N", catalog), v: pattern?.end || "" };
+          const classKey = pattern ? `${pattern.schoolId}|${pattern.classId}` : "";
+          worksheet[`N${row}`] = { t: "n", f: schoolNeedPeriodCountFormula(row), v: pattern ? schoolNeedPeriodCount(pattern) : 0 };
+          worksheet[`O${row}`] = { t: "n", f: schoolNeedUniqueClassFormula(row), v: classKey && !countedPatternClasses.has(classKey) ? 1 : 0 };
+          if (classKey) countedPatternClasses.add(classKey);
         }
         XLSX.utils.book_append_sheet(workbook, worksheet, "Lich nen hoc ky");
         const statsSchools = includeCurrent ? Array.from(new Set(rows.map((row) => String(row[2] || "")))).filter(Boolean) : catalog.schools;
@@ -7121,8 +7136,9 @@ export function MettasoulApp() {
         statsSchools.forEach((_, index) => {
           const row = index + 4;
           const formulas = schoolScheduleStatisticsFormulas("Lich nen hoc ky", row, Math.max(1001, rows.length + 1));
-          statistics[`B${row}`] = { t: "n", f: formulas.classes };
-          statistics[`C${row}`] = { t: "n", f: formulas.lessons };
+          const schoolPatterns = patterns.filter((pattern) => schoolById.get(pattern.schoolId)?.name === statsSchools[index]);
+          statistics[`B${row}`] = { t: "n", f: formulas.classes, v: new Set(schoolPatterns.map((pattern) => pattern.classId)).size };
+          statistics[`C${row}`] = { t: "n", f: formulas.lessons, v: schoolNeedPeriodTotal(schoolPatterns) };
         });
         statistics["!cols"] = [{ wch: 38 }, { wch: 16 }, { wch: 18 }];
         statistics["!autofilter"] = { ref: `A3:C${statsSchools.length + 3}` };
@@ -7132,7 +7148,7 @@ export function MettasoulApp() {
         catalogSheet["!cols"] = [34, 3, 34, 15, 3, 44, 19, 3, 45, 24, 3, 70, 14, 14, 3, 12, 22].map((wch) => ({ wch }));
         applyMettasoulExcelBrand(XLSX, catalogSheet, { headerRow: 0 });
         XLSX.utils.book_append_sheet(workbook, catalogSheet, "Danh muc");
-        const guide = XLSX.utils.aoa_to_sheet([["HƯỚNG DẪN LỊCH NỀN HỌC KỲ"], ["Mỗi dòng là một tiết lặp theo Thứ trong khoảng Từ ngày–Đến ngày."], ["File của một trường và một khoảng hiệu lực là toàn bộ lịch nền; xóa dòng trong file nghĩa là thay quy tắc cũ."], ["Muốn sửa quy tắc đã có: tải lịch nền hiện tại và giữ nguyên Mã quy tắc."], ["Tab Thong ke đếm lớp và quy tắc lặp theo trường. Bộ lọc Excel chỉ đổi cách xem; CRM vẫn đọc toàn bộ tab Lich nen hoc ky."], ["Lịch tuần tải lên sau đó là ngoại lệ và được ưu tiên hơn lịch nền."], ["Nhập một file GSheet cho bốn trường cố định sẽ tự tạo lịch nền cho toàn bộ các tuần trong khoảng hiệu lực; không tự gửi lịch giáo viên."]]);
+        const guide = XLSX.utils.aoa_to_sheet([["HƯỚNG DẪN LỊCH NỀN HỌC KỲ"], ["Mỗi dòng là một khung giờ lặp theo Thứ trong khoảng Từ ngày–Đến ngày; khung đôi tính 2 tiết."], ["File của một trường và một khoảng hiệu lực là toàn bộ lịch nền; xóa dòng trong file nghĩa là thay quy tắc cũ."], ["Muốn sửa quy tắc đã có: tải lịch nền hiện tại và giữ nguyên Mã quy tắc."], ["Tab Thong ke đếm lớp và số tiết lặp theo trường. Bộ lọc Excel chỉ đổi cách xem; CRM vẫn đọc toàn bộ tab Lich nen hoc ky."], ["Lịch tuần tải lên sau đó là ngoại lệ và được ưu tiên hơn lịch nền."], ["Nhập một file GSheet cho bốn trường cố định sẽ tự tạo lịch nền cho toàn bộ các tuần trong khoảng hiệu lực; không tự gửi lịch giáo viên."]]);
         guide["!cols"] = [{ wch: 110 }];
         XLSX.utils.book_append_sheet(workbook, guide, "Huong dan");
         const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
@@ -7416,7 +7432,7 @@ export function MettasoulApp() {
         </section>
         {renderAdminAvailabilityPanel()}
         <span id="assignment-school-week" className="block scroll-mt-24" aria-hidden="true" />
-        <Panel title="Lịch trường theo tuần" action={assignmentSchoolId ? `${weekNeeds.filter((need) => need.status !== "CANCELLED").length} tiết trong tuần` : "Chọn tuần để tải lịch"}>
+        <Panel title="Lịch trường theo tuần" action={assignmentSchoolId ? `${new Set(weekNeeds.filter((need) => need.status !== "CANCELLED").map((need) => need.classId)).size} lớp · ${schoolNeedPeriodTotal(weekNeeds.filter((need) => need.status !== "CANCELLED"))} tiết trong tuần` : "Chọn tuần để tải lịch"}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="rounded-2xl border-2 border-teal-400 bg-teal-50/40 p-2 text-sm font-bold text-[var(--brand-dark)]">Tuần có ngày
               <input type="date" value={assignmentWeekStart} onChange={(event) => { if (!event.target.value) return; setSchoolNeedLoading(Boolean(assignmentSchoolId)); setAssignmentWeekStart(mondayDateKey(event.target.value)); setSchoolNeeds([]); setDraftSchedule({ items: assignmentSchoolId ? [] : [createDraftScheduleItem()] }); setIsSchoolNeedListExpanded(false); setIsWeeklyAssignmentListExpanded(false); setSelectedSchoolNeedIds([]); setEditingSchoolNeedId(""); setEditingSchoolNeedDraft(null); setAssignmentPreviewTeacherId("all"); setSchoolNeedImport(null); setSemesterPatternImport(null); }} className={`${inputClass} mt-1 w-full`} />
@@ -7505,7 +7521,7 @@ export function MettasoulApp() {
           {weekNeeds.length > 0 ? <div className="mt-4 flex flex-wrap gap-3">{Array.from(new Set(weekNeeds.map((need) => need.date))).sort().map((date) => {
             const dayNeeds = weekNeeds.filter((need) => need.date === date);
             const editedCount = dayNeeds.filter((need) => assignmentClockMs > 0 && isSchoolNeedEditHighlighted(need, assignmentClockMs)).length;
-            return <span key={date} className="rounded-2xl bg-cyan-50 px-4 py-2 text-sm font-bold text-cyan-900 sm:text-base">{formatDate(date)} · {new Set(dayNeeds.map((need) => need.classId)).size} lớp · {dayNeeds.length} tiết · {dayNeeds.filter((need) => need.status === "OPEN").length} cần giao{editedCount ? <strong className="ml-2 text-rose-700">· {editedCount} lịch vừa sửa</strong> : null}</span>;
+            return <span key={date} className="rounded-2xl bg-cyan-50 px-4 py-2 text-sm font-bold text-cyan-900 sm:text-base">{formatDate(date)} · {new Set(dayNeeds.map((need) => need.classId)).size} lớp · {schoolNeedPeriodTotal(dayNeeds)} tiết · {schoolNeedPeriodTotal(dayNeeds.filter((need) => need.status === "OPEN"))} cần giao{editedCount ? <strong className="ml-2 text-rose-700">· {editedCount} lịch vừa sửa</strong> : null}</span>;
           })}</div> : null}
           {assignmentSchoolId ? <section aria-label="Danh sách tiết của trường trong tuần" className="mt-4 rounded-2xl border border-cyan-200 bg-cyan-50/30 p-3">
             <button
@@ -7515,7 +7531,7 @@ export function MettasoulApp() {
               onClick={() => setIsSchoolNeedListExpanded((expanded) => !expanded)}
               className="flex w-full items-center justify-between gap-3 rounded-xl px-2 py-1 text-left text-sm font-black text-cyan-950 transition hover:bg-cyan-50"
             >
-              <span>Danh sách tiết của trường · {weekNeeds.length} tiết ({selectableWeekNeeds.length} cần giao)</span>
+              <span>Danh sách tiết của trường · {schoolNeedPeriodTotal(weekNeeds)} tiết ({schoolNeedPeriodTotal(selectableWeekNeeds)} cần giao)</span>
               <span className="inline-flex shrink-0 items-center gap-1 text-cyan-800">
                 {isSchoolNeedListExpanded ? "Thu gọn" : "Mở danh sách"}
                 <ChevronDown className={`size-4 transition-transform ${isSchoolNeedListExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
@@ -7523,8 +7539,8 @@ export function MettasoulApp() {
             </button>
             <div id="assignment-school-needs-list" hidden={!isSchoolNeedListExpanded}>
           {selectableWeekNeeds.length > 0 ? <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-            <button type="button" disabled={Boolean(pendingAction)} onClick={() => setSelectedSchoolNeedIds(selectedWeekNeedIds.length === selectableWeekNeeds.length ? [] : selectableWeekNeeds.map((need) => need.id))} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-700 disabled:opacity-40">{selectedWeekNeedIds.length === selectableWeekNeeds.length ? "Bỏ chọn tất cả" : `Chọn tất cả ${selectableWeekNeeds.length} tiết chưa giao`}</button>
-            <button type="button" disabled={selectedWeekNeedIds.length === 0 || Boolean(pendingAction)} onClick={() => void deleteSelectedSchoolNeeds(selectedWeekNeedIds)} className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 font-bold text-rose-700 disabled:cursor-not-allowed disabled:opacity-40">Xóa {selectedWeekNeedIds.length} tiết đã chọn</button>
+            <button type="button" disabled={Boolean(pendingAction)} onClick={() => setSelectedSchoolNeedIds(selectedWeekNeedIds.length === selectableWeekNeeds.length ? [] : selectableWeekNeeds.map((need) => need.id))} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-bold text-slate-700 disabled:opacity-40">{selectedWeekNeedIds.length === selectableWeekNeeds.length ? "Bỏ chọn tất cả" : `Chọn tất cả ${schoolNeedPeriodTotal(selectableWeekNeeds)} tiết chưa giao`}</button>
+            <button type="button" disabled={selectedWeekNeedIds.length === 0 || Boolean(pendingAction)} onClick={() => void deleteSelectedSchoolNeeds(selectedWeekNeedIds)} className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 font-bold text-rose-700 disabled:cursor-not-allowed disabled:opacity-40">Xóa {schoolNeedPeriodTotal(selectableWeekNeeds.filter((need) => selectedWeekNeedIds.includes(need.id)))} tiết đã chọn</button>
           </div> : null}
           {assignmentSchoolId ? <div className="mt-4 space-y-2">
             {weekNeeds.length === 0 ? <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600 sm:text-base">Tuần này chưa có lịch trường đã nhập.</p> : weekNeeds.slice().sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start) || a.classId.localeCompare(b.classId)).map((need, index) => {
@@ -7572,7 +7588,7 @@ export function MettasoulApp() {
               onClick={() => setIsWeeklyAssignmentListExpanded((expanded) => !expanded)}
               className="flex w-full items-center justify-between gap-3 rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-3 text-left text-sm font-black text-cyan-950 transition hover:bg-cyan-100"
             >
-              <span>{formatDate(assignmentWeekStart)}–{formatDate(weekEnd)} · {schoolNeedLoading ? "Đang tải tiết cần giao…" : `${selectableWeekNeeds.length} tiết chưa giao, ${assignmentProgress.remainingNeedCount} tiết chưa có giáo viên`}</span>
+              <span>{formatDate(assignmentWeekStart)}–{formatDate(weekEnd)} · {schoolNeedLoading ? "Đang tải tiết cần giao…" : `${schoolNeedPeriodTotal(selectableWeekNeeds)} tiết chưa giao, ${assignmentProgress.remainingNeedCount} tiết chưa có giáo viên`}</span>
               <span className="inline-flex shrink-0 items-center gap-1 text-cyan-800">{isWeeklyAssignmentListExpanded ? "Thu gọn" : "Mở tiết tuần này"}<ChevronDown className={`size-4 transition-transform ${isWeeklyAssignmentListExpanded ? "rotate-180" : ""}`} aria-hidden="true" /></span>
             </button> : null}
             <div id="assignment-weekly-draft-list" hidden={Boolean(assignmentSchoolId) && !isWeeklyAssignmentListExpanded}>
@@ -14613,6 +14629,7 @@ function schedulingTimeSlotsForSchool(slots: TimeSlot[], schoolName: string): Ti
       return (
         !isCompositeTimeSlotCandidate(slot, duration, getTimeSlotLabelDuration(slot.label)) ||
         Boolean(getCompositeTimeSlotInfo(slot, slots)) ||
+        isNamedLegacyPairSlot(slot, slots) ||
         isConfiguredThuDucThreeFourSlot(slot)
       );
     })

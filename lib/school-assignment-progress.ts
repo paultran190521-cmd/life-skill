@@ -1,4 +1,5 @@
 import type { SchoolTeachingNeed } from "@/lib/types";
+import { schoolNeedPeriodTotal } from "./school-need-period-count";
 
 type AssignmentDraft = {
   schoolNeedIds?: string[];
@@ -25,12 +26,12 @@ export function getSchoolAssignmentProgress(needs: SchoolTeachingNeed[], drafts:
   const classIds = new Set(activeNeeds.map((need) => need.classId));
   const completedClassCount = [...classIds].filter((classId) => activeNeeds.filter((need) => need.classId === classId).every((need) => coveredIds.has(need.id))).length;
   return {
-    totalNeedCount: activeNeeds.length,
-    coveredNeedCount: coveredIds.size,
-    remainingNeedCount: activeNeeds.length - coveredIds.size,
-    assignedNeedCount: assignedIds.size,
-    selectedDraftNeedCount: [...selectedDraftIds].filter((id) => !assignedIds.has(id)).length,
-    readyDraftNeedCount: [...readyDraftIds].filter((id) => !assignedIds.has(id)).length,
+    totalNeedCount: schoolNeedPeriodTotal(activeNeeds),
+    coveredNeedCount: schoolNeedPeriodTotal(activeNeeds.filter((need) => coveredIds.has(need.id))),
+    remainingNeedCount: schoolNeedPeriodTotal(activeNeeds.filter((need) => !coveredIds.has(need.id))),
+    assignedNeedCount: schoolNeedPeriodTotal(activeNeeds.filter((need) => assignedIds.has(need.id))),
+    selectedDraftNeedCount: schoolNeedPeriodTotal(activeNeeds.filter((need) => selectedDraftIds.has(need.id) && !assignedIds.has(need.id))),
+    readyDraftNeedCount: schoolNeedPeriodTotal(activeNeeds.filter((need) => readyDraftIds.has(need.id) && !assignedIds.has(need.id))),
     totalClassCount: classIds.size,
     completedClassCount,
   };

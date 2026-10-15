@@ -96,15 +96,25 @@ export function schoolPatternWeekdayLabel(value: number | string) {
   return weekday === 7 ? "Chủ nhật" : `Thứ ${weekday + 1}`;
 }
 
-/** The statistics tab reads the unchanged import columns C (school) and E (class). */
+/** Hidden worksheet helpers keep the summary live when a user edits rows in Excel. */
+export function schoolNeedPeriodCountFormula(row: number) {
+  return `IF(OR($C${row}="",$E${row}="",$H${row}="",$I${row}=""),0,IF(IFERROR((IF(ISNUMBER($I${row}),$I${row},TIMEVALUE($I${row}))-IF(ISNUMBER($H${row}),$H${row},TIMEVALUE($H${row})))*1440,0)>=70,2,1))`;
+}
+
+export function schoolNeedUniqueClassFormula(row: number) {
+  return `IF(OR($C${row}="",$E${row}=""),0,IF(COUNTIFS($C$2:$C${row},$C${row},$D$2:$D${row},$D${row},$E$2:$E${row},$E${row})=1,1,0))`;
+}
+
+/** The statistics tab sums helper columns N (periods) and O (unique classes). */
 export function schoolScheduleStatisticsFormulas(sheetName: string, summaryRow: number, lastDataRow: number) {
   const sheet = `'${sheetName.replace(/'/g, "''")}'`;
   const schools = `${sheet}!$C$2:$C$${lastDataRow}`;
-  const classes = `${sheet}!$E$2:$E$${lastDataRow}`;
+  const periods = `${sheet}!$N$2:$N$${lastDataRow}`;
+  const uniqueClasses = `${sheet}!$O$2:$O$${lastDataRow}`;
   const schoolCell = `$A${summaryRow}`;
   return {
-    classes: `SUMPRODUCT((${schools}=${schoolCell})*(${classes}<>"")/COUNTIFS(${schools},${schools},${classes},${classes}))`,
-    lessons: `COUNTIFS(${schools},${schoolCell},${classes},"<>")`,
+    classes: `SUMIFS(${uniqueClasses},${schools},${schoolCell})`,
+    lessons: `SUMIFS(${periods},${schools},${schoolCell})`,
   };
 }
 
