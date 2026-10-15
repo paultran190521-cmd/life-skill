@@ -6977,7 +6977,7 @@ export function MettasoulApp() {
         ["Lần nhập đầu để trống Mã CRM. Khi sửa lịch đã vào CRM, tải lịch tuần hiện tại và giữ nguyên Mã CRM; Mã dòng GSheet được giữ để nhận diện bản cập nhật nguồn."],
         ["Ngày dạy là ô ngày hợp lệ. Excel có thể không hiện lịch bật lên tùy phiên bản; nhập hoặc dán ngày theo DD/MM/YYYY."],
         ["Chọn Trường → Khối → Lớp; chọn Buổi → Tiết. Giờ bắt đầu/kết thúc tự lấy theo tiết của trường."],
-        ["Danh mục trường, lớp và giờ được chụp từ app tại lúc tải mẫu. Nếu cấu hình thay đổi, hãy tải mẫu mới."],
+        ["Tab Danh muc liệt kê cố định mọi khung giờ dạy đang được app cho phép của tất cả trường, kể cả khung hai tiết; danh sách không phụ thuộc tuần hoặc trường đang xem. Nếu cấu hình giờ trên app thay đổi, hãy tải file mới."],
         ["Môi trường chọn từ danh sách. Khi đổi trường hoặc khối, nhớ chọn lại các ô phụ thuộc trên cùng dòng."],
         ["Tên bài và tên tiết học được admin chọn trên màn hình Giao lịch; không nhập vào file này."],
         ["Với mỗi trường có mặt trong file, file là toàn bộ lịch của trường đó trong tuần đã chọn. Tiết đang có nhưng vắng trong file sẽ được đánh dấu hủy sau khi xác nhận; trường không có trong file được giữ nguyên."],

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import XLSX from "xlsx-js-style";
 import { addSchoolNeedTemplateControls, buildSchoolNeedTemplateCatalog, schoolNeedCatalogRows, schoolNeedTimeFormula, schoolPatternWeekdayLabel, schoolScheduleStatisticsFormulas } from "../lib/school-need-template.ts";
+import { isDoubleTeachingTimeSlot, isTimeSlotAllowedForSchool } from "../lib/time-slots.ts";
 
 const schools = [{ id: "s1", name: "Trường A" }, { id: "s2", name: "Trường B" }];
 const classes = [
@@ -18,7 +19,24 @@ const slots = [
 const catalog = buildSchoolNeedTemplateCatalog(schools, classes, slots, (slot, school) => slot.label.startsWith(school.slice(-1)), (slot) => slot.label.includes(","));
 assert.deepEqual(catalog.schools, ["Trường A", "Trường B"]);
 assert.deepEqual(catalog.grades.map((item) => item.grade), ["Khối 1", "Khối 2", "Khối 1"]);
-assert.equal(catalog.periods.length, 3);
+assert.equal(catalog.periods.length, 4);
+assert.deepEqual(catalog.periods.map((period) => period.label), ["Tiết 1", "Tiết 1,2", "Tiết 2", "Tiết 1C"]);
+assert.deepEqual(
+  buildSchoolNeedTemplateCatalog(schools, classes, [...slots].reverse(), (slot, school) => slot.label.startsWith(school.slice(-1)), (slot) => slot.label.includes(",")).periods,
+  catalog.periods,
+);
+assert.equal(
+  buildSchoolNeedTemplateCatalog(schools, classes, slots, (slot, school) => slot.label.startsWith(school.slice(-1)), (slot) => slot.label.includes(","), { includeDouble: false }).periods.length,
+  3,
+);
+const thuDucCatalog = buildSchoolNeedTemplateCatalog(
+  [{ id: "td", name: "TRƯỜNG THPT THỦ ĐỨC" }],
+  [{ id: "td-class", schoolId: "td", grade: "Khối 10", name: "10A1" }],
+  [{ id: "td-pair", label: "TD - Tiết 3,4C (90p)", start: "14:50", end: "16:20", active: true }],
+  isTimeSlotAllowedForSchool,
+  isDoubleTeachingTimeSlot,
+);
+assert.deepEqual(thuDucCatalog.periods.map(({ label, start, end }) => [label, start, end]), [["Tiết 3,4C (90p)", "14:50", "16:20"]]);
 assert.equal(catalog.names.find((name) => name.name === "CLASSES_1_2")?.column, "G");
 assert.match(schoolNeedTimeFormula(2, "M", catalog), /IF\(OR\(\$C2=""/);
 assert.equal(schoolPatternWeekdayLabel("1"), "Thứ 2");
@@ -53,6 +71,7 @@ assert.match(workbookXml, /<definedName name="_xlnm\._FilterDatabase" localSheet
 assert.match(workbookXml, /<definedName name="_xlnm\._FilterDatabase" localSheetId="1">/);
 assert.equal((workbookXml.match(/<definedNames>/g) || []).length, 1);
 assert.deepEqual(XLSX.read(bytes, { type: "array" }).SheetNames, ["Lich truong", "Thong ke", "Danh muc"]);
+assert.ok(XLSX.utils.sheet_to_json(XLSX.read(bytes, { type: "array" }).Sheets["Danh muc"]).some((row) => row.Tiết === "Tiết 1,2"));
 assert.equal(XLSX.utils.sheet_to_json(XLSX.read(bytes, { type: "array" }).Sheets["Lich truong"]).length, 2);
 assert.match(strFromU8(files["xl/worksheets/sheet2.xml"]), /<autoFilter ref="A3:C4"\/>/);
 

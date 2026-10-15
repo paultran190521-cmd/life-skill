@@ -43,9 +43,11 @@ export function buildSchoolNeedTemplateCatalog(
     });
     if (grades.length + 1 >= gradeFirst) names.push({ name: `GRADES_${schoolIndex}`, column: "D", first: gradeFirst, last: grades.length + 1 });
     (["Sáng", "Chiều"] as const).forEach((session, sessionPosition) => {
-      const available = slots.filter((slot) => slot.active !== false && isAllowed(slot, school.name) && (options?.includeDouble || !isDouble(slot)) &&
+      // The workbook is a reference for every teachable frame, including paired periods.
+      // Callers that explicitly need single periods can still opt out.
+      const available = slots.filter((slot) => slot.active !== false && isAllowed(slot, school.name) && (options?.includeDouble !== false || !isDouble(slot)) &&
         (slot.start < "12:00" ? "Sáng" : "Chiều") === session)
-        .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+        .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end) || collator.compare(a.label, b.label));
       const labelCounts = new Map<string, number>();
       for (const slot of available) {
         const label = slot.label.includes(" - ") ? slot.label.split(" - ").slice(1).join(" - ").trim() : slot.label.trim();
